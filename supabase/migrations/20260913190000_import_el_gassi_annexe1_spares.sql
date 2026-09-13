@@ -3,10 +3,17 @@
 -- Source: EL_GASSI CONTRAT N° 111-2024 — Fourniture à la demande (203 lines)
 -- Contract: I/111/HMD-DEG/2024
 -- Verified: sum(total_price_ht) = 26 498 650,00 DA/HT
--- Does NOT replace LABOR (daily rates stay); does NOT overwrite total via canva RPC
+-- Replaces LABOR + SPARE_PART lines; sets contractual HT (not via canva RPC)
 -- =============================================================================
 
 begin;
+
+-- Replace LABOR lines (drop leftovers like LAB-EXEMPLE from canva seed)
+delete from public.contract_items ci
+using public.ref_contracts c
+where ci.contract_id = c.id
+  and c.contract_number = 'I/111/HMD-DEG/2024'
+  and ci.item_type = 'LABOR';
 
 -- Align LABOR designations with Annexe 1 wording (amounts already correct)
 with c as (
