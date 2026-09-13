@@ -1,0 +1,16 @@
+node_modules/
+.next/
+.env
+.env.local
+.env*.local
+.env.e2e
+*.pem
+repomix-output.xml
+nedjm-froid-erp/node_modules/
+nedjm-froid-erp/.next/
+nedjm-froid-erp/.env.local
+nedjm-froid-erp/.env.e2e
+nedjm-froid-erp/playwright-report/
+nedjm-froid-erp/test-results/
+nedjm-froid-erp/e2e/.fixtures/
+nedjm-froid-erp/.git.bak-nested-history/
