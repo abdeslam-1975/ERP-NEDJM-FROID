@@ -1,0 +1,93 @@
+[33mcommit 39c8f0ce4963e745bd201b9320b7960f6805c828[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mcursor/force-password-reset-c1e0[m[33m, [m[1;31morigin/cursor/force-password-reset-c1e0[m[33m)[m
+Author: Cursor Agent <cursoragent@cursor.com>
+Date:   Sun Sep 13 17:00:08 2026 +0000
+
+    feat(auth): force password change before ERP access (option B)
+    
+    Replace the empty nedjm-froid-erp gitlink with the application sources and
+    implement a mandatory password-change gate for users with
+    must_reset_password=true (e.g. after admin reset).
+    
+    - Harden sys_touch_login / sys_clear_must_reset_password with audit trail
+    - Stop clearing must_reset_password on login; touch last_login_at via RPC
+    - Add /changer-mot-de-passe + changePasswordAction (re-auth → Auth update → RPC)
+    - Middleware redirects any flagged session to the change-password screen
+    
+    Co-authored-by: abdeslam-1975 <abdeslam-1975@users.noreply.github.com>
+
+nedjm-froid-erp
+nedjm-froid-erp/.env.example
+nedjm-froid-erp/.gitignore
+nedjm-froid-erp/AGENTS.md
+nedjm-froid-erp/CLAUDE.md
+nedjm-froid-erp/README.md
+nedjm-froid-erp/eslint.config.mjs
+nedjm-froid-erp/next.config.ts
+nedjm-froid-erp/package-lock.json
+nedjm-froid-erp/package.json
+nedjm-froid-erp/postcss.config.mjs
+nedjm-froid-erp/public/file.svg
+nedjm-froid-erp/public/globe.svg
+nedjm-froid-erp/public/next.svg
+nedjm-froid-erp/public/vercel.svg
+nedjm-froid-erp/public/window.svg
+nedjm-froid-erp/src/app/administration/audit/page.tsx
+nedjm-froid-erp/src/app/administration/periodes/page.tsx
+nedjm-froid-erp/src/app/administration/permissions/page.tsx
+nedjm-froid-erp/src/app/administration/roles/page.tsx
+nedjm-froid-erp/src/app/administration/utilisateurs/page.tsx
+nedjm-froid-erp/src/app/changer-mot-de-passe/page.tsx
+nedjm-froid-erp/src/app/commercial/ajustements/page.tsx
+nedjm-froid-erp/src/app/commercial/contrats/page.tsx
+nedjm-froid-erp/src/app/globals.css
+nedjm-froid-erp/src/app/layout.tsx
+nedjm-froid-erp/src/app/login/page.tsx
+nedjm-froid-erp/src/app/page.tsx
+nedjm-froid-erp/src/app/parametres/page.tsx
+nedjm-froid-erp/src/app/parametres/utilisateurs/page.tsx
+nedjm-froid-erp/src/app/referentiels/activites/page.tsx
+nedjm-froid-erp/src/app/referentiels/chantiers/page.tsx
+nedjm-froid-erp/src/app/referentiels/contrats/[id]/page.tsx
+nedjm-froid-erp/src/app/referentiels/contrats/page.tsx
+nedjm-froid-erp/src/app/referentiels/irg/page.tsx
+nedjm-froid-erp/src/app/referentiels/legendes/page.tsx
+nedjm-froid-erp/src/app/referentiels/variables/page.tsx
+nedjm-froid-erp/src/app/rh/contrats/page.tsx
+nedjm-froid-erp/src/app/rh/employes/page.tsx
+nedjm-froid-erp/src/app/rh/page.tsx
+nedjm-froid-erp/src/components/auth/change-password-form.tsx
+nedjm-froid-erp/src/components/auth/login-form.tsx
+nedjm-froid-erp/src/components/castle/alert-badge.tsx
+nedjm-froid-erp/src/components/castle/completeness-kpis.tsx
+nedjm-froid-erp/src/components/contracts/contract-detail-view.tsx
+nedjm-froid-erp/src/components/contracts/contracts-manager.tsx
+nedjm-froid-erp/src/components/layout/app-shell.tsx
+nedjm-froid-erp/src/components/layout/logout-button.tsx
+nedjm-froid-erp/src/components/layout/placeholder-screen.tsx
+nedjm-froid-erp/src/components/layout/sidebar.tsx
+nedjm-froid-erp/src/components/layout/site-switcher.tsx
+nedjm-froid-erp/src/components/layout/theme-provider.tsx
+nedjm-froid-erp/src/components/layout/theme-toggle.tsx
+nedjm-froid-erp/src/components/layout/topbar.tsx
+nedjm-froid-erp/src/components/sites/sites-manager.tsx
+nedjm-froid-erp/src/components/ui/button.tsx
+nedjm-froid-erp/src/components/users/users-admin-manager.tsx
+nedjm-froid-erp/src/lib/actions/auth.ts
+nedjm-froid-erp/src/lib/actions/contracts.ts
+nedjm-froid-erp/src/lib/actions/sites.ts
+nedjm-froid-erp/src/lib/actions/user-admin.ts
+nedjm-froid-erp/src/lib/auth/get-workspace.ts
+nedjm-froid-erp/src/lib/auth/require-roles.ts
+nedjm-froid-erp/src/lib/auth/temp-password.ts
+nedjm-froid-erp/src/lib/auth/types.ts
+nedjm-froid-erp/src/lib/supabase/client.ts
+nedjm-froid-erp/src/lib/supabase/middleware.ts
+nedjm-froid-erp/src/lib/supabase/server.ts
+nedjm-froid-erp/src/lib/supabase/service.ts
+nedjm-froid-erp/src/lib/validations/auth.ts
+nedjm-froid-erp/src/lib/validations/contract.ts
+nedjm-froid-erp/src/lib/validations/site.ts
+nedjm-froid-erp/src/lib/validations/user-admin.ts
+nedjm-froid-erp/src/middleware.ts
+nedjm-froid-erp/tsconfig.json
+supabase/migrations/20260913180000_force_password_change_audit.sql

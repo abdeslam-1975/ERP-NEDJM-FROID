@@ -1,0 +1,3 @@
+0000000000000000000000000000000000000000 1dd739e311e674e9dd4a391479ce9af9a12e8468 Your Name <user@example.com> 1789295675 +0200	branch: Created from HEAD
+1dd739e311e674e9dd4a391479ce9af9a12e8468 4dbc790e33acbcb5ae0be3cbacb779db4e6f1eaa Your Name <user@example.com> 1789295694 +0200	commit: Add contracts workspace, RLS hardening, and CI test gate.
+4dbc790e33acbcb5ae0be3cbacb779db4e6f1eaa 0917cf724da9144081d559f15dce01c75ea44215 Your Name <user@example.com> 1789307403 +0200	commit: Harden production auth redirects and security headers.

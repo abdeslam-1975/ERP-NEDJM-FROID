@@ -1,0 +1,5 @@
+Harden production auth redirects and security headers.
+
+Block open redirects, fail closed when Supabase env is missing in production, and add standard HTTP security headers.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
