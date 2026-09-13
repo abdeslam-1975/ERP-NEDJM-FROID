@@ -47,51 +47,59 @@ export async function listAdminUsers(): Promise<ActionResult<AdminUserRow[]>> {
   if (gate.error || !gate.workspace) return { ok: false, error: gate.error! };
 
   const supabase = await createClient();
+
+  // Two queries: sys_users ↔ sys_user_site_roles has two FKs (user_id + created_by),
+  // so a nested embed from sys_users is ambiguous in PostgREST.
   const { data, error } = await supabase
     .from("sys_users")
-    .select(
-      `
-      id, email, full_name, status, must_reset_password, last_login_at,
-      assignments:sys_user_site_roles (
-        site_id,
-        role:sys_roles ( code, label_fr ),
-        site:ref_sites ( name_fr )
-      )
-    `,
-    )
+    .select("id, email, full_name, status, must_reset_password, last_login_at")
     .order("full_name");
 
   if (error) return { ok: false, error: error.message };
 
-  const rows: AdminUserRow[] = (data ?? []).map((u) => {
-    const raw = (u.assignments ?? []) as Array<{
-      site_id: string | null;
-      role:
-        | { code: string; label_fr: string }
-        | { code: string; label_fr: string }[]
-        | null;
-      site: { name_fr: string } | { name_fr: string }[] | null;
-    }>;
+  const { data: assignmentRows, error: assignError } = await supabase
+    .from("sys_user_site_roles")
+    .select(
+      `
+      user_id,
+      site_id,
+      role:sys_roles ( code, label_fr ),
+      site:ref_sites ( name_fr )
+    `,
+    );
 
-    return {
-      id: u.id,
-      email: u.email,
-      full_name: u.full_name,
-      status: u.status,
-      must_reset_password: u.must_reset_password,
-      last_login_at: u.last_login_at,
-      assignments: raw.map((a) => {
-        const role = Array.isArray(a.role) ? a.role[0] : a.role;
-        const site = Array.isArray(a.site) ? a.site[0] : a.site;
-        return {
-          role_code: role?.code ?? "?",
-          role_label: role?.label_fr ?? "?",
-          site_id: a.site_id,
-          site_name: site?.name_fr ?? null,
-        };
-      }),
-    };
-  });
+  if (assignError) return { ok: false, error: assignError.message };
+
+  type RoleJoin = { code: string; label_fr: string };
+  type SiteJoin = { name_fr: string };
+  const one = <T>(value: T | T[] | null | undefined): T | null => {
+    if (value == null) return null;
+    return Array.isArray(value) ? (value[0] ?? null) : value;
+  };
+
+  const assignmentsByUser = new Map<string, AdminUserRow["assignments"]>();
+  for (const row of assignmentRows ?? []) {
+    const role = one(row.role as RoleJoin | RoleJoin[] | null);
+    const site = one(row.site as SiteJoin | SiteJoin[] | null);
+    const list = assignmentsByUser.get(row.user_id as string) ?? [];
+    list.push({
+      role_code: role?.code ?? "?",
+      role_label: role?.label_fr ?? "?",
+      site_id: (row.site_id as string | null) ?? null,
+      site_name: site?.name_fr ?? null,
+    });
+    assignmentsByUser.set(row.user_id as string, list);
+  }
+
+  const rows: AdminUserRow[] = (data ?? []).map((u) => ({
+    id: u.id,
+    email: u.email,
+    full_name: u.full_name,
+    status: u.status,
+    must_reset_password: u.must_reset_password,
+    last_login_at: u.last_login_at,
+    assignments: assignmentsByUser.get(u.id) ?? [],
+  }));
 
   return { ok: true, data: rows };
 }
