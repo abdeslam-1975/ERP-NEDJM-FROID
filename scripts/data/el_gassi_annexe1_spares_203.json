@@ -1,0 +1,1829 @@
+[
+  {
+    "n": 1,
+    "designation": "Compresseurs hermétique 1/5 CV, R134A, Réfrigérateur 350L",
+    "unit": "U",
+    "quantity": 5.0,
+    "unit_price_ht": 7800.0,
+    "total_price_ht": 39000.0,
+    "page": 1
+  },
+  {
+    "n": 2,
+    "designation": "Compresseurs hermétique 1/6 CV, R134A, Réfrigérateur 240L",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 7500.0,
+    "total_price_ht": 75000.0,
+    "page": 1
+  },
+  {
+    "n": 3,
+    "designation": "Compresseurs hermétique 1/8 CV, R134A, Réfrigérateur 160L",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 6000.0,
+    "total_price_ht": 120000.0,
+    "page": 1
+  },
+  {
+    "n": 4,
+    "designation": "Compresseurs hermétique 1/10 CV, R134A, Réfrigérateur 50L",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 5200.0,
+    "total_price_ht": 104000.0,
+    "page": 1
+  },
+  {
+    "n": 5,
+    "designation": "Relais de démarrage compresseur 1/5 CV de réfrigérateur 350L",
+    "unit": "U",
+    "quantity": 5.0,
+    "unit_price_ht": 150.0,
+    "total_price_ht": 750.0,
+    "page": 1
+  },
+  {
+    "n": 6,
+    "designation": "Relais de démarrage compresseur 1/6 CV de réfrigérateur 240L",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 150.0,
+    "total_price_ht": 1500.0,
+    "page": 1
+  },
+  {
+    "n": 7,
+    "designation": "Relais de démarrage compresseur 1/8 CV de réfrigérateur 160L",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 150.0,
+    "total_price_ht": 3000.0,
+    "page": 1
+  },
+  {
+    "n": 8,
+    "designation": "Joint de porte pour réfrigérateur ENIEM 240L",
+    "unit": "U",
+    "quantity": 5.0,
+    "unit_price_ht": 2600.0,
+    "total_price_ht": 13000.0,
+    "page": 2
+  },
+  {
+    "n": 9,
+    "designation": "Joint de porte pour réfrigérateur ENIEM 160L",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 2600.0,
+    "total_price_ht": 26000.0,
+    "page": 2
+  },
+  {
+    "n": 10,
+    "designation": "Evaporateur (Roll bond) pour réfrigérateurs ENIEM 240L",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 3800.0,
+    "total_price_ht": 38000.0,
+    "page": 2
+  },
+  {
+    "n": 11,
+    "designation": "Evaporateur (Roll bond) pour réfrigérateurs ENIEM 160L",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 15000.0,
+    "total_price_ht": 150000.0,
+    "page": 2
+  },
+  {
+    "n": 12,
+    "designation": "Thermostat VP4 ou VC1 pour réfrigérateurs ENIEM 240L et 160L",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 950.0,
+    "total_price_ht": 19000.0,
+    "page": 2
+  },
+  {
+    "n": 13,
+    "designation": "Filtres déshydrateurs à souder de : 10 grammes",
+    "unit": "U",
+    "quantity": 80.0,
+    "unit_price_ht": 200.0,
+    "total_price_ht": 16000.0,
+    "page": 2
+  },
+  {
+    "n": 14,
+    "designation": "Filtres déshydrateurs à souder de : 15 grammes",
+    "unit": "U",
+    "quantity": 30.0,
+    "unit_price_ht": 200.0,
+    "total_price_ht": 6000.0,
+    "page": 2
+  },
+  {
+    "n": 15,
+    "designation": "Tube de charge Schrader 1/4\" à souder.",
+    "unit": "U",
+    "quantity": 150.0,
+    "unit_price_ht": 100.0,
+    "total_price_ht": 15000.0,
+    "page": 2
+  },
+  {
+    "n": 16,
+    "designation": "Ampoule d’éclairage pour Réfrigérateur E14 – 15 Watts – 230 Vac.",
+    "unit": "U",
+    "quantity": 100.0,
+    "unit_price_ht": 80.0,
+    "total_price_ht": 8000.0,
+    "page": 2
+  },
+  {
+    "n": 17,
+    "designation": "Compresseur hermétique rotatif R22 pour climatiseur monobloc LG 11000Btu/h",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 16500.0,
+    "total_price_ht": 330000.0,
+    "page": 2
+  },
+  {
+    "n": 18,
+    "designation": "Compresseur hermétique rotatif tropicalisé pour climatiseur 12000Btu/h, fréon R22, (de marque : LG, Toshiba, Matsushita, Panasonic ou Danfoss.)",
+    "unit": "U",
+    "quantity": 60.0,
+    "unit_price_ht": 16500.0,
+    "total_price_ht": 990000.0,
+    "page": 2
+  },
+  {
+    "n": 19,
+    "designation": "Compresseur hermétique rotatif tropicalisé pour climatiseur 18000Btu/h, fréon R22 (de marque : LG, Toshiba, Matsushita, Panasonic ou Danfoss.)",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 21000.0,
+    "total_price_ht": 420000.0,
+    "page": 2
+  },
+  {
+    "n": 20,
+    "designation": "Compresseur hermétique rotatif tropicalisé pour climatiseur 12000Btu/h, fréon R410 ou R407C (de marque : LG, Toshiba, Matsushita, Panasonic ou Danfoss.)",
+    "unit": "U",
+    "quantity": 60.0,
+    "unit_price_ht": 21500.0,
+    "total_price_ht": 1290000.0,
+    "page": 2
+  },
+  {
+    "n": 21,
+    "designation": "Compresseur hermétique rotatif tropicalisé pour climatiseur 18000Btu/h, fréon R410 ou R407C (de marque : LG, Toshiba, Matsushita, Panasonic ou Danfoss.)",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 27500.0,
+    "total_price_ht": 275000.0,
+    "page": 2
+  },
+  {
+    "n": 22,
+    "designation": "Compresseur hermétique rotatif tropicalisé pour climatiseur 24000Btu/h, fréon R410 ou R407C (de marque : LG, Toshiba, Matsushita, Panasonic ou Danfoss.)",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 39000.0,
+    "total_price_ht": 390000.0,
+    "page": 2
+  },
+  {
+    "n": 23,
+    "designation": "Ventilateur centrifuge de l’unité intérieure de climatiseur type split système 12000 Btu/h",
+    "unit": "U",
+    "quantity": 40.0,
+    "unit_price_ht": 2900.0,
+    "total_price_ht": 116000.0,
+    "page": 2
+  },
+  {
+    "n": 24,
+    "designation": "Ventilateur centrifuge de l’unité intérieure de climatiseur type split système 18000 Btu/h",
+    "unit": "U",
+    "quantity": 15.0,
+    "unit_price_ht": 2900.0,
+    "total_price_ht": 43500.0,
+    "page": 2
+  },
+  {
+    "n": 25,
+    "designation": "Ventilateur centrifuge de l’unité intérieure de climatiseur type split système 24000 Btu/h",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 3800.0,
+    "total_price_ht": 38000.0,
+    "page": 2
+  },
+  {
+    "n": 26,
+    "designation": "Ventilateur hélicoïde pour l’unité extérieure de climatiseur type Split System 12000 Btu/h.",
+    "unit": "U",
+    "quantity": 15.0,
+    "unit_price_ht": 3500.0,
+    "total_price_ht": 52500.0,
+    "page": 2
+  },
+  {
+    "n": 27,
+    "designation": "Ventilateur hélicoïde pour l’unité extérieure de climatiseur type Split System 18000 Btu/h",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 3500.0,
+    "total_price_ht": 35000.0,
+    "page": 2
+  },
+  {
+    "n": 28,
+    "designation": "Ventilateur hélicoïde pour l’unité extérieure de climatiseur type Split System 24000 Btu/h",
+    "unit": "U",
+    "quantity": 5.0,
+    "unit_price_ht": 3500.0,
+    "total_price_ht": 17500.0,
+    "page": 2
+  },
+  {
+    "n": 29,
+    "designation": "Moteur électrique pour ventilo-condenseur de climatiseur type split système 12000 BTU/h.",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 3500.0,
+    "total_price_ht": 70000.0,
+    "page": 2
+  },
+  {
+    "n": 30,
+    "designation": "Moteur électrique pour ventilo-condenseur de climatiseur type split système 18000 BTU/h.",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 3500.0,
+    "total_price_ht": 35000.0,
+    "page": 2
+  },
+  {
+    "n": 31,
+    "designation": "Moteur électrique pour ventilo-condenseur de climatiseur type split système 24000 BTU/h.",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 3500.0,
+    "total_price_ht": 35000.0,
+    "page": 2
+  },
+  {
+    "n": 32,
+    "designation": "Moteur turbine de l’unité intérieure de climatiseur type split système 12000 Btu/h",
+    "unit": "U",
+    "quantity": 15.0,
+    "unit_price_ht": 3500.0,
+    "total_price_ht": 52500.0,
+    "page": 3
+  },
+  {
+    "n": 33,
+    "designation": "Moteur turbine de l’unité intérieure de climatiseur type split système 18000 Btu/h",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 3500.0,
+    "total_price_ht": 35000.0,
+    "page": 3
+  },
+  {
+    "n": 34,
+    "designation": "Moteur turbine de l’unité intérieure de climatiseur type split système 24000 Btu/h",
+    "unit": "U",
+    "quantity": 5.0,
+    "unit_price_ht": 3500.0,
+    "total_price_ht": 17500.0,
+    "page": 3
+  },
+  {
+    "n": 35,
+    "designation": "Carte Électronique avec variateur de vitesse type standard pour split système.",
+    "unit": "U",
+    "quantity": 40.0,
+    "unit_price_ht": 2200.0,
+    "total_price_ht": 88000.0,
+    "page": 3
+  },
+  {
+    "n": 36,
+    "designation": "Carte Électronique sans variateur de vitesse type standard pour split système.",
+    "unit": "U",
+    "quantity": 40.0,
+    "unit_price_ht": 2200.0,
+    "total_price_ht": 88000.0,
+    "page": 3
+  },
+  {
+    "n": 37,
+    "designation": "Télécommande universelle pour climatiseurs (Split Système)",
+    "unit": "U",
+    "quantity": 30.0,
+    "unit_price_ht": 600.0,
+    "total_price_ht": 18000.0,
+    "page": 3
+  },
+  {
+    "n": 38,
+    "designation": "Condensateurs de : 01 à 05 µf « microfarad »",
+    "unit": "U",
+    "quantity": 40.0,
+    "unit_price_ht": 150.0,
+    "total_price_ht": 6000.0,
+    "page": 3
+  },
+  {
+    "n": 39,
+    "designation": "Condensateurs de : 06 à 10 µf « microfarad »",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 450.0,
+    "total_price_ht": 9000.0,
+    "page": 3
+  },
+  {
+    "n": 40,
+    "designation": "Condensateurs de : 25 à 30 µf « microfarad »",
+    "unit": "U",
+    "quantity": 150.0,
+    "unit_price_ht": 400.0,
+    "total_price_ht": 60000.0,
+    "page": 3
+  },
+  {
+    "n": 41,
+    "designation": "Condensateurs de : 35 à 40 µf « microfarad »",
+    "unit": "U",
+    "quantity": 120.0,
+    "unit_price_ht": 500.0,
+    "total_price_ht": 60000.0,
+    "page": 3
+  },
+  {
+    "n": 42,
+    "designation": "Condensateurs de : 45 à 50 µf « microfarad »",
+    "unit": "U",
+    "quantity": 80.0,
+    "unit_price_ht": 550.0,
+    "total_price_ht": 44000.0,
+    "page": 3
+  },
+  {
+    "n": 43,
+    "designation": "Condensateur combine : 30 /1.5 µf « microfarad »",
+    "unit": "U",
+    "quantity": 70.0,
+    "unit_price_ht": 450.0,
+    "total_price_ht": 31500.0,
+    "page": 3
+  },
+  {
+    "n": 44,
+    "designation": "Électrovanne à 4 voies pour climatiseur split système 12000 BTU/h",
+    "unit": "U",
+    "quantity": 15.0,
+    "unit_price_ht": 1800.0,
+    "total_price_ht": 27000.0,
+    "page": 3
+  },
+  {
+    "n": 45,
+    "designation": "Électrovanne à 4 voies pour climatiseur split système 18000 BTU/h",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 2400.0,
+    "total_price_ht": 24000.0,
+    "page": 3
+  },
+  {
+    "n": 46,
+    "designation": "Électrovanne à 4 voies pour climatiseur split système 24000 BTU/h",
+    "unit": "U",
+    "quantity": 8.0,
+    "unit_price_ht": 3600.0,
+    "total_price_ht": 28800.0,
+    "page": 3
+  },
+  {
+    "n": 47,
+    "designation": "Compresseur à piston, UNITE HERMITIQUE, modèle : AEZ4430Y, R134a, 220V, ou un équivalant.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 17800.0,
+    "total_price_ht": 17800.0,
+    "page": 3
+  },
+  {
+    "n": 48,
+    "designation": "Compresseur à piston, UNITE HERMITIQUE, modèle : AE4450Y, R134a, 220V, ou un équivalent.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 21500.0,
+    "total_price_ht": 21500.0,
+    "page": 3
+  },
+  {
+    "n": 49,
+    "designation": "Compresseur à piston, ELECTROLUX, modèle : GP12TB, R134a, 220V, ou un équivalant.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 17800.0,
+    "total_price_ht": 17800.0,
+    "page": 3
+  },
+  {
+    "n": 50,
+    "designation": "Compresseur à piston, ELECTROLUX, modèle : GL90TB, R134a, 220V, ou un équivalent.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 9000.0,
+    "total_price_ht": 9000.0,
+    "page": 3
+  },
+  {
+    "n": 51,
+    "designation": "Compresseur à piston, DANFOSS, modèle : SC18G, R134a, 220V, ou un équivalant.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 26800.0,
+    "total_price_ht": 26800.0,
+    "page": 3
+  },
+  {
+    "n": 52,
+    "designation": "Compresseur à piston, DANFOSS, modèle : FR8.5CL, R404a, 220V, ou un équivalent.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 29000.0,
+    "total_price_ht": 29000.0,
+    "page": 3
+  },
+  {
+    "n": 53,
+    "designation": "Compresseur à piston, DANFOSS, modèle : SC18CL, R404a, 220V, ou un équivalent.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 32000.0,
+    "total_price_ht": 32000.0,
+    "page": 3
+  },
+  {
+    "n": 54,
+    "designation": "Compresseur à piston, UNITE HERMITIQUE, modèle : CAJ2446Z, R404a, 220V, ou un équivalent.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 49500.0,
+    "total_price_ht": 49500.0,
+    "page": 3
+  },
+  {
+    "n": 55,
+    "designation": "Filtre déshydrateurs 1/2\", avec raccords à visser compatible avec le R404a.",
+    "unit": "U",
+    "quantity": 3.0,
+    "unit_price_ht": 2600.0,
+    "total_price_ht": 7800.0,
+    "page": 3
+  },
+  {
+    "n": 56,
+    "designation": "Filtre déshydrateurs 3/8\", à souder, compatible avec le R407c.",
+    "unit": "U",
+    "quantity": 3.0,
+    "unit_price_ht": 2600.0,
+    "total_price_ht": 7800.0,
+    "page": 3
+  },
+  {
+    "n": 57,
+    "designation": "Filtre déshydrateurs 5/8\", avec raccords à visser compatible avec le R404a.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 3400.0,
+    "total_price_ht": 6800.0,
+    "page": 3
+  },
+  {
+    "n": 58,
+    "designation": "Filtre déshydrateurs 7/8\", à souder compatible avec le R134a.",
+    "unit": "U",
+    "quantity": 4.0,
+    "unit_price_ht": 5400.0,
+    "total_price_ht": 21600.0,
+    "page": 3
+  },
+  {
+    "n": 59,
+    "designation": "Filtre déshydrateurs en cartouche, compatible avec le R134a.",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 2100.0,
+    "total_price_ht": 21000.0,
+    "page": 3
+  },
+  {
+    "n": 60,
+    "designation": "Électrovanne à 4 voies, 1/2\"- 3/4\", avec bobine 230V, pour armoire de climatisation 48000 Btu/h.",
+    "unit": "U",
+    "quantity": 4.0,
+    "unit_price_ht": 6500.0,
+    "total_price_ht": 26000.0,
+    "page": 3
+  },
+  {
+    "n": 61,
+    "designation": "Électrovanne à 4 voies, 7/8\" - 1 1/8\", avec bobine 230V, pour roof top York 62000 Btu/h.",
+    "unit": "U",
+    "quantity": 4.0,
+    "unit_price_ht": 6500.0,
+    "total_price_ht": 26000.0,
+    "page": 4
+  },
+  {
+    "n": 62,
+    "designation": "Electrovanne droite à souder 1 5/8\"",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 12000.0,
+    "total_price_ht": 24000.0,
+    "page": 4
+  },
+  {
+    "n": 63,
+    "designation": "Electrovanne droite à souder 1 1/8\"",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 12000.0,
+    "total_price_ht": 24000.0,
+    "page": 4
+  },
+  {
+    "n": 64,
+    "designation": "Electrovanne droite à souder 3/8\"",
+    "unit": "U",
+    "quantity": 4.0,
+    "unit_price_ht": 5400.0,
+    "total_price_ht": 21600.0,
+    "page": 4
+  },
+  {
+    "n": 65,
+    "designation": "Electrovanne droite à souder 1/2\"",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 4600.0,
+    "total_price_ht": 9200.0,
+    "page": 4
+  },
+  {
+    "n": 66,
+    "designation": "Bobine électrique d’électrovanne liquide, 220V, 50Hz, de 6 Watts à 17 Watts",
+    "unit": "U",
+    "quantity": 15.0,
+    "unit_price_ht": 2300.0,
+    "total_price_ht": 34500.0,
+    "page": 4
+  },
+  {
+    "n": 67,
+    "designation": "Clapet anti-retour droit à souder, NRV 3/8, -50⁰c à 140⁰c.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 5500.0,
+    "total_price_ht": 11000.0,
+    "page": 4
+  },
+  {
+    "n": 68,
+    "designation": "Huile frigorifique utilisé avec les fluides frigorigènes HFC (R407C, R410A, R134A) comme le : BSE170, POE 160SZ, DAPHNE FVC68D, OZ140POE, OZ213POE, SOLEST 170, ou des huiles ressemblantes",
+    "unit": "Litre",
+    "quantity": 80.0,
+    "unit_price_ht": 8700.0,
+    "total_price_ht": 696000.0,
+    "page": 4
+  },
+  {
+    "n": 69,
+    "designation": "Huile frigorifique compatible avec les fluides frigorigènes HCFC (R22)",
+    "unit": "Litre",
+    "quantity": 30.0,
+    "unit_price_ht": 1200.0,
+    "total_price_ht": 36000.0,
+    "page": 4
+  },
+  {
+    "n": 70,
+    "designation": "Fluide frigorigène R22, bouteille de 13Kg",
+    "unit": "U",
+    "quantity": 150.0,
+    "unit_price_ht": 24000.0,
+    "total_price_ht": 3600000.0,
+    "page": 4
+  },
+  {
+    "n": 71,
+    "designation": "Fluide frigorigène R404A, bouteille de 13Kg",
+    "unit": "U",
+    "quantity": 100.0,
+    "unit_price_ht": 18000.0,
+    "total_price_ht": 1800000.0,
+    "page": 4
+  },
+  {
+    "n": 72,
+    "designation": "Fluide frigorigène R407C, bouteille de 13Kg",
+    "unit": "U",
+    "quantity": 100.0,
+    "unit_price_ht": 19000.0,
+    "total_price_ht": 1900000.0,
+    "page": 4
+  },
+  {
+    "n": 73,
+    "designation": "Fluide frigorigène R410A, bouteille de 13Kg",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 19000.0,
+    "total_price_ht": 380000.0,
+    "page": 4
+  },
+  {
+    "n": 74,
+    "designation": "Fluide frigorigène R141B, bouteille de 13Kg, ou un équivalent.",
+    "unit": "U",
+    "quantity": 180.0,
+    "unit_price_ht": 24000.0,
+    "total_price_ht": 4320000.0,
+    "page": 4
+  },
+  {
+    "n": 75,
+    "designation": "Fluide frigorigène R134A, bouteille de 13Kg",
+    "unit": "U",
+    "quantity": 150.0,
+    "unit_price_ht": 19000.0,
+    "total_price_ht": 2850000.0,
+    "page": 4
+  },
+  {
+    "n": 76,
+    "designation": "Relais KRIWAN type INT 69 DMY pour compresseur scroll Danfoss",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 22000.0,
+    "total_price_ht": 440000.0,
+    "page": 4
+  },
+  {
+    "n": 77,
+    "designation": "Moteur turbine de l’unité intérieure d’armoire de climatisation 60000 Btu/h",
+    "unit": "U",
+    "quantity": 3.0,
+    "unit_price_ht": 9500.0,
+    "total_price_ht": 28500.0,
+    "page": 4
+  },
+  {
+    "n": 78,
+    "designation": "Moto-ventilo condenseur pour armoire de climatisation 60000 Btu/h.",
+    "unit": "U",
+    "quantity": 3.0,
+    "unit_price_ht": 9500.0,
+    "total_price_ht": 28500.0,
+    "page": 4
+  },
+  {
+    "n": 79,
+    "designation": "Extracteur d’air, 230V, 50HZ, 11W, 118x118x37 mm",
+    "unit": "U",
+    "quantity": 8.0,
+    "unit_price_ht": 3500.0,
+    "total_price_ht": 28000.0,
+    "page": 4
+  },
+  {
+    "n": 80,
+    "designation": "Extracteur d’air, 230V, 50HZ, 22W, 150x150 mm",
+    "unit": "U",
+    "quantity": 6.0,
+    "unit_price_ht": 4500.0,
+    "total_price_ht": 27000.0,
+    "page": 4
+  },
+  {
+    "n": 81,
+    "designation": "Carte de commande électronique de ventilo-convecteur AIRWELL, 220-240 V, 50/60 HZ, FCU-BU, modèle 926A194- 04, ou un équivalent",
+    "unit": "U",
+    "quantity": 3.0,
+    "unit_price_ht": 24000.0,
+    "total_price_ht": 72000.0,
+    "page": 4
+  },
+  {
+    "n": 82,
+    "designation": "Pressostat de sécurité HP préréglé, à souder, et a réarmement automatique, DANFOSS, mod : ACB-2UA355W, ou un équivalent.",
+    "unit": "U",
+    "quantity": 3.0,
+    "unit_price_ht": 4500.0,
+    "total_price_ht": 13500.0,
+    "page": 4
+  },
+  {
+    "n": 83,
+    "designation": "Pressostat de sécurité HP préréglé, à raccord femelle 1/4\", DANFOSS, pression de déclanchement 22.8 Bars, pression de ré-enclenchement 15.9 Bars, mod : G63P3031, ou un équivalent",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 4500.0,
+    "total_price_ht": 4500.0,
+    "page": 4
+  },
+  {
+    "n": 84,
+    "designation": "Pressostat de sécurité HP préréglé, à raccord femelle 1/4\", pression de déclanchement 30 Bars, pression de ré- enclenchement : 24 Bars.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 4500.0,
+    "total_price_ht": 9000.0,
+    "page": 4
+  },
+  {
+    "n": 85,
+    "designation": "Pressostat de sécurité HP préréglé, à raccord femelle 1/4\", pression de déclanchement 27 Bars, pression de ré- enclenchement 18Bars, 6A, 240 VAC, modèle PS80-01-0009 (Texas Instruments), ou un équivalent",
+    "unit": "U",
+    "quantity": 4.0,
+    "unit_price_ht": 4500.0,
+    "total_price_ht": 18000.0,
+    "page": 4
+  },
+  {
+    "n": 86,
+    "designation": "Pressostat de sécurité BP préréglé, à raccord femelle 1/4\", déclanchement 02 Bars, et à réarmement manuel.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 4500.0,
+    "total_price_ht": 9000.0,
+    "page": 4
+  },
+  {
+    "n": 87,
+    "designation": "Pressostat de sécurité BP préréglé, à raccord femelle 1/4\", pression de déclanchement 0.5 Bar, pression de ré- enclenchement : 1.5 Bars.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 4500.0,
+    "total_price_ht": 9000.0,
+    "page": 5
+  },
+  {
+    "n": 88,
+    "designation": "Pressostat de sécurité BP préréglé, à souder 1/4\", DANFOSS (ACB-2UA355W)",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 4500.0,
+    "total_price_ht": 9000.0,
+    "page": 5
+  },
+  {
+    "n": 89,
+    "designation": "Pressostat combiné HP/BP, RANCO, BP= - 0.5 bar à 7 bars, HP= 3 bars à 30 bars, ou un équivalant",
+    "unit": "U",
+    "quantity": 4.0,
+    "unit_price_ht": 4500.0,
+    "total_price_ht": 18000.0,
+    "page": 5
+  },
+  {
+    "n": 90,
+    "designation": "Pressostat BP, KP1 DANFOSS / Set point : - 0,2 à 7,5 Bars, Diff : 0.7 à 4 Bars, ou un équivalent.",
+    "unit": "U",
+    "quantity": 4.0,
+    "unit_price_ht": 4500.0,
+    "total_price_ht": 18000.0,
+    "page": 5
+  },
+  {
+    "n": 91,
+    "designation": "Pressostat HP, RANCO, 016 H6750, Set point : 7 à 30 bars, Diff : 1 à 8 bars, ou un équivalent.",
+    "unit": "U",
+    "quantity": 6.0,
+    "unit_price_ht": 4500.0,
+    "total_price_ht": 27000.0,
+    "page": 5
+  },
+  {
+    "n": 92,
+    "designation": "Pressostat d’air différentiel (Aérostat), set : 0.5 à 5 mbar, IP54, HONEYWELL mod : HWL-205B, ou un",
+    "unit": "U",
+    "quantity": 15.0,
+    "unit_price_ht": 4500.0,
+    "total_price_ht": 67500.0,
+    "page": 5
+  },
+  {
+    "n": 93,
+    "designation": "Thermostat électronique (Thermorégulateur) avec sonde, DIXELL, 8+8+8A, 230VAC, modèle: XR06CX",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 6900.0,
+    "total_price_ht": 13800.0,
+    "page": 5
+  },
+  {
+    "n": 94,
+    "designation": "Détendeur thermostatique à charge MOP, ALCO CONTROLS, R410A, mod : TX3-Z38, ou un équivalent.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 15800.0,
+    "total_price_ht": 15800.0,
+    "page": 5
+  },
+  {
+    "n": 95,
+    "designation": "Détendeur thermostatique à charge MOP, ALCO CONTROLS, R410A, mod : TX6-Z13, ou un équivalent.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 15800.0,
+    "total_price_ht": 15800.0,
+    "page": 5
+  },
+  {
+    "n": 96,
+    "designation": "Détendeur thermostatique à charge MOP, SPORLAN, R404A, mod : KT- 43-SZ, ou un équivalent.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 15800.0,
+    "total_price_ht": 15800.0,
+    "page": 5
+  },
+  {
+    "n": 97,
+    "designation": "Purgeurs d’air automatique, avec raccord male 15/21 - (1/2\")",
+    "unit": "U",
+    "quantity": 30.0,
+    "unit_price_ht": 3500.0,
+    "total_price_ht": 105000.0,
+    "page": 5
+  },
+  {
+    "n": 98,
+    "designation": "Capillaire flexible en thermoplastique (Polyamide) avec 02 écrous 1/4\", temp/s : - 40°c au + 80°c, pres/s : 30 bar .",
+    "unit": "M/L",
+    "quantity": 150.0,
+    "unit_price_ht": 500.0,
+    "total_price_ht": 75000.0,
+    "page": 5
+  },
+  {
+    "n": 99,
+    "designation": "Manomètre de lecture HP à bain d’huile encastrable, pour circuit frigorifique, avec diamètre de cadran de 63 mm, connexion 1/4\", fréon R22, R134a, R404a, R407c.",
+    "unit": "U",
+    "quantity": 15.0,
+    "unit_price_ht": 3500.0,
+    "total_price_ht": 52500.0,
+    "page": 5
+  },
+  {
+    "n": 100,
+    "designation": "Manomètre de lecture BP à bain d’huile encastrable, pour circuit frigorifique, avec diamètre de cadran de 63 mm, connexion 1/4\", fréon R22, R134a, R404a, R407c.",
+    "unit": "U",
+    "quantity": 15.0,
+    "unit_price_ht": 3500.0,
+    "total_price_ht": 52500.0,
+    "page": 5
+  },
+  {
+    "n": 101,
+    "designation": "Thermomètre de circuit hydraulique à cadran en inox de diamètre 100mm, plage de lecture : -10 à 60°C, le doigt plongeur : 63 mm, diamètre de doigt plongeur : 8 mm, raccord arrière centré avec filetage 15/21(1/2\").",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 1800.0,
+    "total_price_ht": 18000.0,
+    "page": 5
+  },
+  {
+    "n": 102,
+    "designation": "Manomètre de circuit hydraulique à cadran en inox de diamètre 100 mm, plage de lecture : 0 à 10 bar, avec un raccord inferieur fileté: 15/21 (1/2\").",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 3500.0,
+    "total_price_ht": 35000.0,
+    "page": 5
+  },
+  {
+    "n": 103,
+    "designation": "Roulement a une rangé de billes étanche CES.205",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 30000.0,
+    "page": 5
+  },
+  {
+    "n": 104,
+    "designation": "Roulement a une rangé de billes étanche 608- 2RSH/C3 ou 608-ZZ",
+    "unit": "U",
+    "quantity": 210.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 315000.0,
+    "page": 5
+  },
+  {
+    "n": 105,
+    "designation": "Roulement a une rangé de billes étanche 6001- 2RSH/C3 ou 6001-ZZ",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 30000.0,
+    "page": 5
+  },
+  {
+    "n": 106,
+    "designation": "Roulement a une rangé de billes étanche 6004- 2RSH/C3 ou 6004-ZZ",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 30000.0,
+    "page": 5
+  },
+  {
+    "n": 107,
+    "designation": "Roulement a une rangé de billes étanche 6005- 2RSH/C3 ou 6005-ZZ",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 30000.0,
+    "page": 5
+  },
+  {
+    "n": 108,
+    "designation": "Roulement a une rangé de billes étanche 6200- 2RSH/C3 ou 6200-ZZ",
+    "unit": "U",
+    "quantity": 50.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 75000.0,
+    "page": 5
+  },
+  {
+    "n": 109,
+    "designation": "Roulement a une rangé de billes étanche 6201- 2RSH/C3 ou 6201-ZZ",
+    "unit": "U",
+    "quantity": 50.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 75000.0,
+    "page": 5
+  },
+  {
+    "n": 110,
+    "designation": "Roulement a une rangé de billes étanche 6202- 2RSH/C3 ou 6202-ZZ",
+    "unit": "U",
+    "quantity": 30.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 45000.0,
+    "page": 5
+  },
+  {
+    "n": 111,
+    "designation": "Roulement a une rangé de billes étanche 6203- 2RSH/C3 ou 6203-ZZ",
+    "unit": "U",
+    "quantity": 30.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 45000.0,
+    "page": 5
+  },
+  {
+    "n": 112,
+    "designation": "Roulement a une rangé de billes étanche 6204- 2RSH/C3 ou 6204-ZZ",
+    "unit": "U",
+    "quantity": 50.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 75000.0,
+    "page": 5
+  },
+  {
+    "n": 113,
+    "designation": "Roulement a une rangé de billes étanche 6205- 2RSH/C3 ou 6205-ZZ",
+    "unit": "U",
+    "quantity": 30.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 45000.0,
+    "page": 5
+  },
+  {
+    "n": 114,
+    "designation": "Roulement a une rangé de billes étanche 6206- 2RSH/C3 ou 6206-ZZ",
+    "unit": "U",
+    "quantity": 30.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 45000.0,
+    "page": 6
+  },
+  {
+    "n": 115,
+    "designation": "Roulement a une rangé de billes étanche 6304- 2RSH/C3 ou 6304-ZZ",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 30000.0,
+    "page": 6
+  },
+  {
+    "n": 116,
+    "designation": "Roulement a une rangé de billes étanche 6306- 2RSH/C3 ou 6306-ZZ",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 30000.0,
+    "page": 6
+  },
+  {
+    "n": 117,
+    "designation": "Roulement a une rangé de billes étanche 6308- 2RSH/C3 ou 6308-ZZ",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 30000.0,
+    "page": 6
+  },
+  {
+    "n": 118,
+    "designation": "Roulement a une rangé de billes étanche 6309- 2RSH/C3 ou 6309-ZZ",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 15000.0,
+    "page": 6
+  },
+  {
+    "n": 119,
+    "designation": "Roulement a une rangé de billes étanche 6311- 2RSH/C3 ou 6311-ZZ",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 15000.0,
+    "page": 6
+  },
+  {
+    "n": 120,
+    "designation": "Roulement a une rangé de billes étanche 6312- 2RSH/C3 ou 6312-ZZ",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 15000.0,
+    "page": 6
+  },
+  {
+    "n": 121,
+    "designation": "Courroie SPA entre : 900mm et 1000mm",
+    "unit": "U",
+    "quantity": 60.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 90000.0,
+    "page": 6
+  },
+  {
+    "n": 122,
+    "designation": "Courroie SPA entre : 1000mm et 1500mm",
+    "unit": "U",
+    "quantity": 100.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 150000.0,
+    "page": 6
+  },
+  {
+    "n": 123,
+    "designation": "Courroie SPA entre : 1500mm et 2000mm",
+    "unit": "U",
+    "quantity": 40.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 60000.0,
+    "page": 6
+  },
+  {
+    "n": 124,
+    "designation": "Courroie SPZ entre : 1325mm et 1475mm",
+    "unit": "U",
+    "quantity": 40.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 60000.0,
+    "page": 6
+  },
+  {
+    "n": 125,
+    "designation": "Courroie SPB entre : 1900mm et 2800mm",
+    "unit": "U",
+    "quantity": 40.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 60000.0,
+    "page": 6
+  },
+  {
+    "n": 126,
+    "designation": "Courroie BX entre : BX90 et BX 108",
+    "unit": "U",
+    "quantity": 30.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 45000.0,
+    "page": 6
+  },
+  {
+    "n": 127,
+    "designation": "Résistance de porte pour chambres froides négatives, 120 Watts, 230 Volts, L= 5.86 m.",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 3800.0,
+    "total_price_ht": 38000.0,
+    "page": 6
+  },
+  {
+    "n": 128,
+    "designation": "Kit de résistances de dégivrage de l’évaporateur LU-VE (F35HC59-6), 230V, 4 X 450Watts + 1 X 275Watts.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 34000.0,
+    "total_price_ht": 34000.0,
+    "page": 6
+  },
+  {
+    "n": 129,
+    "designation": "Kit de résistances de dégivrage de l’évaporateur LU-VE (F35HC1176), 230V, 4 X 800Watts + 1 X 480Watts.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 34000.0,
+    "total_price_ht": 34000.0,
+    "page": 6
+  },
+  {
+    "n": 130,
+    "designation": "Résistance de carter pour compresseurs BITZER : 4EC-6.2 Y-40S, et 2CC-4.2Y-40S, type CTP autorégulant, 0-120 Watts, 230V, ou une équivalente.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 12500.0,
+    "total_price_ht": 25000.0,
+    "page": 6
+  },
+  {
+    "n": 131,
+    "designation": "Résistance de carter 65w-100w / 520mm-800mm pour gamme de compresseurs DANFOSS",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 12500.0,
+    "total_price_ht": 250000.0,
+    "page": 6
+  },
+  {
+    "n": 132,
+    "designation": "Résistance carter 100w-130w / 760mm-1050mm pour gamme de compresseurs DANFOSS",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 12500.0,
+    "total_price_ht": 250000.0,
+    "page": 6
+  },
+  {
+    "n": 133,
+    "designation": "Résistance d’écoulement pour chambre froide 21770-HP5 et 21 771-HP5, RES/SC",
+    "unit": "U",
+    "quantity": 14.0,
+    "unit_price_ht": 12500.0,
+    "total_price_ht": 175000.0,
+    "page": 6
+  },
+  {
+    "n": 134,
+    "designation": "Transformateur de tension pour circuit de commande 24V/230V, 150VA.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 5000.0,
+    "total_price_ht": 5000.0,
+    "page": 6
+  },
+  {
+    "n": 135,
+    "designation": "Interrupteur à bascule lumineux vert bipolaire Marche-arrêt, 230V, 16A.",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 350.0,
+    "total_price_ht": 3500.0,
+    "page": 6
+  },
+  {
+    "n": 136,
+    "designation": "Fusible 10 x 38 gG différant calibre de 1A à 20A",
+    "unit": "U",
+    "quantity": 60.0,
+    "unit_price_ht": 100.0,
+    "total_price_ht": 6000.0,
+    "page": 6
+  },
+  {
+    "n": 137,
+    "designation": "Kit de Garniture mécanique de pompe à eau différents diamètres de 10 à 40 mm",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 2500.0,
+    "total_price_ht": 25000.0,
+    "page": 6
+  },
+  {
+    "n": 138,
+    "designation": "Lampes de signalisation à LED, 230Vac, INF 20mA, marque : GAVE ou SCHNEIDER, model: 560L 230V, ou une équivalente.",
+    "unit": "U",
+    "quantity": 30.0,
+    "unit_price_ht": 650.0,
+    "total_price_ht": 19500.0,
+    "page": 6
+  },
+  {
+    "n": 139,
+    "designation": "Lampe de signalisation à LED TELEMECANIQUE, couleur blanche, Rouge, Orange et Bleu 24 Volts, mod : XB4BVB1, ou une équivalente.",
+    "unit": "U",
+    "quantity": 100.0,
+    "unit_price_ht": 650.0,
+    "total_price_ht": 65000.0,
+    "page": 6
+  },
+  {
+    "n": 140,
+    "designation": "Contacteur modulaire, type CT, 02 pôles NO, 25A, 230-240V, MERLIN-GERIN PN 15959, ou un équivalent.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 10700.0,
+    "total_price_ht": 10700.0,
+    "page": 6
+  },
+  {
+    "n": 141,
+    "designation": "Contacteur SIEMENS 3RT1045-3AL20, 3Phases, 120A, 230V, 50/60HZ, ou un équivalent.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 4000.0,
+    "total_price_ht": 4000.0,
+    "page": 6
+  },
+  {
+    "n": 142,
+    "designation": "Contacteur SIEMENS 3RT1035-3AL20, 3Phases, 60A, 230V, 50/60HZ, ou un équivalent.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 2000.0,
+    "total_price_ht": 2000.0,
+    "page": 6
+  },
+  {
+    "n": 143,
+    "designation": "Contacteur SIEMENS 3RT1026-3AL20, 3Phases, 25A, 230V, 50/60 HZ, ou un équivalent.",
+    "unit": "U",
+    "quantity": 3.0,
+    "unit_price_ht": 10700.0,
+    "total_price_ht": 32100.0,
+    "page": 6
+  },
+  {
+    "n": 144,
+    "designation": "Contacteur SIEMENS 3RT1017-2AP02, 3Phases, 22A, 230V, 50/60 HZ, ou un équivalent.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 15000.0,
+    "total_price_ht": 30000.0,
+    "page": 7
+  },
+  {
+    "n": 145,
+    "designation": "Relais thermique SIEMENS 3RU1116-1JC1, avec une plage de réglage de : 7 à 10A, 1NO, 1NC, ou un équivalent.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 3600.0,
+    "total_price_ht": 7200.0,
+    "page": 7
+  },
+  {
+    "n": 146,
+    "designation": "Relais thermique SIEMENS 3RU1116-1HC1, avec une plage de réglage de : 5.5 à 8A, 1NO, 1NC, ou un équivalent.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 3600.0,
+    "total_price_ht": 7200.0,
+    "page": 7
+  },
+  {
+    "n": 147,
+    "designation": "Relais auxiliaire SCHNEIDER 24V, RXL4A06B1B7 OU RXM4AB1B7, 6A-250VAC, 50/60HZ, ou un équivalent.",
+    "unit": "U",
+    "quantity": 6.0,
+    "unit_price_ht": 3600.0,
+    "total_price_ht": 21600.0,
+    "page": 7
+  },
+  {
+    "n": 148,
+    "designation": "Relais de phase (contrôle d’asymétrie de phases, séquence de phases, perte de phase)",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 1200.0,
+    "total_price_ht": 12000.0,
+    "page": 7
+  },
+  {
+    "n": 149,
+    "designation": "Interrupteur différentiel, 4poles, 40A, 30mA, gamme : ACTI 9, Schneider Electric ou équivalent",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 14000.0,
+    "total_price_ht": 28000.0,
+    "page": 7
+  },
+  {
+    "n": 150,
+    "designation": "Bouton poussoir noir TELEMECANIQUE, mod : XB4BA21, ou un équivalent.",
+    "unit": "U",
+    "quantity": 3.0,
+    "unit_price_ht": 800.0,
+    "total_price_ht": 2400.0,
+    "page": 7
+  },
+  {
+    "n": 151,
+    "designation": "Commutateur sélecteur à 02 positions, TELEMECANIQUE, 3A, 15 AC, 240V, modèle : XB4BD21, ou un équivalent",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 850.0,
+    "total_price_ht": 8500.0,
+    "page": 7
+  },
+  {
+    "n": 152,
+    "designation": "Additif de contact auxiliaire frontal, SCHNEIDER GVAE11, 2,5A, 250V, 120VA/240V, AC15.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 3000.0,
+    "page": 7
+  },
+  {
+    "n": 153,
+    "designation": "Disjoncteur moteur TELEMECANIQUE, model : GV2ME03.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 10000.0,
+    "total_price_ht": 10000.0,
+    "page": 7
+  },
+  {
+    "n": 154,
+    "designation": "Disjoncteur moteur TELEMECANIQUE, model : GV2ME05.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 11000.0,
+    "total_price_ht": 11000.0,
+    "page": 7
+  },
+  {
+    "n": 155,
+    "designation": "Disjoncteur moteur TELEMECANIQUE, model : GV2ME06.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 12000.0,
+    "total_price_ht": 12000.0,
+    "page": 7
+  },
+  {
+    "n": 156,
+    "designation": "Disjoncteur moteur TELEMECANIQUE, model : GV2ME08.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 14000.0,
+    "total_price_ht": 28000.0,
+    "page": 7
+  },
+  {
+    "n": 157,
+    "designation": "Disjoncteur moteur TELEMECANIQUE, model : GV2ME10.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 15000.0,
+    "total_price_ht": 30000.0,
+    "page": 7
+  },
+  {
+    "n": 158,
+    "designation": "Disjoncteur moteur TELEMECANIQUE, model : GV2ME14.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 18000.0,
+    "total_price_ht": 36000.0,
+    "page": 7
+  },
+  {
+    "n": 159,
+    "designation": "Disjoncteur moteur TELEMECANIQUE, model : GV2ME16.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 20000.0,
+    "total_price_ht": 40000.0,
+    "page": 7
+  },
+  {
+    "n": 160,
+    "designation": "Disjoncteur moteur TELEMECANIQUE, model : GV2ME20.",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 22000.0,
+    "total_price_ht": 22000.0,
+    "page": 7
+  },
+  {
+    "n": 161,
+    "designation": "Disjoncteur moteur TELEMECANIQUE, model : GV2ME22",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 25000.0,
+    "total_price_ht": 50000.0,
+    "page": 7
+  },
+  {
+    "n": 162,
+    "designation": "Disjoncteur moteur TELEMECANIQUE, model : GV2ME32.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 30000.0,
+    "total_price_ht": 60000.0,
+    "page": 7
+  },
+  {
+    "n": 163,
+    "designation": "Ampoule d’éclairage pour centrale de traitement d’air E27, 60W, 24 Vac.",
+    "unit": "U",
+    "quantity": 36.0,
+    "unit_price_ht": 900.0,
+    "total_price_ht": 32400.0,
+    "page": 7
+  },
+  {
+    "n": 164,
+    "designation": "Goulotte pour climatiseur split système 100 x 50mm (longueur : 2m).",
+    "unit": "U",
+    "quantity": 240.0,
+    "unit_price_ht": 1400.0,
+    "total_price_ht": 336000.0,
+    "page": 7
+  },
+  {
+    "n": 165,
+    "designation": "Isolant thermique pour tuyauterie 1/2\" (longueur : 2m)",
+    "unit": "U",
+    "quantity": 300.0,
+    "unit_price_ht": 150.0,
+    "total_price_ht": 45000.0,
+    "page": 7
+  },
+  {
+    "n": 166,
+    "designation": "Isolant thermique pour tuyauterie 1/4\" (longueur : 2m)",
+    "unit": "U",
+    "quantity": 300.0,
+    "unit_price_ht": 150.0,
+    "total_price_ht": 45000.0,
+    "page": 7
+  },
+  {
+    "n": 167,
+    "designation": "Ruban adhésif en aluminium (pour climatisation), 50 x 1000 mm",
+    "unit": "U",
+    "quantity": 50.0,
+    "unit_price_ht": 200.0,
+    "total_price_ht": 10000.0,
+    "page": 7
+  },
+  {
+    "n": 168,
+    "designation": "Isolant thermique adhésif 3 x 50 x 10000 mm.",
+    "unit": "U",
+    "quantity": 150.0,
+    "unit_price_ht": 1500.0,
+    "total_price_ht": 225000.0,
+    "page": 7
+  },
+  {
+    "n": 169,
+    "designation": "Décapant utilisé dans la soudure avec du Bronze.",
+    "unit": "Boite",
+    "quantity": 2.0,
+    "unit_price_ht": 800.0,
+    "total_price_ht": 1600.0,
+    "page": 7
+  },
+  {
+    "n": 170,
+    "designation": "Décapant utilisé avec la soudure de l’Aluminium.",
+    "unit": "Boite",
+    "quantity": 2.0,
+    "unit_price_ht": 1000.0,
+    "total_price_ht": 2000.0,
+    "page": 7
+  },
+  {
+    "n": 171,
+    "designation": "Etain pour dépannage électronique (cid:0)(cid:0)0,5/5000 mm",
+    "unit": "Bobine",
+    "quantity": 4.0,
+    "unit_price_ht": 800.0,
+    "total_price_ht": 3200.0,
+    "page": 7
+  },
+  {
+    "n": 172,
+    "designation": "Cosse femelle 1.5 mm2 « Sachet de 100U »",
+    "unit": "Sac",
+    "quantity": 6.0,
+    "unit_price_ht": 800.0,
+    "total_price_ht": 4800.0,
+    "page": 7
+  },
+  {
+    "n": 173,
+    "designation": "Cosse femelle 2.5 mm2 « Sachet de 100U »",
+    "unit": "Sac",
+    "quantity": 5.0,
+    "unit_price_ht": 800.0,
+    "total_price_ht": 4000.0,
+    "page": 7
+  },
+  {
+    "n": 174,
+    "designation": "Dégrippant-lubrifiant aérosol 300 ml",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 900.0,
+    "total_price_ht": 9000.0,
+    "page": 7
+  },
+  {
+    "n": 175,
+    "designation": "Colle forte spéciale pour obturer les fuites",
+    "unit": "U",
+    "quantity": 6.0,
+    "unit_price_ht": 2300.0,
+    "total_price_ht": 13800.0,
+    "page": 7
+  },
+  {
+    "n": 176,
+    "designation": "Toile émeri de polissage (Entre P150 et P 220)",
+    "unit": "rouleaux",
+    "quantity": 1.0,
+    "unit_price_ht": 6000.0,
+    "total_price_ht": 6000.0,
+    "page": 7
+  },
+  {
+    "n": 177,
+    "designation": "Collier colson en plastique 360 x 3.5 mm (Sac de 100U)",
+    "unit": "Sachet",
+    "quantity": 5.0,
+    "unit_price_ht": 2500.0,
+    "total_price_ht": 12500.0,
+    "page": 7
+  },
+  {
+    "n": 178,
+    "designation": "Cheville métalliques M06 (Brique)",
+    "unit": "U",
+    "quantity": 200.0,
+    "unit_price_ht": 50.0,
+    "total_price_ht": 10000.0,
+    "page": 8
+  },
+  {
+    "n": 179,
+    "designation": "Cheville métalliques M08 (Brique)",
+    "unit": "U",
+    "quantity": 200.0,
+    "unit_price_ht": 60.0,
+    "total_price_ht": 12000.0,
+    "page": 8
+  },
+  {
+    "n": 180,
+    "designation": "Cheville métalliques M10 (Brique)",
+    "unit": "U",
+    "quantity": 250.0,
+    "unit_price_ht": 70.0,
+    "total_price_ht": 17500.0,
+    "page": 8
+  },
+  {
+    "n": 181,
+    "designation": "Cheville plastiques diamètre 06mm (Sac de 500U)",
+    "unit": "Sac",
+    "quantity": 2.0,
+    "unit_price_ht": 600.0,
+    "total_price_ht": 1200.0,
+    "page": 8
+  },
+  {
+    "n": 182,
+    "designation": "Cheville plastiques diamètre 08 mm (Sac de 500U)",
+    "unit": "Sac",
+    "quantity": 2.0,
+    "unit_price_ht": 600.0,
+    "total_price_ht": 1200.0,
+    "page": 8
+  },
+  {
+    "n": 183,
+    "designation": "Cheville plastiques diamètre 10 mm (Sac de 500U)",
+    "unit": "Sac",
+    "quantity": 1.0,
+    "unit_price_ht": 600.0,
+    "total_price_ht": 600.0,
+    "page": 8
+  },
+  {
+    "n": 184,
+    "designation": "Vis Parker 40mm",
+    "unit": "Kg",
+    "quantity": 3.0,
+    "unit_price_ht": 2000.0,
+    "total_price_ht": 6000.0,
+    "page": 8
+  },
+  {
+    "n": 185,
+    "designation": "Pate thermique pour sonde de température",
+    "unit": "U",
+    "quantity": 6.0,
+    "unit_price_ht": 800.0,
+    "total_price_ht": 4800.0,
+    "page": 8
+  },
+  {
+    "n": 186,
+    "designation": "Coffré des joints toriques de différents diamètres",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 14000.0,
+    "total_price_ht": 28000.0,
+    "page": 8
+  },
+  {
+    "n": 187,
+    "designation": "Transformateur de tension 24V, Prim : 220/240VAC, Sec : 24V VAC, 75VA, 50/60HZ",
+    "unit": "U",
+    "quantity": 5.0,
+    "unit_price_ht": 5500.0,
+    "total_price_ht": 27500.0,
+    "page": 8
+  },
+  {
+    "n": 188,
+    "designation": "Fusible SEIMENS, type Gl/Gg 50A , PN: 5SB4 21; ou un équivalent",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 350.0,
+    "total_price_ht": 3500.0,
+    "page": 8
+  },
+  {
+    "n": 189,
+    "designation": "Fusible SEIMENS, type Gl/Gg 16A , PN: 55B2 61; ou un équivalent",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 250.0,
+    "total_price_ht": 5000.0,
+    "page": 8
+  },
+  {
+    "n": 190,
+    "designation": "Fusible SEIMENS, type Gl/Gg 10A , PN: 53B2 51; ou un équivalent",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 250.0,
+    "total_price_ht": 2500.0,
+    "page": 8
+  },
+  {
+    "n": 191,
+    "designation": "Fusible SEIMENS, type Gl/Gg 4A , PN: 5SB2 21; ou un équivalent",
+    "unit": "U",
+    "quantity": 20.0,
+    "unit_price_ht": 200.0,
+    "total_price_ht": 4000.0,
+    "page": 8
+  },
+  {
+    "n": 192,
+    "designation": "Fusible SEIMENS, type Gl/Gg 2A, PN: 5SE2 202 ; ou un équivalent",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 150.0,
+    "total_price_ht": 1500.0,
+    "page": 8
+  },
+  {
+    "n": 193,
+    "designation": "Fusible SEIMENS, type Gl/Gg 2A , PN: 5SB2.11; ou un équivalent",
+    "unit": "U",
+    "quantity": 10.0,
+    "unit_price_ht": 150.0,
+    "total_price_ht": 1500.0,
+    "page": 8
+  },
+  {
+    "n": 194,
+    "designation": "Contacteur SEIMENS, 18A-690V, 230V, 50/60 HZ, PN : 3RT1015-2AP02 ; ou un équivalent",
+    "unit": "U",
+    "quantity": 4.0,
+    "unit_price_ht": 4700.0,
+    "total_price_ht": 18800.0,
+    "page": 8
+  },
+  {
+    "n": 195,
+    "designation": "Relais miniature OMRON, mod: MY2; ou un équivalent",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 1900.0,
+    "total_price_ht": 3800.0,
+    "page": 8
+  },
+  {
+    "n": 196,
+    "designation": "Relais thermique SEIMENS, 7 à 10A, PN: 3RU1116-1JC1; ou un équivalent",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 4600.0,
+    "total_price_ht": 9200.0,
+    "page": 8
+  },
+  {
+    "n": 197,
+    "designation": "Relais de phase SEIMENS, PN: 3UG3511-1BQ50; ou un équivalent",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 15000.0,
+    "total_price_ht": 30000.0,
+    "page": 8
+  },
+  {
+    "n": 198,
+    "designation": "Sectionneur Technoelectric, PN: VC2P 3X160ME; ou un équivalent",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 16000.0,
+    "total_price_ht": 16000.0,
+    "page": 8
+  },
+  {
+    "n": 199,
+    "designation": "Sectionneur GEWISS, 4P, 32 A , 500V , IP65, PN: GW70436 ; ou un équivalent",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 4300.0,
+    "total_price_ht": 4300.0,
+    "page": 8
+  },
+  {
+    "n": 200,
+    "designation": "Sectionneur GEWISS, 4P, 16 A , 500V , IP65, PN: GW70433 ; ou un équivalent",
+    "unit": "U",
+    "quantity": 1.0,
+    "unit_price_ht": 4300.0,
+    "total_price_ht": 4300.0,
+    "page": 8
+  },
+  {
+    "n": 201,
+    "designation": "Contrôleur de débit d'eau, MECANICA TOVO, mod: SFS050M1G1/4 ; ou un équivalent.",
+    "unit": "U",
+    "quantity": 2.0,
+    "unit_price_ht": 6500.0,
+    "total_price_ht": 13000.0,
+    "page": 8
+  },
+  {
+    "n": 202,
+    "designation": "Servomoteur de vanne papillon BELIMO GM24, 30NM, 24v AC/DC, 6VA, 3W, 50/60Hz, IP54; ou un équivalent.",
+    "unit": "U",
+    "quantity": 4.0,
+    "unit_price_ht": 11000.0,
+    "total_price_ht": 44000.0,
+    "page": 8
+  },
+  {
+    "n": 203,
+    "designation": "Filtre à eau CILLIT, DN20 90-110μm ; ou un équivalent.",
+    "unit": "U",
+    "quantity": 3.0,
+    "unit_price_ht": 9000.0,
+    "total_price_ht": 27000.0,
+    "page": 8
+  }
+]
