@@ -1591,7 +1591,10 @@ function PilotageTab({
   const [events, setEvents] = useState<ContractPenaltyEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [force, setForce] = useState(false);
-  const rules = contract.attributes.penalties?.rules ?? [];
+  const rules = [
+    ...(contract.attributes.penalties?.presets ?? []),
+    ...(contract.attributes.penalties?.custom ?? []),
+  ];
   const [form, setForm] = useState({
     rule_code: "",
     amount_ht: "",
