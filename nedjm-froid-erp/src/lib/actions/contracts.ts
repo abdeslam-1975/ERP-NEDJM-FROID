@@ -99,6 +99,14 @@ export type ContractBalance = {
   paid_ht: number;
   remaining_ht: number;
   is_solded: boolean;
+  open_invoices?: {
+    invoice_id: string;
+    invoice_number: string;
+    invoice_date: string;
+    total_ht: number;
+    paid_ht: number;
+    open_ht: number;
+  }[];
 };
 
 export type ContractPayment = {
@@ -1045,6 +1053,7 @@ export async function getContractBalance(
   if (error) return { ok: false, error: error.message };
 
   const bal = (data ?? {}) as Record<string, unknown>;
+  const openRaw = Array.isArray(bal.open_invoices) ? bal.open_invoices : [];
   return {
     ok: true,
     data: {
@@ -1053,6 +1062,17 @@ export async function getContractBalance(
       paid_ht: Number(bal.paid_ht ?? 0),
       remaining_ht: Number(bal.remaining_ht ?? 0),
       is_solded: Boolean(bal.is_solded),
+      open_invoices: openRaw.map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          invoice_id: String(r.invoice_id ?? ""),
+          invoice_number: String(r.invoice_number ?? ""),
+          invoice_date: String(r.invoice_date ?? ""),
+          total_ht: Number(r.total_ht ?? 0),
+          paid_ht: Number(r.paid_ht ?? 0),
+          open_ht: Number(r.open_ht ?? 0),
+        };
+      }),
     },
   };
 }
@@ -1113,14 +1133,17 @@ export async function postPayment(
   if (error) {
     return {
       ok: false,
-      error: error.message.includes("exceeds remaining")
-        ? "Paiement > reste à encaisser."
-        : error.message,
+      error: error.message.includes("exceeds invoice open amount")
+        ? "Paiement > reste de la facture sélectionnée."
+        : error.message.includes("exceeds remaining receivable")
+          ? "Paiement > reste à encaisser du contrat."
+          : error.message,
     };
   }
 
   const result = (data ?? {}) as { id?: string; balance?: Record<string, unknown> };
   const bal = result.balance ?? {};
+  const openRaw = Array.isArray(bal.open_invoices) ? bal.open_invoices : [];
   revalidateContract(p.contract_id);
   return {
     ok: true,
@@ -1132,6 +1155,17 @@ export async function postPayment(
         paid_ht: Number(bal.paid_ht ?? 0),
         remaining_ht: Number(bal.remaining_ht ?? 0),
         is_solded: Boolean(bal.is_solded),
+        open_invoices: openRaw.map((row) => {
+          const r = row as Record<string, unknown>;
+          return {
+            invoice_id: String(r.invoice_id ?? ""),
+            invoice_number: String(r.invoice_number ?? ""),
+            invoice_date: String(r.invoice_date ?? ""),
+            total_ht: Number(r.total_ht ?? 0),
+            paid_ht: Number(r.paid_ht ?? 0),
+            open_ht: Number(r.open_ht ?? 0),
+          };
+        }),
       },
     },
   };

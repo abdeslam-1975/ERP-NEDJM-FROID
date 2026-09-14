@@ -1831,7 +1831,8 @@ function BalanceTab({
   return (
     <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
       <p className="text-sm text-foreground/70">
-        Solde = facturé (ÉMISE) − encaissé. Soldé quand reste = 0 et facturé &gt; 0.
+        Solde = facturé (ÉMISE) − encaissé. Paiement plafonné au reste contrat et
+        au reste de la facture liée. Soldé quand reste = 0 et facturé &gt; 0.
       </p>
       {error && <p className="text-sm text-red-600">{error}</p>}
       {balance && (
@@ -1843,6 +1844,52 @@ function BalanceTab({
             label="État"
             value={balance.is_solded ? "Soldé" : "Ouvert"}
           />
+        </div>
+      )}
+
+      {(balance?.open_invoices?.length ?? 0) > 0 && (
+        <div className="overflow-x-auto">
+          <h3 className="mb-2 font-semibold">Factures ouvertes</h3>
+          <table className="min-w-full text-left text-sm">
+            <thead className="border-b border-border text-xs uppercase text-foreground/55">
+              <tr>
+                <th className="px-2 py-2">N°</th>
+                <th className="px-2 py-2">Total</th>
+                <th className="px-2 py-2">Payé</th>
+                <th className="px-2 py-2">Reste</th>
+                <th className="px-2 py-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {balance!.open_invoices!.map((inv) => (
+                <tr key={inv.invoice_id} className="border-b border-border/60">
+                  <td className="px-2 py-1.5 font-mono text-xs">
+                    {inv.invoice_number}
+                  </td>
+                  <td className="px-2 py-1.5">{money(inv.total_ht)}</td>
+                  <td className="px-2 py-1.5">{money(inv.paid_ht)}</td>
+                  <td className="px-2 py-1.5 font-semibold">
+                    {money(inv.open_ht)}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <Button
+                      type="button"
+                      disabled={pending}
+                      onClick={() =>
+                        setForm((f) => ({
+                          ...f,
+                          invoice_id: inv.invoice_id,
+                          amount_ht: String(inv.open_ht),
+                        }))
+                      }
+                    >
+                      Payer le reste
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -1877,14 +1924,24 @@ function BalanceTab({
         <select
           className={inputClass}
           value={form.invoice_id}
-          onChange={(e) =>
-            setForm((f) => ({ ...f, invoice_id: e.target.value }))
-          }
+          onChange={(e) => {
+            const id = e.target.value;
+            const open = balance?.open_invoices?.find((i) => i.invoice_id === id);
+            setForm((f) => ({
+              ...f,
+              invoice_id: id,
+              amount_ht: open ? String(open.open_ht) : f.amount_ht,
+            }));
+          }}
         >
           <option value="">Facture (opt.)</option>
-          {invoices.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.invoice_number} · {money(i.total_ht)}
+          {(balance?.open_invoices ?? invoices.map((i) => ({
+            invoice_id: i.id,
+            invoice_number: i.invoice_number,
+            open_ht: i.total_ht,
+          }))).map((i) => (
+            <option key={i.invoice_id} value={i.invoice_id}>
+              {i.invoice_number} · reste {money(i.open_ht)}
             </option>
           ))}
         </select>
@@ -1896,7 +1953,7 @@ function BalanceTab({
         />
         <Button
           type="button"
-          disabled={pending || !form.amount_ht}
+          disabled={pending || !form.amount_ht || (balance?.remaining_ht ?? 0) <= 0}
           onClick={() =>
             onPay({
               contract_id: contract.id,
@@ -1912,6 +1969,25 @@ function BalanceTab({
           Enregistrer paiement
         </Button>
       </div>
+      {balance && balance.remaining_ht > 0 && (
+        <Button
+          type="button"
+          disabled={pending}
+          onClick={() =>
+            onPay({
+              contract_id: contract.id,
+              amount_ht: balance.remaining_ht,
+              payment_date: form.payment_date,
+              method: form.method,
+              invoice_id: form.invoice_id || null,
+              reference: form.reference || undefined,
+              note: form.note || "Solde intégral contrat",
+            })
+          }
+        >
+          Encaisser tout le reste ({money(balance.remaining_ht)})
+        </Button>
+      )}
 
       <h3 className="font-semibold">Paiements</h3>
       <div className="overflow-x-auto">
