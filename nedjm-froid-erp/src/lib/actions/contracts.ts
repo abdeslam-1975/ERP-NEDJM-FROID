@@ -28,6 +28,7 @@ import {
   invoiceIdSchema,
   paymentPostSchema,
   penaltyApplySchema,
+  penaltySuggestSchema,
   contractCloseSchema,
 } from "@/lib/validations/contract";
 
@@ -130,6 +131,17 @@ export type ContractPenaltyEvent = {
   amount_ht: number;
   note: string | null;
   created_at: string;
+  basis_days?: number | null;
+  rule_mode?: string | null;
+  hr_employee_id?: string | null;
+};
+
+export type HrEmployeeOption = {
+  id: string;
+  matricule: string;
+  first_name: string;
+  last_name: string;
+  status: string;
 };
 
 export type ContractStats = {
@@ -817,6 +829,7 @@ export async function postConsumption(
     p_quantity: p.quantity,
     p_movement_date: p.movement_date ?? undefined,
     p_note: p.note ?? undefined,
+    p_hr_employee_id: p.hr_employee_id ?? undefined,
   });
 
   if (error) {
@@ -1180,7 +1193,7 @@ export async function listPenaltyEvents(
   const { data, error } = await supabase
     .from("contract_penalty_events")
     .select(
-      "id, contract_id, rule_code, rule_label, event_date, amount_ht, note, created_at",
+      "id, contract_id, rule_code, rule_label, event_date, amount_ht, note, created_at, basis_days, rule_mode, hr_employee_id",
     )
     .eq("contract_id", contractId)
     .order("event_date", { ascending: false })
@@ -1188,8 +1201,66 @@ export async function listPenaltyEvents(
   if (error) return { ok: false, error: error.message };
   return {
     ok: true,
-    data: (data ?? []).map((e) => ({ ...e, amount_ht: Number(e.amount_ht) })),
+    data: (data ?? []).map((e) => ({
+      ...e,
+      amount_ht: Number(e.amount_ht),
+      basis_days: e.basis_days == null ? null : Number(e.basis_days),
+    })),
   };
+}
+
+export async function suggestPenaltyAmount(
+  input: unknown,
+): Promise<
+  ActionResult<{
+    rule_code: string;
+    rule_label: string;
+    mode: string;
+    basis_days: number;
+    suggested_amount_ht: number;
+  }>
+> {
+  const gate = await requireContractAccess();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const parsed = penaltySuggestSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
+  }
+  const p = parsed.data;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("ref_contract_suggest_penalty", {
+    p_contract_id: p.contract_id,
+    p_rule_code: p.rule_code,
+    p_basis_days: p.basis_days,
+    p_item_code: p.item_code ?? undefined,
+  });
+  if (error) return { ok: false, error: error.message };
+  const s = (data ?? {}) as Record<string, unknown>;
+  return {
+    ok: true,
+    data: {
+      rule_code: String(s.rule_code ?? p.rule_code),
+      rule_label: String(s.rule_label ?? s.rule_label ?? ""),
+      mode: String(s.mode ?? ""),
+      basis_days: Number(s.basis_days ?? p.basis_days),
+      suggested_amount_ht: Number(
+        s.suggested_amount_ht ?? s.suggested_amount_ht ?? 0,
+      ),
+    },
+  };
+}
+
+export async function listHrEmployees(): Promise<ActionResult<HrEmployeeOption[]>> {
+  const gate = await requireContractAccess();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("hr_employees")
+    .select("id, matricule, first_name, last_name, status")
+    .order("last_name")
+    .limit(500);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, data: data ?? [] };
 }
 
 export async function applyPenalty(
@@ -1210,6 +1281,9 @@ export async function applyPenalty(
     p_amount_ht: p.amount_ht,
     p_event_date: p.event_date ?? undefined,
     p_note: p.note ?? undefined,
+    p_basis_days: p.basis_days ?? undefined,
+    p_rule_mode: p.rule_mode ?? undefined,
+    p_hr_employee_id: p.hr_employee_id ?? undefined,
   });
   if (error) return { ok: false, error: error.message };
   const result = (data ?? {}) as { id?: string; amount_ht?: number };

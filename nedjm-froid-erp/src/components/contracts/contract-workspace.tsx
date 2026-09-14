@@ -16,11 +16,13 @@ import {
   listConsumptionMovements,
   listContractInvoices,
   listContractPayments,
+  listHrEmployees,
   listPenaltyEvents,
   postConsumption,
   postPayment,
   replaceContractAttributes,
   suggestNextInvoiceNumber,
+  suggestPenaltyAmount,
   upsertContract,
   upsertContractItem,
   type ConsumptionMovement,
@@ -31,6 +33,7 @@ import {
   type ContractPayment,
   type ContractPenaltyEvent,
   type ContractStats,
+  type HrEmployeeOption,
 } from "@/lib/actions/contracts";
 import type {
   ContreLine,
@@ -1595,20 +1598,25 @@ function PilotageTab({
   const rules = [
     ...(contract.attributes.penalties?.presets ?? []),
     ...(contract.attributes.penalties?.custom ?? []),
-  ];
+  ].filter((r) => r.enabled !== false);
   const [form, setForm] = useState({
     rule_code: "",
     amount_ht: "",
+    basis_days: "1",
     event_date: new Date().toISOString().slice(0, 10),
     note: "",
+    hr_employee_id: "",
   });
+  const [employees, setEmployees] = useState<HrEmployeeOption[]>([]);
+  const [suggestHint, setSuggestHint] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [s, e] = await Promise.all([
+      const [s, e, hr] = await Promise.all([
         getContractStats(contract.id),
         listPenaltyEvents(contract.id),
+        listHrEmployees(),
       ]);
       if (cancelled) return;
       if (!s.ok) {
@@ -1621,6 +1629,7 @@ function PilotageTab({
       }
       setStats(s.data);
       setEvents(e.data);
+      if (hr.ok) setEmployees(hr.data);
       setError(null);
     })();
     return () => {
@@ -1630,11 +1639,33 @@ function PilotageTab({
 
   const selected = rules.find((r) => r.code === form.rule_code);
 
+  async function onRuleChange(code: string) {
+    setForm((f) => ({ ...f, rule_code: code }));
+    setSuggestHint(null);
+    if (!code) return;
+    const days = Number(form.basis_days) || 1;
+    const r = await suggestPenaltyAmount({
+      contract_id: contract.id,
+      rule_code: code,
+      basis_days: days,
+    });
+    if (r.ok) {
+      setForm((f) => ({
+        ...f,
+        rule_code: code,
+        amount_ht: String(r.data.suggested_amount_ht),
+      }));
+      setSuggestHint(
+        `Suggestion ${r.data.mode} : ${money(r.data.suggested_amount_ht)}`,
+      );
+    }
+  }
+
   return (
     <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
       <p className="text-sm text-foreground/70">
-        Vue A→Z : consommation, facturation, encaissement, pénalités appliquées,
-        clôture.
+        Vue A→Z : consommation, facturation, encaissement, pénalités appliquées
+        (montant suggéré depuis la règle), clôture.
       </p>
       {error && <p className="text-sm text-red-600">{error}</p>}
       {stats && (
@@ -1659,21 +1690,36 @@ function PilotageTab({
       )}
 
       <h3 className="font-semibold">Appliquer une pénalité</h3>
-      <div className="grid gap-2 sm:grid-cols-5">
+      {suggestHint && (
+        <p className="text-xs text-foreground/55">{suggestHint}</p>
+      )}
+      <div className="grid gap-2 sm:grid-cols-6">
         <select
           className={inputClass}
           value={form.rule_code}
-          onChange={(e) =>
-            setForm((f) => ({ ...f, rule_code: e.target.value }))
-          }
+          onChange={(e) => void onRuleChange(e.target.value)}
         >
           <option value="">Règle…</option>
           {rules.map((r) => (
             <option key={r.id} value={r.code}>
-              {r.code} — {r.label}
+              {r.code} — {r.label} ({r.mode})
             </option>
           ))}
         </select>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          className={inputClass}
+          placeholder="Jours (base)"
+          value={form.basis_days}
+          onChange={(e) =>
+            setForm((f) => ({ ...f, basis_days: e.target.value }))
+          }
+          onBlur={() => {
+            if (form.rule_code) void onRuleChange(form.rule_code);
+          }}
+        />
         <input
           type="number"
           min="0"
@@ -1691,29 +1737,46 @@ function PilotageTab({
             setForm((f) => ({ ...f, event_date: e.target.value }))
           }
         />
+        <select
+          className={inputClass}
+          value={form.hr_employee_id}
+          onChange={(e) =>
+            setForm((f) => ({ ...f, hr_employee_id: e.target.value }))
+          }
+        >
+          <option value="">Employé RH (opt.)</option>
+          {employees.map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.matricule} — {e.last_name} {e.first_name}
+            </option>
+          ))}
+        </select>
         <input
           className={inputClass}
           placeholder="Note"
           value={form.note}
           onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
         />
-        <Button
-          type="button"
-          disabled={pending || !form.rule_code || !form.amount_ht}
-          onClick={() =>
-            onApplyPenalty({
-              contract_id: contract.id,
-              rule_code: form.rule_code,
-              rule_label: selected?.label ?? form.rule_code,
-              amount_ht: form.amount_ht,
-              event_date: form.event_date,
-              note: form.note || undefined,
-            })
-          }
-        >
-          Appliquer
-        </Button>
       </div>
+      <Button
+        type="button"
+        disabled={pending || !form.rule_code || !form.amount_ht}
+        onClick={() =>
+          onApplyPenalty({
+            contract_id: contract.id,
+            rule_code: form.rule_code,
+            rule_label: selected?.label ?? form.rule_code,
+            amount_ht: form.amount_ht,
+            event_date: form.event_date,
+            note: form.note || undefined,
+            basis_days: form.basis_days ? Number(form.basis_days) : null,
+            rule_mode: selected?.mode ?? null,
+            hr_employee_id: form.hr_employee_id || null,
+          })
+        }
+      >
+        Appliquer
+      </Button>
 
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-sm">
@@ -1721,6 +1784,7 @@ function PilotageTab({
             <tr>
               <th className="px-2 py-2">Date</th>
               <th className="px-2 py-2">Règle</th>
+              <th className="px-2 py-2">Jours</th>
               <th className="px-2 py-2">Montant</th>
               <th className="px-2 py-2">Note</th>
             </tr>
@@ -1728,7 +1792,7 @@ function PilotageTab({
           <tbody>
             {events.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-2 py-3 text-foreground/55">
+                <td colSpan={5} className="px-2 py-3 text-foreground/55">
                   Aucune pénalité appliquée.
                 </td>
               </tr>
@@ -1738,7 +1802,9 @@ function PilotageTab({
                   <td className="px-2 py-1.5">{e.event_date}</td>
                   <td className="px-2 py-1.5">
                     {e.rule_code} — {e.rule_label}
+                    {e.rule_mode ? ` (${e.rule_mode})` : ""}
                   </td>
+                  <td className="px-2 py-1.5">{e.basis_days ?? "—"}</td>
                   <td className="px-2 py-1.5">{money(e.amount_ht)}</td>
                   <td className="px-2 py-1.5">{e.note ?? "—"}</td>
                 </tr>
@@ -2338,12 +2404,17 @@ function ConsumptionTab({
     quantity: "1",
     movement_date: new Date().toISOString().slice(0, 10),
     note: "",
+    hr_employee_id: "",
   });
+  const [employees, setEmployees] = useState<HrEmployeeOption[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const result = await listConsumptionMovements(contract.id);
+      const [result, hr] = await Promise.all([
+        listConsumptionMovements(contract.id),
+        listHrEmployees(),
+      ]);
       if (cancelled) return;
       if (!result.ok) {
         setLoadError(result.error);
@@ -2351,11 +2422,15 @@ function ConsumptionTab({
       }
       setMovements(result.data);
       setLoadError(null);
+      if (hr.ok) setEmployees(hr.data);
     })();
     return () => {
       cancelled = true;
     };
   }, [contract.id, contract.items]);
+
+  const selectedItem = contract.items.find((i) => i.id === form.contract_item_id);
+  const showHr = selectedItem?.item_type === "LABOR";
 
   const rows = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -2375,8 +2450,8 @@ function ConsumptionTab({
     <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
       <p className="text-sm text-foreground/70">
         Suivi contractuel : quantité prévue, consommée, reste et %. Les
-        mouvements sont append-only (annulation = REVERSE). Autorisé si statut
-        Validé ou En cours.
+        mouvements sont append-only (annulation = REVERSE). Sur lignes MO, un
+        employé RH peut être rattaché.
       </p>
       {!canPost && (
         <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
@@ -2389,7 +2464,11 @@ function ConsumptionTab({
           className={inputClass}
           value={form.contract_item_id}
           onChange={(e) =>
-            setForm((f) => ({ ...f, contract_item_id: e.target.value }))
+            setForm((f) => ({
+              ...f,
+              contract_item_id: e.target.value,
+              hr_employee_id: "",
+            }))
           }
         >
           <option value="">Ligne…</option>
@@ -2430,8 +2509,31 @@ function ConsumptionTab({
             setForm((f) => ({ ...f, movement_date: e.target.value }))
           }
         />
+        {showHr ? (
+          <select
+            className={inputClass}
+            value={form.hr_employee_id}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, hr_employee_id: e.target.value }))
+            }
+          >
+            <option value="">Employé RH (opt.)</option>
+            {employees.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.matricule} — {e.last_name} {e.first_name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            className={inputClass}
+            placeholder="Note (optionnel)"
+            value={form.note}
+            onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+          />
+        )}
         <input
-          className={`${inputClass} sm:col-span-2`}
+          className={inputClass}
           placeholder="Note (optionnel)"
           value={form.note}
           onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
@@ -2448,6 +2550,9 @@ function ConsumptionTab({
             quantity: form.quantity,
             movement_date: form.movement_date,
             note: form.note || undefined,
+            hr_employee_id: showHr && form.hr_employee_id
+              ? form.hr_employee_id
+              : null,
           })
         }
       >

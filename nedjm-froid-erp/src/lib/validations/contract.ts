@@ -103,6 +103,7 @@ export const consumptionPostSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
   note: z.string().trim().max(500).optional(),
+  hr_employee_id: z.string().uuid().optional().nullable(),
 });
 
 export const invoiceDraftSchema = z.object({
@@ -148,6 +149,16 @@ export const penaltyApplySchema = z.object({
   amount_ht: z.coerce.number().min(0),
   event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   note: z.string().trim().max(500).optional(),
+  basis_days: z.coerce.number().min(0).optional().nullable(),
+  rule_mode: z.string().trim().max(32).optional().nullable(),
+  hr_employee_id: z.string().uuid().optional().nullable(),
+});
+
+export const penaltySuggestSchema = z.object({
+  contract_id: z.string().uuid(),
+  rule_code: z.string().trim().min(1).max(64),
+  basis_days: z.coerce.number().min(0).default(1),
+  item_code: z.string().trim().max(64).optional().nullable(),
 });
 
 export const contractCloseSchema = z.object({
