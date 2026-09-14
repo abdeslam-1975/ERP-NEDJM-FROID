@@ -125,4 +125,14 @@ export const invoiceIdSchema = z.object({
   contract_id: z.string().uuid(),
 });
 
+export const paymentPostSchema = z.object({
+  contract_id: z.string().uuid(),
+  amount_ht: z.coerce.number().positive(),
+  payment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  method: z.enum(["VIREMENT", "CHEQUE", "ESPECES", "AUTRE"]).default("VIREMENT"),
+  invoice_id: z.string().uuid().optional().nullable(),
+  reference: z.string().trim().max(120).optional(),
+  note: z.string().trim().max(500).optional(),
+});
+
 export { contreLineSchema, penaltyRuleSchema, contractAttributesSchema };

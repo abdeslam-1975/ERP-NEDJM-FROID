@@ -7,18 +7,23 @@ import {
   cancelInvoice,
   createInvoiceDraft,
   deleteContractItem,
+  getContractBalance,
   importFullCanva,
   issueInvoice,
   listConsumptionMovements,
   listContractInvoices,
+  listContractPayments,
   postConsumption,
+  postPayment,
   replaceContractAttributes,
   upsertContract,
   upsertContractItem,
   type ConsumptionMovement,
+  type ContractBalance,
   type ContractDetail,
   type ContractInvoice,
   type ContractItem,
+  type ContractPayment,
 } from "@/lib/actions/contracts";
 import type {
   ContreLine,
@@ -41,6 +46,7 @@ type Tab =
   | "spares"
   | "consumption"
   | "invoicing"
+  | "balance"
   | "penalties"
   | "margin"
   | "rh"
@@ -105,6 +111,7 @@ export function ContractWorkspace({
     { id: "spares", label: `Pièces (${spares.length})` },
     { id: "consumption", label: "Consommation" },
     { id: "invoicing", label: "Facturation" },
+    { id: "balance", label: "Solde" },
     { id: "penalties", label: "Pénalités" },
     { id: "margin", label: "Gardes de marge" },
     { id: "rh", label: "RH / AN" },
@@ -326,6 +333,24 @@ export function ContractWorkspace({
               });
               if (!result.ok) throw new Error(result.error);
               setInfo("Facture annulée.");
+            })
+          }
+        />
+      )}
+
+      {tab === "balance" && (
+        <BalanceTab
+          contract={contract}
+          pending={pending}
+          onPay={(payload) =>
+            run(async () => {
+              const result = await postPayment(payload);
+              if (!result.ok) throw new Error(result.error);
+              setInfo(
+                result.data.balance.is_solded
+                  ? "Paiement enregistré — contrat soldé."
+                  : `Paiement OK — reste ${money(result.data.balance.remaining_ht)}.`,
+              );
             })
           }
         />
@@ -1515,6 +1540,179 @@ function CanvaTab({
       <p className="text-xs text-foreground/55">
         Contrat cible : {contractId}
       </p>
+    </section>
+  );
+}
+
+function BalanceTab({
+  contract,
+  pending,
+  onPay,
+}: {
+  contract: ContractDetail;
+  pending: boolean;
+  onPay: (payload: Record<string, unknown>) => void;
+}) {
+  const [balance, setBalance] = useState<ContractBalance | null>(null);
+  const [payments, setPayments] = useState<ContractPayment[]>([]);
+  const [invoices, setInvoices] = useState<ContractInvoice[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    amount_ht: "",
+    payment_date: new Date().toISOString().slice(0, 10),
+    method: "VIREMENT",
+    invoice_id: "",
+    reference: "",
+    note: "",
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [b, p, inv] = await Promise.all([
+        getContractBalance(contract.id),
+        listContractPayments(contract.id),
+        listContractInvoices(contract.id),
+      ]);
+      if (cancelled) return;
+      if (!b.ok) {
+        setError(b.error);
+        return;
+      }
+      if (!p.ok) {
+        setError(p.error);
+        return;
+      }
+      if (!inv.ok) {
+        setError(inv.error);
+        return;
+      }
+      setBalance(b.data);
+      setPayments(p.data);
+      setInvoices(inv.data.filter((i) => i.status === "EMISE"));
+      setError(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [contract.id, contract.items]);
+
+  return (
+    <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
+      <p className="text-sm text-foreground/70">
+        Solde = facturé (ÉMISE) − encaissé. Soldé quand reste = 0 et facturé &gt; 0.
+      </p>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {balance && (
+        <div className="grid gap-2 sm:grid-cols-4">
+          <Stat label="Facturé HT" value={money(balance.invoiced_ht)} />
+          <Stat label="Encaissé HT" value={money(balance.paid_ht)} />
+          <Stat label="Reste HT" value={money(balance.remaining_ht)} />
+          <Stat
+            label="État"
+            value={balance.is_solded ? "Soldé" : "Ouvert"}
+          />
+        </div>
+      )}
+
+      <div className="grid gap-2 sm:grid-cols-6">
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          className={inputClass}
+          placeholder="Montant HT"
+          value={form.amount_ht}
+          onChange={(e) => setForm((f) => ({ ...f, amount_ht: e.target.value }))}
+        />
+        <input
+          type="date"
+          className={inputClass}
+          value={form.payment_date}
+          onChange={(e) =>
+            setForm((f) => ({ ...f, payment_date: e.target.value }))
+          }
+        />
+        <select
+          className={inputClass}
+          value={form.method}
+          onChange={(e) => setForm((f) => ({ ...f, method: e.target.value }))}
+        >
+          <option value="VIREMENT">Virement</option>
+          <option value="CHEQUE">Chèque</option>
+          <option value="ESPECES">Espèces</option>
+          <option value="AUTRE">Autre</option>
+        </select>
+        <select
+          className={inputClass}
+          value={form.invoice_id}
+          onChange={(e) =>
+            setForm((f) => ({ ...f, invoice_id: e.target.value }))
+          }
+        >
+          <option value="">Facture (opt.)</option>
+          {invoices.map((i) => (
+            <option key={i.id} value={i.id}>
+              {i.invoice_number} · {money(i.total_ht)}
+            </option>
+          ))}
+        </select>
+        <input
+          className={inputClass}
+          placeholder="Réf. bancaire"
+          value={form.reference}
+          onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))}
+        />
+        <Button
+          type="button"
+          disabled={pending || !form.amount_ht}
+          onClick={() =>
+            onPay({
+              contract_id: contract.id,
+              amount_ht: form.amount_ht,
+              payment_date: form.payment_date,
+              method: form.method,
+              invoice_id: form.invoice_id || null,
+              reference: form.reference || undefined,
+              note: form.note || undefined,
+            })
+          }
+        >
+          Enregistrer paiement
+        </Button>
+      </div>
+
+      <h3 className="font-semibold">Paiements</h3>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-left text-sm">
+          <thead className="border-b border-border text-xs uppercase text-foreground/55">
+            <tr>
+              <th className="px-2 py-2">Date</th>
+              <th className="px-2 py-2">Montant</th>
+              <th className="px-2 py-2">Mode</th>
+              <th className="px-2 py-2">Réf.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payments.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-2 py-3 text-foreground/55">
+                  Aucun paiement.
+                </td>
+              </tr>
+            ) : (
+              payments.map((p) => (
+                <tr key={p.id} className="border-b border-border/60">
+                  <td className="px-2 py-1.5">{p.payment_date}</td>
+                  <td className="px-2 py-1.5">{money(p.amount_ht)}</td>
+                  <td className="px-2 py-1.5">{p.method}</td>
+                  <td className="px-2 py-1.5">{p.reference ?? "—"}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

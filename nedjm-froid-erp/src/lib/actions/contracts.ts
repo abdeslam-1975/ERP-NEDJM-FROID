@@ -26,6 +26,7 @@ import {
   contractUpsertSchema,
   invoiceDraftSchema,
   invoiceIdSchema,
+  paymentPostSchema,
 } from "@/lib/validations/contract";
 
 export type ActionResult<T = void> =
@@ -85,6 +86,26 @@ export type ContractInvoiceLine = {
   quantity: number;
   unit_price_ht: number;
   total_price_ht: number;
+};
+
+export type ContractBalance = {
+  contract_id: string;
+  invoiced_ht: number;
+  paid_ht: number;
+  remaining_ht: number;
+  is_solded: boolean;
+};
+
+export type ContractPayment = {
+  id: string;
+  contract_id: string;
+  invoice_id: string | null;
+  payment_date: string;
+  amount_ht: number;
+  method: string;
+  reference: string | null;
+  note: string | null;
+  created_at: string;
 };
 
 export type ContractListRow = {
@@ -942,5 +963,110 @@ export async function cancelInvoice(
   return {
     ok: true,
     data: { id: String(result.id ?? ""), status: String(result.status ?? "ANNULEE") },
+  };
+}
+
+export async function getContractBalance(
+  contractId: string,
+): Promise<ActionResult<ContractBalance>> {
+  const gate = await requireContractAccess();
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("ref_contract_balance", {
+    p_contract_id: contractId,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  const bal = (data ?? {}) as Record<string, unknown>;
+  return {
+    ok: true,
+    data: {
+      contract_id: contractId,
+      invoiced_ht: Number(bal.invoiced_ht ?? 0),
+      paid_ht: Number(bal.paid_ht ?? 0),
+      remaining_ht: Number(bal.remaining_ht ?? 0),
+      is_solded: Boolean(bal.is_solded),
+    },
+  };
+}
+
+export async function listContractPayments(
+  contractId: string,
+): Promise<ActionResult<ContractPayment[]>> {
+  const gate = await requireContractAccess();
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("contract_payments")
+    .select(
+      "id, contract_id, invoice_id, payment_date, amount_ht, method, reference, note, created_at",
+    )
+    .eq("contract_id", contractId)
+    .order("payment_date", { ascending: false })
+    .limit(200);
+
+  if (error) return { ok: false, error: error.message };
+
+  return {
+    ok: true,
+    data: (data ?? []).map((p) => ({
+      ...p,
+      amount_ht: Number(p.amount_ht),
+    })),
+  };
+}
+
+export async function postPayment(
+  input: unknown,
+): Promise<ActionResult<{ id: string; balance: ContractBalance }>> {
+  const gate = await requireContractWrite();
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  const parsed = paymentPostSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Données invalides",
+    };
+  }
+
+  const p = parsed.data;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("ref_contract_post_payment", {
+    p_contract_id: p.contract_id,
+    p_amount_ht: p.amount_ht,
+    p_payment_date: p.payment_date ?? undefined,
+    p_method: p.method,
+    p_invoice_id: p.invoice_id ?? undefined,
+    p_reference: p.reference ?? undefined,
+    p_note: p.note ?? undefined,
+  });
+
+  if (error) {
+    return {
+      ok: false,
+      error: error.message.includes("exceeds remaining")
+        ? "Paiement > reste à encaisser."
+        : error.message,
+    };
+  }
+
+  const result = (data ?? {}) as { id?: string; balance?: Record<string, unknown> };
+  const bal = result.balance ?? {};
+  revalidateContract(p.contract_id);
+  return {
+    ok: true,
+    data: {
+      id: String(result.id ?? ""),
+      balance: {
+        contract_id: p.contract_id,
+        invoiced_ht: Number(bal.invoiced_ht ?? 0),
+        paid_ht: Number(bal.paid_ht ?? 0),
+        remaining_ht: Number(bal.remaining_ht ?? 0),
+        is_solded: Boolean(bal.is_solded),
+      },
+    },
   };
 }

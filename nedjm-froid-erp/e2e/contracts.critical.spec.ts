@@ -12,6 +12,7 @@ const WORKSPACE_TABS = [
   /pièces/i,
   /consommation/i,
   /facturation/i,
+  /solde/i,
   /pénalités/i,
   /gardes de marge/i,
   /rh \/ an/i,
@@ -37,7 +38,7 @@ test.describe("@critical contrats clients", () => {
     await expect(page.getByText(/SONATRACH/i).first()).toBeVisible();
   });
 
-  test("workspace seed : 10 onglets + mode AUTO / caution", async ({ page }) => {
+  test("workspace seed : onglets hub + mode AUTO / caution", async ({ page }) => {
     await gotoContracts(page);
     await page.getByPlaceholder(/rechercher/i).fill(SEED_CONTRACT);
     await page.getByRole("link", { name: /workspace/i }).first().click();
