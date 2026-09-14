@@ -107,7 +107,13 @@ export const consumptionPostSchema = z.object({
 
 export const invoiceDraftSchema = z.object({
   contract_id: z.string().uuid(),
-  invoice_number: z.string().trim().min(2).max(80),
+  /** Empty → server auto-generates FAC/{n°contrat}/{YYYY}/{seq} */
+  invoice_number: z
+    .string()
+    .trim()
+    .max(80)
+    .optional()
+    .transform((v) => v ?? ""),
   invoice_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   note: z.string().trim().max(500).optional(),
   lines: z

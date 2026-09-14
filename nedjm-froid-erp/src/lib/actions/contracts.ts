@@ -73,6 +73,9 @@ export type ContractInvoice = {
   invoice_date: string;
   status: "BROUILLON" | "EMISE" | "ANNULEE";
   total_ht: number;
+  tva_rate: number;
+  tva_amount: number;
+  total_ttc: number;
   note: string | null;
   issued_at: string | null;
   created_at: string;
@@ -853,6 +856,7 @@ export async function listContractInvoices(
     .select(
       `
       id, contract_id, invoice_number, invoice_date, status, total_ht,
+      tva_rate, tva_amount, total_ttc,
       note, issued_at, created_at,
       lines:contract_invoice_lines (
         id, contract_item_id, item_code, designation, unit,
@@ -874,6 +878,9 @@ export async function listContractInvoices(
       invoice_date: inv.invoice_date,
       status: inv.status as ContractInvoice["status"],
       total_ht: Number(inv.total_ht),
+      tva_rate: Number(inv.tva_rate ?? 0),
+      tva_amount: Number(inv.tva_amount ?? 0),
+      total_ttc: Number(inv.total_ttc ?? inv.total_ht ?? 0),
       note: inv.note,
       issued_at: inv.issued_at,
       created_at: inv.created_at,
@@ -887,9 +894,31 @@ export async function listContractInvoices(
   };
 }
 
+export async function suggestNextInvoiceNumber(
+  contractId: string,
+): Promise<ActionResult<{ invoice_number: string }>> {
+  const gate = await requireContractAccess();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("ref_contract_next_invoice_number", {
+    p_contract_id: contractId,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, data: { invoice_number: String(data ?? "") } };
+}
+
 export async function createInvoiceDraft(
   input: unknown,
-): Promise<ActionResult<{ id: string; total_ht: number; lines: number }>> {
+): Promise<
+  ActionResult<{
+    id: string;
+    invoice_number: string;
+    total_ht: number;
+    tva_amount: number;
+    total_ttc: number;
+    lines: number;
+  }>
+> {
   const gate = await requireContractWrite();
   if (!gate.ok) return { ok: false, error: gate.error };
 
@@ -905,7 +934,7 @@ export async function createInvoiceDraft(
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("ref_contract_create_invoice_draft", {
     p_contract_id: p.contract_id,
-    p_invoice_number: p.invoice_number,
+    p_invoice_number: p.invoice_number || "",
     p_invoice_date: p.invoice_date,
     p_lines: p.lines,
     p_note: p.note ?? undefined,
@@ -922,13 +951,23 @@ export async function createInvoiceDraft(
     };
   }
 
-  const result = (data ?? {}) as { id?: string; total_ht?: number; lines?: number };
+  const result = (data ?? {}) as {
+    id?: string;
+    invoice_number?: string;
+    total_ht?: number;
+    tva_amount?: number;
+    total_ttc?: number;
+    lines?: number;
+  };
   revalidateContract(p.contract_id);
   return {
     ok: true,
     data: {
       id: String(result.id ?? ""),
+      invoice_number: String(result.invoice_number ?? p.invoice_number ?? ""),
       total_ht: Number(result.total_ht ?? 0),
+      tva_amount: Number(result.tva_amount ?? 0),
+      total_ttc: Number(result.total_ttc ?? result.total_ht ?? 0),
       lines: Number(result.lines ?? 0),
     },
   };

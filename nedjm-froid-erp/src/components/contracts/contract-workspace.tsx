@@ -20,6 +20,7 @@ import {
   postConsumption,
   postPayment,
   replaceContractAttributes,
+  suggestNextInvoiceNumber,
   upsertContract,
   upsertContractItem,
   type ConsumptionMovement,
@@ -319,7 +320,7 @@ export function ContractWorkspace({
               const result = await createInvoiceDraft(payload);
               if (!result.ok) throw new Error(result.error);
               setInfo(
-                `Brouillon créé — ${result.data.lines} ligne(s), HT ${money(result.data.total_ht)}.`,
+                `Brouillon ${result.data.invoice_number} — ${result.data.lines} ligne(s), HT ${money(result.data.total_ht)} / TTC ${money(result.data.total_ttc)}.`,
               );
             })
           }
@@ -2020,8 +2021,9 @@ function InvoicingTab({
     <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
       <p className="text-sm text-foreground/70">
         Facturation depuis la consommation : on ne facture que le{" "}
-        <strong>facturable</strong> (consommé − déjà émis). Brouillon → Émise /
-        Annulée. Paiements = phase 3.
+        <strong>facturable</strong> (consommé − déjà émis). N° vide = auto
+        (FAC/…/YYYY/nnn). TVA depuis attributs financiers du contrat. Brouillon →
+        Émise / Annulée.
       </p>
       {!canPost && (
         <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
@@ -2029,15 +2031,32 @@ function InvoicingTab({
         </p>
       )}
 
-      <div className="grid gap-2 sm:grid-cols-5">
-        <input
-          className={inputClass}
-          placeholder="N° facture / fort"
-          value={form.invoice_number}
-          onChange={(e) =>
-            setForm((f) => ({ ...f, invoice_number: e.target.value }))
-          }
-        />
+      <div className="grid gap-2 sm:grid-cols-6">
+        <div className="flex gap-1 sm:col-span-2">
+          <input
+            className={inputClass}
+            placeholder="N° auto si vide"
+            value={form.invoice_number}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, invoice_number: e.target.value }))
+            }
+          />
+          <Button
+            type="button"
+            disabled={pending}
+            onClick={async () => {
+              const r = await suggestNextInvoiceNumber(contract.id);
+              if (r.ok) {
+                setForm((f) => ({
+                  ...f,
+                  invoice_number: r.data.invoice_number,
+                }));
+              }
+            }}
+          >
+            Auto
+          </Button>
+        </div>
         <input
           type="date"
           className={inputClass}
@@ -2068,7 +2087,24 @@ function InvoicingTab({
           onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
         />
         <Button type="button" disabled={pending || !canPost} onClick={addLine}>
-          Ajouter ligne
+          Ajouter
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          disabled={pending || !canPost || billableItems.length === 0}
+          onClick={() =>
+            setDraftLines(
+              billableItems.map((i) => ({
+                contract_item_id: i.id,
+                code: i.item_code,
+                quantity: i.billable_qty ?? 0,
+              })),
+            )
+          }
+        >
+          Tout le facturable
         </Button>
       </div>
       <input
@@ -2101,9 +2137,7 @@ function InvoicingTab({
 
       <Button
         type="button"
-        disabled={
-          pending || !canPost || !form.invoice_number || draftLines.length === 0
-        }
+        disabled={pending || !canPost || draftLines.length === 0}
         onClick={() =>
           onCreate({
             contract_id: contract.id,
@@ -2166,7 +2200,12 @@ function InvoicingTab({
                       {inv.invoice_date} · {inv.status}
                     </span>
                   </p>
-                  <p className="text-sm">HT {money(inv.total_ht)}</p>
+                  <p className="text-sm">
+                    HT {money(inv.total_ht)}
+                    {inv.tva_amount > 0
+                      ? ` · TVA ${money(inv.tva_amount)} · TTC ${money(inv.total_ttc)}`
+                      : " · exonéré TVA"}
+                  </p>
                 </div>
                 <div className="flex gap-2">
                   {inv.status === "BROUILLON" && (
