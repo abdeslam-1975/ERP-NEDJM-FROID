@@ -1268,6 +1268,7 @@ export async function listHrEmployees(): Promise<ActionResult<HrEmployeeOption[]
   const { data, error } = await supabase
     .from("hr_employees")
     .select("id, matricule, first_name, last_name, status")
+    .eq("status", "ACTIVE")
     .order("last_name")
     .limit(500);
   if (error) return { ok: false, error: error.message };

@@ -1,10 +1,18 @@
-import PlaceholderScreen from "@/components/layout/placeholder-screen";
+import { AppShell } from "@/components/layout/app-shell";
+import { EmployeesManager } from "@/components/rh/employees-manager";
+import { listHrEmployeeRows } from "@/lib/actions/hr-employees";
 
-export default function Page() {
+export const dynamic = "force-dynamic";
+
+export default async function EmployesPage() {
+  const result = await listHrEmployeeRows();
+
   return (
-    <PlaceholderScreen
-      title="Employés"
-      description="Fiche minimale RH (catégorie IRG STANDARD / HANDICAPÉ-RETRAITÉ)."
-    />
+    <AppShell title="Employés RH">
+      <EmployeesManager
+        initialEmployees={result.ok ? result.data : []}
+        loadError={result.ok ? undefined : result.error}
+      />
+    </AppShell>
   );
 }
