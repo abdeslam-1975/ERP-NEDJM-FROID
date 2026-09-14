@@ -24,6 +24,8 @@ import {
   contractItemDeleteSchema,
   contractItemSchema,
   contractUpsertSchema,
+  invoiceDraftSchema,
+  invoiceIdSchema,
 } from "@/lib/validations/contract";
 
 export type ActionResult<T = void> =
@@ -43,6 +45,8 @@ export type ContractItem = {
   consumed_qty?: number;
   remaining_qty?: number;
   pct_consumed?: number | null;
+  invoiced_qty?: number;
+  billable_qty?: number;
 };
 
 export type ConsumptionMovement = {
@@ -57,6 +61,30 @@ export type ConsumptionMovement = {
   item_code?: string;
   designation?: string;
   item_type?: "LABOR" | "SPARE_PART";
+};
+
+export type ContractInvoice = {
+  id: string;
+  contract_id: string;
+  invoice_number: string;
+  invoice_date: string;
+  status: "BROUILLON" | "EMISE" | "ANNULEE";
+  total_ht: number;
+  note: string | null;
+  issued_at: string | null;
+  created_at: string;
+  lines?: ContractInvoiceLine[];
+};
+
+export type ContractInvoiceLine = {
+  id: string;
+  contract_item_id: string;
+  item_code: string;
+  designation: string;
+  unit: string;
+  quantity: number;
+  unit_price_ht: number;
+  total_price_ht: number;
 };
 
 export type ContractListRow = {
@@ -220,11 +248,29 @@ export async function getContract(
     );
   }
 
+  const { data: issuedLines } = await supabase
+    .from("contract_invoice_lines")
+    .select(
+      "contract_item_id, quantity, invoice:contract_invoices!inner(contract_id, status)",
+    )
+    .eq("invoice.contract_id", id)
+    .eq("invoice.status", "EMISE");
+
+  const invoicedByItem = new Map<string, number>();
+  for (const l of issuedLines ?? []) {
+    invoicedByItem.set(
+      l.contract_item_id,
+      (invoicedByItem.get(l.contract_item_id) ?? 0) + Number(l.quantity),
+    );
+  }
+
   const items = rawItems
     .map((i) => {
       const contractual = Number(i.quantity);
       const consumed = consumedByItem.get(i.id) ?? 0;
       const remaining = contractual - consumed;
+      const invoiced = invoicedByItem.get(i.id) ?? 0;
+      const billable = Math.max(0, consumed - invoiced);
       return {
         ...i,
         quantity: contractual,
@@ -234,6 +280,8 @@ export async function getContract(
         remaining_qty: remaining,
         pct_consumed:
           contractual === 0 ? null : Math.round((consumed / contractual) * 10000) / 100,
+        invoiced_qty: invoiced,
+        billable_qty: billable,
       };
     })
     .sort(
@@ -742,5 +790,157 @@ export async function postConsumption(
       pct_consumed:
         result.pct_consumed == null ? null : Number(result.pct_consumed),
     },
+  };
+}
+
+export async function listContractInvoices(
+  contractId: string,
+): Promise<ActionResult<ContractInvoice[]>> {
+  const gate = await requireContractAccess();
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("contract_invoices")
+    .select(
+      `
+      id, contract_id, invoice_number, invoice_date, status, total_ht,
+      note, issued_at, created_at,
+      lines:contract_invoice_lines (
+        id, contract_item_id, item_code, designation, unit,
+        quantity, unit_price_ht, total_price_ht
+      )
+    `,
+    )
+    .eq("contract_id", contractId)
+    .order("invoice_date", { ascending: false });
+
+  if (error) return { ok: false, error: error.message };
+
+  return {
+    ok: true,
+    data: (data ?? []).map((inv) => ({
+      id: inv.id,
+      contract_id: inv.contract_id,
+      invoice_number: inv.invoice_number,
+      invoice_date: inv.invoice_date,
+      status: inv.status as ContractInvoice["status"],
+      total_ht: Number(inv.total_ht),
+      note: inv.note,
+      issued_at: inv.issued_at,
+      created_at: inv.created_at,
+      lines: ((inv.lines ?? []) as ContractInvoiceLine[]).map((l) => ({
+        ...l,
+        quantity: Number(l.quantity),
+        unit_price_ht: Number(l.unit_price_ht),
+        total_price_ht: Number(l.total_price_ht),
+      })),
+    })),
+  };
+}
+
+export async function createInvoiceDraft(
+  input: unknown,
+): Promise<ActionResult<{ id: string; total_ht: number; lines: number }>> {
+  const gate = await requireContractWrite();
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  const parsed = invoiceDraftSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Données invalides",
+    };
+  }
+
+  const p = parsed.data;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("ref_contract_create_invoice_draft", {
+    p_contract_id: p.contract_id,
+    p_invoice_number: p.invoice_number,
+    p_invoice_date: p.invoice_date,
+    p_lines: p.lines,
+    p_note: p.note ?? undefined,
+  });
+
+  if (error) {
+    return {
+      ok: false,
+      error: error.message.includes("billable")
+        ? "Quantité > facturable (consommé − déjà facturé)."
+        : error.message.includes("Invoicing allowed only")
+          ? "Facturation autorisée uniquement si Validé ou En cours."
+          : error.message,
+    };
+  }
+
+  const result = (data ?? {}) as { id?: string; total_ht?: number; lines?: number };
+  revalidateContract(p.contract_id);
+  return {
+    ok: true,
+    data: {
+      id: String(result.id ?? ""),
+      total_ht: Number(result.total_ht ?? 0),
+      lines: Number(result.lines ?? 0),
+    },
+  };
+}
+
+export async function issueInvoice(
+  input: unknown,
+): Promise<ActionResult<{ id: string; status: string }>> {
+  const gate = await requireContractWrite();
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  const parsed = invoiceIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("ref_contract_issue_invoice", {
+    p_invoice_id: parsed.data.invoice_id,
+  });
+
+  if (error) {
+    return {
+      ok: false,
+      error: error.message.includes("Cannot issue")
+        ? "Émission refusée : quantité non facturable (consommation insuffisante)."
+        : error.message,
+    };
+  }
+
+  const result = (data ?? {}) as { id?: string; status?: string };
+  revalidateContract(parsed.data.contract_id);
+  return {
+    ok: true,
+    data: { id: String(result.id ?? ""), status: String(result.status ?? "EMISE") },
+  };
+}
+
+export async function cancelInvoice(
+  input: unknown,
+): Promise<ActionResult<{ id: string; status: string }>> {
+  const gate = await requireContractWrite();
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  const parsed = invoiceIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("ref_contract_cancel_invoice", {
+    p_invoice_id: parsed.data.invoice_id,
+  });
+
+  if (error) return { ok: false, error: error.message };
+
+  const result = (data ?? {}) as { id?: string; status?: string };
+  revalidateContract(parsed.data.contract_id);
+  return {
+    ok: true,
+    data: { id: String(result.id ?? ""), status: String(result.status ?? "ANNULEE") },
   };
 }

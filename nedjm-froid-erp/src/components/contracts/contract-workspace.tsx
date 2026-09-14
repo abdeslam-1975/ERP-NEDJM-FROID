@@ -4,15 +4,20 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
+  cancelInvoice,
+  createInvoiceDraft,
   deleteContractItem,
   importFullCanva,
+  issueInvoice,
   listConsumptionMovements,
+  listContractInvoices,
   postConsumption,
   replaceContractAttributes,
   upsertContract,
   upsertContractItem,
   type ConsumptionMovement,
   type ContractDetail,
+  type ContractInvoice,
   type ContractItem,
 } from "@/lib/actions/contracts";
 import type {
@@ -35,6 +40,7 @@ type Tab =
   | "labor"
   | "spares"
   | "consumption"
+  | "invoicing"
   | "penalties"
   | "margin"
   | "rh"
@@ -98,6 +104,7 @@ export function ContractWorkspace({
     { id: "labor", label: `Main-d'œuvre (${labor.length})` },
     { id: "spares", label: `Pièces (${spares.length})` },
     { id: "consumption", label: "Consommation" },
+    { id: "invoicing", label: "Facturation" },
     { id: "penalties", label: "Pénalités" },
     { id: "margin", label: "Gardes de marge" },
     { id: "rh", label: "RH / AN" },
@@ -283,6 +290,42 @@ export function ContractWorkspace({
               setInfo(
                 `Mouvement enregistré — consommé ${result.data.consumed_qty} / reste ${result.data.remaining_qty}.`,
               );
+            })
+          }
+        />
+      )}
+
+      {tab === "invoicing" && (
+        <InvoicingTab
+          contract={contract}
+          pending={pending}
+          onCreate={(payload) =>
+            run(async () => {
+              const result = await createInvoiceDraft(payload);
+              if (!result.ok) throw new Error(result.error);
+              setInfo(
+                `Brouillon créé — ${result.data.lines} ligne(s), HT ${money(result.data.total_ht)}.`,
+              );
+            })
+          }
+          onIssue={(invoiceId) =>
+            run(async () => {
+              const result = await issueInvoice({
+                invoice_id: invoiceId,
+                contract_id: contract.id,
+              });
+              if (!result.ok) throw new Error(result.error);
+              setInfo("Facture émise.");
+            })
+          }
+          onCancel={(invoiceId) =>
+            run(async () => {
+              const result = await cancelInvoice({
+                invoice_id: invoiceId,
+                contract_id: contract.id,
+              });
+              if (!result.ok) throw new Error(result.error);
+              setInfo("Facture annulée.");
             })
           }
         />
@@ -1472,6 +1515,264 @@ function CanvaTab({
       <p className="text-xs text-foreground/55">
         Contrat cible : {contractId}
       </p>
+    </section>
+  );
+}
+
+function InvoicingTab({
+  contract,
+  pending,
+  onCreate,
+  onIssue,
+  onCancel,
+}: {
+  contract: ContractDetail;
+  pending: boolean;
+  onCreate: (payload: Record<string, unknown>) => void;
+  onIssue: (invoiceId: string) => void;
+  onCancel: (invoiceId: string) => void;
+}) {
+  const [invoices, setInvoices] = useState<ContractInvoice[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const billableItems = useMemo(
+    () => contract.items.filter((i) => (i.billable_qty ?? 0) > 0),
+    [contract.items],
+  );
+  const [form, setForm] = useState({
+    invoice_number: "",
+    invoice_date: new Date().toISOString().slice(0, 10),
+    note: "",
+    item_id: "",
+    quantity: "",
+  });
+  const [draftLines, setDraftLines] = useState<
+    { contract_item_id: string; code: string; quantity: number }[]
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const result = await listContractInvoices(contract.id);
+      if (cancelled) return;
+      if (!result.ok) {
+        setLoadError(result.error);
+        return;
+      }
+      setInvoices(result.data);
+      setLoadError(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [contract.id, contract.items]);
+
+  const canPost =
+    contract.status === "VALIDE" || contract.status === "EN_COURS";
+
+  function addLine() {
+    const item = contract.items.find((i) => i.id === form.item_id);
+    const qty = Number(form.quantity);
+    if (!item || !(qty > 0)) return;
+    const max = item.billable_qty ?? 0;
+    if (qty > max) {
+      return;
+    }
+    setDraftLines((lines) => [
+      ...lines.filter((l) => l.contract_item_id !== item.id),
+      {
+        contract_item_id: item.id,
+        code: item.item_code,
+        quantity: qty,
+      },
+    ]);
+    setForm((f) => ({ ...f, item_id: "", quantity: "" }));
+  }
+
+  return (
+    <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
+      <p className="text-sm text-foreground/70">
+        Facturation depuis la consommation : on ne facture que le{" "}
+        <strong>facturable</strong> (consommé − déjà émis). Brouillon → Émise /
+        Annulée. Paiements = phase 3.
+      </p>
+      {!canPost && (
+        <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+          Statut « {contract.status} » — facturation bloquée.
+        </p>
+      )}
+
+      <div className="grid gap-2 sm:grid-cols-5">
+        <input
+          className={inputClass}
+          placeholder="N° facture / fort"
+          value={form.invoice_number}
+          onChange={(e) =>
+            setForm((f) => ({ ...f, invoice_number: e.target.value }))
+          }
+        />
+        <input
+          type="date"
+          className={inputClass}
+          value={form.invoice_date}
+          onChange={(e) =>
+            setForm((f) => ({ ...f, invoice_date: e.target.value }))
+          }
+        />
+        <select
+          className={inputClass}
+          value={form.item_id}
+          onChange={(e) => setForm((f) => ({ ...f, item_id: e.target.value }))}
+        >
+          <option value="">Ligne facturable…</option>
+          {billableItems.map((i) => (
+            <option key={i.id} value={i.id}>
+              {i.item_code} (max {i.billable_qty})
+            </option>
+          ))}
+        </select>
+        <input
+          type="number"
+          min="0"
+          step="0.0001"
+          className={inputClass}
+          placeholder="Qté"
+          value={form.quantity}
+          onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
+        />
+        <Button type="button" disabled={pending || !canPost} onClick={addLine}>
+          Ajouter ligne
+        </Button>
+      </div>
+      <input
+        className={`${inputClass} max-w-xl`}
+        placeholder="Note (optionnel)"
+        value={form.note}
+        onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+      />
+
+      {draftLines.length > 0 && (
+        <ul className="text-sm">
+          {draftLines.map((l) => (
+            <li key={l.contract_item_id}>
+              {l.code} × {l.quantity}{" "}
+              <button
+                type="button"
+                className="text-brand underline"
+                onClick={() =>
+                  setDraftLines((rows) =>
+                    rows.filter((r) => r.contract_item_id !== l.contract_item_id),
+                  )
+                }
+              >
+                retirer
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <Button
+        type="button"
+        disabled={
+          pending || !canPost || !form.invoice_number || draftLines.length === 0
+        }
+        onClick={() =>
+          onCreate({
+            contract_id: contract.id,
+            invoice_number: form.invoice_number,
+            invoice_date: form.invoice_date,
+            note: form.note || undefined,
+            lines: draftLines.map(({ contract_item_id, quantity }) => ({
+              contract_item_id,
+              quantity,
+            })),
+          })
+        }
+      >
+        Créer brouillon
+      </Button>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-left text-sm">
+          <thead className="border-b border-border text-xs uppercase text-foreground/55">
+            <tr>
+              <th className="px-2 py-2">Code</th>
+              <th className="px-2 py-2">Consommé</th>
+              <th className="px-2 py-2">Facturé</th>
+              <th className="px-2 py-2">Facturable</th>
+            </tr>
+          </thead>
+          <tbody>
+            {contract.items
+              .filter((i) => (i.consumed_qty ?? 0) > 0 || (i.invoiced_qty ?? 0) > 0)
+              .map((i) => (
+                <tr key={i.id} className="border-b border-border/60">
+                  <td className="px-2 py-1.5 font-mono text-xs">{i.item_code}</td>
+                  <td className="px-2 py-1.5">{i.consumed_qty ?? 0}</td>
+                  <td className="px-2 py-1.5">{i.invoiced_qty ?? 0}</td>
+                  <td className="px-2 py-1.5 font-semibold">
+                    {i.billable_qty ?? 0}
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="font-semibold">Factures / forts</h3>
+      {loadError && <p className="text-sm text-red-600">{loadError}</p>}
+      <div className="space-y-3">
+        {invoices.length === 0 ? (
+          <p className="text-sm text-foreground/55">Aucune facture.</p>
+        ) : (
+          invoices.map((inv) => (
+            <div
+              key={inv.id}
+              className="rounded-md border border-border bg-background p-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="font-semibold">
+                    {inv.invoice_number}{" "}
+                    <span className="text-xs font-normal text-foreground/55">
+                      {inv.invoice_date} · {inv.status}
+                    </span>
+                  </p>
+                  <p className="text-sm">HT {money(inv.total_ht)}</p>
+                </div>
+                <div className="flex gap-2">
+                  {inv.status === "BROUILLON" && (
+                    <Button
+                      type="button"
+                      disabled={pending}
+                      onClick={() => onIssue(inv.id)}
+                    >
+                      Émettre
+                    </Button>
+                  )}
+                  {inv.status !== "ANNULEE" && (
+                    <Button
+                      type="button"
+                      disabled={pending}
+                      onClick={() => onCancel(inv.id)}
+                    >
+                      Annuler
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <ul className="mt-2 text-xs text-foreground/70">
+                {(inv.lines ?? []).map((l) => (
+                  <li key={l.id}>
+                    {l.item_code} · {l.quantity} × {l.unit_price_ht} ={" "}
+                    {l.total_price_ht}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        )}
+      </div>
     </section>
   );
 }

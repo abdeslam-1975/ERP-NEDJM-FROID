@@ -105,4 +105,24 @@ export const consumptionPostSchema = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
+export const invoiceDraftSchema = z.object({
+  contract_id: z.string().uuid(),
+  invoice_number: z.string().trim().min(2).max(80),
+  invoice_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  note: z.string().trim().max(500).optional(),
+  lines: z
+    .array(
+      z.object({
+        contract_item_id: z.string().uuid(),
+        quantity: z.coerce.number().positive(),
+      }),
+    )
+    .min(1),
+});
+
+export const invoiceIdSchema = z.object({
+  invoice_id: z.string().uuid(),
+  contract_id: z.string().uuid(),
+});
+
 export { contreLineSchema, penaltyRuleSchema, contractAttributesSchema };
