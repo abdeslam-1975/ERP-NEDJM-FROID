@@ -1678,13 +1678,40 @@ function PilotageTab({
                 : `${stats.pct_qty_consumed}%`
             }
           />
-          <Stat label="Facturé" value={money(stats.invoiced_ht)} />
-          <Stat label="Encaissé" value={money(stats.paid_ht)} />
-          <Stat label="Reste" value={money(stats.remaining_ht)} />
-          <Stat label="Pénalités" value={money(stats.penalties_ht)} />
+          <Stat
+            label="% HT conso."
+            value={
+              stats.pct_ht_consumed == null ? "—" : `${stats.pct_ht_consumed}%`
+            }
+          />
+          <Stat
+            label="% Facturé"
+            value={stats.pct_invoiced == null ? "—" : `${stats.pct_invoiced}%`}
+          />
+          <Stat
+            label="% Encaissé"
+            value={
+              stats.pct_collected == null ? "—" : `${stats.pct_collected}%`
+            }
+          />
+          <Stat
+            label="Pénalités"
+            value={`${money(stats.penalties_ht)} (${stats.penalties_count})`}
+          />
           <Stat
             label="État"
             value={stats.is_solded ? "Soldé" : stats.status}
+          />
+        </div>
+      )}
+      {stats && (
+        <div className="grid gap-2 sm:grid-cols-4 text-sm">
+          <Stat label="Conso. HT" value={money(stats.consumed_ht)} />
+          <Stat label="MO conso." value={String(stats.labor_consumed_qty)} />
+          <Stat label="Pièces conso." value={String(stats.spare_consumed_qty)} />
+          <Stat
+            label="Factures ouvertes"
+            value={String(stats.open_invoices_count)}
           />
         </div>
       )}
@@ -1817,8 +1844,34 @@ function PilotageTab({
       <div className="rounded-md border border-border bg-background p-3">
         <h3 className="font-semibold">Clôture</h3>
         <p className="mt-1 text-xs text-foreground/55">
-          Refusée si reste à encaisser &gt; 0, sauf forçage explicite.
+          Checklist avant clôture. Refusée si bloqueurs (sauf forçage). Une
+          snapshot est enregistrée dans attributes.closeout.
         </p>
+        {stats && (
+          <ul className="mt-2 space-y-1 text-sm">
+            <li>
+              {stats.remaining_ht <= 0 ? "✅" : "⛔"} Reste à encaisser :{" "}
+              {money(stats.remaining_ht)}
+            </li>
+            <li>
+              {stats.draft_invoices_count === 0 ? "✅" : "⛔"} Factures
+              brouillon : {stats.draft_invoices_count}
+            </li>
+            <li>
+              {stats.open_invoices_count === 0 ? "✅" : "⚠️"} Factures ouvertes :{" "}
+              {stats.open_invoices_count}
+            </li>
+            <li>
+              {stats.can_close ? "✅" : "⛔"} Prêt à clôturer :{" "}
+              {stats.can_close ? "oui" : "non"}
+            </li>
+          </ul>
+        )}
+        {stats && stats.close_blockers.length > 0 && (
+          <div className="mt-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+            Bloqueurs : {stats.close_blockers.join(" · ")}
+          </div>
+        )}
         <label className="mt-2 flex items-center gap-2 text-sm">
           <input
             type="checkbox"

@@ -150,12 +150,23 @@ export type ContractStats = {
   contract_total_ht: number;
   contractual_qty: number;
   consumed_qty: number;
+  consumed_ht: number;
+  labor_consumed_qty: number;
+  spare_consumed_qty: number;
   pct_qty_consumed: number | null;
+  pct_ht_consumed: number | null;
   invoiced_ht: number;
   paid_ht: number;
   remaining_ht: number;
   is_solded: boolean;
+  pct_invoiced: number | null;
+  pct_collected: number | null;
   penalties_ht: number;
+  penalties_count: number;
+  open_invoices_count: number;
+  draft_invoices_count: number;
+  close_blockers: string[];
+  can_close: boolean;
 };
 
 export type ContractListRow = {
@@ -1305,6 +1316,9 @@ export async function getContractStats(
   });
   if (error) return { ok: false, error: error.message };
   const s = (data ?? {}) as Record<string, unknown>;
+  const blockers = Array.isArray(s.close_blockers)
+    ? (s.close_blockers as unknown[]).map(String)
+    : [];
   return {
     ok: true,
     data: {
@@ -1313,13 +1327,25 @@ export async function getContractStats(
       contract_total_ht: Number(s.contract_total_ht ?? 0),
       contractual_qty: Number(s.contractual_qty ?? 0),
       consumed_qty: Number(s.consumed_qty ?? 0),
+      consumed_ht: Number(s.consumed_ht ?? 0),
+      labor_consumed_qty: Number(s.labor_consumed_qty ?? 0),
+      spare_consumed_qty: Number(s.spare_consumed_qty ?? 0),
       pct_qty_consumed:
         s.pct_qty_consumed == null ? null : Number(s.pct_qty_consumed),
+      pct_ht_consumed:
+        s.pct_ht_consumed == null ? null : Number(s.pct_ht_consumed),
       invoiced_ht: Number(s.invoiced_ht ?? 0),
       paid_ht: Number(s.paid_ht ?? 0),
       remaining_ht: Number(s.remaining_ht ?? 0),
       is_solded: Boolean(s.is_solded),
+      pct_invoiced: s.pct_invoiced == null ? null : Number(s.pct_invoiced),
+      pct_collected: s.pct_collected == null ? null : Number(s.pct_collected),
       penalties_ht: Number(s.penalties_ht ?? 0),
+      penalties_count: Number(s.penalties_count ?? 0),
+      open_invoices_count: Number(s.open_invoices_count ?? 0),
+      draft_invoices_count: Number(s.draft_invoices_count ?? 0),
+      close_blockers: blockers,
+      can_close: Boolean(s.can_close),
     },
   };
 }
@@ -1339,11 +1365,14 @@ export async function closeContract(
     p_force: parsed.data.force,
   });
   if (error) {
+    const msg = error.message;
     return {
       ok: false,
-      error: error.message.includes("remaining receivable")
+      error: msg.includes("remaining receivable")
         ? "Clôture refusée : reste à encaisser > 0 (cochez forcer si autorisé)."
-        : error.message,
+        : msg.includes("draft invoices")
+          ? "Clôture refusée : factures brouillon restantes (émettez/annulez ou forcez)."
+          : msg,
     };
   }
   const result = (data ?? {}) as { id?: string; status?: string };
