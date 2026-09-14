@@ -13,6 +13,7 @@ const WORKSPACE_TABS = [
   /consommation/i,
   /facturation/i,
   /solde/i,
+  /pilotage/i,
   /pénalités/i,
   /gardes de marge/i,
   /rh \/ an/i,

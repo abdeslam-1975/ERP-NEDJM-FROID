@@ -135,4 +135,18 @@ export const paymentPostSchema = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
+export const penaltyApplySchema = z.object({
+  contract_id: z.string().uuid(),
+  rule_code: z.string().trim().min(1).max(64),
+  rule_label: z.string().trim().min(1).max(200),
+  amount_ht: z.coerce.number().min(0),
+  event_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  note: z.string().trim().max(500).optional(),
+});
+
+export const contractCloseSchema = z.object({
+  contract_id: z.string().uuid(),
+  force: z.boolean().default(false),
+});
+
 export { contreLineSchema, penaltyRuleSchema, contractAttributesSchema };

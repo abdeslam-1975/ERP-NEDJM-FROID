@@ -27,6 +27,8 @@ import {
   invoiceDraftSchema,
   invoiceIdSchema,
   paymentPostSchema,
+  penaltyApplySchema,
+  contractCloseSchema,
 } from "@/lib/validations/contract";
 
 export type ActionResult<T = void> =
@@ -106,6 +108,31 @@ export type ContractPayment = {
   reference: string | null;
   note: string | null;
   created_at: string;
+};
+
+export type ContractPenaltyEvent = {
+  id: string;
+  contract_id: string;
+  rule_code: string;
+  rule_label: string;
+  event_date: string;
+  amount_ht: number;
+  note: string | null;
+  created_at: string;
+};
+
+export type ContractStats = {
+  contract_id: string;
+  status: string;
+  contract_total_ht: number;
+  contractual_qty: number;
+  consumed_qty: number;
+  pct_qty_consumed: number | null;
+  invoiced_ht: number;
+  paid_ht: number;
+  remaining_ht: number;
+  is_solded: boolean;
+  penalties_ht: number;
 };
 
 export type ContractListRow = {
@@ -1068,5 +1095,114 @@ export async function postPayment(
         is_solded: Boolean(bal.is_solded),
       },
     },
+  };
+}
+
+export async function listPenaltyEvents(
+  contractId: string,
+): Promise<ActionResult<ContractPenaltyEvent[]>> {
+  const gate = await requireContractAccess();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("contract_penalty_events")
+    .select(
+      "id, contract_id, rule_code, rule_label, event_date, amount_ht, note, created_at",
+    )
+    .eq("contract_id", contractId)
+    .order("event_date", { ascending: false })
+    .limit(200);
+  if (error) return { ok: false, error: error.message };
+  return {
+    ok: true,
+    data: (data ?? []).map((e) => ({ ...e, amount_ht: Number(e.amount_ht) })),
+  };
+}
+
+export async function applyPenalty(
+  input: unknown,
+): Promise<ActionResult<{ id: string; amount_ht: number }>> {
+  const gate = await requireContractWrite();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const parsed = penaltyApplySchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
+  }
+  const p = parsed.data;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("ref_contract_apply_penalty", {
+    p_contract_id: p.contract_id,
+    p_rule_code: p.rule_code,
+    p_rule_label: p.rule_label,
+    p_amount_ht: p.amount_ht,
+    p_event_date: p.event_date ?? undefined,
+    p_note: p.note ?? undefined,
+  });
+  if (error) return { ok: false, error: error.message };
+  const result = (data ?? {}) as { id?: string; amount_ht?: number };
+  revalidateContract(p.contract_id);
+  return {
+    ok: true,
+    data: { id: String(result.id ?? ""), amount_ht: Number(result.amount_ht ?? 0) },
+  };
+}
+
+export async function getContractStats(
+  contractId: string,
+): Promise<ActionResult<ContractStats>> {
+  const gate = await requireContractAccess();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("ref_contract_stats", {
+    p_contract_id: contractId,
+  });
+  if (error) return { ok: false, error: error.message };
+  const s = (data ?? {}) as Record<string, unknown>;
+  return {
+    ok: true,
+    data: {
+      contract_id: contractId,
+      status: String(s.status ?? ""),
+      contract_total_ht: Number(s.contract_total_ht ?? 0),
+      contractual_qty: Number(s.contractual_qty ?? 0),
+      consumed_qty: Number(s.consumed_qty ?? 0),
+      pct_qty_consumed:
+        s.pct_qty_consumed == null ? null : Number(s.pct_qty_consumed),
+      invoiced_ht: Number(s.invoiced_ht ?? 0),
+      paid_ht: Number(s.paid_ht ?? 0),
+      remaining_ht: Number(s.remaining_ht ?? 0),
+      is_solded: Boolean(s.is_solded),
+      penalties_ht: Number(s.penalties_ht ?? 0),
+    },
+  };
+}
+
+export async function closeContract(
+  input: unknown,
+): Promise<ActionResult<{ id: string; status: string }>> {
+  const gate = await requireContractWrite();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const parsed = contractCloseSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
+  }
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("ref_contract_close", {
+    p_contract_id: parsed.data.contract_id,
+    p_force: parsed.data.force,
+  });
+  if (error) {
+    return {
+      ok: false,
+      error: error.message.includes("remaining receivable")
+        ? "Clôture refusée : reste à encaisser > 0 (cochez forcer si autorisé)."
+        : error.message,
+    };
+  }
+  const result = (data ?? {}) as { id?: string; status?: string };
+  revalidateContract(parsed.data.contract_id);
+  return {
+    ok: true,
+    data: { id: String(result.id ?? ""), status: String(result.status ?? "CLOTURE") },
   };
 }

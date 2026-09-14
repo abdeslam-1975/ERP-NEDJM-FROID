@@ -4,15 +4,19 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
+  applyPenalty,
   cancelInvoice,
+  closeContract,
   createInvoiceDraft,
   deleteContractItem,
   getContractBalance,
+  getContractStats,
   importFullCanva,
   issueInvoice,
   listConsumptionMovements,
   listContractInvoices,
   listContractPayments,
+  listPenaltyEvents,
   postConsumption,
   postPayment,
   replaceContractAttributes,
@@ -24,6 +28,8 @@ import {
   type ContractInvoice,
   type ContractItem,
   type ContractPayment,
+  type ContractPenaltyEvent,
+  type ContractStats,
 } from "@/lib/actions/contracts";
 import type {
   ContreLine,
@@ -47,6 +53,7 @@ type Tab =
   | "consumption"
   | "invoicing"
   | "balance"
+  | "pilotage"
   | "penalties"
   | "margin"
   | "rh"
@@ -112,6 +119,7 @@ export function ContractWorkspace({
     { id: "consumption", label: "Consommation" },
     { id: "invoicing", label: "Facturation" },
     { id: "balance", label: "Solde" },
+    { id: "pilotage", label: "Pilotage" },
     { id: "penalties", label: "Pénalités" },
     { id: "margin", label: "Gardes de marge" },
     { id: "rh", label: "RH / AN" },
@@ -351,6 +359,30 @@ export function ContractWorkspace({
                   ? "Paiement enregistré — contrat soldé."
                   : `Paiement OK — reste ${money(result.data.balance.remaining_ht)}.`,
               );
+            })
+          }
+        />
+      )}
+
+      {tab === "pilotage" && (
+        <PilotageTab
+          contract={contract}
+          pending={pending}
+          onApplyPenalty={(payload) =>
+            run(async () => {
+              const result = await applyPenalty(payload);
+              if (!result.ok) throw new Error(result.error);
+              setInfo(`Pénalité appliquée : ${money(result.data.amount_ht)}.`);
+            })
+          }
+          onClose={(force) =>
+            run(async () => {
+              const result = await closeContract({
+                contract_id: contract.id,
+                force,
+              });
+              if (!result.ok) throw new Error(result.error);
+              setInfo("Contrat clôturé.");
             })
           }
         />
@@ -1540,6 +1572,201 @@ function CanvaTab({
       <p className="text-xs text-foreground/55">
         Contrat cible : {contractId}
       </p>
+    </section>
+  );
+}
+
+function PilotageTab({
+  contract,
+  pending,
+  onApplyPenalty,
+  onClose,
+}: {
+  contract: ContractDetail;
+  pending: boolean;
+  onApplyPenalty: (payload: Record<string, unknown>) => void;
+  onClose: (force: boolean) => void;
+}) {
+  const [stats, setStats] = useState<ContractStats | null>(null);
+  const [events, setEvents] = useState<ContractPenaltyEvent[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [force, setForce] = useState(false);
+  const rules = contract.attributes.penalties?.rules ?? [];
+  const [form, setForm] = useState({
+    rule_code: "",
+    amount_ht: "",
+    event_date: new Date().toISOString().slice(0, 10),
+    note: "",
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [s, e] = await Promise.all([
+        getContractStats(contract.id),
+        listPenaltyEvents(contract.id),
+      ]);
+      if (cancelled) return;
+      if (!s.ok) {
+        setError(s.error);
+        return;
+      }
+      if (!e.ok) {
+        setError(e.error);
+        return;
+      }
+      setStats(s.data);
+      setEvents(e.data);
+      setError(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [contract.id, contract.items, contract.status]);
+
+  const selected = rules.find((r) => r.code === form.rule_code);
+
+  return (
+    <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
+      <p className="text-sm text-foreground/70">
+        Vue A→Z : consommation, facturation, encaissement, pénalités appliquées,
+        clôture.
+      </p>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {stats && (
+        <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <Stat
+            label="% Qté conso."
+            value={
+              stats.pct_qty_consumed == null
+                ? "—"
+                : `${stats.pct_qty_consumed}%`
+            }
+          />
+          <Stat label="Facturé" value={money(stats.invoiced_ht)} />
+          <Stat label="Encaissé" value={money(stats.paid_ht)} />
+          <Stat label="Reste" value={money(stats.remaining_ht)} />
+          <Stat label="Pénalités" value={money(stats.penalties_ht)} />
+          <Stat
+            label="État"
+            value={stats.is_solded ? "Soldé" : stats.status}
+          />
+        </div>
+      )}
+
+      <h3 className="font-semibold">Appliquer une pénalité</h3>
+      <div className="grid gap-2 sm:grid-cols-5">
+        <select
+          className={inputClass}
+          value={form.rule_code}
+          onChange={(e) =>
+            setForm((f) => ({ ...f, rule_code: e.target.value }))
+          }
+        >
+          <option value="">Règle…</option>
+          {rules.map((r) => (
+            <option key={r.id} value={r.code}>
+              {r.code} — {r.label}
+            </option>
+          ))}
+        </select>
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          className={inputClass}
+          placeholder="Montant HT"
+          value={form.amount_ht}
+          onChange={(e) => setForm((f) => ({ ...f, amount_ht: e.target.value }))}
+        />
+        <input
+          type="date"
+          className={inputClass}
+          value={form.event_date}
+          onChange={(e) =>
+            setForm((f) => ({ ...f, event_date: e.target.value }))
+          }
+        />
+        <input
+          className={inputClass}
+          placeholder="Note"
+          value={form.note}
+          onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+        />
+        <Button
+          type="button"
+          disabled={pending || !form.rule_code || !form.amount_ht}
+          onClick={() =>
+            onApplyPenalty({
+              contract_id: contract.id,
+              rule_code: form.rule_code,
+              rule_label: selected?.label ?? form.rule_code,
+              amount_ht: form.amount_ht,
+              event_date: form.event_date,
+              note: form.note || undefined,
+            })
+          }
+        >
+          Appliquer
+        </Button>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-left text-sm">
+          <thead className="border-b border-border text-xs uppercase text-foreground/55">
+            <tr>
+              <th className="px-2 py-2">Date</th>
+              <th className="px-2 py-2">Règle</th>
+              <th className="px-2 py-2">Montant</th>
+              <th className="px-2 py-2">Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {events.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-2 py-3 text-foreground/55">
+                  Aucune pénalité appliquée.
+                </td>
+              </tr>
+            ) : (
+              events.map((e) => (
+                <tr key={e.id} className="border-b border-border/60">
+                  <td className="px-2 py-1.5">{e.event_date}</td>
+                  <td className="px-2 py-1.5">
+                    {e.rule_code} — {e.rule_label}
+                  </td>
+                  <td className="px-2 py-1.5">{money(e.amount_ht)}</td>
+                  <td className="px-2 py-1.5">{e.note ?? "—"}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="rounded-md border border-border bg-background p-3">
+        <h3 className="font-semibold">Clôture</h3>
+        <p className="mt-1 text-xs text-foreground/55">
+          Refusée si reste à encaisser &gt; 0, sauf forçage explicite.
+        </p>
+        <label className="mt-2 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={force}
+            onChange={(e) => setForce(e.target.checked)}
+          />
+          Forcer la clôture
+        </label>
+        <div className="mt-2">
+          <Button
+            type="button"
+            disabled={pending || contract.status === "CLOTURE"}
+            onClick={() => onClose(force)}
+          >
+            Clôturer le contrat
+          </Button>
+        </div>
+      </div>
     </section>
   );
 }
