@@ -229,6 +229,12 @@ export function ContractWorkspace({
               setInfo("En-tête enregistré (HT & caution recalculés si AUTO).");
             })
           }
+          onSaveIssuer={(issuer) =>
+            saveAttributes(
+              { ...attrs, issuer },
+              "En-tête facture (émetteur) enregistré.",
+            )
+          }
         />
       )}
 
@@ -461,6 +467,7 @@ function HeaderTab({
   duration,
   pending,
   onSave,
+  onSaveIssuer,
 }: {
   contract: ContractDetail;
   sites: SiteOpt[];
@@ -470,6 +477,7 @@ function HeaderTab({
   duration: number;
   pending: boolean;
   onSave: (payload: Record<string, unknown>) => void;
+  onSaveIssuer: (issuer: ContractAttributes["issuer"]) => void;
 }) {
   const [form, setForm] = useState({
     contract_number: contract.contract_number,
@@ -488,6 +496,8 @@ function HeaderTab({
     tva_articles: attrs.financial.tva_articles.join(","),
     tva_standard_rate_pct: String(attrs.financial.tva_standard_rate * 100),
   });
+  const [issuer, setIssuer] = useState(attrs.issuer);
+
 
   const autoPreview = laborHt + spareHt;
 
@@ -706,7 +716,51 @@ function HeaderTab({
           Exonération TVA
         </label>
       </div>
-      <Button
+            <div className="rounded-md border border-border bg-background p-3">
+        <h3 className="font-semibold">Émetteur facture (PDF)</h3>
+        <p className="mt-1 text-xs text-foreground/55">
+          Identifiants légaux UI-driven (attributes.issuer) — aucun NIF/RC
+          codé en dur.
+        </p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+          {(
+            [
+              ["legal_name", "Raison sociale"],
+              ["address", "Adresse"],
+              ["city", "Ville"],
+              ["nif", "NIF"],
+              ["rc", "RC"],
+              ["ai", "AI"],
+              ["nis", "NIS"],
+              ["phone", "Tél."],
+              ["email", "Email"],
+              ["capital", "Capital"],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key} className="text-xs font-medium text-foreground/70">
+              {label}
+              <input
+                className={inputClass + " mt-1"}
+                value={issuer[key]}
+                onChange={(e) =>
+                  setIssuer((s) => ({ ...s, [key]: e.target.value }))
+                }
+              />
+            </label>
+          ))}
+        </div>
+        <div className="mt-2">
+          <Button
+            type="button"
+            disabled={pending}
+            onClick={() => onSaveIssuer(issuer)}
+          >
+            Enregistrer émetteur PDF
+          </Button>
+        </div>
+      </div>
+
+<Button
         disabled={pending}
         onClick={() =>
           onSave({
@@ -2403,6 +2457,14 @@ function InvoicingTab({
                   </p>
                 </div>
                 <div className="flex gap-2">
+                  <a
+                    href={`/api/contracts/invoices/${inv.id}/pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-10 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-hover"
+                  >
+                    PDF
+                  </a>
                   {inv.status === "BROUILLON" && (
                     <Button
                       type="button"

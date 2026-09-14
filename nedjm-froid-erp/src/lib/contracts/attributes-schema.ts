@@ -60,6 +60,20 @@ export const rhAnWorkflowSchema = z.object({
   unblock_roles: z.array(z.string()).default(["SUPER_ADMIN", "ADMIN_RH"]),
 });
 
+
+export const issuerAttrsSchema = z.object({
+  legal_name: z.string().trim().max(200).default(""),
+  address: z.string().trim().max(300).default(""),
+  city: z.string().trim().max(120).default(""),
+  nif: z.string().trim().max(64).default(""),
+  rc: z.string().trim().max(64).default(""),
+  ai: z.string().trim().max(64).default(""),
+  nis: z.string().trim().max(64).default(""),
+  phone: z.string().trim().max(64).default(""),
+  email: z.string().trim().max(120).default(""),
+  capital: z.string().trim().max(120).default(""),
+});
+
 export const financialAttrsSchema = z.object({
   total_mode: totalModeSchema.default("AUTO"),
   tva_exempt: z.boolean().default(false),
@@ -105,6 +119,18 @@ export const contractAttributesSchema = z.object({
     retention_formula_key: "BILLING_MINUS_INTERNAL_PLUS_CLIENT_PENALTY",
     require_pv: true,
     unblock_roles: ["SUPER_ADMIN", "ADMIN_RH"],
+  }),
+  issuer: issuerAttrsSchema.default({
+    legal_name: "",
+    address: "",
+    city: "",
+    nif: "",
+    rc: "",
+    ai: "",
+    nis: "",
+    phone: "",
+    email: "",
+    capital: "",
   }),
 });
 
@@ -256,6 +282,10 @@ export function normalizeContractAttributes(
       rh_an_workflow: {
         ...base.rh_an_workflow,
         ...((r.rh_an_workflow as object) ?? {}),
+      },
+      issuer: {
+        ...base.issuer,
+        ...((r.issuer as object) ?? {}),
       },
     };
     const parsed = contractAttributesSchema.safeParse(merged);
