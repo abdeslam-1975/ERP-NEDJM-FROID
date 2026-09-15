@@ -57,12 +57,14 @@ create table public.fin_tax_rates (
   label_fr text not null check (char_length(trim(label_fr)) between 1 and 120),
   rate numeric(8,6) not null check (rate >= 0 and rate <= 1),
   active boolean not null default true,
+  is_default boolean not null default false,
   valid_from date,
   valid_to date,
   created_by uuid references public.sys_users(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check (valid_to is null or valid_from is null or valid_to >= valid_from)
+  check (valid_to is null or valid_from is null or valid_to >= valid_from),
+  check (not is_default or active)
 );
 
 create table public.fin_payment_methods (
@@ -236,11 +238,11 @@ alter table public.contract_payments
   alter column amount_tva set not null,
   alter column amount_tva set default 0;
 
-insert into public.fin_tax_rates(code, label_fr, rate)
+insert into public.fin_tax_rates(code, label_fr, rate, is_default)
 values
-  ('TVA19', 'TVA 19 %', 0.19),
-  ('TVA09', 'TVA 9 %', 0.09),
-  ('EXO', 'Exonéré', 0)
+  ('TVA19', 'TVA 19 %', 0.19, true),
+  ('TVA09', 'TVA 9 %', 0.09, false),
+  ('EXO', 'Exonéré', 0, false)
 on conflict (code) do nothing;
 
 insert into public.fin_payment_methods(code, label_fr, account_scope, legacy_contract_method, sort_order)
@@ -393,7 +395,9 @@ begin
   perform id from public.fin_accounts where id in (p_from_account_id, p_to_account_id) order by id for update;
   select * into v_from from public.fin_accounts where id = p_from_account_id;
   select * into v_to from public.fin_accounts where id = p_to_account_id;
-  if not found or not v_from.active or not v_to.active then raise exception 'Active accounts required'; end if;
+  if v_from.id is null or v_to.id is null or not v_from.active or not v_to.active then
+    raise exception 'Active accounts required';
+  end if;
   if not public.fin_can_access('create', v_from.site_id) or not public.fin_can_access('create', v_to.site_id) then
     raise exception 'Permission denied';
   end if;
@@ -439,7 +443,7 @@ begin
   select * into v_original from public.fin_transactions where id = p_transaction_id for update;
   if not found then raise exception 'Transaction not found'; end if;
   if not public.fin_can_access('update', v_original.site_id) then raise exception 'Permission denied'; end if;
-  if v_original.source_type in ('CUSTOMER_PAYMENT', 'TRANSFER') then
+  if v_original.source_type <> 'MANUAL' then
     raise exception 'Use the source-specific reversal operation';
   end if;
   if v_original.reversal_of is not null or exists (
@@ -487,6 +491,64 @@ begin
     reconciliation_reference = case when p_reconciled then nullif(trim(p_reference), '') else null end
   where id = p_transaction_id;
   return jsonb_build_object('id', p_transaction_id, 'reconciled', p_reconciled);
+end;
+$$;
+
+create or replace function public.fin_reverse_transfer(
+  p_transaction_id uuid,
+  p_reversal_date date,
+  p_reason text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_seed public.fin_transactions%rowtype;
+  v_row public.fin_transactions%rowtype;
+  v_new_group uuid := gen_random_uuid();
+  v_count int := 0;
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  select * into v_seed from public.fin_transactions where id = p_transaction_id for update;
+  if not found or v_seed.source_type <> 'TRANSFER' or v_seed.transfer_group_id is null then
+    raise exception 'Transfer transaction not found';
+  end if;
+  perform id from public.fin_transactions
+    where transfer_group_id = v_seed.transfer_group_id order by id for update;
+  for v_row in
+    select * from public.fin_transactions
+    where transfer_group_id = v_seed.transfer_group_id and source_type = 'TRANSFER'
+  loop
+    if not public.fin_can_access('update', v_row.site_id) then raise exception 'Permission denied'; end if;
+    if v_row.reconciled_at is not null then raise exception 'Unreconcile transfer before reversal'; end if;
+    if public.fin_period_is_locked(v_row.account_id, coalesce(p_reversal_date, current_date)) then
+      raise exception 'Financial period is locked';
+    end if;
+    if exists (select 1 from public.fin_transactions where reversal_of = v_row.id) then
+      raise exception 'Transfer already reversed';
+    end if;
+    if v_row.direction = 'IN'
+       and not (select allow_negative from public.fin_accounts where id = v_row.account_id)
+       and v_row.amount > public.fin_account_balance(v_row.account_id, null) then
+      raise exception 'Insufficient destination balance to reverse transfer';
+    end if;
+    insert into public.fin_transactions(
+      account_id, site_id, movement_date, direction, amount, category_id,
+      reference, description, counterparty, source_type, source_id,
+      transfer_group_id, reversal_of, created_by
+    ) values (
+      v_row.account_id, v_row.site_id, coalesce(p_reversal_date, current_date),
+      case when v_row.direction = 'IN' then 'OUT' else 'IN' end,
+      v_row.amount, v_row.category_id, v_row.reference,
+      'Annulation transfert: ' || trim(p_reason), v_row.counterparty,
+      'REVERSAL', v_seed.transfer_group_id, v_new_group, v_row.id, auth.uid()
+    );
+    v_count := v_count + 1;
+  end loop;
+  if v_count <> 2 then raise exception 'Invalid transfer pair'; end if;
+  return jsonb_build_object('transfer_group_id', v_new_group, 'reversed_group_id', v_seed.transfer_group_id);
 end;
 $$;
 
@@ -546,6 +608,50 @@ begin
     trim(p_purpose), v_tx_id, auth.uid()
   );
   return jsonb_build_object('id', v_advance_id, 'advance_number', v_number, 'transaction_id', v_tx_id);
+end;
+$$;
+
+create or replace function public.fin_cancel_cash_advance(
+  p_advance_id uuid,
+  p_cancellation_date date,
+  p_reason text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_advance public.fin_cash_advances%rowtype;
+  v_issue public.fin_transactions%rowtype;
+  v_reversal_id uuid := gen_random_uuid();
+begin
+  if auth.uid() is null then raise exception 'Not authenticated'; end if;
+  select * into v_advance from public.fin_cash_advances where id = p_advance_id for update;
+  if not found or v_advance.status <> 'OPEN' then raise exception 'Open advance not found'; end if;
+  if not public.fin_can_access('update', v_advance.site_id) then raise exception 'Permission denied'; end if;
+  if exists (select 1 from public.fin_cash_advance_expenses where advance_id = p_advance_id) then
+    raise exception 'Advance with expenses must be settled, not cancelled';
+  end if;
+  select * into v_issue from public.fin_transactions where id = v_advance.issue_transaction_id for update;
+  if v_issue.reconciled_at is not null then raise exception 'Unreconcile advance before cancellation'; end if;
+  if public.fin_period_is_locked(v_advance.cash_account_id, coalesce(p_cancellation_date, current_date)) then
+    raise exception 'Financial period is locked';
+  end if;
+  insert into public.fin_transactions(
+    id, account_id, site_id, movement_date, direction, amount, category_id,
+    reference, description, counterparty, source_type, source_id, reversal_of, created_by
+  ) values (
+    v_reversal_id, v_issue.account_id, v_issue.site_id, coalesce(p_cancellation_date, current_date),
+    'IN', v_issue.amount, v_issue.category_id, v_issue.reference,
+    'Annulation avance: ' || trim(p_reason), v_issue.counterparty, 'REVERSAL',
+    v_advance.id, v_issue.id, auth.uid()
+  );
+  update public.fin_cash_advances set
+    status = 'CANCELLED', settled_at = now(), settled_by = auth.uid(),
+    settlement_note = trim(p_reason), return_transaction_id = v_reversal_id
+  where id = p_advance_id;
+  return jsonb_build_object('id', p_advance_id, 'status', 'CANCELLED', 'transaction_id', v_reversal_id);
 end;
 $$;
 
@@ -626,6 +732,24 @@ begin
 end;
 $$;
 
+create or replace function public.fin_tax_rate_default_guard()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.is_default then
+    update public.fin_tax_rates set is_default = false
+    where is_default and id <> new.id;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger trg_fin_tax_rate_default
+before insert or update of is_default on public.fin_tax_rates
+for each row execute function public.fin_tax_rate_default_guard();
+
 create trigger trg_fin_transactions_guard
 before update or delete on public.fin_transactions
 for each row execute function public.fin_transaction_guard();
@@ -637,8 +761,21 @@ set search_path = public, pg_temp
 as $$
 declare v_status text;
 begin
-  select status into v_status from public.fin_cash_advances where id = coalesce(new.advance_id, old.advance_id);
+  if tg_op = 'DELETE' then
+    select status into v_status from public.fin_cash_advances where id = old.advance_id;
+  else
+    select status into v_status from public.fin_cash_advances where id = new.advance_id;
+  end if;
   if v_status <> 'OPEN' then raise exception 'Only open advance expenses can be changed'; end if;
+  if tg_op <> 'DELETE' and (
+    select coalesce(sum(amount), 0)
+      - case when tg_op = 'UPDATE' then old.amount else 0 end
+      + new.amount
+    from public.fin_cash_advance_expenses
+    where advance_id = new.advance_id
+  ) > (select amount from public.fin_cash_advances where id = new.advance_id) then
+    raise exception 'Expense total cannot exceed advance amount';
+  end if;
   if tg_op = 'DELETE' then return old; end if;
   return new;
 end;
@@ -647,6 +784,25 @@ $$;
 create trigger trg_fin_cash_expense_guard
 before insert or update or delete on public.fin_cash_advance_expenses
 for each row execute function public.fin_cash_expense_guard();
+
+create or replace function public.fin_account_guard()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if exists (select 1 from public.fin_transactions where account_id = old.id)
+     and row(new.opening_balance, new.opening_date, new.currency_code, new.account_type)
+       is distinct from
+       row(old.opening_balance, old.opening_date, old.currency_code, old.account_type) then
+    raise exception 'Opening balance, date, currency and type are immutable after first movement';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger trg_fin_accounts_guard before update on public.fin_accounts
+for each row execute function public.fin_account_guard();
 
 create trigger trg_fin_tax_rates_updated before update on public.fin_tax_rates
 for each row execute function public.erp_set_updated_at();
@@ -686,12 +842,12 @@ alter table public.fin_cash_advances enable row level security;
 alter table public.fin_cash_advance_expenses enable row level security;
 
 create policy fin_tax_rates_read on public.fin_tax_rates for select to authenticated
-using (public.fin_can_access('read') or public.erp_has_perm('client_contracts', 'read', null));
+using (auth.uid() is not null);
 create policy fin_tax_rates_write on public.fin_tax_rates for all to authenticated
 using (public.erp_has_perm('finance_settings', 'update', null))
 with check (public.erp_has_perm('finance_settings', 'update', null));
 create policy fin_payment_methods_read on public.fin_payment_methods for select to authenticated
-using (public.fin_can_access('read') or public.erp_has_perm('client_contracts', 'read', null));
+using (auth.uid() is not null);
 create policy fin_payment_methods_write on public.fin_payment_methods for all to authenticated
 using (public.erp_has_perm('finance_settings', 'update', null))
 with check (public.erp_has_perm('finance_settings', 'update', null));
@@ -754,8 +910,10 @@ grant execute on function public.fin_account_balance(uuid, date) to authenticate
 grant execute on function public.fin_post_transaction(uuid, text, numeric, date, text, uuid, uuid, text, text) to authenticated;
 grant execute on function public.fin_post_transfer(uuid, uuid, numeric, date, text, text) to authenticated;
 grant execute on function public.fin_reverse_transaction(uuid, date, text) to authenticated;
+grant execute on function public.fin_reverse_transfer(uuid, date, text) to authenticated;
 grant execute on function public.fin_set_reconciliation(uuid, boolean, text) to authenticated;
 grant execute on function public.fin_issue_cash_advance(uuid, text, numeric, date, text, uuid) to authenticated;
+grant execute on function public.fin_cancel_cash_advance(uuid, date, text) to authenticated;
 grant execute on function public.fin_settle_cash_advance(uuid, numeric, date, text) to authenticated;
 
 commit;

@@ -85,12 +85,12 @@ begin
   from public.fin_tax_rates
   where active and (
     (v_default_rate_code is not null and code = v_default_rate_code)
-    or (v_default_rate_code is null and rate = coalesce((v_attrs #>> '{financial,tva_standard_rate}')::numeric, 0.19))
+    or (v_default_rate_code is null and is_default)
   )
   order by case when code = v_default_rate_code then 0 else 1 end, valid_from desc nulls last
   limit 1;
   if v_default_rate is null then
-    v_default_rate := coalesce((v_attrs #>> '{financial,tva_standard_rate}')::numeric, 0.19);
+    v_default_rate := coalesce((v_attrs #>> '{financial,tva_standard_rate}')::numeric, 0);
     v_default_rate_id := null;
   end if;
 

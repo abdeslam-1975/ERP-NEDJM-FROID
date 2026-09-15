@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   upsertContract,
+  type ContractFinanceOptions,
   type ContractListRow,
 } from "@/lib/actions/contracts";
 import { AlertBadge } from "@/components/castle/alert-badge";
@@ -42,11 +43,12 @@ type FormState = {
   status: string;
   total_mode: "AUTO" | "MANUAL";
   caution_sync: "FROM_RATE" | "FROM_AMOUNT" | "MANUAL";
-  tva_exempt: boolean;
+  tva_mode: "TAXABLE" | "EXEMPT" | "MIXED";
   tva_articles: string;
+  default_tax_rate_code: string;
 };
 
-const emptyForm = (siteId: string): FormState => ({
+const emptyForm = (siteId: string, taxRateCode: string): FormState => ({
   contract_number: "",
   client_name: "",
   site_id: siteId,
@@ -59,8 +61,9 @@ const emptyForm = (siteId: string): FormState => ({
   status: "BROUILLON",
   total_mode: "AUTO",
   caution_sync: "FROM_RATE",
-  tva_exempt: true,
+  tva_mode: "MIXED",
   tva_articles: "12,16",
+  default_tax_rate_code: taxRateCode,
 });
 
 function fromContract(c: ContractListRow): FormState {
@@ -79,18 +82,21 @@ function fromContract(c: ContractListRow): FormState {
     status: c.status,
     total_mode: fin.total_mode,
     caution_sync: fin.caution_sync,
-    tva_exempt: fin.tva_exempt,
+    tva_mode: fin.tva_mode,
     tva_articles: fin.tva_articles.join(","),
+    default_tax_rate_code: fin.default_tax_rate_code,
   };
 }
 
 export function ContractsManager({
   initialContracts,
   sites,
+  taxRates,
   loadError,
 }: {
   initialContracts: ContractListRow[];
   sites: SiteOpt[];
+  taxRates: ContractFinanceOptions["tax_rates"];
   loadError?: string;
 }) {
   const router = useRouter();
@@ -98,7 +104,12 @@ export function ContractsManager({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [q, setQ] = useState("");
-  const [form, setForm] = useState<FormState>(emptyForm(sites[0]?.id ?? ""));
+  const [form, setForm] = useState<FormState>(
+    emptyForm(
+      sites[0]?.id ?? "",
+      taxRates.find((rate) => rate.is_default)?.code ?? taxRates[0]?.code ?? "",
+    ),
+  );
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -112,7 +123,14 @@ export function ContractsManager({
   }, [initialContracts, q]);
 
   function openCreate() {
-    setForm(emptyForm(sites[0]?.id ?? ""));
+    setForm(
+      emptyForm(
+        sites[0]?.id ?? "",
+        taxRates.find((rate) => rate.is_default)?.code ??
+          taxRates[0]?.code ??
+          "",
+      ),
+    );
     setError(null);
     setOpen(true);
   }
@@ -151,9 +169,13 @@ export function ContractsManager({
         status: form.status,
         total_mode: form.total_mode,
         caution_sync: form.caution_sync,
-        tva_exempt: form.tva_exempt,
+        tva_mode: form.tva_mode,
+        tva_exempt: form.tva_mode === "EXEMPT",
         tva_articles: form.tva_articles,
-        tva_standard_rate: 0.19,
+        default_tax_rate_code: form.default_tax_rate_code,
+        tva_standard_rate:
+          taxRates.find((rate) => rate.code === form.default_tax_rate_code)
+            ?.rate ?? 0,
       });
       if (!result.ok) {
         setError(result.error);
@@ -428,7 +450,41 @@ export function ContractsManager({
                   }
                 />
               </Field>
-              <Field label="Articles TVA (ex: 12,16)">
+              <Field label="Régime TVA">
+                <select
+                  className={inputClass}
+                  value={form.tva_mode}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      tva_mode: e.target.value as FormState["tva_mode"],
+                    }))
+                  }
+                >
+                  <option value="TAXABLE">Soumis par défaut</option>
+                  <option value="EXEMPT">Exonéré par défaut</option>
+                  <option value="MIXED">Mixte / codes articles</option>
+                </select>
+              </Field>
+              <Field label="Taux TVA par défaut">
+                <select
+                  className={inputClass}
+                  value={form.default_tax_rate_code}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      default_tax_rate_code: e.target.value,
+                    }))
+                  }
+                >
+                  {taxRates.map((rate) => (
+                    <option key={rate.id} value={rate.code}>
+                      {rate.label_fr} ({rate.rate * 100}%)
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Codes articles taxables (ex: 12,16)">
                 <input
                   className={inputClass}
                   value={form.tva_articles}
@@ -437,16 +493,6 @@ export function ContractsManager({
                   }
                 />
               </Field>
-              <label className="flex items-end gap-2 pb-2 text-sm font-medium">
-                <input
-                  type="checkbox"
-                  checked={form.tva_exempt}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, tva_exempt: e.target.checked }))
-                  }
-                />
-                Exonération TVA
-              </label>
             </div>
             <div className="mt-5 flex justify-end gap-2">
               <Button variant="secondary" onClick={() => setOpen(false)}>

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import {
   cashAdvanceExpenseSchema,
+  cashAdvanceCancelSchema,
   cashAdvanceSchema,
   cashAdvanceSettleSchema,
   financeAccountSchema,
@@ -45,6 +46,7 @@ export type FinanceTaxRate = {
   label_fr: string;
   rate: number;
   active: boolean;
+  is_default: boolean;
   valid_from: string | null;
   valid_to: string | null;
 };
@@ -419,6 +421,23 @@ export async function reverseFinanceMovement(input: unknown): Promise<ActionResu
   return { ok: true, data: { id: String((data as { id?: string })?.id ?? "") } };
 }
 
+export async function reverseFinanceTransfer(input: unknown): Promise<ActionResult<{ id: string }>> {
+  const parsed = financeReverseSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Annulation invalide." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("fin_reverse_transfer", {
+    p_transaction_id: parsed.data.transaction_id,
+    p_reversal_date: parsed.data.reversal_date,
+    p_reason: parsed.data.reason,
+  });
+  if (error) return fail(error);
+  refreshFinance();
+  return {
+    ok: true,
+    data: { id: String((data as { transfer_group_id?: string })?.transfer_group_id ?? "") },
+  };
+}
+
 export async function reconcileFinanceMovement(input: unknown): Promise<ActionResult<{ id: string }>> {
   const parsed = financeReconcileSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Rapprochement invalide." };
@@ -488,6 +507,20 @@ export async function settleCashAdvance(input: unknown): Promise<ActionResult<{ 
     p_return_amount: p.return_amount,
     p_settlement_date: p.settlement_date,
     p_note: p.note ?? undefined,
+  });
+  if (error) return fail(error);
+  refreshFinance();
+  return { ok: true, data: { id: String((data as { id?: string })?.id ?? "") } };
+}
+
+export async function cancelCashAdvance(input: unknown): Promise<ActionResult<{ id: string }>> {
+  const parsed = cashAdvanceCancelSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Annulation invalide." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("fin_cancel_cash_advance", {
+    p_advance_id: parsed.data.advance_id,
+    p_cancellation_date: parsed.data.cancellation_date,
+    p_reason: parsed.data.reason,
   });
   if (error) return fail(error);
   refreshFinance();

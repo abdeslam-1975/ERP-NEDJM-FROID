@@ -224,6 +224,7 @@ export type ContractFinanceOptions = {
     label_fr: string;
     rate: number;
     active: boolean;
+    is_default: boolean;
   }[];
   accounts: {
     id: string;
@@ -835,8 +836,9 @@ export async function listContractFinanceOptions(): Promise<
   const [rates, accounts, methods] = await Promise.all([
     supabase
       .from("fin_tax_rates")
-      .select("id, code, label_fr, rate, active")
+      .select("id, code, label_fr, rate, active, is_default")
       .eq("active", true)
+      .order("is_default", { ascending: false })
       .order("rate"),
     supabase
       .from("fin_accounts")

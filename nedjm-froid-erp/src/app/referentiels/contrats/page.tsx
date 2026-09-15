@@ -3,6 +3,7 @@ import { ContractsManager } from "@/components/contracts/contracts-manager";
 import { requireContractRead } from "@/lib/auth/require-roles";
 import {
   listContracts,
+  listContractFinanceOptions,
   listSitesForContracts,
 } from "@/lib/actions/contracts";
 
@@ -11,9 +12,10 @@ export const dynamic = "force-dynamic";
 export default async function ContratsPage() {
   await requireContractRead();
 
-  const [contractsRes, sitesRes] = await Promise.all([
+  const [contractsRes, sitesRes, financeRes] = await Promise.all([
     listContracts(),
     listSitesForContracts(),
+    listContractFinanceOptions(),
   ]);
 
   const loadError = !contractsRes.ok
@@ -27,6 +29,7 @@ export default async function ContratsPage() {
       <ContractsManager
         initialContracts={contractsRes.ok ? contractsRes.data : []}
         sites={sitesRes.ok ? sitesRes.data : []}
+        taxRates={financeRes.ok ? financeRes.data.tax_rates : []}
         loadError={loadError}
       />
     </AppShell>

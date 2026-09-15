@@ -187,10 +187,10 @@ function AccountsEditor({
 }
 
 function TaxEditor({ rows, pending, run }: { rows: FinanceTaxRate[]; pending: boolean; run: Runner }) {
-  const empty = { id: "", code: "", label_fr: "", rate_pct: "", active: true, valid_from: "", valid_to: "" };
+  const empty = { id: "", code: "", label_fr: "", rate_pct: "", active: true, is_default: false, valid_from: "", valid_to: "" };
   const [form, setForm] = useState(empty);
   function edit(r: FinanceTaxRate) {
-    setForm({ id: r.id, code: r.code, label_fr: r.label_fr, rate_pct: String(r.rate * 100), active: r.active, valid_from: r.valid_from ?? "", valid_to: r.valid_to ?? "" });
+    setForm({ id: r.id, code: r.code, label_fr: r.label_fr, rate_pct: String(r.rate * 100), active: r.active, is_default: r.is_default, valid_from: r.valid_from ?? "", valid_to: r.valid_to ?? "" });
   }
   return (
     <ConfigLayout>
@@ -200,9 +200,10 @@ function TaxEditor({ rows, pending, run }: { rows: FinanceTaxRate[]; pending: bo
         <Field label="Taux (%)"><input type="number" min="0" max="100" step="0.01" className={inputClass} value={form.rate_pct} onChange={(e) => setForm((f) => ({ ...f, rate_pct: e.target.value }))} /></Field>
         <div className="grid grid-cols-2 gap-2"><Field label="Valide du"><input type="date" className={inputClass} value={form.valid_from} onChange={(e) => setForm((f) => ({ ...f, valid_from: e.target.value }))} /></Field><Field label="Au"><input type="date" className={inputClass} value={form.valid_to} onChange={(e) => setForm((f) => ({ ...f, valid_to: e.target.value }))} /></Field></div>
         <Active checked={form.active} onChange={(active) => setForm((f) => ({ ...f, active }))} />
-        <FormButtons pending={pending} editing={Boolean(form.id)} reset={() => setForm(empty)} save={() => run(() => upsertFinanceTaxRate({ id: form.id || undefined, code: form.code, label_fr: form.label_fr, rate: Number(form.rate_pct) / 100, active: form.active, valid_from: form.valid_from || null, valid_to: form.valid_to || null }), "Taux TVA enregistré.")} />
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_default} onChange={(e) => setForm((f) => ({ ...f, is_default: e.target.checked, active: e.target.checked ? true : f.active }))} /> Taux par défaut</label>
+        <FormButtons pending={pending} editing={Boolean(form.id)} reset={() => setForm(empty)} save={() => run(() => upsertFinanceTaxRate({ id: form.id || undefined, code: form.code, label_fr: form.label_fr, rate: Number(form.rate_pct) / 100, active: form.active, is_default: form.is_default, valid_from: form.valid_from || null, valid_to: form.valid_to || null }), "Taux TVA enregistré.")} />
       </EditorCard>
-      <DataTable headers={["Code", "Libellé", "Taux", "État", "Actions"]} rows={rows.map((r) => [r.code, r.label_fr, `${(r.rate * 100).toFixed(2)} %`, r.active ? "Actif" : "Inactif", <Actions key="a" edit={() => edit(r)} remove={() => run(() => deleteFinanceConfig({ entity: "tax_rate", id: r.id }), "Taux supprimé.")} />])} />
+      <DataTable headers={["Code", "Libellé", "Taux", "État", "Actions"]} rows={rows.map((r) => [r.code, r.label_fr, `${(r.rate * 100).toFixed(2)} %`, r.is_default ? "Par défaut" : r.active ? "Actif" : "Inactif", <Actions key="a" edit={() => edit(r)} remove={() => run(() => deleteFinanceConfig({ entity: "tax_rate", id: r.id }), "Taux supprimé.")} />])} />
     </ConfigLayout>
   );
 }
@@ -250,7 +251,7 @@ function PeriodsEditor({ data, pending, run }: { data: FinanceHubData; pending: 
   return (
     <ConfigLayout>
       <EditorCard title="Clôturer une période">
-        <p className="mb-3 text-sm text-foreground/55">Bloque toute écriture datée dans l'intervalle. Le déverrouillage reste audité.</p>
+        <p className="mb-3 text-sm text-foreground/55">Bloque toute écriture datée dans l&apos;intervalle. Le déverrouillage reste audité.</p>
         <Field label="Compte"><select className={inputClass} value={form.account_id} onChange={(e) => setForm((f) => ({ ...f, account_id: e.target.value }))}>{data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
         <div className="grid grid-cols-2 gap-2"><Field label="Du"><input type="date" className={inputClass} value={form.start_date} onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))} /></Field><Field label="Au"><input type="date" className={inputClass} value={form.end_date} onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))} /></Field></div>
         <Field label="Motif"><input className={inputClass} value={form.reason} onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))} /></Field>

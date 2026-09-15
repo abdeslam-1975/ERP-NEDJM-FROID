@@ -2108,8 +2108,8 @@ function BalanceTab({
   return (
     <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
       <p className="text-sm text-foreground/70">
-        Le paiement représente l'argent réellement reçu en TTC. Le système
-        ventile automatiquement HT et TVA, et l'écriture alimente directement
+        Le paiement représente l&apos;argent réellement reçu en TTC. Le système
+        ventile automatiquement HT et TVA, et l&apos;écriture alimente directement
         le compte Banque ou Caisse.
       </p>
       {error && <p className="text-sm text-red-600">{error}</p>}

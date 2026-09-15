@@ -27,6 +27,7 @@ export const financeTaxRateSchema = z.object({
   label_fr: z.string().trim().min(1).max(120),
   rate: z.coerce.number().min(0).max(1),
   active: z.boolean().default(true),
+  is_default: z.boolean().default(false),
   valid_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   valid_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 });
@@ -111,6 +112,12 @@ export const cashAdvanceSettleSchema = z.object({
   return_amount: z.coerce.number().min(0),
   settlement_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   note: optionalText(500),
+});
+
+export const cashAdvanceCancelSchema = z.object({
+  advance_id: uuid,
+  cancellation_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  reason: z.string().trim().min(3).max(500),
 });
 
 export const financeConfigDeleteSchema = z.object({

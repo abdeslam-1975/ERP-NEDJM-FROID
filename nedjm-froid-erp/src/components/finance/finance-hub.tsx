@@ -4,12 +4,14 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   addCashAdvanceExpense,
+  cancelCashAdvance,
   deleteCashAdvanceExpense,
   issueCashAdvance,
   postFinanceMovement,
   postFinanceTransfer,
   reconcileFinanceMovement,
   reverseFinanceMovement,
+  reverseFinanceTransfer,
   settleCashAdvance,
   type CashAdvance,
   type FinanceHubData,
@@ -510,7 +512,7 @@ function Advances({
                 beneficiary_employee_id: form.beneficiary_employee_id || null,
               }), "Avance émise.")}
             >
-              Émettre l'avance
+              Émettre l&apos;avance
             </Button>
           </div>
         </section>
@@ -595,6 +597,28 @@ function Advances({
                 }), "Avance régularisée et clôturée.")}>
                   Régulariser et clôturer
                 </Button>
+                {selected.expenses.length === 0 && (
+                  <Button
+                    variant="danger"
+                    disabled={pending}
+                    onClick={() => {
+                      const reason = window.prompt("Motif obligatoire d'annulation");
+                      if (reason) {
+                        run(
+                          () =>
+                            cancelCashAdvance({
+                              advance_id: selected.id,
+                              cancellation_date: today(),
+                              reason,
+                            }),
+                          "Avance annulée par contre-passation.",
+                        );
+                      }
+                    }}
+                  >
+                    Annuler l&apos;avance
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -657,13 +681,32 @@ function Reconciliation({
                       {t.reconciled_at ? "Dépointer" : "Pointer"}
                     </button>
                   )}
-                  {!t.reconciled_at && !t.reversal_of && !t.is_reversed && !["CUSTOMER_PAYMENT", "TRANSFER"].includes(t.source_type) && (
+                  {!t.reconciled_at &&
+                    !t.reversal_of &&
+                    !t.is_reversed &&
+                    ["MANUAL", "TRANSFER"].includes(t.source_type) && (
                     <button
                       disabled={pending}
                       className="text-red-600 disabled:opacity-50"
                       onClick={() => {
                         const reason = window.prompt("Motif obligatoire de contre-passation");
-                        if (reason) run(() => reverseFinanceMovement({ transaction_id: t.id, reversal_date: today(), reason }), "Contre-passation créée.");
+                        if (reason) {
+                          run(
+                            () =>
+                              t.source_type === "TRANSFER"
+                                ? reverseFinanceTransfer({
+                                    transaction_id: t.id,
+                                    reversal_date: today(),
+                                    reason,
+                                  })
+                                : reverseFinanceMovement({
+                                    transaction_id: t.id,
+                                    reversal_date: today(),
+                                    reason,
+                                  }),
+                            "Contre-passation créée.",
+                          );
+                        }
                       }}
                     >
                       Annuler
