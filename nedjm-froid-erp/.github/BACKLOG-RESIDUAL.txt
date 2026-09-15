@@ -1,0 +1,6 @@
+# Residual CDC / tech backlog after P1–P6 (not blocking merge gate).
+# - Runtime engines: penalties billing, margin enforcement, RH AN payroll block
+# - Migrate com_draft_adjustments off deprecated com_client_contracts
+# - Placeholder screens: IRG, variables, legendes, audit UI, roles matrix
+# - Next.js middleware → proxy convention migration
+# - exceljs transitive uuid (mitigated via npm overrides when possible)
