@@ -25,6 +25,11 @@ describe("buildInvoicePdf", () => {
       tva_rate: 0,
       tva_amount: 0,
       total_ttc: 10000,
+      tax_mode: "EXEMPT",
+      tax_breakdown: [{ rate: 0, base_ht: 10000, tax_amount: 0 }],
+      exemption_certificate_number: "EXO-001",
+      exemption_certificate_date: "2026-09-01",
+      exemption_note: null,
       lines: [
         {
           item_code: "MO-01",
@@ -33,6 +38,8 @@ describe("buildInvoicePdf", () => {
           quantity: 2,
           unit_price_ht: 5000,
           total_price_ht: 10000,
+          tax_rate: 0,
+          tax_amount: 0,
         },
       ],
       contract_number: "I/111/HMD-DEG/2024",
@@ -66,6 +73,11 @@ describe("buildInvoicePdf", () => {
       tva_rate: 0,
       tva_amount: 0,
       total_ttc: 7800,
+      tax_mode: "EXEMPT",
+      tax_breakdown: [{ rate: 0, base_ht: 7800, tax_amount: 0 }],
+      exemption_certificate_number: null,
+      exemption_certificate_date: null,
+      exemption_note: null,
       lines: [
         {
           item_code: "SP-1",
@@ -74,6 +86,8 @@ describe("buildInvoicePdf", () => {
           quantity: 1,
           unit_price_ht: 7800,
           total_price_ht: 7800,
+          tax_rate: 0,
+          tax_amount: 0,
         },
       ],
       contract_number: "I/111/HMD-DEG/2024",

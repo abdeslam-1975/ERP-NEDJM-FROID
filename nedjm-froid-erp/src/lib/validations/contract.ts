@@ -32,8 +32,10 @@ export const contractUpsertSchema = z
     status: contractStatusSchema.default("BROUILLON"),
     total_mode: totalModeSchema.default("AUTO"),
     caution_sync: cautionSyncSchema.default("FROM_RATE"),
+    tva_mode: z.enum(["TAXABLE", "EXEMPT", "MIXED"]).default("TAXABLE"),
     tva_exempt: z.boolean().default(false),
     tva_articles: z.string().default("12,16"),
+    default_tax_rate_code: z.string().trim().max(32).default("TVA19"),
     tva_standard_rate: z.coerce.number().min(0).max(1).default(0.19),
     attributes_patch: contractAttributesSchema.partial().optional(),
   })
@@ -57,6 +59,8 @@ export const contractItemSchema = z.object({
   quantity: z.coerce.number().min(0),
   unit_price_ht: z.coerce.number().min(0),
   sort_order: z.coerce.number().int().default(0),
+  tax_rule: z.enum(["INHERIT", "TAXABLE", "EXEMPT"]).default("INHERIT"),
+  tax_rate_id: z.string().uuid().nullable().optional(),
 });
 
 export const contractItemDeleteSchema = z.object({
@@ -122,9 +126,21 @@ export const invoiceDraftSchema = z.object({
       z.object({
         contract_item_id: z.string().uuid(),
         quantity: z.coerce.number().positive(),
+        tax_rule: z.enum(["INHERIT", "TAXABLE", "EXEMPT"]).default("INHERIT"),
+        tax_rate_id: z.string().uuid().nullable().optional(),
       }),
     )
     .min(1),
+  invoice_tax_mode: z
+    .enum(["INHERIT", "TAXABLE", "EXEMPT", "MIXED"])
+    .default("INHERIT"),
+  exemption_certificate_number: z.string().trim().max(120).optional(),
+  exemption_certificate_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .nullable(),
+  exemption_note: z.string().trim().max(500).optional(),
 });
 
 export const invoiceIdSchema = z.object({
@@ -134,12 +150,20 @@ export const invoiceIdSchema = z.object({
 
 export const paymentPostSchema = z.object({
   contract_id: z.string().uuid(),
-  amount_ht: z.coerce.number().positive(),
+  account_id: z.string().uuid(),
+  payment_method_id: z.string().uuid(),
+  amount_ttc: z.coerce.number().positive(),
   payment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  method: z.enum(["VIREMENT", "CHEQUE", "ESPECES", "AUTRE"]).default("VIREMENT"),
   invoice_id: z.string().uuid().optional().nullable(),
   reference: z.string().trim().max(120).optional(),
   note: z.string().trim().max(500).optional(),
+});
+
+export const paymentReverseSchema = z.object({
+  payment_id: z.string().uuid(),
+  contract_id: z.string().uuid(),
+  reversal_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  reason: z.string().trim().min(3).max(500),
 });
 
 export const penaltyApplySchema = z.object({

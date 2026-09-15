@@ -27,6 +27,7 @@ import {
   invoiceDraftSchema,
   invoiceIdSchema,
   paymentPostSchema,
+  paymentReverseSchema,
   penaltyApplySchema,
   penaltySuggestSchema,
   contractCloseSchema,
@@ -46,6 +47,8 @@ export type ContractItem = {
   unit_price_ht: number;
   total_price_ht: number;
   sort_order: number;
+  tax_rule: "INHERIT" | "TAXABLE" | "EXEMPT";
+  tax_rate_id: string | null;
   consumed_qty?: number;
   remaining_qty?: number;
   pct_consumed?: number | null;
@@ -77,6 +80,11 @@ export type ContractInvoice = {
   tva_rate: number;
   tva_amount: number;
   total_ttc: number;
+  tax_mode: "TAXABLE" | "EXEMPT" | "MIXED";
+  tax_breakdown: { rate: number; base_ht: number; tax_amount: number }[];
+  exemption_certificate_number: string | null;
+  exemption_certificate_date: string | null;
+  exemption_note: string | null;
   note: string | null;
   issued_at: string | null;
   created_at: string;
@@ -92,21 +100,35 @@ export type ContractInvoiceLine = {
   quantity: number;
   unit_price_ht: number;
   total_price_ht: number;
+  tax_rule: "INHERIT" | "TAXABLE" | "EXEMPT";
+  tax_rate_id: string | null;
+  tax_rate: number;
+  tax_amount: number;
 };
 
 export type ContractBalance = {
   contract_id: string;
   invoiced_ht: number;
+  invoiced_tva: number;
+  invoiced_ttc: number;
   paid_ht: number;
+  paid_tva: number;
+  paid_ttc: number;
   remaining_ht: number;
+  remaining_tva: number;
+  remaining_ttc: number;
   is_solded: boolean;
   open_invoices?: {
     invoice_id: string;
     invoice_number: string;
     invoice_date: string;
     total_ht: number;
+    total_tva: number;
+    total_ttc: number;
     paid_ht: number;
+    paid_ttc: number;
     open_ht: number;
+    open_ttc: number;
   }[];
 };
 
@@ -116,6 +138,12 @@ export type ContractPayment = {
   invoice_id: string | null;
   payment_date: string;
   amount_ht: number;
+  amount_tva: number;
+  amount_ttc: number;
+  direction: 1 | -1;
+  account_id: string | null;
+  payment_method_id: string | null;
+  reversal_of: string | null;
   method: string;
   reference: string | null;
   note: string | null;
@@ -188,6 +216,30 @@ export type ContractListRow = {
 };
 
 export type ContractDetail = ContractListRow & { items: ContractItem[] };
+
+export type ContractFinanceOptions = {
+  tax_rates: {
+    id: string;
+    code: string;
+    label_fr: string;
+    rate: number;
+    active: boolean;
+  }[];
+  accounts: {
+    id: string;
+    code: string;
+    name: string;
+    account_type: "BANK" | "CASH";
+    active: boolean;
+  }[];
+  payment_methods: {
+    id: string;
+    code: string;
+    label_fr: string;
+    account_scope: "BANK" | "CASH" | "BOTH";
+    active: boolean;
+  }[];
+};
 
 function revalidateContract(id?: string) {
   revalidatePath("/referentiels/contrats");
@@ -302,7 +354,8 @@ export async function getContract(
       site:ref_sites ( name_fr ),
       items:contract_items (
         id, item_type, item_code, designation, unit,
-        quantity, unit_price_ht, total_price_ht, sort_order
+        quantity, unit_price_ht, total_price_ht, sort_order,
+        tax_rule, tax_rate_id
       )
     `,
     )
@@ -427,11 +480,13 @@ export async function upsertContract(
       ...attrs.financial,
       total_mode: p.total_mode,
       caution_sync: p.caution_sync,
+      tva_mode: p.tva_mode,
       tva_exempt: p.tva_exempt,
       tva_articles: p.tva_articles
         .split(/[,;]/)
         .map((s) => s.trim())
         .filter(Boolean),
+      default_tax_rate_code: p.default_tax_rate_code,
       tva_standard_rate: p.tva_standard_rate,
     },
   };
@@ -614,6 +669,8 @@ export async function upsertContractItem(
         unit_price_ht: p.unit_price_ht,
         total_price_ht: total,
         sort_order: p.sort_order,
+        tax_rule: p.tax_rule,
+        tax_rate_id: p.tax_rate_id ?? null,
       })
       .eq("id", p.id)
       .eq("contract_id", p.contract_id)
@@ -634,6 +691,8 @@ export async function upsertContractItem(
         unit_price_ht: p.unit_price_ht,
         total_price_ht: total,
         sort_order: p.sort_order,
+        tax_rule: p.tax_rule,
+        tax_rate_id: p.tax_rate_id ?? null,
       })
       .select("id")
       .single();
@@ -767,6 +826,44 @@ export async function listSitesForContracts(): Promise<
   return { ok: true, data: data ?? [] };
 }
 
+export async function listContractFinanceOptions(): Promise<
+  ActionResult<ContractFinanceOptions>
+> {
+  const gate = await requireContractAccess();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const supabase = await createClient();
+  const [rates, accounts, methods] = await Promise.all([
+    supabase
+      .from("fin_tax_rates")
+      .select("id, code, label_fr, rate, active")
+      .eq("active", true)
+      .order("rate"),
+    supabase
+      .from("fin_accounts")
+      .select("id, code, name, account_type, active")
+      .eq("active", true)
+      .order("code"),
+    supabase
+      .from("fin_payment_methods")
+      .select("id, code, label_fr, account_scope, active")
+      .eq("active", true)
+      .order("sort_order"),
+  ]);
+  const error = rates.error ?? accounts.error ?? methods.error;
+  if (error) return { ok: false, error: error.message };
+  return {
+    ok: true,
+    data: {
+      tax_rates: (rates.data ?? []).map((r) => ({
+        ...r,
+        rate: Number(r.rate),
+      })),
+      accounts: (accounts.data ?? []) as ContractFinanceOptions["accounts"],
+      payment_methods: (methods.data ?? []) as ContractFinanceOptions["payment_methods"],
+    },
+  };
+}
+
 export async function listConsumptionMovements(
   contractId: string,
 ): Promise<ActionResult<ConsumptionMovement[]>> {
@@ -888,11 +985,13 @@ export async function listContractInvoices(
     .select(
       `
       id, contract_id, invoice_number, invoice_date, status, total_ht,
-      tva_rate, tva_amount, total_ttc,
+      tva_rate, tva_amount, total_ttc, tax_mode, tax_breakdown,
+      exemption_certificate_number, exemption_certificate_date, exemption_note,
       note, issued_at, created_at,
       lines:contract_invoice_lines (
         id, contract_item_id, item_code, designation, unit,
-        quantity, unit_price_ht, total_price_ht
+        quantity, unit_price_ht, total_price_ht,
+        tax_rule, tax_rate_id, tax_rate, tax_amount
       )
     `,
     )
@@ -913,6 +1012,17 @@ export async function listContractInvoices(
       tva_rate: Number(inv.tva_rate ?? 0),
       tva_amount: Number(inv.tva_amount ?? 0),
       total_ttc: Number(inv.total_ttc ?? inv.total_ht ?? 0),
+      tax_mode: inv.tax_mode as ContractInvoice["tax_mode"],
+      tax_breakdown: Array.isArray(inv.tax_breakdown)
+        ? (inv.tax_breakdown as Array<Record<string, unknown>>).map((row) => ({
+            rate: Number(row.rate ?? 0),
+            base_ht: Number(row.base_ht ?? 0),
+            tax_amount: Number(row.tax_amount ?? 0),
+          }))
+        : [],
+      exemption_certificate_number: inv.exemption_certificate_number,
+      exemption_certificate_date: inv.exemption_certificate_date,
+      exemption_note: inv.exemption_note,
       note: inv.note,
       issued_at: inv.issued_at,
       created_at: inv.created_at,
@@ -921,6 +1031,8 @@ export async function listContractInvoices(
         quantity: Number(l.quantity),
         unit_price_ht: Number(l.unit_price_ht),
         total_price_ht: Number(l.total_price_ht),
+        tax_rate: Number(l.tax_rate ?? 0),
+        tax_amount: Number(l.tax_amount ?? 0),
       })),
     })),
   };
@@ -970,6 +1082,12 @@ export async function createInvoiceDraft(
     p_invoice_date: p.invoice_date,
     p_lines: p.lines,
     p_note: p.note ?? undefined,
+    p_invoice_tax_mode: p.invoice_tax_mode,
+    p_exemption_certificate_number:
+      p.exemption_certificate_number ?? undefined,
+    p_exemption_certificate_date:
+      p.exemption_certificate_date ?? undefined,
+    p_exemption_note: p.exemption_note ?? undefined,
   });
 
   if (error) {
@@ -1083,8 +1201,14 @@ export async function getContractBalance(
     data: {
       contract_id: contractId,
       invoiced_ht: Number(bal.invoiced_ht ?? 0),
+      invoiced_tva: Number(bal.invoiced_tva ?? 0),
+      invoiced_ttc: Number(bal.invoiced_ttc ?? 0),
       paid_ht: Number(bal.paid_ht ?? 0),
+      paid_tva: Number(bal.paid_tva ?? 0),
+      paid_ttc: Number(bal.paid_ttc ?? 0),
       remaining_ht: Number(bal.remaining_ht ?? 0),
+      remaining_tva: Number(bal.remaining_tva ?? 0),
+      remaining_ttc: Number(bal.remaining_ttc ?? 0),
       is_solded: Boolean(bal.is_solded),
       open_invoices: openRaw.map((row) => {
         const r = row as Record<string, unknown>;
@@ -1093,8 +1217,12 @@ export async function getContractBalance(
           invoice_number: String(r.invoice_number ?? ""),
           invoice_date: String(r.invoice_date ?? ""),
           total_ht: Number(r.total_ht ?? 0),
+          total_tva: Number(r.total_tva ?? 0),
+          total_ttc: Number(r.total_ttc ?? 0),
           paid_ht: Number(r.paid_ht ?? 0),
+          paid_ttc: Number(r.paid_ttc ?? 0),
           open_ht: Number(r.open_ht ?? 0),
+          open_ttc: Number(r.open_ttc ?? 0),
         };
       }),
     },
@@ -1111,7 +1239,7 @@ export async function listContractPayments(
   const { data, error } = await supabase
     .from("contract_payments")
     .select(
-      "id, contract_id, invoice_id, payment_date, amount_ht, method, reference, note, created_at",
+      "id, contract_id, invoice_id, payment_date, amount_ht, amount_tva, amount_ttc, direction, account_id, payment_method_id, reversal_of, method, reference, note, created_at",
     )
     .eq("contract_id", contractId)
     .order("payment_date", { ascending: false })
@@ -1124,6 +1252,9 @@ export async function listContractPayments(
     data: (data ?? []).map((p) => ({
       ...p,
       amount_ht: Number(p.amount_ht),
+      amount_tva: Number(p.amount_tva),
+      amount_ttc: Number(p.amount_ttc),
+      direction: Number(p.direction) as 1 | -1,
     })),
   };
 }
@@ -1146,9 +1277,10 @@ export async function postPayment(
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("ref_contract_post_payment", {
     p_contract_id: p.contract_id,
-    p_amount_ht: p.amount_ht,
+    p_account_id: p.account_id,
+    p_payment_method_id: p.payment_method_id,
+    p_amount_ttc: p.amount_ttc,
     p_payment_date: p.payment_date ?? undefined,
-    p_method: p.method,
     p_invoice_id: p.invoice_id ?? undefined,
     p_reference: p.reference ?? undefined,
     p_note: p.note ?? undefined,
@@ -1157,10 +1289,10 @@ export async function postPayment(
   if (error) {
     return {
       ok: false,
-      error: error.message.includes("exceeds invoice open amount")
-        ? "Paiement > reste de la facture sélectionnée."
+      error: error.message.includes("exceeds invoice open TTC")
+        ? "Paiement TTC > reste TTC de la facture sélectionnée."
         : error.message.includes("exceeds remaining receivable")
-          ? "Paiement > reste à encaisser du contrat."
+          ? "Paiement TTC > reste TTC à encaisser du contrat."
           : error.message,
     };
   }
@@ -1176,8 +1308,14 @@ export async function postPayment(
       balance: {
         contract_id: p.contract_id,
         invoiced_ht: Number(bal.invoiced_ht ?? 0),
+        invoiced_tva: Number(bal.invoiced_tva ?? 0),
+        invoiced_ttc: Number(bal.invoiced_ttc ?? 0),
         paid_ht: Number(bal.paid_ht ?? 0),
+        paid_tva: Number(bal.paid_tva ?? 0),
+        paid_ttc: Number(bal.paid_ttc ?? 0),
         remaining_ht: Number(bal.remaining_ht ?? 0),
+        remaining_tva: Number(bal.remaining_tva ?? 0),
+        remaining_ttc: Number(bal.remaining_ttc ?? 0),
         is_solded: Boolean(bal.is_solded),
         open_invoices: openRaw.map((row) => {
           const r = row as Record<string, unknown>;
@@ -1186,10 +1324,56 @@ export async function postPayment(
             invoice_number: String(r.invoice_number ?? ""),
             invoice_date: String(r.invoice_date ?? ""),
             total_ht: Number(r.total_ht ?? 0),
+            total_tva: Number(r.total_tva ?? 0),
+            total_ttc: Number(r.total_ttc ?? 0),
             paid_ht: Number(r.paid_ht ?? 0),
+            paid_ttc: Number(r.paid_ttc ?? 0),
             open_ht: Number(r.open_ht ?? 0),
+            open_ttc: Number(r.open_ttc ?? 0),
           };
         }),
+      },
+    },
+  };
+}
+
+export async function reversePayment(
+  input: unknown,
+): Promise<ActionResult<{ id: string; balance: ContractBalance }>> {
+  const gate = await requireContractWrite();
+  if (!gate.ok) return { ok: false, error: gate.error };
+  const parsed = paymentReverseSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Annulation invalide" };
+  }
+  const p = parsed.data;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("ref_contract_reverse_payment", {
+    p_payment_id: p.payment_id,
+    p_reversal_date: p.reversal_date,
+    p_reason: p.reason,
+  });
+  if (error) return { ok: false, error: error.message };
+  const result = (data ?? {}) as { id?: string; balance?: Record<string, unknown> };
+  const bal = result.balance ?? {};
+  revalidateContract(p.contract_id);
+  return {
+    ok: true,
+    data: {
+      id: String(result.id ?? ""),
+      balance: {
+        contract_id: p.contract_id,
+        invoiced_ht: Number(bal.invoiced_ht ?? 0),
+        invoiced_tva: Number(bal.invoiced_tva ?? 0),
+        invoiced_ttc: Number(bal.invoiced_ttc ?? 0),
+        paid_ht: Number(bal.paid_ht ?? 0),
+        paid_tva: Number(bal.paid_tva ?? 0),
+        paid_ttc: Number(bal.paid_ttc ?? 0),
+        remaining_ht: Number(bal.remaining_ht ?? 0),
+        remaining_tva: Number(bal.remaining_tva ?? 0),
+        remaining_ttc: Number(bal.remaining_ttc ?? 0),
+        is_solded: Boolean(bal.is_solded),
+        open_invoices: [],
       },
     },
   };

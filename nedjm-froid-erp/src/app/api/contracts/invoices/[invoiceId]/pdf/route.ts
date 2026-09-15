@@ -27,13 +27,15 @@ export async function GET(_request: Request, context: RouteContext) {
     .select(
       `
       id, invoice_number, invoice_date, status, total_ht,
-      tva_rate, tva_amount, total_ttc, note,
+      tva_rate, tva_amount, total_ttc, tax_mode, tax_breakdown,
+      exemption_certificate_number, exemption_certificate_date, exemption_note, note,
       contract:ref_contracts!inner (
         id, contract_number, client_name, attributes,
         site:ref_sites ( name_fr )
       ),
       lines:contract_invoice_lines (
-        item_code, designation, unit, quantity, unit_price_ht, total_price_ht
+        item_code, designation, unit, quantity, unit_price_ht, total_price_ht,
+        tax_rate, tax_amount
       )
     `,
     )
@@ -72,6 +74,21 @@ export async function GET(_request: Request, context: RouteContext) {
     tva_rate: Number(inv.tva_rate ?? 0),
     tva_amount: Number(inv.tva_amount ?? 0),
     total_ttc: Number(inv.total_ttc ?? inv.total_ht ?? 0),
+    tax_mode: String(inv.tax_mode ?? "TAXABLE") as
+      | "TAXABLE"
+      | "EXEMPT"
+      | "MIXED",
+    tax_breakdown: Array.isArray(inv.tax_breakdown)
+      ? (inv.tax_breakdown as Array<Record<string, unknown>>).map((row) => ({
+          rate: Number(row.rate ?? 0),
+          base_ht: Number(row.base_ht ?? 0),
+          tax_amount: Number(row.tax_amount ?? 0),
+        }))
+      : [],
+    exemption_certificate_number:
+      inv.exemption_certificate_number ?? null,
+    exemption_certificate_date: inv.exemption_certificate_date ?? null,
+    exemption_note: inv.exemption_note ?? null,
     lines: ((inv.lines ?? []) as Array<Record<string, unknown>>).map((l) => ({
       item_code: String(l.item_code ?? ""),
       designation: String(l.designation ?? ""),
@@ -79,6 +96,8 @@ export async function GET(_request: Request, context: RouteContext) {
       quantity: Number(l.quantity ?? 0),
       unit_price_ht: Number(l.unit_price_ht ?? 0),
       total_price_ht: Number(l.total_price_ht ?? 0),
+      tax_rate: Number(l.tax_rate ?? 0),
+      tax_amount: Number(l.tax_amount ?? 0),
     })),
     contract_number: String(contractRaw.contract_number),
     client_name: String(contractRaw.client_name),

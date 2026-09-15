@@ -53,6 +53,22 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    titleFr: "Finance",
+    titleAr: "المالية",
+    items: [
+      {
+        href: "/finance",
+        labelFr: "Banque & Caisse",
+        labelAr: "البنك والصندوق",
+      },
+      {
+        href: "/finance/parametres",
+        labelFr: "Paramètres financiers",
+        labelAr: "إعدادات المالية",
+      },
+    ],
+  },
+  {
     titleFr: "Paramètres",
     titleAr: "الإعدادات",
     items: [

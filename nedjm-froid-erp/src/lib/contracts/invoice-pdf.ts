@@ -8,6 +8,8 @@ export type InvoicePdfLine = {
   quantity: number;
   unit_price_ht: number;
   total_price_ht: number;
+  tax_rate: number;
+  tax_amount: number;
 };
 
 export type InvoicePdfInput = {
@@ -19,6 +21,11 @@ export type InvoicePdfInput = {
   tva_rate: number;
   tva_amount: number;
   total_ttc: number;
+  tax_mode: "TAXABLE" | "EXEMPT" | "MIXED";
+  tax_breakdown: { rate: number; base_ht: number; tax_amount: number }[];
+  exemption_certificate_number: string | null;
+  exemption_certificate_date: string | null;
+  exemption_note: string | null;
   lines: InvoicePdfLine[];
   contract_number: string;
   client_name: string;
@@ -185,14 +192,17 @@ export async function buildInvoicePdf(
   });
   doc.moveDown(0.6);
 
-  if (input.tva_exempt || input.tva_amount <= 0) {
+  if (input.tva_amount <= 0) {
     const arts =
       input.tva_articles.length > 0
         ? ` (art. ${input.tva_articles.join(", ")})`
         : "";
     doc.text(`TVA exonérée${arts}`, totalsX, doc.y, { width: 180 });
     doc.moveDown(0.6);
-  } else {
+  } else if (
+    input.tax_breakdown.filter((row) => row.rate > 0).length <= 1 &&
+    !input.tax_breakdown.some((row) => row.rate === 0)
+  ) {
     doc.text(`TVA (${(input.tva_rate * 100).toFixed(2)} %)`, totalsX, doc.y, {
       width: 90,
     });
@@ -201,6 +211,26 @@ export async function buildInvoicePdf(
       align: "right",
     });
     doc.moveDown(0.6);
+  } else {
+    for (const row of input.tax_breakdown) {
+      if (row.rate === 0) {
+        doc.text(`Base exonérée : ${money(row.base_ht)} DA`, totalsX, doc.y, {
+          width: 187,
+        });
+      } else {
+        doc.text(
+          `TVA ${(row.rate * 100).toFixed(2)}% / base ${money(row.base_ht)}`,
+          totalsX,
+          doc.y,
+          { width: 150 },
+        );
+        doc.text(`${money(row.tax_amount)} DA`, 500, doc.y, {
+          width: 47,
+          align: "right",
+        });
+      }
+      doc.moveDown(0.5);
+    }
   }
 
   doc.font("Helvetica-Bold");
@@ -209,6 +239,17 @@ export async function buildInvoicePdf(
     width: 97,
     align: "right",
   });
+
+  if (nonEmpty(input.exemption_certificate_number)) {
+    doc.moveDown(1);
+    doc.font("Helvetica").fontSize(8).text(
+      `Attestation d'exonération : ${input.exemption_certificate_number}` +
+        (input.exemption_certificate_date
+          ? ` du ${input.exemption_certificate_date}`
+          : ""),
+    );
+    if (nonEmpty(input.exemption_note)) doc.text(input.exemption_note!);
+  }
 
   if (nonEmpty(input.note)) {
     doc.moveDown(1.2);
