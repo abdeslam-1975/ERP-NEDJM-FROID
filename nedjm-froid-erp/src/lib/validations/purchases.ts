@@ -84,6 +84,26 @@ export const numberSequenceSchema = z.object({
   next_value: z.coerce.number().int().positive(),
 });
 
+export const documentProfileSchema = z.object({
+  id: uuid.optional(),
+  code: z.string().trim().min(1).max(40).transform((value) => value.toUpperCase()),
+  label_fr: z.string().trim().min(1).max(160),
+  legal_name: z.string().trim().min(1).max(200),
+  address: optionalText(500),
+  city: optionalText(120),
+  phone: optionalText(80),
+  email: z.string().trim().email().max(200).or(z.literal("")).transform((value) => value || null),
+  nif: optionalText(80),
+  nis: optionalText(80),
+  rc: optionalText(80),
+  ai: optionalText(80),
+  capital: optionalText(120),
+  bank_details: optionalText(1000),
+  footer: optionalText(1000),
+  active: z.boolean().default(true),
+  is_default: z.boolean().default(false),
+});
+
 export const purchasingLineSchema = z
   .object({
     item_code: z.string().trim().min(1).max(80).transform((value) => value.toUpperCase()),
@@ -126,6 +146,7 @@ export const orderFromProformaSchema = z.object({
   order_date: date,
   expected_delivery_date: nullableDate,
   delivery_address: optionalText(500),
+  document_profile_id: uuid.nullable().optional(),
   note: optionalText(1000),
 });
 

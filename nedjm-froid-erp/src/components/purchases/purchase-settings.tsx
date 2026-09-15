@@ -4,16 +4,18 @@ import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   updateNumberSequence,
+  upsertDocumentProfile,
   upsertSituationType,
   upsertStampRule,
   type NumberSequence,
+  type DocumentProfile,
   type PurchaseHubData,
   type SituationType,
   type StampRule,
 } from "@/lib/actions/purchases";
 import { Button } from "@/components/ui/button";
 
-type Tab = "situations" | "stamp" | "sequences";
+type Tab = "profiles" | "situations" | "stamp" | "sequences";
 const inputClass =
   "h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/15";
 
@@ -25,7 +27,7 @@ export function PurchaseSettings({
   loadError?: string;
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("situations");
+  const [tab, setTab] = useState<Tab>("profiles");
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [message, setMessage] = useState<string | null>(null);
@@ -54,10 +56,11 @@ export function PurchaseSettings({
       {error && <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
       {message && <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">{message}</div>}
       <div className="flex gap-1 rounded-xl border border-border bg-surface p-1">
-        {([["situations", "Types de situation"], ["stamp", "Timbre légal"], ["sequences", "Numérotation"]] as const).map(([value, label]) => (
+        {([["profiles", "Profils d’impression"], ["situations", "Types de situation"], ["stamp", "Timbre légal"], ["sequences", "Numérotation"]] as const).map(([value, label]) => (
           <button key={value} onClick={() => setTab(value)} className={`rounded-lg px-4 py-2 text-sm font-semibold ${tab === value ? "bg-brand text-white" : "hover:bg-surface-muted"}`}>{label}</button>
         ))}
       </div>
+      {tab === "profiles" && <Profiles rows={initialData.documentProfiles} pending={pending} run={run} />}
       {tab === "situations" && <Situations rows={initialData.situations} pending={pending} run={run} />}
       {tab === "stamp" && <StampRules rows={initialData.stampRules} methods={initialData.paymentMethods} pending={pending} run={run} />}
       {tab === "sequences" && <Sequences rows={initialData.sequences} pending={pending} run={run} />}
@@ -66,6 +69,49 @@ export function PurchaseSettings({
 }
 
 type Runner = (action: () => Promise<{ ok: boolean; error?: string }>, success: string) => void;
+
+function Profiles({ rows, pending, run }: { rows: DocumentProfile[]; pending: boolean; run: Runner }) {
+  const empty = {
+    id: "", code: "", label_fr: "", legal_name: "", address: "", city: "", phone: "",
+    email: "", nif: "", nis: "", rc: "", ai: "", capital: "", bank_details: "",
+    footer: "", active: true, is_default: false,
+  };
+  const [form, setForm] = useState(empty);
+  function edit(row: DocumentProfile) {
+    setForm({
+      id: row.id, code: row.code, label_fr: row.label_fr, legal_name: row.legal_name,
+      address: row.address ?? "", city: row.city ?? "", phone: row.phone ?? "",
+      email: row.email ?? "", nif: row.nif ?? "", nis: row.nis ?? "", rc: row.rc ?? "",
+      ai: row.ai ?? "", capital: row.capital ?? "", bank_details: row.bank_details ?? "",
+      footer: row.footer ?? "", active: row.active, is_default: row.is_default,
+    });
+  }
+  return (
+    <ConfigGrid>
+      <Editor title={form.id ? "Modifier le profil" : "Nouveau profil d’impression"}>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Code"><input className={inputClass} value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} /></Field>
+          <Field label="Libellé"><input className={inputClass} value={form.label_fr} onChange={(e) => setForm((f) => ({ ...f, label_fr: e.target.value }))} /></Field>
+        </div>
+        <Field label="Raison sociale"><input className={inputClass} value={form.legal_name} onChange={(e) => setForm((f) => ({ ...f, legal_name: e.target.value }))} /></Field>
+        <Field label="Adresse"><input className={inputClass} value={form.address} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} /></Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Ville"><input className={inputClass} value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} /></Field>
+          <Field label="Téléphone"><input className={inputClass} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} /></Field>
+          <Field label="NIF"><input className={inputClass} value={form.nif} onChange={(e) => setForm((f) => ({ ...f, nif: e.target.value }))} /></Field>
+          <Field label="RC"><input className={inputClass} value={form.rc} onChange={(e) => setForm((f) => ({ ...f, rc: e.target.value }))} /></Field>
+          <Field label="NIS"><input className={inputClass} value={form.nis} onChange={(e) => setForm((f) => ({ ...f, nis: e.target.value }))} /></Field>
+          <Field label="AI"><input className={inputClass} value={form.ai} onChange={(e) => setForm((f) => ({ ...f, ai: e.target.value }))} /></Field>
+        </div>
+        <Field label="Pied de page"><textarea className="min-h-20 w-full rounded-md border border-border bg-background p-3 text-sm" value={form.footer} onChange={(e) => setForm((f) => ({ ...f, footer: e.target.value }))} /></Field>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} /> Actif</label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_default} onChange={(e) => setForm((f) => ({ ...f, is_default: e.target.checked, active: e.target.checked ? true : f.active }))} /> Profil par défaut</label>
+        <Buttons pending={pending} editing={Boolean(form.id)} reset={() => setForm(empty)} save={() => run(() => upsertDocumentProfile({ ...form, id: form.id || undefined }), "Profil d’impression enregistré.")} />
+      </Editor>
+      <Table headers={["Code", "Profil", "Raison sociale", "Identifiants", "État", ""]} rows={rows.map((row) => [row.code, row.label_fr, row.legal_name, `NIF ${row.nif ?? "—"} · RC ${row.rc ?? "—"}`, row.is_default ? "Par défaut" : row.active ? "Actif" : "Inactif", <button key="e" className="font-semibold text-brand" onClick={() => edit(row)}>Modifier</button>])} />
+    </ConfigGrid>
+  );
+}
 
 function Situations({ rows, pending, run }: { rows: SituationType[]; pending: boolean; run: Runner }) {
   const empty = { id: "", code: "", label_fr: "", label_ar: "", includes_supply: true, includes_installation: false, active: true, sort_order: "0" };

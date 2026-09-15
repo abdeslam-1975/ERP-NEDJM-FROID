@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import {
+  documentProfileSchema,
   idSchema,
   numberSequenceSchema,
   orderFromProformaSchema,
@@ -77,6 +78,26 @@ export type NumberSequence = {
   next_value: number;
 };
 
+export type DocumentProfile = {
+  id: string;
+  code: string;
+  label_fr: string;
+  legal_name: string;
+  address: string | null;
+  city: string | null;
+  phone: string | null;
+  email: string | null;
+  nif: string | null;
+  nis: string | null;
+  rc: string | null;
+  ai: string | null;
+  capital: string | null;
+  bank_details: string | null;
+  footer: string | null;
+  active: boolean;
+  is_default: boolean;
+};
+
 export type PurchasingLine = {
   id: string;
   item_code: string;
@@ -121,6 +142,8 @@ export type PurchaseOrder = {
   id: string;
   order_number: string;
   proforma_id: string | null;
+  document_profile_id: string | null;
+  issuer_snapshot: Record<string, string | null>;
   supplier_id: string;
   site_id: string | null;
   order_date: string;
@@ -186,6 +209,7 @@ export type PurchaseHubData = {
   situations: SituationType[];
   stampRules: StampRule[];
   sequences: NumberSequence[];
+  documentProfiles: DocumentProfile[];
   proformas: Proforma[];
   orders: PurchaseOrder[];
   receipts: PurchaseReceipt[];
@@ -194,6 +218,17 @@ export type PurchaseHubData = {
   accounts: { id: string; code: string; name: string; account_type: string }[];
   paymentMethods: { id: string; code: string; label_fr: string; account_scope: string }[];
   sites: { id: string; code: string; name_fr: string }[];
+};
+
+type RawOrderLine = PurchasingLine & {
+  receipt_lines?: {
+    accepted_quantity: number | string;
+    receipt: { status: string } | { status: string }[] | null;
+  }[];
+  invoice_lines?: {
+    quantity: number | string;
+    invoice: { status: string } | { status: string }[] | null;
+  }[];
 };
 
 function refreshPurchases() {
@@ -223,6 +258,7 @@ export async function getPurchaseHubData(): Promise<ActionResult<PurchaseHubData
     situations,
     stamps,
     sequences,
+    profiles,
     proformas,
     orders,
     receipts,
@@ -236,6 +272,7 @@ export async function getPurchaseHubData(): Promise<ActionResult<PurchaseHubData
     supabase.from("ref_situation_types").select("*").order("sort_order").order("code"),
     supabase.from("fin_stamp_rules").select("*").order("priority").order("code"),
     supabase.from("pur_number_sequences").select("*").order("document_type"),
+    supabase.from("pur_document_profiles").select("*").order("is_default", { ascending: false }).order("code"),
     supabase
       .from("pur_proformas")
       .select("*, supplier:pur_suppliers(legal_name), lines:pur_proforma_lines(*)")
@@ -277,6 +314,7 @@ export async function getPurchaseHubData(): Promise<ActionResult<PurchaseHubData
     situations.error,
     stamps.error,
     sequences.error,
+    profiles.error,
     proformas.error,
     orders.error,
     receipts.error,
@@ -294,7 +332,7 @@ export async function getPurchaseHubData(): Promise<ActionResult<PurchaseHubData
     total_tva: Number(order.total_tva),
     total_ttc: Number(order.total_ttc),
     supplier_name: relation(order.supplier)?.legal_name ?? "—",
-    lines: (order.lines ?? []).map((line) => ({
+    lines: ((order.lines ?? []) as RawOrderLine[]).map((line) => ({
       ...line,
       quantity: Number(line.quantity),
       supply_unit_price_ht: Number(line.supply_unit_price_ht),
@@ -315,7 +353,7 @@ export async function getPurchaseHubData(): Promise<ActionResult<PurchaseHubData
   })) as PurchaseOrder[];
 
   const mappedInvoices: SupplierInvoice[] = (invoices.data ?? []).map((invoice) => {
-    const payments = (invoice.payments ?? []).map((payment) => ({
+    const payments = ((invoice.payments ?? []) as SupplierPayment[]).map((payment) => ({
       ...payment,
       amount: Number(payment.amount),
       direction: Number(payment.direction),
@@ -360,13 +398,14 @@ export async function getPurchaseHubData(): Promise<ActionResult<PurchaseHubData
         padding: Number(row.padding),
         next_value: Number(row.next_value),
       })) as NumberSequence[],
+      documentProfiles: (profiles.data ?? []) as DocumentProfile[],
       proformas: (proformas.data ?? []).map((row) => ({
         ...row,
         total_ht: Number(row.total_ht),
         total_tva: Number(row.total_tva),
         total_ttc: Number(row.total_ttc),
         supplier_name: relation(row.supplier)?.legal_name ?? "—",
-        lines: (row.lines ?? []).map((line) => ({
+        lines: ((row.lines ?? []) as PurchasingLine[]).map((line) => ({
           ...line,
           quantity: Number(line.quantity),
           supply_unit_price_ht: Number(line.supply_unit_price_ht),
@@ -392,7 +431,11 @@ export async function getPurchaseHubData(): Promise<ActionResult<PurchaseHubData
 }
 
 async function upsertRow(
-  table: "pur_suppliers" | "ref_situation_types" | "fin_stamp_rules",
+  table:
+    | "pur_suppliers"
+    | "ref_situation_types"
+    | "fin_stamp_rules"
+    | "pur_document_profiles",
   payload: Record<string, unknown>,
   id?: string,
 ): Promise<ActionResult<{ id: string }>> {
@@ -426,6 +469,13 @@ export async function upsertStampRule(input: unknown) {
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Règle invalide" } as ActionResult<never>;
   const { id, ...payload } = parsed.data;
   return upsertRow("fin_stamp_rules", payload, id);
+}
+
+export async function upsertDocumentProfile(input: unknown) {
+  const parsed = documentProfileSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Profil invalide" } as ActionResult<never>;
+  const { id, ...payload } = parsed.data;
+  return upsertRow("pur_document_profiles", payload, id);
 }
 
 export async function updateNumberSequence(input: unknown): Promise<ActionResult> {
@@ -489,6 +539,7 @@ export async function createOrderFromProforma(input: unknown): Promise<ActionRes
     p_order_date: parsed.data.order_date,
     p_expected_delivery_date: parsed.data.expected_delivery_date ?? undefined,
     p_delivery_address: parsed.data.delivery_address ?? undefined,
+    p_document_profile_id: parsed.data.document_profile_id ?? undefined,
     p_note: parsed.data.note ?? undefined,
   });
   if (error) return fail(error);

@@ -116,6 +116,29 @@ values
   ('SUPPLIER_INVOICE', 'FF', 5, true)
 on conflict (document_type) do nothing;
 
+create table public.pur_document_profiles (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique check (code = upper(trim(code)) and char_length(code) between 1 and 40),
+  label_fr text not null check (char_length(trim(label_fr)) between 1 and 160),
+  legal_name text not null check (char_length(trim(legal_name)) between 1 and 200),
+  address text,
+  city text,
+  phone text,
+  email text,
+  nif text,
+  nis text,
+  rc text,
+  ai text,
+  capital text,
+  bank_details text,
+  footer text,
+  active boolean not null default true,
+  is_default boolean not null default false check (not is_default or active),
+  created_by uuid references public.sys_users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table public.pur_suppliers (
   id uuid primary key default gen_random_uuid(),
   code text not null unique check (code = upper(trim(code)) and char_length(code) between 1 and 40),
@@ -185,6 +208,8 @@ create table public.pur_orders (
   id uuid primary key default gen_random_uuid(),
   order_number text not null unique,
   proforma_id uuid references public.pur_proformas(id) on delete restrict,
+  document_profile_id uuid references public.pur_document_profiles(id) on delete restrict,
+  issuer_snapshot jsonb not null default '{}'::jsonb check (jsonb_typeof(issuer_snapshot) = 'object'),
   supplier_id uuid not null references public.pur_suppliers(id) on delete restrict,
   site_id uuid references public.ref_sites(id) on delete restrict,
   order_date date not null default current_date,
@@ -329,6 +354,32 @@ alter table public.contract_items
 update public.contract_items
 set supply_unit_price_ht = unit_price_ht, installation_unit_price_ht = 0;
 
+create or replace function public.contract_item_price_split_guard()
+returns trigger
+language plpgsql set search_path = public, pg_temp
+as $$
+begin
+  if coalesce(new.supply_unit_price_ht, 0) + coalesce(new.installation_unit_price_ht, 0) = 0
+     and new.unit_price_ht > 0 then
+    if new.item_type = 'LABOR' then
+      new.installation_unit_price_ht := new.unit_price_ht;
+    else
+      new.supply_unit_price_ht := new.unit_price_ht;
+    end if;
+  else
+    new.unit_price_ht := coalesce(new.supply_unit_price_ht, 0)
+      + coalesce(new.installation_unit_price_ht, 0);
+  end if;
+  new.total_price_ht := round(new.quantity * new.unit_price_ht, 2);
+  return new;
+end;
+$$;
+
+create trigger trg_contract_item_price_split
+before insert or update of quantity, unit_price_ht, supply_unit_price_ht, installation_unit_price_ht
+on public.contract_items
+for each row execute function public.contract_item_price_split_guard();
+
 alter table public.contract_invoice_lines
   add column supply_unit_price_ht numeric(18,4) not null default 0,
   add column installation_unit_price_ht numeric(18,4) not null default 0,
@@ -467,13 +518,14 @@ declare
   v_total_ht numeric;
   v_total_tva numeric;
   v_total_ttc numeric;
+  v_invoice_date date;
   v_supply numeric;
   v_installation numeric;
   v_rg numeric;
   v_stamp numeric;
 begin
-  select i.contract_id, c.site_id, i.status, i.total_ht, i.tva_amount, i.total_ttc
-  into v_contract_id, v_site_id, v_status, v_total_ht, v_total_tva, v_total_ttc
+  select i.contract_id, c.site_id, i.status, i.total_ht, i.tva_amount, i.total_ttc, i.invoice_date
+  into v_contract_id, v_site_id, v_status, v_total_ht, v_total_tva, v_total_ttc, v_invoice_date
   from public.contract_invoices i join public.ref_contracts c on c.id = i.contract_id
   where i.id = p_invoice_id for update of i;
   if not found then raise exception 'Invoice not found'; end if;
@@ -497,7 +549,7 @@ begin
   into v_supply, v_installation
   from public.contract_invoice_lines where invoice_id = p_invoice_id;
   v_rg := round(v_total_ht * coalesce(p_retention_rate, 0), 2);
-  v_stamp := public.fin_calculate_stamp(p_stamp_rule_id, current_date, v_total_ht, v_total_tva, v_total_ttc);
+  v_stamp := public.fin_calculate_stamp(p_stamp_rule_id, v_invoice_date, v_total_ht, v_total_tva, v_total_ttc);
 
   update public.contract_invoices set
     situation_type_id = p_situation_type_id,
@@ -619,12 +671,15 @@ create or replace function public.pur_create_order_from_proforma(
   p_order_date date,
   p_expected_delivery_date date,
   p_delivery_address text,
+  p_document_profile_id uuid,
   p_note text
 )
 returns jsonb
 language plpgsql security definer set search_path = public, pg_temp
 as $$
-declare v_p public.pur_proformas%rowtype; v_id uuid := gen_random_uuid(); v_number text;
+declare
+  v_p public.pur_proformas%rowtype; v_id uuid := gen_random_uuid(); v_number text;
+  v_profile public.pur_document_profiles%rowtype;
 begin
   select * into v_p from public.pur_proformas where id = p_proforma_id for update;
   if not found then raise exception 'Proforma not found'; end if;
@@ -633,13 +688,31 @@ begin
     raise exception 'An active order already exists for this proforma';
   end if;
   if not public.pur_can_access('create'::public.rbac_action, v_p.site_id) then raise exception 'Permission denied'; end if;
+  if p_document_profile_id is not null then
+    select * into v_profile from public.pur_document_profiles
+    where id = p_document_profile_id and active;
+    if not found then raise exception 'Active document profile not found'; end if;
+  else
+    select * into v_profile from public.pur_document_profiles
+    where active and is_default order by created_at limit 1;
+  end if;
   v_number := coalesce(nullif(trim(p_order_number), ''), public.pur_next_number('ORDER', p_order_date));
   insert into public.pur_orders(
-    id, order_number, proforma_id, supplier_id, site_id, order_date, expected_delivery_date,
+    id, order_number, proforma_id, document_profile_id, issuer_snapshot,
+    supplier_id, site_id, order_date, expected_delivery_date,
     delivery_address, currency_code, status, total_ht, total_tva, total_ttc,
     payment_terms, note, approved_at, approved_by, created_by
   ) values (
-    v_id, v_number, v_p.id, v_p.supplier_id, v_p.site_id, coalesce(p_order_date, current_date),
+    v_id, v_number, v_p.id, v_profile.id,
+    case when v_profile.id is null then '{}'::jsonb else
+      jsonb_build_object(
+        'legal_name', v_profile.legal_name, 'address', v_profile.address, 'city', v_profile.city,
+        'phone', v_profile.phone, 'email', v_profile.email, 'nif', v_profile.nif,
+        'nis', v_profile.nis, 'rc', v_profile.rc, 'ai', v_profile.ai,
+        'capital', v_profile.capital, 'bank_details', v_profile.bank_details,
+        'footer', v_profile.footer
+      ) end,
+    v_p.supplier_id, v_p.site_id, coalesce(p_order_date, current_date),
     p_expected_delivery_date, nullif(trim(p_delivery_address), ''), v_p.currency_code,
     'APPROVED', v_p.total_ht, v_p.total_tva, v_p.total_ttc, v_p.payment_terms,
     nullif(trim(p_note), ''), now(), auth.uid(), auth.uid()
@@ -789,6 +862,7 @@ begin
   end if;
   v_rg := round(v_total_ht * coalesce(p_retention_rate, 0), 2);
   v_stamp := public.fin_calculate_stamp(p_stamp_rule_id, p_invoice_date, v_total_ht, v_total_tva, v_total_ht + v_total_tva);
+  perform set_config('app.pur_invoice_post', '1', true);
   update public.pur_supplier_invoices set
     total_supply_ht = v_supply, total_installation_ht = v_install,
     total_ht = v_total_ht, total_tva = v_total_tva, total_ttc = v_total_ht + v_total_tva,
@@ -800,6 +874,7 @@ begin
         from public.pur_supplier_invoice_lines where supplier_invoice_id = v_id group by tax_rate) x
     ), '[]'::jsonb)
   where id = v_id;
+  perform set_config('app.pur_invoice_post', '0', true);
   return jsonb_build_object('id', v_id, 'number', v_number, 'net_payable',
     greatest(v_total_ht + v_total_tva + v_stamp - v_rg, 0));
 end;
@@ -835,7 +910,8 @@ as $$
 declare
   v_inv public.pur_supplier_invoices%rowtype; v_order public.pur_orders%rowtype;
   v_supplier text; v_open numeric; v_tx uuid := gen_random_uuid(); v_id uuid := gen_random_uuid();
-  v_account public.fin_accounts%rowtype; v_category uuid; v_balance numeric;
+  v_account public.fin_accounts%rowtype; v_method public.fin_payment_methods%rowtype;
+  v_category uuid; v_balance numeric;
 begin
   select * into v_inv from public.pur_supplier_invoices where id = p_invoice_id for update;
   if not found or v_inv.status <> 'POSTED' then raise exception 'Supplier invoice not payable'; end if;
@@ -847,6 +923,14 @@ begin
   select legal_name into v_supplier from public.pur_suppliers where id = v_inv.supplier_id;
   select * into v_account from public.fin_accounts where id = p_account_id for update;
   if not found or not v_account.active then raise exception 'Active account not found'; end if;
+  select * into v_method from public.fin_payment_methods where id = p_payment_method_id and active;
+  if not found then raise exception 'Active payment method not found'; end if;
+  if v_method.account_scope <> 'BOTH' and v_method.account_scope <> v_account.account_type then
+    raise exception 'Payment method is incompatible with account type';
+  end if;
+  if v_order.site_id is not null and v_account.site_id is not null and v_order.site_id <> v_account.site_id then
+    raise exception 'Account belongs to another site';
+  end if;
   if not public.fin_can_access('create', v_account.site_id) then raise exception 'Finance permission denied'; end if;
   if public.fin_period_is_locked(p_account_id, coalesce(p_payment_date, current_date)) then
     raise exception 'Financial period is locked';
@@ -890,8 +974,10 @@ begin
   if not public.pur_can_access('update'::public.rbac_action, v_site) then raise exception 'Permission denied'; end if;
   if v_status <> 'HELD' then raise exception 'No held retention'; end if;
   if v_due is not null and v_due > current_date then raise exception 'Retention is not due yet'; end if;
+  perform set_config('app.pur_retention_release', '1', true);
   update public.pur_supplier_invoices set retention_status = 'RELEASED', retention_released_at = now()
   where id = p_invoice_id;
+  perform set_config('app.pur_retention_release', '0', true);
 end;
 $$;
 
@@ -944,12 +1030,34 @@ as $$
 begin raise exception '% is append-only; use reversal/cancellation workflow', tg_table_name; end;
 $$;
 
+create or replace function public.pur_supplier_invoice_guard()
+returns trigger
+language plpgsql set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'DELETE' then
+    raise exception 'Supplier invoices are append-only';
+  end if;
+  if current_setting('app.pur_invoice_post', true) = '1' then
+    return new;
+  end if;
+  if current_setting('app.pur_retention_release', true) <> '1' then
+    raise exception 'Posted supplier invoice is immutable';
+  end if;
+  if (to_jsonb(new) - array['retention_status', 'retention_released_at']::text[])
+     <> (to_jsonb(old) - array['retention_status', 'retention_released_at']::text[]) then
+    raise exception 'Only retention release fields may change';
+  end if;
+  return new;
+end;
+$$;
+
 create trigger trg_pur_receipts_guard before update or delete on public.pur_receipts
 for each row execute function public.pur_financial_guard();
 create trigger trg_pur_receipt_lines_guard before update or delete on public.pur_receipt_lines
 for each row execute function public.pur_financial_guard();
-create trigger trg_pur_supplier_invoices_guard before delete on public.pur_supplier_invoices
-for each row execute function public.pur_financial_guard();
+create trigger trg_pur_supplier_invoices_guard before update or delete on public.pur_supplier_invoices
+for each row execute function public.pur_supplier_invoice_guard();
 create trigger trg_pur_supplier_invoice_lines_guard before update or delete on public.pur_supplier_invoice_lines
 for each row execute function public.pur_financial_guard();
 create trigger trg_pur_supplier_payments_guard before update or delete on public.pur_supplier_payments
@@ -959,6 +1067,8 @@ create trigger trg_ref_situation_types_updated before update on public.ref_situa
 for each row execute function public.erp_set_updated_at();
 create trigger trg_fin_stamp_rules_updated before update on public.fin_stamp_rules
 for each row execute function public.erp_set_updated_at();
+create trigger trg_pur_document_profiles_updated before update on public.pur_document_profiles
+for each row execute function public.erp_set_updated_at();
 create trigger trg_pur_suppliers_updated before update on public.pur_suppliers
 for each row execute function public.erp_set_updated_at();
 create trigger trg_pur_proformas_updated before update on public.pur_proformas
@@ -966,11 +1076,28 @@ for each row execute function public.erp_set_updated_at();
 create trigger trg_pur_orders_updated before update on public.pur_orders
 for each row execute function public.erp_set_updated_at();
 
+create or replace function public.pur_document_profile_default_guard()
+returns trigger
+language plpgsql set search_path = public, pg_temp
+as $$
+begin
+  if new.is_default then
+    update public.pur_document_profiles set is_default = false
+    where is_default and id <> new.id;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger trg_pur_document_profile_default
+before insert or update of is_default on public.pur_document_profiles
+for each row execute function public.pur_document_profile_default_guard();
+
 do $$
 declare t text;
 begin
   foreach t in array array[
-    'ref_situation_types', 'fin_stamp_rules', 'pur_suppliers',
+    'ref_situation_types', 'fin_stamp_rules', 'pur_document_profiles', 'pur_suppliers',
     'pur_proformas', 'pur_proforma_lines', 'pur_orders', 'pur_order_lines',
     'pur_receipts', 'pur_receipt_lines', 'pur_supplier_invoices',
     'pur_supplier_invoice_lines', 'pur_supplier_payments'
@@ -984,17 +1111,22 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'ref_situation_types', 'fin_stamp_rules', 'pur_number_sequences', 'pur_suppliers',
+    'ref_situation_types', 'fin_stamp_rules', 'pur_number_sequences', 'pur_document_profiles', 'pur_suppliers',
     'pur_proformas', 'pur_proforma_lines', 'pur_orders', 'pur_order_lines',
     'pur_receipts', 'pur_receipt_lines', 'pur_supplier_invoices',
     'pur_supplier_invoice_lines', 'pur_supplier_invoice_receipts', 'pur_supplier_payments'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
-    execute format('create policy %I on public.%I for select to authenticated using (auth.uid() is not null)',
+    execute format('create policy %I on public.%I for select to authenticated using (public.pur_can_access(''read''::public.rbac_action, null))',
       t || '_read', t);
-    execute format('create policy %I on public.%I for all to authenticated using (public.pur_can_access(''update''::public.rbac_action, null))
-      with check (public.pur_can_access(''create''::public.rbac_action, null))', t || '_write', t);
+    execute format('create policy %I on public.%I for insert to authenticated
+      with check (public.pur_can_access(''create''::public.rbac_action, null))', t || '_insert', t);
+    execute format('create policy %I on public.%I for update to authenticated
+      using (public.pur_can_access(''update''::public.rbac_action, null))
+      with check (public.pur_can_access(''update''::public.rbac_action, null))', t || '_update', t);
+    execute format('create policy %I on public.%I for delete to authenticated
+      using (public.pur_can_access(''delete''::public.rbac_action, null))', t || '_delete', t);
   end loop;
 end $$;
 
@@ -1004,7 +1136,7 @@ grant execute on function public.fin_calculate_stamp(uuid, date, numeric, numeri
 grant execute on function public.ref_contract_configure_invoice(uuid, uuid, uuid, numeric, date, uuid) to authenticated;
 grant execute on function public.pur_create_proforma(uuid, uuid, text, text, date, date, text, text, text, text, text, jsonb) to authenticated;
 grant execute on function public.pur_set_proforma_status(uuid, text) to authenticated;
-grant execute on function public.pur_create_order_from_proforma(uuid, text, date, date, text, text) to authenticated;
+grant execute on function public.pur_create_order_from_proforma(uuid, text, date, date, text, uuid, text) to authenticated;
 grant execute on function public.pur_post_receipt(uuid, text, date, text, text, text, jsonb) to authenticated;
 grant execute on function public.pur_post_supplier_invoice(uuid, text, text, date, date, numeric, date, uuid, uuid[], text, text, jsonb) to authenticated;
 grant execute on function public.pur_supplier_invoice_open(uuid) to authenticated;

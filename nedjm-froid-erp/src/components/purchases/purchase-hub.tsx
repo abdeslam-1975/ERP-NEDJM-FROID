@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   createOrderFromProforma,
@@ -12,7 +12,6 @@ import {
   setProformaStatus,
   upsertSupplier,
   type PurchaseHubData,
-  type PurchaseOrder,
   type Supplier,
 } from "@/lib/actions/purchases";
 import { Button } from "@/components/ui/button";
@@ -291,6 +290,8 @@ function Orders({ data, pending, run }: { data: PurchaseHubData; pending: boolea
     order_date: today(),
     expected_delivery_date: "",
     delivery_address: "",
+    document_profile_id:
+      data.documentProfiles.find((profile) => profile.is_default && profile.active)?.id ?? "",
     note: "",
   });
   return (
@@ -302,17 +303,18 @@ function Orders({ data, pending, run }: { data: PurchaseHubData; pending: boolea
           <Field label="Date BC"><input type="date" className={inputClass} value={form.order_date} onChange={(e) => setForm((f) => ({ ...f, order_date: e.target.value }))} /></Field>
           <Field label="Livraison prévue"><input type="date" className={inputClass} value={form.expected_delivery_date} onChange={(e) => setForm((f) => ({ ...f, expected_delivery_date: e.target.value }))} /></Field>
           <Field label="Adresse de livraison"><input className={inputClass} value={form.delivery_address} onChange={(e) => setForm((f) => ({ ...f, delivery_address: e.target.value }))} /></Field>
+          <Field label="Profil d&apos;impression"><select className={inputClass} value={form.document_profile_id} onChange={(e) => setForm((f) => ({ ...f, document_profile_id: e.target.value }))}><option value="">Sans profil</option>{data.documentProfiles.filter((row) => row.active).map((row) => <option key={row.id} value={row.id}>{row.label_fr}</option>)}</select></Field>
           <Field label="Note"><input className={inputClass} value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} /></Field>
         </div>
-        <Button className="mt-4" disabled={pending || !form.proforma_id} onClick={() => run(() => createOrderFromProforma({ ...form, expected_delivery_date: form.expected_delivery_date || null }), "Bon de commande créé.")}>Créer le bon de commande</Button>
+        <Button className="mt-4" disabled={pending || !form.proforma_id} onClick={() => run(() => createOrderFromProforma({ ...form, expected_delivery_date: form.expected_delivery_date || null, document_profile_id: form.document_profile_id || null }), "Bon de commande créé.")}>Créer le bon de commande</Button>
       </Panel>
       <DocumentTable
-        headers={["N° BC", "Date", "Fournisseur", "HT", "TTC", "Réception", "Facturation", "Statut"]}
+        headers={["N° BC", "Date", "Fournisseur", "HT", "TTC", "Réception", "Facturation", "Statut", ""]}
         rows={data.orders.map((row) => {
           const ordered = row.lines.reduce((sum, line) => sum + line.quantity, 0);
           const received = row.lines.reduce((sum, line) => sum + line.received_quantity, 0);
           const invoiced = row.lines.reduce((sum, line) => sum + line.invoiced_quantity, 0);
-          return [row.order_number, row.order_date, row.supplier_name, money(row.total_ht), money(row.total_ttc), `${received} / ${ordered}`, `${invoiced} / ${received}`, <Status key="s" value={row.status} />];
+          return [row.order_number, row.order_date, row.supplier_name, money(row.total_ht), money(row.total_ttc), `${received} / ${ordered}`, `${invoiced} / ${received}`, <Status key="s" value={row.status} />, <a key="pdf" className="font-semibold text-brand" href={`/api/purchases/orders/${row.id}/pdf`} target="_blank">PDF</a>];
         })}
       />
     </div>

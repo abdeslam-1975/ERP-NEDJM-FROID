@@ -9,6 +9,7 @@ const emptyData: PurchaseHubData = {
   situations: [],
   stampRules: [],
   sequences: [],
+  documentProfiles: [],
   proformas: [],
   orders: [],
   receipts: [],
