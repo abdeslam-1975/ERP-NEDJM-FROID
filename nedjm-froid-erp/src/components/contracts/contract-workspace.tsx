@@ -263,6 +263,7 @@ export function ContractWorkspace({
           items={labor}
           pending={pending}
           taxRates={financeOptions.tax_rates}
+          situationTypes={financeOptions.situation_types}
           onUpsert={(row) =>
             run(async () => {
               const result = await upsertContractItem(row);
@@ -290,6 +291,7 @@ export function ContractWorkspace({
           items={spares}
           pending={pending}
           taxRates={financeOptions.tax_rates}
+          situationTypes={financeOptions.situation_types}
           searchable
           onUpsert={(row) =>
             run(async () => {
@@ -332,6 +334,9 @@ export function ContractWorkspace({
           contract={contract}
           pending={pending}
           taxRates={financeOptions.tax_rates}
+          situationTypes={financeOptions.situation_types}
+          paymentMethods={financeOptions.payment_methods}
+          stampRules={financeOptions.stamp_rules}
           onCreate={(payload) =>
             run(async () => {
               const result = await createInvoiceDraft(payload);
@@ -1014,6 +1019,7 @@ function ItemsTab({
   items,
   pending,
   taxRates,
+  situationTypes,
   searchable,
   onUpsert,
   onDelete,
@@ -1023,6 +1029,7 @@ function ItemsTab({
   items: ContractItem[];
   pending: boolean;
   taxRates: ContractFinanceOptions["tax_rates"];
+  situationTypes: ContractFinanceOptions["situation_types"];
   searchable?: boolean;
   onUpsert: (row: Record<string, unknown>) => void;
   onDelete: (id: string) => void;
@@ -1035,7 +1042,9 @@ function ItemsTab({
     designation: "",
     unit: itemType === "LABOR" ? "JOUR" : "U",
     quantity: "1",
-    unit_price_ht: "0",
+    supply_unit_price_ht: "0",
+    installation_unit_price_ht: "0",
+    situation_type_id: "",
     sort_order: "0",
     tax_rule: "INHERIT" as ContractItem["tax_rule"],
     tax_rate_id: "",
@@ -1061,7 +1070,9 @@ function ItemsTab({
       designation: item.designation,
       unit: item.unit,
       quantity: String(item.quantity),
-      unit_price_ht: String(item.unit_price_ht),
+      supply_unit_price_ht: String(item.supply_unit_price_ht),
+      installation_unit_price_ht: String(item.installation_unit_price_ht),
+      situation_type_id: item.situation_type_id ?? "",
       sort_order: String(item.sort_order),
       tax_rule: item.tax_rule,
       tax_rate_id: item.tax_rate_id ?? "",
@@ -1075,7 +1086,9 @@ function ItemsTab({
       designation: "",
       unit: itemType === "LABOR" ? "JOUR" : "U",
       quantity: "1",
-      unit_price_ht: "0",
+      supply_unit_price_ht: "0",
+      installation_unit_price_ht: "0",
+      situation_type_id: "",
       sort_order: "0",
       tax_rule: "INHERIT",
       tax_rate_id: "",
@@ -1095,7 +1108,7 @@ function ItemsTab({
           }}
         />
       )}
-      <div className="grid gap-2 sm:grid-cols-6">
+      <div className="grid gap-2 sm:grid-cols-7">
         <input
           className={inputClass}
           placeholder="Code"
@@ -1128,14 +1141,37 @@ function ItemsTab({
         <input
           type="number"
           className={inputClass}
-          placeholder="PU HT"
-          value={form.unit_price_ht}
+          placeholder="PU fourniture HT"
+          value={form.supply_unit_price_ht}
           onChange={(e) =>
-            setForm((f) => ({ ...f, unit_price_ht: e.target.value }))
+            setForm((f) => ({ ...f, supply_unit_price_ht: e.target.value }))
+          }
+        />
+        <input
+          type="number"
+          className={inputClass}
+          placeholder="PU pose HT"
+          value={form.installation_unit_price_ht}
+          onChange={(e) =>
+            setForm((f) => ({ ...f, installation_unit_price_ht: e.target.value }))
           }
         />
       </div>
-      <div className="grid gap-2 rounded-md border border-border bg-surface-muted p-3 sm:grid-cols-2">
+      <div className="grid gap-2 rounded-md border border-border bg-surface-muted p-3 sm:grid-cols-3">
+        <Field label="Type de situation">
+          <select
+            className={inputClass}
+            value={form.situation_type_id}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, situation_type_id: e.target.value }))
+            }
+          >
+            <option value="">Non défini</option>
+            {situationTypes.map((type) => (
+              <option key={type.id} value={type.id}>{type.label_fr}</option>
+            ))}
+          </select>
+        </Field>
         <Field label="Règle TVA du poste">
           <select
             className={inputClass}
@@ -1182,7 +1218,12 @@ function ItemsTab({
               designation: form.designation,
               unit: form.unit,
               quantity: Number(form.quantity),
-              unit_price_ht: Number(form.unit_price_ht),
+              unit_price_ht:
+                Number(form.supply_unit_price_ht) +
+                Number(form.installation_unit_price_ht),
+              supply_unit_price_ht: Number(form.supply_unit_price_ht),
+              installation_unit_price_ht: Number(form.installation_unit_price_ht),
+              situation_type_id: form.situation_type_id || null,
               sort_order: Number(form.sort_order) || 0,
               tax_rule: form.tax_rule,
               tax_rate_id: form.tax_rate_id || null,
@@ -1205,7 +1246,8 @@ function ItemsTab({
               <th className="px-3 py-2">Désignation</th>
               <th className="px-3 py-2">Unité</th>
               <th className="px-3 py-2">Qté</th>
-              <th className="px-3 py-2">PU HT</th>
+              <th className="px-3 py-2">PU fourniture</th>
+              <th className="px-3 py-2">PU pose</th>
               <th className="px-3 py-2">Total</th>
               <th className="px-3 py-2">TVA</th>
               <th className="px-3 py-2 text-right">Actions</th>
@@ -1218,7 +1260,8 @@ function ItemsTab({
                 <td className="px-3 py-2">{item.designation}</td>
                 <td className="px-3 py-2">{item.unit}</td>
                 <td className="px-3 py-2">{item.quantity}</td>
-                <td className="px-3 py-2">{money(item.unit_price_ht)}</td>
+                <td className="px-3 py-2">{money(item.supply_unit_price_ht)}</td>
+                <td className="px-3 py-2">{money(item.installation_unit_price_ht)}</td>
                 <td className="px-3 py-2">{money(item.total_price_ht)}</td>
                 <td className="px-3 py-2">
                   {item.tax_rule === "INHERIT"
@@ -2359,6 +2402,9 @@ function InvoicingTab({
   contract,
   pending,
   taxRates,
+  situationTypes,
+  paymentMethods,
+  stampRules,
   onCreate,
   onIssue,
   onCancel,
@@ -2366,6 +2412,9 @@ function InvoicingTab({
   contract: ContractDetail;
   pending: boolean;
   taxRates: ContractFinanceOptions["tax_rates"];
+  situationTypes: ContractFinanceOptions["situation_types"];
+  paymentMethods: ContractFinanceOptions["payment_methods"];
+  stampRules: ContractFinanceOptions["stamp_rules"];
   onCreate: (payload: Record<string, unknown>) => void;
   onIssue: (invoiceId: string) => void;
   onCancel: (invoiceId: string) => void;
@@ -2392,6 +2441,11 @@ function InvoicingTab({
     exemption_certificate_number: "",
     exemption_certificate_date: "",
     exemption_note: "",
+    situation_type_id: "",
+    expected_payment_method_id: "",
+    retention_rate_pct: "0",
+    retention_due_date: "",
+    stamp_rule_id: "",
   });
   const [draftLines, setDraftLines] = useState<
     {
@@ -2576,6 +2630,82 @@ function InvoicingTab({
           </select>
         </Field>
       </div>
+      <div className="grid gap-2 rounded-md border border-border bg-surface-muted p-3 sm:grid-cols-5">
+        <Field label="Type de situation">
+          <select
+            className={inputClass}
+            value={form.situation_type_id}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, situation_type_id: e.target.value }))
+            }
+          >
+            <option value="">Selon les lignes</option>
+            {situationTypes.map((type) => (
+              <option key={type.id} value={type.id}>{type.label_fr}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Paiement prévu">
+          <select
+            className={inputClass}
+            value={form.expected_payment_method_id}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                expected_payment_method_id: e.target.value,
+              }))
+            }
+          >
+            <option value="">Non défini</option>
+            {paymentMethods.map((method) => (
+              <option key={method.id} value={method.id}>{method.label_fr}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="RG sur HT (%)">
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            className={inputClass}
+            value={form.retention_rate_pct}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, retention_rate_pct: e.target.value }))
+            }
+          />
+        </Field>
+        <Field label="Échéance RG">
+          <input
+            type="date"
+            className={inputClass}
+            value={form.retention_due_date}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, retention_due_date: e.target.value }))
+            }
+          />
+        </Field>
+        <Field label="Règle de timbre">
+          <select
+            className={inputClass}
+            value={form.stamp_rule_id}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, stamp_rule_id: e.target.value }))
+            }
+          >
+            <option value="">Aucun timbre</option>
+            {stampRules
+              .filter(
+                (rule) =>
+                  !rule.payment_method_id ||
+                  rule.payment_method_id === form.expected_payment_method_id,
+              )
+              .map((rule) => (
+                <option key={rule.id} value={rule.id}>{rule.label_fr}</option>
+              ))}
+          </select>
+        </Field>
+      </div>
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
@@ -2684,6 +2814,12 @@ function InvoicingTab({
             exemption_certificate_date:
               form.exemption_certificate_date || null,
             exemption_note: form.exemption_note || undefined,
+            situation_type_id: form.situation_type_id || null,
+            expected_payment_method_id:
+              form.expected_payment_method_id || null,
+            retention_rate: Number(form.retention_rate_pct) / 100,
+            retention_due_date: form.retention_due_date || null,
+            stamp_rule_id: form.stamp_rule_id || null,
             lines: draftLines.map(
               ({ contract_item_id, quantity, tax_rule, tax_rate_id }) => ({
               contract_item_id,
@@ -2749,6 +2885,13 @@ function InvoicingTab({
                     {inv.tva_amount > 0
                       ? ` · TVA ${money(inv.tva_amount)} · TTC ${money(inv.total_ttc)}`
                       : " · exonéré TVA"}
+                  </p>
+                  <p className="text-xs font-medium">
+                    Fourniture {money(inv.total_supply_ht)} · Pose{" "}
+                    {money(inv.total_installation_ht)} · RG{" "}
+                    {money(inv.retention_amount)} · Timbre{" "}
+                    {money(inv.stamp_amount)} · Net à payer{" "}
+                    {money(inv.net_payable)}
                   </p>
                   <p className="text-xs text-foreground/55">
                     Régime {inv.tax_mode}

@@ -7,6 +7,8 @@ export type InvoicePdfLine = {
   unit: string;
   quantity: number;
   unit_price_ht: number;
+  supply_unit_price_ht: number;
+  installation_unit_price_ht: number;
   total_price_ht: number;
   tax_rate: number;
   tax_amount: number;
@@ -26,6 +28,15 @@ export type InvoicePdfInput = {
   exemption_certificate_number: string | null;
   exemption_certificate_date: string | null;
   exemption_note: string | null;
+  situation_label: string | null;
+  total_supply_ht: number;
+  total_installation_ht: number;
+  retention_rate: number;
+  retention_amount: number;
+  retention_status: "NONE" | "HELD" | "RELEASED";
+  retention_due_date: string | null;
+  stamp_amount: number;
+  net_payable: number;
   lines: InvoicePdfLine[];
   contract_number: string;
   client_name: string;
@@ -123,6 +134,9 @@ export async function buildInvoicePdf(
   doc.text(input.client_name);
   if (nonEmpty(input.site_name)) doc.text(`Site : ${input.site_name}`);
   doc.text(`Contrat : ${input.contract_number}`);
+  if (nonEmpty(input.situation_label)) {
+    doc.text(`Type de situation : ${input.situation_label}`);
+  }
 
   doc.moveDown(1);
   const tableTop = doc.y;
@@ -192,6 +206,21 @@ export async function buildInvoicePdf(
   });
   doc.moveDown(0.6);
 
+  if (input.total_supply_ht > 0 && input.total_installation_ht > 0) {
+    doc.text("Dont fourniture HT", totalsX, doc.y, { width: 110 });
+    doc.text(`${money(input.total_supply_ht)} DA`, 450, doc.y, {
+      width: 97,
+      align: "right",
+    });
+    doc.moveDown(0.5);
+    doc.text("Dont pose HT", totalsX, doc.y, { width: 110 });
+    doc.text(`${money(input.total_installation_ht)} DA`, 450, doc.y, {
+      width: 97,
+      align: "right",
+    });
+    doc.moveDown(0.6);
+  }
+
   if (input.tva_amount <= 0) {
     const arts =
       input.tva_articles.length > 0
@@ -236,6 +265,34 @@ export async function buildInvoicePdf(
   doc.font("Helvetica-Bold");
   doc.text("Total TTC", totalsX, doc.y, { width: 90 });
   doc.text(`${money(input.total_ttc)} DA`, 450, doc.y, {
+    width: 97,
+    align: "right",
+  });
+
+  if (input.retention_amount > 0) {
+    doc.moveDown(0.6);
+    doc.font("Helvetica");
+    doc.text(`RG (${(input.retention_rate * 100).toFixed(2)} % du HT)`, totalsX, doc.y, {
+      width: 120,
+    });
+    doc.text(`- ${money(input.retention_amount)} DA`, 450, doc.y, {
+      width: 97,
+      align: "right",
+    });
+  }
+  if (input.stamp_amount > 0) {
+    doc.moveDown(0.6);
+    doc.font("Helvetica");
+    doc.text("Timbre", totalsX, doc.y, { width: 90 });
+    doc.text(`+ ${money(input.stamp_amount)} DA`, 450, doc.y, {
+      width: 97,
+      align: "right",
+    });
+  }
+  doc.moveDown(0.7);
+  doc.font("Helvetica-Bold");
+  doc.text("Net à payer", totalsX, doc.y, { width: 90 });
+  doc.text(`${money(input.net_payable)} DA`, 450, doc.y, {
     width: 97,
     align: "right",
   });

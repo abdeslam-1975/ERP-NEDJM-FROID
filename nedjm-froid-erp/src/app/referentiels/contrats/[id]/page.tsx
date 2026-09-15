@@ -34,7 +34,13 @@ export default async function ContratDetailPage({
         financeOptions={
           financeRes.ok
             ? financeRes.data
-            : { tax_rates: [], accounts: [], payment_methods: [] }
+            : {
+                tax_rates: [],
+                accounts: [],
+                payment_methods: [],
+                situation_types: [],
+                stamp_rules: [],
+              }
         }
       />
     </AppShell>

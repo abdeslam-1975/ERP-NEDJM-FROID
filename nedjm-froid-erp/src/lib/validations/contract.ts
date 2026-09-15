@@ -58,6 +58,9 @@ export const contractItemSchema = z.object({
   unit: z.string().trim().min(1).max(32).default("U"),
   quantity: z.coerce.number().min(0),
   unit_price_ht: z.coerce.number().min(0),
+  supply_unit_price_ht: z.coerce.number().min(0).optional(),
+  installation_unit_price_ht: z.coerce.number().min(0).optional(),
+  situation_type_id: z.string().uuid().nullable().optional(),
   sort_order: z.coerce.number().int().default(0),
   tax_rule: z.enum(["INHERIT", "TAXABLE", "EXEMPT"]).default("INHERIT"),
   tax_rate_id: z.string().uuid().nullable().optional(),
@@ -141,6 +144,15 @@ export const invoiceDraftSchema = z.object({
     .optional()
     .nullable(),
   exemption_note: z.string().trim().max(500).optional(),
+  situation_type_id: z.string().uuid().nullable().optional(),
+  expected_payment_method_id: z.string().uuid().nullable().optional(),
+  retention_rate: z.coerce.number().min(0).max(1).default(0),
+  retention_due_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .nullable(),
+  stamp_rule_id: z.string().uuid().nullable().optional(),
 });
 
 export const invoiceIdSchema = z.object({

@@ -69,6 +69,22 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    titleFr: "Achats",
+    titleAr: "المشتريات",
+    items: [
+      {
+        href: "/achats",
+        labelFr: "Achats & fournisseurs",
+        labelAr: "المشتريات والموردون",
+      },
+      {
+        href: "/achats/parametres",
+        labelFr: "Paramètres documentaires",
+        labelAr: "إعدادات الوثائق",
+      },
+    ],
+  },
+  {
     titleFr: "Paramètres",
     titleAr: "الإعدادات",
     items: [
