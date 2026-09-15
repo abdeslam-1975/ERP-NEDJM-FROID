@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { loginAction, type AuthActionResult } from "@/lib/actions/auth";
 import { Button } from "@/components/ui/button";
+import { PasswordInput } from "@/components/ui/password-input";
 
 const initial: AuthActionResult | null = null;
 
@@ -44,14 +45,14 @@ export function LoginForm({ nextPath = "/" }: { nextPath?: string }) {
             كلمة المرور
           </span>
         </label>
-        <input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           autoComplete="current-password"
           required
           minLength={8}
-          className="mt-1.5 w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+          wrapperClassName="mt-1.5"
+          className="w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
         />
       </div>
 

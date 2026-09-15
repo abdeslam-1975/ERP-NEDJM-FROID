@@ -44,9 +44,13 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user: { id: string } | null = null;
+  try {
+    const auth = await supabase.auth.getUser();
+    user = auth.data.user;
+  } catch {
+    return supabaseResponse;
+  }
 
   const pathname = request.nextUrl.pathname;
   const isLogin = pathname === "/login";
@@ -68,11 +72,21 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user) {
-    const { data: profile } = await supabase
-      .from("sys_users")
-      .select("must_reset_password, status")
-      .eq("id", user.id)
-      .maybeSingle();
+    let profile: { must_reset_password: boolean; status: string } | null =
+      null;
+    try {
+      const result = await supabase
+        .from("sys_users")
+        .select("must_reset_password, status")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (result.error) {
+        return supabaseResponse;
+      }
+      profile = result.data;
+    } catch {
+      return supabaseResponse;
+    }
 
     const mustReset = Boolean(profile?.must_reset_password);
     const inactive = profile != null && profile.status !== "ACTIVE";

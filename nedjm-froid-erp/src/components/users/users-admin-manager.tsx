@@ -8,9 +8,9 @@ import {
   setUserLifecycleStatus,
   type AdminUserRow,
 } from "@/lib/actions/user-admin";
-import { generateTempPassword } from "@/lib/auth/temp-password";
 import { AlertBadge } from "@/components/castle/alert-badge";
 import { Button } from "@/components/ui/button";
+import { PasswordInput } from "@/components/ui/password-input";
 
 type RoleOpt = {
   id: string;
@@ -58,16 +58,18 @@ export function UsersAdminManager({
   const [form, setForm] = useState({
     full_name: "",
     email: "",
-    password: generateTempPassword(),
+    password: "",
     role_id: visibleRoles[0]?.id ?? "",
     site_id: "",
   });
+  const [resetUser, setResetUser] = useState<AdminUserRow | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
 
   function openCreate() {
     setForm({
       full_name: "",
       email: "",
-      password: generateTempPassword(),
+      password: "",
       role_id: visibleRoles[0]?.id ?? "",
       site_id: "",
     });
@@ -88,24 +90,37 @@ export function UsersAdminManager({
         return;
       }
       setOpen(false);
-      setInfo(`Utilisateur créé. Mot de passe initial: ${form.password}`);
+      setInfo(
+        "Utilisateur créé. Communiquez-lui le mot de passe saisi ; il devra le changer à la première connexion.",
+      );
       router.refresh();
     });
   }
 
-  function resetPwd(user: AdminUserRow) {
-    const pwd = generateTempPassword();
+  function openReset(user: AdminUserRow) {
     setMenuId(null);
+    setResetUser(user);
+    setResetPassword("");
+    setError(null);
+  }
+
+  function submitReset() {
+    if (!resetUser) return;
+    setError(null);
     startTransition(async () => {
       const result = await adminResetPassword({
-        user_id: user.id,
-        password: pwd,
+        user_id: resetUser.id,
+        password: resetPassword,
       });
       if (!result.ok) {
         setError(result.error);
         return;
       }
-      setInfo(`Nouveau mot de passe pour ${user.email}: ${pwd}`);
+      setResetUser(null);
+      setResetPassword("");
+      setInfo(
+        `Nouveau mot de passe temporaire enregistré pour ${resetUser.email}. Le salarié devra le changer à la prochaine connexion.`,
+      );
       router.refresh();
     });
   }
@@ -243,7 +258,7 @@ export function UsersAdminManager({
                         <button
                           type="button"
                           className="block w-full px-3 py-2 text-left text-sm hover:bg-brand-muted"
-                          onClick={() => resetPwd(u)}
+                          onClick={() => openReset(u)}
                           disabled={pending}
                         >
                           Réinit. mot de passe
@@ -307,27 +322,21 @@ export function UsersAdminManager({
               </label>
               <label className="block text-sm font-medium">
                 Mot de passe initial *
-                <div className="mt-1 flex gap-2">
-                  <input
-                    className={inputClass + " mt-0"}
-                    value={form.password}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, password: e.target.value }))
-                    }
-                  />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() =>
-                      setForm((f) => ({
-                        ...f,
-                        password: generateTempPassword(),
-                      }))
-                    }
-                  >
-                    Générer
-                  </Button>
-                </div>
+                <span className="mt-0.5 block text-xs font-normal text-foreground/55">
+                  Saisi par l&apos;administrateur · الموظف سيغيّره عند أول دخول
+                </span>
+                <PasswordInput
+                  id="initial_password"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  value={form.password}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, password: e.target.value }))
+                  }
+                  wrapperClassName="mt-1"
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+                />
               </label>
               <label className="block text-sm font-medium">
                 Rôle *
@@ -367,8 +376,55 @@ export function UsersAdminManager({
               <Button variant="secondary" onClick={() => setOpen(false)}>
                 Annuler
               </Button>
-              <Button onClick={submit} disabled={pending}>
+              <Button
+                onClick={submit}
+                disabled={pending || form.password.length < 8}
+              >
                 {pending ? "Création…" : "Créer"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {resetUser ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-lg border border-border bg-surface p-5">
+            <h3 className="font-display text-xl font-semibold">
+              Réinitialiser le mot de passe
+            </h3>
+            <p className="mt-1 text-sm text-foreground/70">
+              Saisissez un mot de passe temporaire pour {resetUser.email}. Le
+              salarié devra le changer à la prochaine connexion.
+            </p>
+            <label className="mt-4 block text-sm font-medium">
+              Mot de passe temporaire *
+              <PasswordInput
+                id="reset_password"
+                autoComplete="new-password"
+                required
+                minLength={8}
+                value={resetPassword}
+                onChange={(e) => setResetPassword(e.target.value)}
+                wrapperClassName="mt-1"
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+              />
+            </label>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setResetUser(null);
+                  setResetPassword("");
+                }}
+              >
+                Annuler
+              </Button>
+              <Button
+                onClick={submitReset}
+                disabled={pending || resetPassword.length < 8}
+              >
+                {pending ? "Enregistrement…" : "Enregistrer"}
               </Button>
             </div>
           </div>

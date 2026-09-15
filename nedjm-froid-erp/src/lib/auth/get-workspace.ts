@@ -69,7 +69,18 @@ export async function getWorkspaceProfile(): Promise<WorkspaceProfile | null> {
     .eq("user_id", user.id);
 
   if (assignError) {
-    throw new Error(`Chargement des rôles impossible: ${assignError.message}`);
+    return {
+      id: profile.id,
+      email: profile.email,
+      fullName: profile.full_name,
+      status: profile.status,
+      locale: profile.locale,
+      isSuperAdmin: false,
+      roles: [],
+      accessibleSites: [],
+      activeSite: null,
+      hasGlobalScope: false,
+    };
   }
 
   const rows = assignments ?? [];
@@ -105,20 +116,16 @@ export async function getWorkspaceProfile(): Promise<WorkspaceProfile | null> {
       .eq("is_active", true)
       .order("code");
 
-    if (sitesError) {
-      throw new Error(
-        `Chargement des chantiers impossible: ${sitesError.message}`,
-      );
+    if (!sitesError) {
+      accessibleSites =
+        allSites?.map((s) => ({
+          id: s.id,
+          code: s.code,
+          nameFr: s.name_fr,
+          nameAr: s.name_ar,
+          wilaya: s.wilaya,
+        })) ?? [];
     }
-
-    accessibleSites =
-      allSites?.map((s) => ({
-        id: s.id,
-        code: s.code,
-        nameFr: s.name_fr,
-        nameAr: s.name_ar,
-        wilaya: s.wilaya,
-      })) ?? [];
   } else {
     const seen = new Set<string>();
     for (const row of rows) {

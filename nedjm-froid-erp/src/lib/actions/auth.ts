@@ -6,6 +6,12 @@ import { z } from "zod";
 import { ACTIVE_SITE_COOKIE } from "@/lib/auth/get-workspace";
 import { safeInternalPath } from "@/lib/auth/safe-path";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
+import {
+  ignoreSlow,
+  isTransientError,
+  wait,
+} from "@/lib/supabase/transient";
 
 const loginSchema = z.object({
   email: z.string().trim().email("Adresse e-mail invalide"),
@@ -62,17 +68,30 @@ export async function loginAction(
     };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("sys_users")
-    .select("id, status, must_reset_password")
-    .eq("id", data.user.id)
-    .maybeSingle();
+  const loadProfile = () =>
+    supabase
+      .from("sys_users")
+      .select("id, status, must_reset_password")
+      .eq("id", data.user.id)
+      .maybeSingle();
+
+  let { data: profile, error: profileError } = await loadProfile();
+  if (profileError && isTransientError(profileError.message)) {
+    await wait(400);
+    const retry = await loadProfile();
+    profile = retry.data;
+    profileError = retry.error;
+  }
 
   if (profileError) {
-    await supabase.auth.signOut();
+    if (!isTransientError(profileError.message)) {
+      await ignoreSlow(supabase.auth.signOut());
+    }
     return {
       ok: false,
-      error: `Profil ERP inaccessible: ${profileError.message}`,
+      error: isTransientError(profileError.message)
+        ? "Serveur momentanément indisponible. Réessayez dans quelques secondes."
+        : `Profil ERP inaccessible: ${profileError.message}`,
     };
   }
 
@@ -94,15 +113,18 @@ export async function loginAction(
   }
 
   // Touch last_login only — never clear must_reset_password here (F2 fix)
-  const { error: touchError } = await supabase.rpc("sys_touch_login");
-  if (touchError) {
-    await supabase
+  // Do not block login on audit/touch slowness (Gateway Timeout).
+  const touchResult = await ignoreSlow<{ error: { message: string } | null }>(
+    Promise.resolve(supabase.rpc("sys_touch_login")),
+  );
+  if (touchResult?.error) {
+    void supabase
       .from("sys_users")
       .update({ last_login_at: new Date().toISOString() })
       .eq("id", data.user.id);
   }
 
-  await supabase.rpc("sys_audit_write", {
+  void supabase.rpc("sys_audit_write", {
     p_user_id: data.user.id,
     p_action: "LOGIN",
     p_table_name: "sys_users",
@@ -168,20 +190,18 @@ export async function changePasswordAction(
     };
   }
 
-  const { error: clearError } = await supabase.rpc(
-    "sys_clear_must_reset_password",
-  );
-  if (clearError) {
-    // Fallback if migration not yet applied: best-effort direct update
-    await supabase
-      .from("sys_users")
-      .update({ must_reset_password: false })
-      .eq("id", user.id);
+  const cleared = await clearMustResetFlag(user.id);
+  if (!cleared) {
+    return {
+      ok: false,
+      error:
+        "Mot de passe enregistré, mais le compte n'a pas pu être débloqué. Réessayez, ou contactez un administrateur.",
+    };
   }
 
-  await supabase.rpc("sys_audit_write", {
+  void supabase.rpc("sys_audit_write", {
     p_user_id: user.id,
-    p_action: "PASSWORD_CHANGED",
+    p_action: "UPDATE",
     p_table_name: "sys_users",
     p_target_id: user.id,
     p_old: { must_reset_password: true },
@@ -192,6 +212,39 @@ export async function changePasswordAction(
   });
 
   redirect("/");
+}
+
+/** Clears must_reset_password even if RLS blocks the employee self-update. */
+async function clearMustResetFlag(userId: string): Promise<boolean> {
+  try {
+    const service = createServiceClient();
+    const { error: svcErr } = await service
+      .from("sys_users")
+      .update({ must_reset_password: false })
+      .eq("id", userId);
+    if (!svcErr) {
+      const { data } = await service
+        .from("sys_users")
+        .select("must_reset_password")
+        .eq("id", userId)
+        .maybeSingle();
+      if (data?.must_reset_password === false) return true;
+    }
+  } catch {
+    // Fall through to authenticated RPC.
+  }
+
+  const supabase = await createClient();
+  const { error: rpcError } = await supabase.rpc(
+    "sys_clear_must_reset_password",
+  );
+  if (rpcError) return false;
+  const { data } = await supabase
+    .from("sys_users")
+    .select("must_reset_password")
+    .eq("id", userId)
+    .maybeSingle();
+  return data?.must_reset_password === false;
 }
 
 export async function logoutAction(): Promise<void> {
