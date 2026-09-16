@@ -21,6 +21,7 @@ import {
   postConsumption,
   postPayment,
   replaceContractAttributes,
+  reversePayment,
   suggestNextInvoiceNumber,
   suggestPenaltyAmount,
   upsertContract,
@@ -28,6 +29,7 @@ import {
   type ConsumptionMovement,
   type ContractBalance,
   type ContractDetail,
+  type ContractFinanceOptions,
   type ContractInvoice,
   type ContractItem,
   type ContractPayment,
@@ -92,9 +94,11 @@ function uid() {
 export function ContractWorkspace({
   contract,
   sites,
+  financeOptions,
 }: {
   contract: ContractDetail;
   sites: SiteOpt[];
+  financeOptions: ContractFinanceOptions;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("header");
@@ -217,6 +221,7 @@ export function ContractWorkspace({
         <HeaderTab
           contract={contract}
           sites={sites}
+          taxRates={financeOptions.tax_rates}
           attrs={attrs}
           laborHt={laborHt}
           spareHt={spareHt}
@@ -257,6 +262,8 @@ export function ContractWorkspace({
           itemType="LABOR"
           items={labor}
           pending={pending}
+          taxRates={financeOptions.tax_rates}
+          situationTypes={financeOptions.situation_types}
           onUpsert={(row) =>
             run(async () => {
               const result = await upsertContractItem(row);
@@ -283,6 +290,8 @@ export function ContractWorkspace({
           itemType="SPARE_PART"
           items={spares}
           pending={pending}
+          taxRates={financeOptions.tax_rates}
+          situationTypes={financeOptions.situation_types}
           searchable
           onUpsert={(row) =>
             run(async () => {
@@ -324,6 +333,10 @@ export function ContractWorkspace({
         <InvoicingTab
           contract={contract}
           pending={pending}
+          taxRates={financeOptions.tax_rates}
+          situationTypes={financeOptions.situation_types}
+          paymentMethods={financeOptions.payment_methods}
+          stampRules={financeOptions.stamp_rules}
           onCreate={(payload) =>
             run(async () => {
               const result = await createInvoiceDraft(payload);
@@ -360,6 +373,8 @@ export function ContractWorkspace({
         <BalanceTab
           contract={contract}
           pending={pending}
+          accounts={financeOptions.accounts}
+          paymentMethods={financeOptions.payment_methods}
           onPay={(payload) =>
             run(async () => {
               const result = await postPayment(payload);
@@ -367,8 +382,20 @@ export function ContractWorkspace({
               setInfo(
                 result.data.balance.is_solded
                   ? "Paiement enregistré — contrat soldé."
-                  : `Paiement OK — reste ${money(result.data.balance.remaining_ht)}.`,
+                  : `Paiement OK — reste TTC ${money(result.data.balance.remaining_ttc)}.`,
               );
+            })
+          }
+          onReverse={(paymentId, reason) =>
+            run(async () => {
+              const result = await reversePayment({
+                payment_id: paymentId,
+                contract_id: contract.id,
+                reversal_date: new Date().toISOString().slice(0, 10),
+                reason,
+              });
+              if (!result.ok) throw new Error(result.error);
+              setInfo("Paiement contre-passé avec traçabilité.");
             })
           }
         />
@@ -461,6 +488,7 @@ export function ContractWorkspace({
 function HeaderTab({
   contract,
   sites,
+  taxRates,
   attrs,
   laborHt,
   spareHt,
@@ -471,6 +499,7 @@ function HeaderTab({
 }: {
   contract: ContractDetail;
   sites: SiteOpt[];
+  taxRates: ContractFinanceOptions["tax_rates"];
   attrs: ContractAttributes;
   laborHt: number;
   spareHt: number;
@@ -492,8 +521,9 @@ function HeaderTab({
     total_amount_ht: String(contract.total_amount_ht),
     caution_rate_pct: String(contract.caution_rate * 100),
     caution_amount: String(contract.caution_amount),
-    tva_exempt: attrs.financial.tva_exempt,
+    tva_mode: attrs.financial.tva_mode,
     tva_articles: attrs.financial.tva_articles.join(","),
+    default_tax_rate_code: attrs.financial.default_tax_rate_code,
     tva_standard_rate_pct: String(attrs.financial.tva_standard_rate * 100),
   });
   const [issuer, setIssuer] = useState(attrs.issuer);
@@ -682,7 +712,24 @@ function HeaderTab({
             }
           />
         </Field>
-        <Field label="Articles TVA">
+        <Field label="Régime TVA du contrat">
+          <select
+            className={inputClass}
+            value={form.tva_mode}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                tva_mode: e.target
+                  .value as ContractAttributes["financial"]["tva_mode"],
+              }))
+            }
+          >
+            <option value="TAXABLE">Soumis — lignes taxables par défaut</option>
+            <option value="EXEMPT">Exonéré — lignes exonérées par défaut</option>
+            <option value="MIXED">Mixte — détection par codes articles</option>
+          </select>
+        </Field>
+        <Field label="Codes articles taxables automatiques">
           <input
             className={inputClass}
             value={form.tva_articles}
@@ -691,30 +738,28 @@ function HeaderTab({
             }
           />
         </Field>
-        <Field label="TVA standard (%)">
-          <input
-            type="number"
-            step="0.01"
+        <Field label="Taux TVA par défaut">
+          <select
             className={inputClass}
-            value={form.tva_standard_rate_pct}
+            value={form.default_tax_rate_code}
             onChange={(e) =>
               setForm((f) => ({
                 ...f,
-                tva_standard_rate_pct: e.target.value,
+                default_tax_rate_code: e.target.value,
+                tva_standard_rate_pct: String(
+                  (taxRates.find((r) => r.code === e.target.value)?.rate ?? 0) *
+                    100,
+                ),
               }))
             }
-          />
+          >
+            {taxRates.map((rate) => (
+              <option key={rate.id} value={rate.code}>
+                {rate.label_fr} ({rate.rate * 100}%)
+              </option>
+            ))}
+          </select>
         </Field>
-        <label className="flex items-end gap-2 pb-2 text-sm font-medium">
-          <input
-            type="checkbox"
-            checked={form.tva_exempt}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, tva_exempt: e.target.checked }))
-            }
-          />
-          Exonération TVA
-        </label>
       </div>
             <div className="rounded-md border border-border bg-background p-3">
         <h3 className="font-semibold">Émetteur facture (PDF)</h3>
@@ -780,8 +825,10 @@ function HeaderTab({
                 : Number(form.total_amount_ht),
             caution_rate: Number(form.caution_rate_pct) / 100,
             caution_amount: Number(form.caution_amount),
-            tva_exempt: form.tva_exempt,
+            tva_mode: form.tva_mode,
+            tva_exempt: form.tva_mode === "EXEMPT",
             tva_articles: form.tva_articles,
+            default_tax_rate_code: form.default_tax_rate_code,
             tva_standard_rate: Number(form.tva_standard_rate_pct) / 100,
           })
         }
@@ -971,6 +1018,8 @@ function ItemsTab({
   itemType,
   items,
   pending,
+  taxRates,
+  situationTypes,
   searchable,
   onUpsert,
   onDelete,
@@ -979,6 +1028,8 @@ function ItemsTab({
   itemType: "LABOR" | "SPARE_PART";
   items: ContractItem[];
   pending: boolean;
+  taxRates: ContractFinanceOptions["tax_rates"];
+  situationTypes: ContractFinanceOptions["situation_types"];
   searchable?: boolean;
   onUpsert: (row: Record<string, unknown>) => void;
   onDelete: (id: string) => void;
@@ -991,8 +1042,12 @@ function ItemsTab({
     designation: "",
     unit: itemType === "LABOR" ? "JOUR" : "U",
     quantity: "1",
-    unit_price_ht: "0",
+    supply_unit_price_ht: "0",
+    installation_unit_price_ht: "0",
+    situation_type_id: "",
     sort_order: "0",
+    tax_rule: "INHERIT" as ContractItem["tax_rule"],
+    tax_rate_id: "",
   });
 
   const filtered = useMemo(() => {
@@ -1015,8 +1070,12 @@ function ItemsTab({
       designation: item.designation,
       unit: item.unit,
       quantity: String(item.quantity),
-      unit_price_ht: String(item.unit_price_ht),
+      supply_unit_price_ht: String(item.supply_unit_price_ht),
+      installation_unit_price_ht: String(item.installation_unit_price_ht),
+      situation_type_id: item.situation_type_id ?? "",
       sort_order: String(item.sort_order),
+      tax_rule: item.tax_rule,
+      tax_rate_id: item.tax_rate_id ?? "",
     });
   }
 
@@ -1027,8 +1086,12 @@ function ItemsTab({
       designation: "",
       unit: itemType === "LABOR" ? "JOUR" : "U",
       quantity: "1",
-      unit_price_ht: "0",
+      supply_unit_price_ht: "0",
+      installation_unit_price_ht: "0",
+      situation_type_id: "",
       sort_order: "0",
+      tax_rule: "INHERIT",
+      tax_rate_id: "",
     });
   }
 
@@ -1045,7 +1108,7 @@ function ItemsTab({
           }}
         />
       )}
-      <div className="grid gap-2 sm:grid-cols-6">
+      <div className="grid gap-2 sm:grid-cols-7">
         <input
           className={inputClass}
           placeholder="Code"
@@ -1078,12 +1141,70 @@ function ItemsTab({
         <input
           type="number"
           className={inputClass}
-          placeholder="PU HT"
-          value={form.unit_price_ht}
+          placeholder="PU fourniture HT"
+          value={form.supply_unit_price_ht}
           onChange={(e) =>
-            setForm((f) => ({ ...f, unit_price_ht: e.target.value }))
+            setForm((f) => ({ ...f, supply_unit_price_ht: e.target.value }))
           }
         />
+        <input
+          type="number"
+          className={inputClass}
+          placeholder="PU pose HT"
+          value={form.installation_unit_price_ht}
+          onChange={(e) =>
+            setForm((f) => ({ ...f, installation_unit_price_ht: e.target.value }))
+          }
+        />
+      </div>
+      <div className="grid gap-2 rounded-md border border-border bg-surface-muted p-3 sm:grid-cols-3">
+        <Field label="Type de situation">
+          <select
+            className={inputClass}
+            value={form.situation_type_id}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, situation_type_id: e.target.value }))
+            }
+          >
+            <option value="">Non défini</option>
+            {situationTypes.map((type) => (
+              <option key={type.id} value={type.id}>{type.label_fr}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Règle TVA du poste">
+          <select
+            className={inputClass}
+            value={form.tax_rule}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                tax_rule: e.target.value as ContractItem["tax_rule"],
+              }))
+            }
+          >
+            <option value="INHERIT">Automatique — règle contrat / code article</option>
+            <option value="TAXABLE">Forcer taxable</option>
+            <option value="EXEMPT">Forcer exonéré</option>
+          </select>
+        </Field>
+        <Field label="Taux manuel (facultatif)">
+          <select
+            className={inputClass}
+            value={form.tax_rate_id}
+            disabled={form.tax_rule === "EXEMPT"}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, tax_rate_id: e.target.value }))
+            }
+          >
+            <option value="">Taux par défaut du contrat</option>
+            {taxRates.map((rate) => (
+              <option key={rate.id} value={rate.id}>
+                {rate.label_fr} ({rate.rate * 100}%)
+              </option>
+            ))}
+          </select>
+        </Field>
       </div>
       <div className="flex flex-wrap gap-2">
         <Button
@@ -1097,8 +1218,15 @@ function ItemsTab({
               designation: form.designation,
               unit: form.unit,
               quantity: Number(form.quantity),
-              unit_price_ht: Number(form.unit_price_ht),
+              unit_price_ht:
+                Number(form.supply_unit_price_ht) +
+                Number(form.installation_unit_price_ht),
+              supply_unit_price_ht: Number(form.supply_unit_price_ht),
+              installation_unit_price_ht: Number(form.installation_unit_price_ht),
+              situation_type_id: form.situation_type_id || null,
               sort_order: Number(form.sort_order) || 0,
+              tax_rule: form.tax_rule,
+              tax_rate_id: form.tax_rate_id || null,
             })
           }
         >
@@ -1118,8 +1246,10 @@ function ItemsTab({
               <th className="px-3 py-2">Désignation</th>
               <th className="px-3 py-2">Unité</th>
               <th className="px-3 py-2">Qté</th>
-              <th className="px-3 py-2">PU HT</th>
+              <th className="px-3 py-2">PU fourniture</th>
+              <th className="px-3 py-2">PU pose</th>
               <th className="px-3 py-2">Total</th>
+              <th className="px-3 py-2">TVA</th>
               <th className="px-3 py-2 text-right">Actions</th>
             </tr>
           </thead>
@@ -1130,8 +1260,17 @@ function ItemsTab({
                 <td className="px-3 py-2">{item.designation}</td>
                 <td className="px-3 py-2">{item.unit}</td>
                 <td className="px-3 py-2">{item.quantity}</td>
-                <td className="px-3 py-2">{money(item.unit_price_ht)}</td>
+                <td className="px-3 py-2">{money(item.supply_unit_price_ht)}</td>
+                <td className="px-3 py-2">{money(item.installation_unit_price_ht)}</td>
                 <td className="px-3 py-2">{money(item.total_price_ht)}</td>
+                <td className="px-3 py-2">
+                  {item.tax_rule === "INHERIT"
+                    ? "Auto"
+                    : item.tax_rule === "EXEMPT"
+                      ? "Exonéré"
+                      : taxRates.find((r) => r.id === item.tax_rate_id)?.label_fr ??
+                        "Taxable"}
+                </td>
                 <td className="space-x-3 px-3 py-2 text-right">
                   <button
                     type="button"
@@ -1951,32 +2090,45 @@ function PilotageTab({
 function BalanceTab({
   contract,
   pending,
+  accounts,
+  paymentMethods,
   onPay,
+  onReverse,
 }: {
   contract: ContractDetail;
   pending: boolean;
+  accounts: ContractFinanceOptions["accounts"];
+  paymentMethods: ContractFinanceOptions["payment_methods"];
   onPay: (payload: Record<string, unknown>) => void;
+  onReverse: (paymentId: string, reason: string) => void;
 }) {
   const [balance, setBalance] = useState<ContractBalance | null>(null);
   const [payments, setPayments] = useState<ContractPayment[]>([]);
-  const [invoices, setInvoices] = useState<ContractInvoice[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
-    amount_ht: "",
+    amount_ttc: "",
     payment_date: new Date().toISOString().slice(0, 10),
-    method: "VIREMENT",
+    account_id: accounts[0]?.id ?? "",
+    payment_method_id: "",
     invoice_id: "",
     reference: "",
     note: "",
   });
+  const selectedAccount = accounts.find((a) => a.id === form.account_id);
+  const compatibleMethods = paymentMethods.filter(
+    (m) =>
+      m.active &&
+      (!selectedAccount ||
+        m.account_scope === "BOTH" ||
+        m.account_scope === selectedAccount.account_type),
+  );
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [b, p, inv] = await Promise.all([
+      const [b, p] = await Promise.all([
         getContractBalance(contract.id),
         listContractPayments(contract.id),
-        listContractInvoices(contract.id),
       ]);
       if (cancelled) return;
       if (!b.ok) {
@@ -1987,13 +2139,8 @@ function BalanceTab({
         setError(p.error);
         return;
       }
-      if (!inv.ok) {
-        setError(inv.error);
-        return;
-      }
       setBalance(b.data);
       setPayments(p.data);
-      setInvoices(inv.data.filter((i) => i.status === "EMISE"));
       setError(null);
     })();
     return () => {
@@ -2004,15 +2151,17 @@ function BalanceTab({
   return (
     <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
       <p className="text-sm text-foreground/70">
-        Solde = facturé (ÉMISE) − encaissé. Paiement plafonné au reste contrat et
-        au reste de la facture liée. Soldé quand reste = 0 et facturé &gt; 0.
+        Le paiement représente l&apos;argent réellement reçu en TTC. Le système
+        ventile automatiquement HT et TVA, et l&apos;écriture alimente directement
+        le compte Banque ou Caisse.
       </p>
       {error && <p className="text-sm text-red-600">{error}</p>}
       {balance && (
         <div className="grid gap-2 sm:grid-cols-4">
           <Stat label="Facturé HT" value={money(balance.invoiced_ht)} />
-          <Stat label="Encaissé HT" value={money(balance.paid_ht)} />
-          <Stat label="Reste HT" value={money(balance.remaining_ht)} />
+          <Stat label="Facturé TVA" value={money(balance.invoiced_tva)} />
+          <Stat label="Encaissé TTC" value={money(balance.paid_ttc)} />
+          <Stat label="Reste TTC" value={money(balance.remaining_ttc)} />
           <Stat
             label="État"
             value={balance.is_solded ? "Soldé" : "Ouvert"}
@@ -2027,9 +2176,9 @@ function BalanceTab({
             <thead className="border-b border-border text-xs uppercase text-foreground/55">
               <tr>
                 <th className="px-2 py-2">N°</th>
-                <th className="px-2 py-2">Total</th>
-                <th className="px-2 py-2">Payé</th>
-                <th className="px-2 py-2">Reste</th>
+                <th className="px-2 py-2">Total TTC</th>
+                <th className="px-2 py-2">Payé TTC</th>
+                <th className="px-2 py-2">Reste TTC</th>
                 <th className="px-2 py-2" />
               </tr>
             </thead>
@@ -2039,10 +2188,10 @@ function BalanceTab({
                   <td className="px-2 py-1.5 font-mono text-xs">
                     {inv.invoice_number}
                   </td>
-                  <td className="px-2 py-1.5">{money(inv.total_ht)}</td>
-                  <td className="px-2 py-1.5">{money(inv.paid_ht)}</td>
+                  <td className="px-2 py-1.5">{money(inv.total_ttc)}</td>
+                  <td className="px-2 py-1.5">{money(inv.paid_ttc)}</td>
                   <td className="px-2 py-1.5 font-semibold">
-                    {money(inv.open_ht)}
+                    {money(inv.open_ttc)}
                   </td>
                   <td className="px-2 py-1.5">
                     <Button
@@ -2052,7 +2201,7 @@ function BalanceTab({
                         setForm((f) => ({
                           ...f,
                           invoice_id: inv.invoice_id,
-                          amount_ht: String(inv.open_ht),
+                          amount_ttc: String(inv.open_ttc),
                         }))
                       }
                     >
@@ -2072,9 +2221,9 @@ function BalanceTab({
           min="0"
           step="0.01"
           className={inputClass}
-          placeholder="Montant HT"
-          value={form.amount_ht}
-          onChange={(e) => setForm((f) => ({ ...f, amount_ht: e.target.value }))}
+          placeholder="Montant TTC reçu"
+          value={form.amount_ttc}
+          onChange={(e) => setForm((f) => ({ ...f, amount_ttc: e.target.value }))}
         />
         <input
           type="date"
@@ -2086,13 +2235,35 @@ function BalanceTab({
         />
         <select
           className={inputClass}
-          value={form.method}
-          onChange={(e) => setForm((f) => ({ ...f, method: e.target.value }))}
+          value={form.account_id}
+          onChange={(e) =>
+            setForm((f) => ({
+              ...f,
+              account_id: e.target.value,
+              payment_method_id: "",
+            }))
+          }
         >
-          <option value="VIREMENT">Virement</option>
-          <option value="CHEQUE">Chèque</option>
-          <option value="ESPECES">Espèces</option>
-          <option value="AUTRE">Autre</option>
+          <option value="">Compte de réception…</option>
+          {accounts.map((account) => (
+            <option key={account.id} value={account.id}>
+              {account.code} — {account.name}
+            </option>
+          ))}
+        </select>
+        <select
+          className={inputClass}
+          value={form.payment_method_id}
+          onChange={(e) =>
+            setForm((f) => ({ ...f, payment_method_id: e.target.value }))
+          }
+        >
+          <option value="">Mode de paiement…</option>
+          {compatibleMethods.map((method) => (
+            <option key={method.id} value={method.id}>
+              {method.label_fr}
+            </option>
+          ))}
         </select>
         <select
           className={inputClass}
@@ -2103,18 +2274,14 @@ function BalanceTab({
             setForm((f) => ({
               ...f,
               invoice_id: id,
-              amount_ht: open ? String(open.open_ht) : f.amount_ht,
+              amount_ttc: open ? String(open.open_ttc) : f.amount_ttc,
             }));
           }}
         >
           <option value="">Facture (opt.)</option>
-          {(balance?.open_invoices ?? invoices.map((i) => ({
-            invoice_id: i.id,
-            invoice_number: i.invoice_number,
-            open_ht: i.total_ht,
-          }))).map((i) => (
+          {(balance?.open_invoices ?? []).map((i) => (
             <option key={i.invoice_id} value={i.invoice_id}>
-              {i.invoice_number} · reste {money(i.open_ht)}
+              {i.invoice_number} · reste TTC {money(i.open_ttc)}
             </option>
           ))}
         </select>
@@ -2126,13 +2293,20 @@ function BalanceTab({
         />
         <Button
           type="button"
-          disabled={pending || !form.amount_ht || (balance?.remaining_ht ?? 0) <= 0}
+          disabled={
+            pending ||
+            !form.amount_ttc ||
+            !form.account_id ||
+            !form.payment_method_id ||
+            (balance?.remaining_ttc ?? 0) <= 0
+          }
           onClick={() =>
             onPay({
               contract_id: contract.id,
-              amount_ht: form.amount_ht,
+              account_id: form.account_id,
+              payment_method_id: form.payment_method_id,
+              amount_ttc: form.amount_ttc,
               payment_date: form.payment_date,
-              method: form.method,
               invoice_id: form.invoice_id || null,
               reference: form.reference || undefined,
               note: form.note || undefined,
@@ -2142,23 +2316,24 @@ function BalanceTab({
           Enregistrer paiement
         </Button>
       </div>
-      {balance && balance.remaining_ht > 0 && (
+      {balance && balance.remaining_ttc > 0 && (
         <Button
           type="button"
           disabled={pending}
           onClick={() =>
             onPay({
               contract_id: contract.id,
-              amount_ht: balance.remaining_ht,
+              account_id: form.account_id,
+              payment_method_id: form.payment_method_id,
+              amount_ttc: balance.remaining_ttc,
               payment_date: form.payment_date,
-              method: form.method,
               invoice_id: form.invoice_id || null,
               reference: form.reference || undefined,
               note: form.note || "Solde intégral contrat",
             })
           }
         >
-          Encaisser tout le reste ({money(balance.remaining_ht)})
+          Encaisser tout le reste TTC ({money(balance.remaining_ttc)})
         </Button>
       )}
 
@@ -2171,24 +2346,50 @@ function BalanceTab({
               <th className="px-2 py-2">Montant</th>
               <th className="px-2 py-2">Mode</th>
               <th className="px-2 py-2">Réf.</th>
+              <th className="px-2 py-2" />
             </tr>
           </thead>
           <tbody>
             {payments.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-2 py-3 text-foreground/55">
+                <td colSpan={5} className="px-2 py-3 text-foreground/55">
                   Aucun paiement.
                 </td>
               </tr>
             ) : (
-              payments.map((p) => (
-                <tr key={p.id} className="border-b border-border/60">
+              payments.map((p) => {
+                const reversed =
+                  p.direction === -1 ||
+                  payments.some((candidate) => candidate.reversal_of === p.id);
+                return (
+                <tr key={p.id} className={`border-b border-border/60 ${reversed ? "opacity-50" : ""}`}>
                   <td className="px-2 py-1.5">{p.payment_date}</td>
-                  <td className="px-2 py-1.5">{money(p.amount_ht)}</td>
+                  <td className="px-2 py-1.5">
+                    {p.direction === -1 ? "−" : ""}
+                    {money(p.amount_ttc)} TTC
+                    <span className="block text-xs text-foreground/50">
+                      HT {money(p.amount_ht)} · TVA {money(p.amount_tva)}
+                    </span>
+                  </td>
                   <td className="px-2 py-1.5">{p.method}</td>
                   <td className="px-2 py-1.5">{p.reference ?? "—"}</td>
+                  <td className="px-2 py-1.5 text-right">
+                    {!reversed && (
+                      <button
+                        className="text-red-600"
+                        onClick={() => {
+                          const reason = window.prompt(
+                            "Motif obligatoire de contre-passation",
+                          );
+                          if (reason) onReverse(p.id, reason);
+                        }}
+                      >
+                        Annuler
+                      </button>
+                    )}
+                  </td>
                 </tr>
-              ))
+              )})
             )}
           </tbody>
         </table>
@@ -2200,12 +2401,20 @@ function BalanceTab({
 function InvoicingTab({
   contract,
   pending,
+  taxRates,
+  situationTypes,
+  paymentMethods,
+  stampRules,
   onCreate,
   onIssue,
   onCancel,
 }: {
   contract: ContractDetail;
   pending: boolean;
+  taxRates: ContractFinanceOptions["tax_rates"];
+  situationTypes: ContractFinanceOptions["situation_types"];
+  paymentMethods: ContractFinanceOptions["payment_methods"];
+  stampRules: ContractFinanceOptions["stamp_rules"];
   onCreate: (payload: Record<string, unknown>) => void;
   onIssue: (invoiceId: string) => void;
   onCancel: (invoiceId: string) => void;
@@ -2222,9 +2431,30 @@ function InvoicingTab({
     note: "",
     item_id: "",
     quantity: "",
+    line_tax_rule: "INHERIT" as ContractItem["tax_rule"],
+    line_tax_rate_id: "",
+    invoice_tax_mode: "INHERIT" as
+      | "INHERIT"
+      | "TAXABLE"
+      | "EXEMPT"
+      | "MIXED",
+    exemption_certificate_number: "",
+    exemption_certificate_date: "",
+    exemption_note: "",
+    situation_type_id: "",
+    expected_payment_method_id: "",
+    retention_rate_pct: "0",
+    retention_due_date: "",
+    stamp_rule_id: "",
   });
   const [draftLines, setDraftLines] = useState<
-    { contract_item_id: string; code: string; quantity: number }[]
+    {
+      contract_item_id: string;
+      code: string;
+      quantity: number;
+      tax_rule: ContractItem["tax_rule"];
+      tax_rate_id: string | null;
+    }[]
   >([]);
 
   useEffect(() => {
@@ -2261,9 +2491,17 @@ function InvoicingTab({
         contract_item_id: item.id,
         code: item.item_code,
         quantity: qty,
+        tax_rule: form.line_tax_rule,
+        tax_rate_id: form.line_tax_rate_id || null,
       },
     ]);
-    setForm((f) => ({ ...f, item_id: "", quantity: "" }));
+    setForm((f) => ({
+      ...f,
+      item_id: "",
+      quantity: "",
+      line_tax_rule: "INHERIT",
+      line_tax_rate_id: "",
+    }));
   }
 
   return (
@@ -2271,8 +2509,8 @@ function InvoicingTab({
       <p className="text-sm text-foreground/70">
         Facturation depuis la consommation : on ne facture que le{" "}
         <strong>facturable</strong> (consommé − déjà émis). N° vide = auto
-        (FAC/…/YYYY/nnn). TVA depuis attributs financiers du contrat. Brouillon →
-        Émise / Annulée.
+        (FAC/…/YYYY/nnn). La TVA est héritée automatiquement puis modifiable par
+        ligne et par facture. Brouillon → Émise / Annulée.
       </p>
       {!canPost && (
         <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
@@ -2339,6 +2577,135 @@ function InvoicingTab({
           Ajouter
         </Button>
       </div>
+      <div className="grid gap-2 rounded-md border border-border bg-surface-muted p-3 sm:grid-cols-3">
+        <Field label="TVA de la ligne ajoutée">
+          <select
+            className={inputClass}
+            value={form.line_tax_rule}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                line_tax_rule: e.target.value as ContractItem["tax_rule"],
+              }))
+            }
+          >
+            <option value="INHERIT">Automatique</option>
+            <option value="TAXABLE">Taxable</option>
+            <option value="EXEMPT">Exonérée</option>
+          </select>
+        </Field>
+        <Field label="Taux manuel">
+          <select
+            className={inputClass}
+            disabled={form.line_tax_rule === "EXEMPT"}
+            value={form.line_tax_rate_id}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, line_tax_rate_id: e.target.value }))
+            }
+          >
+            <option value="">Taux hérité</option>
+            {taxRates.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.label_fr} ({r.rate * 100}%)
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Régime de la facture">
+          <select
+            className={inputClass}
+            value={form.invoice_tax_mode}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                invoice_tax_mode: e.target
+                  .value as typeof f.invoice_tax_mode,
+              }))
+            }
+          >
+            <option value="INHERIT">Hériter du contrat</option>
+            <option value="TAXABLE">Taxable par défaut</option>
+            <option value="EXEMPT">Exonérée par défaut</option>
+            <option value="MIXED">Mixte / codes articles</option>
+          </select>
+        </Field>
+      </div>
+      <div className="grid gap-2 rounded-md border border-border bg-surface-muted p-3 sm:grid-cols-5">
+        <Field label="Type de situation">
+          <select
+            className={inputClass}
+            value={form.situation_type_id}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, situation_type_id: e.target.value }))
+            }
+          >
+            <option value="">Selon les lignes</option>
+            {situationTypes.map((type) => (
+              <option key={type.id} value={type.id}>{type.label_fr}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Paiement prévu">
+          <select
+            className={inputClass}
+            value={form.expected_payment_method_id}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                expected_payment_method_id: e.target.value,
+              }))
+            }
+          >
+            <option value="">Non défini</option>
+            {paymentMethods.map((method) => (
+              <option key={method.id} value={method.id}>{method.label_fr}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="RG sur HT (%)">
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            className={inputClass}
+            value={form.retention_rate_pct}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, retention_rate_pct: e.target.value }))
+            }
+          />
+        </Field>
+        <Field label="Échéance RG">
+          <input
+            type="date"
+            className={inputClass}
+            value={form.retention_due_date}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, retention_due_date: e.target.value }))
+            }
+          />
+        </Field>
+        <Field label="Règle de timbre">
+          <select
+            className={inputClass}
+            value={form.stamp_rule_id}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, stamp_rule_id: e.target.value }))
+            }
+          >
+            <option value="">Aucun timbre</option>
+            {stampRules
+              .filter(
+                (rule) =>
+                  !rule.payment_method_id ||
+                  rule.payment_method_id === form.expected_payment_method_id,
+              )
+              .map((rule) => (
+                <option key={rule.id} value={rule.id}>{rule.label_fr}</option>
+              ))}
+          </select>
+        </Field>
+      </div>
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
@@ -2349,6 +2716,8 @@ function InvoicingTab({
                 contract_item_id: i.id,
                 code: i.item_code,
                 quantity: i.billable_qty ?? 0,
+                tax_rule: "INHERIT",
+                tax_rate_id: null,
               })),
             )
           }
@@ -2362,12 +2731,58 @@ function InvoicingTab({
         value={form.note}
         onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
       />
+      {(form.invoice_tax_mode === "EXEMPT" ||
+        form.invoice_tax_mode === "MIXED" ||
+        contract.attributes.financial.tva_mode !== "TAXABLE") && (
+        <div className="grid gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/20 sm:grid-cols-3">
+          <Field label="N° attestation d'exonération">
+            <input
+              className={inputClass}
+              value={form.exemption_certificate_number}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  exemption_certificate_number: e.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Date attestation">
+            <input
+              type="date"
+              className={inputClass}
+              value={form.exemption_certificate_date}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  exemption_certificate_date: e.target.value,
+                }))
+              }
+            />
+          </Field>
+          <Field label="Observation">
+            <input
+              className={inputClass}
+              value={form.exemption_note}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, exemption_note: e.target.value }))
+              }
+            />
+          </Field>
+        </div>
+      )}
 
       {draftLines.length > 0 && (
         <ul className="text-sm">
           {draftLines.map((l) => (
             <li key={l.contract_item_id}>
-              {l.code} × {l.quantity}{" "}
+              {l.code} × {l.quantity} ·{" "}
+              {l.tax_rule === "INHERIT"
+                ? "TVA auto"
+                : l.tax_rule === "EXEMPT"
+                  ? "exonéré"
+                  : taxRates.find((r) => r.id === l.tax_rate_id)?.label_fr ??
+                    "taxable"}{" "}
               <button
                 type="button"
                 className="text-brand underline"
@@ -2393,10 +2808,26 @@ function InvoicingTab({
             invoice_number: form.invoice_number,
             invoice_date: form.invoice_date,
             note: form.note || undefined,
-            lines: draftLines.map(({ contract_item_id, quantity }) => ({
+            invoice_tax_mode: form.invoice_tax_mode,
+            exemption_certificate_number:
+              form.exemption_certificate_number || undefined,
+            exemption_certificate_date:
+              form.exemption_certificate_date || null,
+            exemption_note: form.exemption_note || undefined,
+            situation_type_id: form.situation_type_id || null,
+            expected_payment_method_id:
+              form.expected_payment_method_id || null,
+            retention_rate: Number(form.retention_rate_pct) / 100,
+            retention_due_date: form.retention_due_date || null,
+            stamp_rule_id: form.stamp_rule_id || null,
+            lines: draftLines.map(
+              ({ contract_item_id, quantity, tax_rule, tax_rate_id }) => ({
               contract_item_id,
               quantity,
-            })),
+                tax_rule,
+                tax_rate_id,
+              }),
+            ),
           })
         }
       >
@@ -2455,6 +2886,19 @@ function InvoicingTab({
                       ? ` · TVA ${money(inv.tva_amount)} · TTC ${money(inv.total_ttc)}`
                       : " · exonéré TVA"}
                   </p>
+                  <p className="text-xs font-medium">
+                    Fourniture {money(inv.total_supply_ht)} · Pose{" "}
+                    {money(inv.total_installation_ht)} · RG{" "}
+                    {money(inv.retention_amount)} · Timbre{" "}
+                    {money(inv.stamp_amount)} · Net à payer{" "}
+                    {money(inv.net_payable)}
+                  </p>
+                  <p className="text-xs text-foreground/55">
+                    Régime {inv.tax_mode}
+                    {inv.exemption_certificate_number
+                      ? ` · attestation ${inv.exemption_certificate_number}`
+                      : ""}
+                  </p>
                 </div>
                 <div className="flex gap-2">
                   <a
@@ -2489,7 +2933,8 @@ function InvoicingTab({
                 {(inv.lines ?? []).map((l) => (
                   <li key={l.id}>
                     {l.item_code} · {l.quantity} × {l.unit_price_ht} ={" "}
-                    {l.total_price_ht}
+                    {l.total_price_ht} · TVA {(l.tax_rate * 100).toFixed(2)}% ={" "}
+                    {money(l.tax_amount)}
                   </li>
                 ))}
               </ul>

@@ -4,6 +4,7 @@ import { z } from "zod";
 
 export const totalModeSchema = z.enum(["AUTO", "MANUAL"]);
 export const cautionSyncSchema = z.enum(["FROM_RATE", "FROM_AMOUNT", "MANUAL"]);
+export const tvaModeSchema = z.enum(["TAXABLE", "EXEMPT", "MIXED"]);
 
 export const contreLineSchema = z.object({
   id: z.string().min(1),
@@ -76,8 +77,10 @@ export const issuerAttrsSchema = z.object({
 
 export const financialAttrsSchema = z.object({
   total_mode: totalModeSchema.default("AUTO"),
+  tva_mode: tvaModeSchema.default("TAXABLE"),
   tva_exempt: z.boolean().default(false),
   tva_articles: z.array(z.string()).default([]),
+  default_tax_rate_code: z.string().trim().max(32).default("TVA19"),
   tva_standard_rate: z.coerce.number().min(0).max(1).default(0.19),
   caution_sync: cautionSyncSchema.default("FROM_RATE"),
 });
@@ -85,8 +88,10 @@ export const financialAttrsSchema = z.object({
 export const contractAttributesSchema = z.object({
   financial: financialAttrsSchema.default({
     total_mode: "AUTO",
+    tva_mode: "TAXABLE",
     tva_exempt: false,
     tva_articles: [],
+    default_tax_rate_code: "TVA19",
     tva_standard_rate: 0.19,
     caution_sync: "FROM_RATE",
   }),
@@ -143,8 +148,10 @@ export function elGassiDefaultAttributes(): ContractAttributes {
   return contractAttributesSchema.parse({
     financial: {
       total_mode: "AUTO",
+      tva_mode: "MIXED",
       tva_exempt: true,
       tva_articles: ["12", "16"],
+      default_tax_rate_code: "TVA19",
       tva_standard_rate: 0.19,
       caution_sync: "FROM_RATE",
     },
@@ -304,6 +311,9 @@ export function normalizeContractAttributes(
     financial: {
       ...base.financial,
       tva_exempt: Boolean(r.tva_exempt ?? base.financial.tva_exempt),
+      tva_mode: Boolean(r.tva_exempt ?? base.financial.tva_exempt)
+        ? "EXEMPT"
+        : "TAXABLE",
       tva_articles: articles,
     },
     contre_facturation: {

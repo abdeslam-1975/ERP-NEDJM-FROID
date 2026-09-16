@@ -53,6 +53,38 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    titleFr: "Finance",
+    titleAr: "المالية",
+    items: [
+      {
+        href: "/finance",
+        labelFr: "Banque & Caisse",
+        labelAr: "البنك والصندوق",
+      },
+      {
+        href: "/finance/parametres",
+        labelFr: "Paramètres financiers",
+        labelAr: "إعدادات المالية",
+      },
+    ],
+  },
+  {
+    titleFr: "Achats",
+    titleAr: "المشتريات",
+    items: [
+      {
+        href: "/achats",
+        labelFr: "Achats & fournisseurs",
+        labelAr: "المشتريات والموردون",
+      },
+      {
+        href: "/achats/parametres",
+        labelFr: "Paramètres documentaires",
+        labelAr: "إعدادات الوثائق",
+      },
+    ],
+  },
+  {
     titleFr: "Paramètres",
     titleAr: "الإعدادات",
     items: [
