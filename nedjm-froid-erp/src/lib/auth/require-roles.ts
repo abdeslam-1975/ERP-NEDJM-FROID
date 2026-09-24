@@ -17,6 +17,13 @@ export const CONTRACT_WRITE_ROLES = [
   "GERANT",
 ] as const;
 
+/** RH values on contracts / exceptions. Dictionary stays SUPER_ADMIN. */
+export const HR_SALARY_VALUE_ROLES = [
+  "SUPER_ADMIN",
+  "ADMIN_RH",
+  "GERANT",
+] as const;
+
 export async function requireRoles(
   allowed: string[],
 ): Promise<WorkspaceProfile> {
@@ -67,6 +74,22 @@ export async function requireContractAccess(): Promise<
   if (!workspace) return { ok: false, error: "Session requise." };
   if (!workspaceHasRole(workspace, CONTRACT_READ_ROLES)) {
     return { ok: false, error: "Accès refusé aux contrats clients." };
+  }
+  return { ok: true, workspace };
+}
+
+export async function requireHrSalaryValues(): Promise<
+  | { ok: true; workspace: WorkspaceProfile }
+  | { ok: false; error: string }
+> {
+  const workspace = await getWorkspaceProfile();
+  if (!workspace) return { ok: false, error: "Session requise. · يلزم تسجيل الدخول." };
+  if (!workspaceHasRole(workspace, HR_SALARY_VALUE_ROLES)) {
+    return {
+      ok: false,
+      error:
+        "Saisie des montants réservée à SUPER_ADMIN, ADMIN_RH et GERANT. · إدخال المبالغ لـ SUPER_ADMIN و ADMIN_RH و GERANT.",
+    };
   }
   return { ok: true, workspace };
 }

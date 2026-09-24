@@ -11,7 +11,7 @@ describe("hrEmployeeUpsertSchema", () => {
     expect(parsed.matricule).toBe("NF-0100");
     expect(parsed.status).toBe("ACTIVE");
     expect(parsed.irg_category).toBe("STANDARD");
-    expect(parsed.nss).toBeNull();
+    expect(parsed.nss == null).toBe(true);
   });
 
   it("rejects empty names", () => {

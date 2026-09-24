@@ -229,9 +229,16 @@ alter table public.contract_payments
   add column financial_transaction_id uuid unique references public.fin_transactions(id) on delete restrict,
   add column reversal_of uuid unique references public.contract_payments(id) on delete restrict;
 
+-- Ledger is append-only; disable mutation guards only for this one-time backfill.
+alter table public.contract_payments disable trigger trg_contract_payments_no_update;
+alter table public.contract_payments disable trigger trg_contract_payments_audit;
+
 update public.contract_payments
 set amount_ttc = amount_ht, amount_tva = 0
 where amount_ttc is null;
+
+alter table public.contract_payments enable trigger trg_contract_payments_no_update;
+alter table public.contract_payments enable trigger trg_contract_payments_audit;
 
 alter table public.contract_payments
   alter column amount_ttc set not null,

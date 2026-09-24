@@ -1,49 +1,56 @@
 "use client";
 
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { useMemo, useState, useTransition } from "react";
 import {
+  deleteHrEmployeeField,
+  getHrEmployeeFiche,
+  nextHrMatricule,
+  setHrEmployeeFieldActive,
   setHrEmployeeStatus,
   upsertHrEmployee,
-  type HrEmployeeRow,
+  upsertHrEmployeeField,
+  type HrEmployeeFiche,
+  type HrEmployeeField,
 } from "@/lib/actions/hr-employees";
+import { archiveEmployeeFicheRenseignements } from "@/lib/actions/hr-documents";
+import { maritalAllowsChildren, missingRequiredFields } from "@/lib/hr/employee-field-utils";
+import {
+  normalizeFicheValues,
+  validateFicheConstraints,
+} from "@/lib/hr/employee-fiche-constraints";
+import { missingRequiredDocuments } from "@/lib/hr/required-documents";
+import { listHrFilesForEmployee } from "@/lib/actions/hr-documents";
+import type { CatalogItem, CatalogKind } from "@/lib/actions/hr-catalogs";
+import type { SiteRow } from "@/lib/actions/sites";
 import { Button } from "@/components/ui/button";
 import { AlertBadge } from "@/components/castle/alert-badge";
+import {
+  RhAlert,
+  RhField,
+  RhModal,
+  RhPage,
+  RhPageHeader,
+  RhTableWrap,
+  RhToolbar,
+  bi,
+  catalogOptionLabel,
+  rhInput,
+  rhTd,
+  rhTh,
+} from "@/components/rh/rh-ui";
+import { EmployeeFicheDialog } from "@/components/rh/employee-fiche";
+import { EmployeeAdminDossierDialog } from "@/components/rh/employee-admin-dossier";
+import { DEFAULT_FICHE_SETTINGS, type HrFicheSettings } from "@/lib/hr/fiche-settings";
+import { mergeAffectationCatalog } from "@/lib/hr/affectation-options";
 
-type FormState = {
-  id?: string;
-  matricule: string;
-  last_name: string;
-  first_name: string;
-  nss: string;
-  nin: string;
-  birth_date: string;
-  hired_at: string;
-  irg_category: "STANDARD" | "DISABLED_OR_RETIREE";
-  status: string;
-};
+function rawValue(row: HrEmployeeFiche, field: HrEmployeeField): unknown {
+  if (field.storage_group === "extra") return row.attrs?.[field.code];
+  return (row as unknown as Record<string, unknown>)[field.code];
+}
 
-const emptyForm = (): FormState => ({
-  matricule: "",
-  last_name: "",
-  first_name: "",
-  nss: "",
-  nin: "",
-  birth_date: "",
-  hired_at: "",
-  irg_category: "STANDARD",
-  status: "ACTIVE",
-});
-
-const inputClass =
-  "mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm";
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="text-xs font-medium text-foreground/70">
-      {label}
-      {children}
-    </label>
-  );
+function asText(value: unknown) {
+  if (value == null || value === "") return "";
+  return String(value);
 }
 
 function statusTone(
@@ -55,109 +62,271 @@ function statusTone(
   return "info";
 }
 
+function slugify(label: string) {
+  const slug = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 40);
+  return slug || `col_${Date.now().toString().slice(-6)}`;
+}
+
+function valuesFromFiche(
+  row: HrEmployeeFiche,
+  fields: HrEmployeeField[],
+): Record<string, string> {
+  const values: Record<string, string> = { id: row.id };
+  for (const field of fields) {
+    values[field.code] = asText(rawValue(row, field));
+    if (field.code === "irg_category" && !values[field.code]) {
+      values[field.code] = "STANDARD";
+    }
+  }
+  return values;
+}
+
 export function EmployeesManager({
   initialEmployees,
+  fields: initialFields,
+  catalogs,
+  kinds,
+  sites = [],
+  fiche = DEFAULT_FICHE_SETTINGS,
   loadError,
 }: {
-  initialEmployees: HrEmployeeRow[];
+  initialEmployees: HrEmployeeFiche[];
+  fields: HrEmployeeField[];
+  catalogs: CatalogItem[];
+  kinds: CatalogKind[];
+  sites?: Pick<SiteRow, "id" | "name_fr" | "name_ar">[];
+  fiche?: HrFicheSettings;
   loadError?: string;
 }) {
   const [rows, setRows] = useState(initialEmployees);
+  const [fields, setFields] = useState(initialFields);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<FormState>(emptyForm());
+  const [dossierEmployee, setDossierEmployee] = useState<HrEmployeeFiche | null>(null);
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [newCol, setNewCol] = useState({
+    label_ar: "",
+    label_fr: "",
+    value_type: "text" as HrEmployeeField["value_type"],
+    catalog_kind: "",
+    section_ar: "إضافي",
+    section_fr: "Extra",
+  });
+
+  const ficheCatalogs = useMemo(
+    () => mergeAffectationCatalog(catalogs, sites),
+    [catalogs, sites],
+  );
+
+  const activeFields = useMemo(
+    () =>
+      fields
+        .filter((f) => f.is_active)
+        .sort((a, b) => a.sort_order - b.sort_order),
+    [fields],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return rows;
-    return rows.filter(
-      (e) =>
-        e.matricule.toLowerCase().includes(q) ||
-        e.last_name.toLowerCase().includes(q) ||
-        e.first_name.toLowerCase().includes(q),
+    return rows.filter((row) =>
+      activeFields.some((field) =>
+        asText(rawValue(row, field)).toLowerCase().includes(q),
+      ),
     );
-  }, [rows, query]);
+  }, [rows, query, activeFields]);
 
-  function openCreate() {
-    setForm(emptyForm());
-    setFormError(null);
-    setOpen(true);
+  function display(row: HrEmployeeFiche, field: HrEmployeeField) {
+    const raw = rawValue(row, field);
+    if (raw == null || raw === "") return "—";
+    if (field.value_type === "catalog" && field.catalog_kind) {
+      const opt = ficheCatalogs.find(
+        (c) => c.kind === field.catalog_kind && c.code === String(raw),
+      );
+      return opt ? catalogOptionLabel(opt) : String(raw);
+    }
+    if (field.code === "photo_url") {
+      return raw ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={String(raw)} alt="" className="h-10 w-8 object-cover" />
+      ) : (
+        "—"
+      );
+    }
+    if (field.code === "status") {
+      return (
+        <AlertBadge label={String(raw)} tone={statusTone(String(raw))} />
+      );
+    }
+    return String(raw);
   }
 
-  function openEdit(row: HrEmployeeRow) {
-    setForm({
-      id: row.id,
-      matricule: row.matricule,
-      last_name: row.last_name,
-      first_name: row.first_name,
-      nss: row.nss ?? "",
-      nin: row.nin ?? "",
-      birth_date: row.birth_date ?? "",
-      hired_at: row.hired_at ?? "",
-      irg_category: row.irg_category,
-      status: row.status,
-    });
+  function openCreate() {
+    const empty: Record<string, string> = {};
+    for (const field of activeFields) {
+      empty[field.code] =
+        field.code === "status"
+          ? "ACTIVE"
+          : field.code === "irg_category"
+            ? "STANDARD"
+            : field.code === "nationality"
+              ? "Algérienne"
+              : "";
+    }
+    setValues(empty);
     setFormError(null);
     setOpen(true);
+    startTransition(async () => {
+      const next = await nextHrMatricule();
+      if (next.ok && next.data.matricule) {
+        setValues((v) => ({ ...v, matricule: v.matricule || next.data.matricule }));
+      }
+    });
+  }
+
+  function openEdit(row: HrEmployeeFiche) {
+    setFormError(null);
+    setOpen(true);
+    startTransition(async () => {
+      const result = await getHrEmployeeFiche(row.id);
+      if (!result.ok) {
+        setFormError(result.error);
+        return;
+      }
+      setValues(valuesFromFiche(result.data, fields));
+    });
   }
 
   function submit() {
     setFormError(null);
     setInfo(null);
+    const normalized = normalizeFicheValues(values) as Record<string, string>;
+    setValues(normalized);
+    const missing = missingRequiredFields(normalized, activeFields);
+    if (missing.length) {
+      setFormError(
+        `Champs obligatoires manquants : ${missing
+          .slice(0, 6)
+          .map((f) => f.label_fr || f.label_ar || f.code)
+          .join(", ")}`,
+      );
+      return;
+    }
+    const constraintIssues = validateFicheConstraints(normalized);
+    if (constraintIssues.length) {
+      setFormError(constraintIssues.map((i) => i.message).join(" "));
+      return;
+    }
     startTransition(async () => {
-      const result = await upsertHrEmployee({
-        id: form.id,
-        matricule: form.matricule,
-        last_name: form.last_name,
-        first_name: form.first_name,
-        nss: form.nss || null,
-        nin: form.nin || null,
-        birth_date: form.birth_date || null,
-        hired_at: form.hired_at || null,
-        irg_category: form.irg_category,
-        status: form.status,
-      });
+      if (normalized.id) {
+        const files = await listHrFilesForEmployee(normalized.id);
+        if (files.ok) {
+          const missingDocs = missingRequiredDocuments(
+            ficheCatalogs,
+            files.data.map((f) => f.doc_type_code),
+          );
+          if (missingDocs.length) {
+            setFormError(
+              `Documents obligatoires manquants : ${missingDocs
+                .slice(0, 6)
+                .map((d) => d.label_fr || d.code)
+                .join(", ")}. Onglet Documents.`,
+            );
+            return;
+          }
+        }
+      }
+      const attrs: Record<string, unknown> = {};
+      const payload: Record<string, unknown> = {
+        id: normalized.id || undefined,
+        irg_category: normalized.irg_category || "STANDARD",
+        status: normalized.status || "ACTIVE",
+      };
+      for (const field of activeFields) {
+        const v = normalized[field.code] ?? "";
+        if (field.storage_group === "extra") {
+          attrs[field.code] = v === "" ? null : v;
+        } else if (field.code === "experience_years" || field.code === "children_count") {
+          if (field.code === "children_count" && !maritalAllowsChildren(normalized.marital_code)) {
+            payload.children_count = null;
+          } else {
+            payload[field.code] = v === "" ? null : Number(v);
+          }
+        } else if (field.code === "irg_category") {
+          payload.irg_category = v || "STANDARD";
+        } else if (field.code === "status") {
+          payload.status = v || "ACTIVE";
+        } else {
+          payload[field.code] = v;
+        }
+      }
+      payload.attrs = attrs;
+      const result = await upsertHrEmployee(payload);
       if (!result.ok) {
         setFormError(result.error);
         return;
       }
-      const next: HrEmployeeRow = {
-        id: result.data.id,
-        matricule: form.matricule.toUpperCase(),
-        last_name: form.last_name.trim(),
-        first_name: form.first_name.trim(),
-        nss: form.nss || null,
-        nin: form.nin || null,
-        birth_date: form.birth_date || null,
-        hired_at: form.hired_at || null,
-        irg_category: form.irg_category,
-        status: form.status,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      setRows((prev) => {
-        const without = prev.filter((r) => r.id !== next.id);
-        return [...without, next].sort((a, b) =>
-          a.last_name.localeCompare(b.last_name, "fr"),
+      const fiche = await getHrEmployeeFiche(result.data.id);
+      if (fiche.ok) {
+        setRows((prev) => {
+          const without = prev.filter((r) => r.id !== fiche.data.id);
+          return [...without, fiche.data].sort((a, b) => {
+            const aOk = a.import_seq != null;
+            const bOk = b.import_seq != null;
+            if (aOk && bOk && a.import_seq !== b.import_seq) {
+              return (a.import_seq as number) - (b.import_seq as number);
+            }
+            if (aOk && !bOk) return -1;
+            if (!aOk && bOk) return 1;
+            return a.matricule.localeCompare(b.matricule, "fr", { numeric: true });
+          });
+        });
+        setValues(valuesFromFiche(fiche.data, fields));
+      }
+
+      setInfo(bi("Fiche enregistrée.", "تم حفظ البطاقة."));
+
+      // PDF archive must never break the save UI
+      try {
+        const archived = await archiveEmployeeFicheRenseignements(result.data.id);
+        if (archived.ok) {
+          setInfo(
+            bi(
+              `Fiche enregistrée. PDF : ${archived.data.file_name}`,
+              `تم الحفظ. PDF: ${archived.data.file_name}`,
+            ),
+          );
+        } else {
+          setInfo(
+            bi(
+              `Fiche enregistrée. PDF plus tard : ${archived.error}`,
+              `تم الحفظ. PDF لاحقاً: ${archived.error}`,
+            ),
+          );
+        }
+      } catch {
+        setInfo(
+          bi(
+            "Fiche enregistrée. Génération PDF reportée.",
+            "تم الحفظ. تأجيل إنشاء PDF.",
+          ),
         );
-      });
-      setOpen(false);
-      setInfo(form.id ? "Employé mis à jour." : "Employé créé.");
+      }
     });
   }
 
-  function toggleActive(row: HrEmployeeRow) {
+  function toggleActive(row: HrEmployeeFiche) {
     const nextStatus = row.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
-    setInfo(null);
-    setFormError(null);
     startTransition(async () => {
-      const result = await setHrEmployeeStatus({
-        id: row.id,
-        status: nextStatus,
-      });
+      const result = await setHrEmployeeStatus({ id: row.id, status: nextStatus });
       if (!result.ok) {
         setFormError(result.error);
         return;
@@ -167,68 +336,79 @@ export function EmployeesManager({
           r.id === row.id ? { ...r, status: result.data.status } : r,
         ),
       );
-      setInfo(
-        nextStatus === "ACTIVE"
-          ? "Employé réactivé (visible dans les pickers contrats)."
-          : "Employé désactivé (retiré des pickers actifs).",
-      );
     });
   }
 
+  function searchFromFiche(q: string) {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return;
+    const found = rows.find(
+      (r) =>
+        r.matricule.toLowerCase() === needle ||
+        (r.nss ?? "").toLowerCase() === needle ||
+        (r.nin ?? "").toLowerCase() === needle,
+    );
+    if (found) {
+      openEdit(found);
+      return;
+    }
+    setFormError("Aucun employé pour cette recherche.");
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="font-display text-2xl font-semibold">Employés RH</h2>
-          <p className="mt-1 text-sm text-foreground/70">
-            Fiches minimales pour rattacher la main-d&apos;œuvre et les
-            pénalités aux contrats clients. Statut ACTIVE = disponible dans les
-            pickers.
-          </p>
-        </div>
-        <Button type="button" disabled={pending} onClick={openCreate}>
-          Nouvel employé
-        </Button>
-      </div>
-
-      {(loadError || formError || info) && (
-        <div
-          role="alert"
-          className={`rounded-md border px-4 py-3 text-sm ${
-            loadError || formError
-              ? "border-alert-critical/40 bg-alert-critical/10 text-alert-critical"
-              : "border-alert-success/40 bg-alert-success/10 text-alert-success"
-          }`}
-        >
-          {loadError || formError || info}
-        </div>
-      )}
-
-      <input
-        className="h-10 w-full max-w-md rounded-md border border-border bg-surface px-3 text-sm"
-        placeholder="Rechercher matricule / nom…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
+    <RhPage>
+      <RhPageHeader
+        title="Employés"
+        description="Toutes les données de l'employé apparaissent ici. Ajoutez ou masquez une colonne depuis cet écran."
+        actions={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setColumnsOpen(true)}>
+              Colonnes
+            </Button>
+            <Button type="button" disabled={pending} onClick={openCreate}>
+              Nouvel employé
+            </Button>
+          </>
+        }
       />
 
-      <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-        <table className="min-w-full text-left text-sm">
-          <thead className="border-b border-border bg-surface-muted text-xs uppercase text-foreground/60">
+      {loadError || formError ? (
+        <RhAlert tone="danger">{loadError || formError}</RhAlert>
+      ) : null}
+      {info && !loadError && !formError ? (
+        <RhAlert tone="success">{info}</RhAlert>
+      ) : null}
+
+      <RhToolbar>
+        <input
+          className={`${rhInput} mt-0 max-w-md`}
+          placeholder="Rechercher dans toutes les colonnes"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </RhToolbar>
+
+      <RhTableWrap>
+        <table className="min-w-max text-left text-sm">
+          <thead className="border-b border-border/70 bg-surface-muted/80">
             <tr>
-              <th className="px-3 py-2">Matricule</th>
-              <th className="px-3 py-2">Nom</th>
-              <th className="px-3 py-2">IRG</th>
-              <th className="px-3 py-2">Statut</th>
-              <th className="px-3 py-2">Embauche</th>
-              <th className="px-3 py-2" />
+              {activeFields.map((field) => (
+                <th key={field.id} className={`whitespace-nowrap ${rhTh()}`}>
+                  <span className="block">{field.label_fr}</span>
+                  <span className="block font-normal normal-case tracking-normal" dir="rtl">
+                    {field.label_ar}
+                  </span>
+                </th>
+              ))}
+              <th className={`sticky right-0 bg-surface-muted/80 ${rhTh()}`} />
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
-                  className="px-3 py-6 text-center text-foreground/55"
+                  colSpan={activeFields.length + 1}
+                  className={`${rhTd()} py-6 text-center text-foreground/55`}
                 >
                   Aucun employé.
                 </td>
@@ -236,16 +416,12 @@ export function EmployeesManager({
             ) : (
               filtered.map((row) => (
                 <tr key={row.id} className="border-b border-border/60">
-                  <td className="px-3 py-2 font-mono text-xs">{row.matricule}</td>
-                  <td className="px-3 py-2">
-                    {row.last_name} {row.first_name}
-                  </td>
-                  <td className="px-3 py-2 text-xs">{row.irg_category}</td>
-                  <td className="px-3 py-2">
-                    <AlertBadge label={row.status} tone={statusTone(row.status)} />
-                  </td>
-                  <td className="px-3 py-2 text-xs">{row.hired_at ?? "—"}</td>
-                  <td className="px-3 py-2">
+                  {activeFields.map((field) => (
+                    <td key={field.id} className={`whitespace-nowrap ${rhTd()}`}>
+                      {display(row, field)}
+                    </td>
+                  ))}
+                  <td className={`sticky right-0 bg-surface ${rhTd()}`}>
                     <div className="flex flex-wrap gap-2">
                       <Button
                         type="button"
@@ -253,7 +429,15 @@ export function EmployeesManager({
                         disabled={pending}
                         onClick={() => openEdit(row)}
                       >
-                        Modifier
+                        Ouvrir
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={pending}
+                        onClick={() => setDossierEmployee(row)}
+                      >
+                        Dossier
                       </Button>
                       <Button
                         type="button"
@@ -270,132 +454,238 @@ export function EmployeesManager({
             )}
           </tbody>
         </table>
-      </div>
+      </RhTableWrap>
+
+      {columnsOpen ? (
+        <RhModal
+          title="Colonnes base employés"
+          subtitle="Ajoutez une colonne ici. Masquer une colonne système la cache sans effacer les données."
+          onClose={() => setColumnsOpen(false)}
+          footer={
+            <Button variant="secondary" onClick={() => setColumnsOpen(false)}>
+              Fermer
+            </Button>
+          }
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            <RhField label="Libellé AR">
+              <input
+                dir="rtl"
+                className={rhInput}
+                value={newCol.label_ar}
+                onChange={(e) => setNewCol({ ...newCol, label_ar: e.target.value })}
+              />
+            </RhField>
+            <RhField label="Libellé">
+              <input
+                className={rhInput}
+                value={newCol.label_fr}
+                onChange={(e) => setNewCol({ ...newCol, label_fr: e.target.value })}
+              />
+            </RhField>
+            <RhField label="Type">
+              <select
+                className={rhInput}
+                value={newCol.value_type}
+                onChange={(e) =>
+                  setNewCol({
+                    ...newCol,
+                    value_type: e.target.value as HrEmployeeField["value_type"],
+                  })
+                }
+              >
+                <option value="text">Texte</option>
+                <option value="date">Date</option>
+                <option value="number">Nombre</option>
+                <option value="catalog">Liste</option>
+              </select>
+            </RhField>
+            {newCol.value_type === "catalog" ? (
+              <RhField label="Liste">
+                <select
+                  className={rhInput}
+                  value={newCol.catalog_kind}
+                  onChange={(e) =>
+                    setNewCol({ ...newCol, catalog_kind: e.target.value })
+                  }
+                >
+                  <option value="">—</option>
+                  {kinds.map((k) => (
+                    <option key={k.code} value={k.code}>
+                      {k.label_fr} — {k.label_ar}
+                    </option>
+                  ))}
+                </select>
+              </RhField>
+            ) : null}
+          </div>
+          <div className="mt-3">
+            <Button
+              disabled={pending}
+              onClick={() => {
+                setFormError(null);
+                startTransition(async () => {
+                  const result = await upsertHrEmployeeField({
+                    code: slugify(newCol.label_fr || newCol.label_ar),
+                    label_ar: newCol.label_ar,
+                    label_fr: newCol.label_fr,
+                    value_type: newCol.value_type,
+                    catalog_kind: newCol.catalog_kind || null,
+                    section_ar: newCol.section_ar,
+                    section_fr: newCol.section_fr,
+                  });
+                  if (!result.ok) {
+                    setFormError(result.error);
+                    return;
+                  }
+                  setFields((prev) => [
+                    ...prev,
+                    {
+                      id: result.data.id,
+                      code: slugify(newCol.label_fr || newCol.label_ar),
+                      label_ar: newCol.label_ar,
+                      label_fr: newCol.label_fr,
+                      value_type: newCol.value_type,
+                      catalog_kind: newCol.catalog_kind || null,
+                      storage_group: "extra",
+                      section_ar: newCol.section_ar,
+                      section_fr: newCol.section_fr,
+                      sort_order: 800,
+                      is_system: false,
+                      is_active: true,
+                      is_required: false,
+                    },
+                  ]);
+                  setNewCol({
+                    label_ar: "",
+                    label_fr: "",
+                    value_type: "text",
+                    catalog_kind: "",
+                    section_ar: "إضافي",
+                    section_fr: "Extra",
+                  });
+                  setInfo("Colonne ajoutée.");
+                });
+              }}
+            >
+              Ajouter une colonne
+            </Button>
+          </div>
+          <RhTableWrap>
+            <table className="mt-4 min-w-full text-sm">
+              <thead className="border-b border-border/70 bg-surface-muted/80">
+                <tr>
+                  <th className={rhTh()}>Colonne</th>
+                  <th className={rhTh()}>Type</th>
+                  <th className={rhTh()} />
+                </tr>
+              </thead>
+              <tbody>
+                {fields
+                  .slice()
+                  .sort((a, b) => a.sort_order - b.sort_order)
+                  .map((field) => (
+                    <tr key={field.id} className="border-b border-border/60">
+                      <td className={rhTd()}>
+                        {field.label_fr} — {field.label_ar}
+                        {!field.is_active ? (
+                          <span className="ms-2 text-xs text-foreground/45">Masqué</span>
+                        ) : null}
+                      </td>
+                      <td className={`${rhTd()} text-xs`}>{field.value_type}</td>
+                      <td className={rhTd()}>
+                        <div className="flex gap-2">
+                          {field.is_active ? (
+                            <Button
+                              variant="ghost"
+                              disabled={pending}
+                              onClick={() => {
+                                startTransition(async () => {
+                                  const result = await deleteHrEmployeeField(field.id);
+                                  if (!result.ok) {
+                                    setFormError(result.error);
+                                    return;
+                                  }
+                                  setFields((prev) =>
+                                    field.is_system
+                                      ? prev.map((f) =>
+                                          f.id === field.id
+                                            ? { ...f, is_active: false }
+                                            : f,
+                                        )
+                                      : prev.filter((f) => f.id !== field.id),
+                                  );
+                                });
+                              }}
+                            >
+                              Supprimer
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="secondary"
+                              disabled={pending}
+                              onClick={() => {
+                                startTransition(async () => {
+                                  const result = await setHrEmployeeFieldActive({
+                                    id: field.id,
+                                    is_active: true,
+                                  });
+                                  if (!result.ok) {
+                                    setFormError(result.error);
+                                    return;
+                                  }
+                                  setFields((prev) =>
+                                    prev.map((f) =>
+                                      f.id === field.id ? { ...f, is_active: true } : f,
+                                    ),
+                                  );
+                                });
+                              }}
+                            >
+                              Afficher
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </RhTableWrap>
+        </RhModal>
+      ) : null}
+
+      {dossierEmployee ? (
+        <EmployeeAdminDossierDialog
+          employeeId={dossierEmployee.id}
+          employeeLabel={[
+            dossierEmployee.matricule,
+            dossierEmployee.last_name,
+            dossierEmployee.first_name,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+          catalogs={ficheCatalogs}
+          onClose={() => setDossierEmployee(null)}
+          onOpenFiche={() => openEdit(dossierEmployee)}
+        />
+      ) : null}
 
       {open ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg border border-border bg-surface p-4 shadow-lg">
-            <h3 className="font-semibold">
-              {form.id ? "Modifier l'employé" : "Nouvel employé"}
-            </h3>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <Field label="Matricule">
-                <input
-                  className={inputClass}
-                  value={form.matricule}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, matricule: e.target.value }))
-                  }
-                />
-              </Field>
-              <Field label="Statut">
-                <select
-                  className={inputClass}
-                  value={form.status}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, status: e.target.value }))
-                  }
-                >
-                  <option value="ACTIVE">ACTIVE</option>
-                  <option value="INACTIVE">INACTIVE</option>
-                  <option value="SUSPENDED">SUSPENDED</option>
-                  <option value="DISABLED">DISABLED</option>
-                  <option value="INVITED">INVITED</option>
-                </select>
-              </Field>
-              <Field label="Nom">
-                <input
-                  className={inputClass}
-                  value={form.last_name}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, last_name: e.target.value }))
-                  }
-                />
-              </Field>
-              <Field label="Prénom">
-                <input
-                  className={inputClass}
-                  value={form.first_name}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, first_name: e.target.value }))
-                  }
-                />
-              </Field>
-              <Field label="Catégorie IRG">
-                <select
-                  className={inputClass}
-                  value={form.irg_category}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      irg_category: e.target.value as FormState["irg_category"],
-                    }))
-                  }
-                >
-                  <option value="STANDARD">STANDARD</option>
-                  <option value="DISABLED_OR_RETIREE">DISABLED_OR_RETIREE</option>
-                </select>
-              </Field>
-              <Field label="Date embauche">
-                <input
-                  type="date"
-                  className={inputClass}
-                  value={form.hired_at}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, hired_at: e.target.value }))
-                  }
-                />
-              </Field>
-              <Field label="NSS (optionnel)">
-                <input
-                  className={inputClass}
-                  value={form.nss}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, nss: e.target.value }))
-                  }
-                />
-              </Field>
-              <Field label="NIN (optionnel)">
-                <input
-                  className={inputClass}
-                  value={form.nin}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, nin: e.target.value }))
-                  }
-                />
-              </Field>
-              <div className="sm:col-span-2">
-                <Field label="Date de naissance (optionnel)">
-                  <input
-                    type="date"
-                    className={inputClass}
-                    value={form.birth_date}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, birth_date: e.target.value }))
-                    }
-                  />
-                </Field>
-              </div>
-            </div>
-            {formError ? (
-              <p className="mt-2 text-sm text-alert-critical">{formError}</p>
-            ) : null}
-            <div className="mt-4 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={pending}
-                onClick={() => setOpen(false)}
-              >
-                Annuler
-              </Button>
-              <Button type="button" disabled={pending} onClick={submit}>
-                Enregistrer
-              </Button>
-            </div>
-          </div>
-        </div>
+        <EmployeeFicheDialog
+          values={values}
+          setValues={setValues}
+          fields={fields}
+          catalogs={ficheCatalogs}
+          fiche={fiche}
+          pending={pending}
+          formError={formError}
+          onClose={() => setOpen(false)}
+          onSubmit={submit}
+          onNew={openCreate}
+          onSearch={searchFromFiche}
+        />
       ) : null}
-    </div>
+    </RhPage>
   );
 }
