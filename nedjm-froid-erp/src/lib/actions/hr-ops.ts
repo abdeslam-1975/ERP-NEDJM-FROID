@@ -154,6 +154,17 @@ async function loadPeriodStatus(
   return { ok: true, status: periodStatus([typeof data === "string" ? data : null]) };
 }
 
+export async function getAttendancePeriodStatus(input: {
+  site_id: string;
+  year: number;
+  month: number;
+}): Promise<ActionResult<PayrollRunStatus | null>> {
+  const supabase = await createClient();
+  const period = await loadPeriodStatus(supabase, input.site_id, input.year, input.month);
+  if (!period.ok) return period;
+  return { ok: true, data: period.status };
+}
+
 export async function listAttendanceMonth(input: {
   site_id: string;
   year: number;
@@ -214,6 +225,18 @@ export async function saveAttendanceMonth(
   if (!period.ok) return period;
   const frozen = attendanceFrozenMessage(period.status);
   if (frozen) return { ok: false, error: frozen };
+  const { data: canEditDays, error: accessErr } = await supabase.rpc("hr_att_col_allowed", {
+    p_code: "DAYS",
+    p_edit: true,
+    p_site: p.site_id,
+  });
+  if (accessErr) return { ok: false, error: accessErr.message };
+  if (!canEditDays) {
+    return {
+      ok: false,
+      error: "Saisie des jours non autorisée pour votre rôle. · تعبئة الأيام غير مسموحة لدورك.",
+    };
+  }
   const start = `${p.year}-${String(p.month).padStart(2, "0")}-01`;
   const endDate = new Date(p.year, p.month, 0).getDate();
   const end = `${p.year}-${String(p.month).padStart(2, "0")}-${String(endDate).padStart(2, "0")}`;

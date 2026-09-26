@@ -14,6 +14,8 @@ import type { HrEmployeeField } from "@/lib/actions/hr-employees";
 import type { HrFicheSettings } from "@/lib/hr/fiche-settings";
 import type { HrBulletinSettings, BulletinLegalRates } from "@/lib/hr/bulletin-settings";
 import { BulletinSettingsManager } from "@/components/rh/bulletin-settings-manager";
+import { AttendanceColumnsManager } from "@/components/rh/attendance-columns-manager";
+import type { AttendanceColumnsAdmin } from "@/lib/actions/hr-attendance-sheet";
 import { RhAlert, RhPage, RhTabs } from "@/components/rh/rh-ui";
 
 export function RhParametres({
@@ -31,6 +33,7 @@ export function RhParametres({
   contracts,
   bulletin,
   legalRates,
+  attendanceAdmin,
   loadError,
 }: {
   kinds: CatalogKind[];
@@ -47,9 +50,12 @@ export function RhParametres({
   contracts: SalaryTarget[];
   bulletin: HrBulletinSettings;
   legalRates?: BulletinLegalRates;
+  attendanceAdmin?: AttendanceColumnsAdmin | null;
   loadError?: string;
 }) {
-  const [tab, setTab] = useState<"fiche" | "salary" | "catalogs" | "bulletin">("salary");
+  const [tab, setTab] = useState<"fiche" | "salary" | "catalogs" | "bulletin" | "attendance">(
+    "salary",
+  );
   return (
     <RhPage>
       {loadError ? <RhAlert tone="danger">{loadError}</RhAlert> : null}
@@ -60,6 +66,9 @@ export function RhParametres({
             { id: "fiche", label: "Modèle de fiche" },
             { id: "catalogs", label: "Listes et codes" },
             { id: "bulletin", label: "Modèle de bulletin" },
+            ...(isSuperAdmin && attendanceAdmin
+              ? [{ id: "attendance", label: "Feuille de présence" }]
+              : []),
           ]}
           value={tab}
           onChange={(id) => setTab(id as typeof tab)}
@@ -88,6 +97,8 @@ export function RhParametres({
           catalogs={items}
           isSuperAdmin={isSuperAdmin}
         />
+      ) : tab === "attendance" && attendanceAdmin ? (
+        <AttendanceColumnsManager initial={attendanceAdmin} />
       ) : tab === "bulletin" ? (
         <BulletinSettingsManager
           initial={bulletin}

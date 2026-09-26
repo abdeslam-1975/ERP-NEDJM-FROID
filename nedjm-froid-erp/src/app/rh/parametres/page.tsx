@@ -7,6 +7,7 @@ import { listSites } from "@/lib/actions/sites";
 import { listSalaryAssignments, listSalaryRubriques } from "@/lib/actions/hr-salary";
 import { getHrFicheSettings } from "@/lib/actions/hr-fiche";
 import { loadPayrollBulletinContext } from "@/lib/actions/hr-bulletin";
+import { loadAttendanceColumnsAdmin } from "@/lib/actions/hr-attendance-sheet";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { HR_SALARY_VALUE_ROLES, workspaceHasRole } from "@/lib/auth/require-roles";
 import { DEFAULT_FICHE_SETTINGS } from "@/lib/hr/fiche-settings";
@@ -25,6 +26,7 @@ export default async function RhParametresPage() {
     contracts,
     sites,
     bulletin,
+    attendanceAdmin,
   ] = await Promise.all([
     loadHrLookups(),
     listHrEmployeeFields(),
@@ -36,6 +38,7 @@ export default async function RhParametresPage() {
     listHrContracts(),
     listSites(),
     loadPayrollBulletinContext(),
+    loadAttendanceColumnsAdmin(),
   ]);
   const salaryError =
     (!rubriques.ok && rubriques.error) ||
@@ -71,6 +74,7 @@ export default async function RhParametresPage() {
         }))}
         bulletin={bulletin.bulletin}
         legalRates={bulletin.legalRates}
+        attendanceAdmin={attendanceAdmin.ok ? attendanceAdmin.data : null}
         loadError={
           lookups.error ||
           (!fields.ok ? fields.error : undefined) ||
