@@ -29,6 +29,7 @@ import {
 import { ContractSalaryFields, type SelectedSalaryLine } from "@/components/rh/contract-salary-fields";
 import { LegalSettings } from "@/components/rh/legal-settings";
 import { ContractComplianceCards } from "@/components/rh/contract-compliance-cards";
+import { ContractSalaryHistory } from "@/components/rh/contract-salary-history";
 import {
   SalaryRubricsManager,
   type SalaryTarget,
@@ -117,7 +118,7 @@ export function ContractsManager({
   const [rows, setRows] = useState(initialContracts);
   const [asgRows, setAsgRows] = useState(assignments);
   const [open, setOpen] = useState(false);
-  const [modalTab, setModalTab] = useState<"contrat" | "rubriques" | "legal">("contrat");
+  const [modalTab, setModalTab] = useState<"contrat" | "avenants" | "rubriques" | "legal">("contrat");
   const [form, setForm] = useState<FormState>(emptyForm());
   const [selectedLines, setSelectedLines] = useState<Record<string, SelectedSalaryLine>>({});
   const [error, setError] = useState<string | null>(loadError ?? null);
@@ -382,6 +383,7 @@ export function ContractsManager({
             <RhTabs
               items={[
                 { id: "contrat", label: bi("Contrat de travail", "عقد العمل") },
+                { id: "avenants", label: bi("Avenants salaire", "ملاحق الأجر") },
                 { id: "rubriques", label: bi("Rubriques de salaire", "بنود الأجر") },
                 { id: "legal", label: bi("Cotisations & impôts", "الاشتراكات والضرائب") },
               ]}
@@ -591,6 +593,29 @@ export function ContractsManager({
                 {bi("Affectation principale", "التعيين الرئيسي")}
               </label>
             </div>
+          ) : null}
+
+          {modalTab === "avenants" ? (
+            form.id ? (
+              <ContractSalaryHistory
+                contractId={form.id}
+                canEdit={canEditSalaryValues}
+                onCurrentSalary={({ base, net }) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    salaire_base_monthly: String(base),
+                    salaire_net_ref_monthly: String(net),
+                  }))
+                }
+              />
+            ) : (
+              <RhAlert tone="info">
+                {bi(
+                  "Enregistrez d'abord le contrat : les avenants (augmentations datées) se saisissent ensuite ici.",
+                  "احفظ العقد أولاً ثم أدخل الملاحق هنا.",
+                )}
+              </RhAlert>
+            )
           ) : null}
 
           {modalTab === "rubriques" ? (

@@ -421,6 +421,7 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
           { href: "/rh/documents", label: "Documents" },
           { href: "/rh/legal", label: "Cotisations" },
           { href: "/rh/paie/exceptions", label: "Exceptions" },
+          { href: "/rh/paie/avances", label: "Avances & prêts" },
           { href: "/rh/parametres", label: "Paramètres" },
         ].map((m) => (
           <Link

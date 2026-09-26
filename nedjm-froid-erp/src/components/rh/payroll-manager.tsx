@@ -332,6 +332,7 @@ export function PayrollManager({
                 ["/rh/legal", bi("Cotisations & impôts", "الاشتراكات والضرائب")],
                 ["/rh/paie/bulletins", "Bulletins"],
                 ["/rh/paie/exceptions", bi("Exceptions", "استثناءات")],
+                ["/rh/paie/avances", bi("Avances & prêts", "التسبيقات والقروض")],
                 ["/rh/parametres", "Rubriques"],
               ] as const
             ).map(([href, label]) => (

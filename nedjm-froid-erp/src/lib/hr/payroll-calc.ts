@@ -6,7 +6,15 @@ export type SalaryNature =
   | "rappel"
   | "remboursement"
   | "retenue";
-export type LineSource = "base" | "site" | "contract" | "employee" | "exception";
+export type LineSource =
+  | "base"
+  | "site"
+  | "contract"
+  | "employee"
+  | "exception"
+  | "advance"
+  | "overtime";
+export type LineUnit = SalaryUnit | "hour";
 
 export type PayrollRubrique = {
   id: string;
@@ -49,13 +57,14 @@ export type PayrollException = {
 export type PayrollLine = {
   rubrique_id: string | null;
   exception_id: string | null;
+  advance_id?: string | null;
   source_code: LineSource;
   code: string;
   label_ar: string;
   label_fr: string;
   category: SalaryCategory;
   nature: SalaryNature;
-  unit: SalaryUnit;
+  unit: LineUnit;
   cotisable: boolean;
   taxable: boolean;
   quantity: number;
@@ -224,6 +233,132 @@ export function groupContractsByEmployee<T extends ContractForPeriod>(
   });
 }
 
+export type SalaryVersion = {
+  contract_id: string;
+  effective_from: string;
+  salaire_base_monthly: number;
+  salaire_net_ref_monthly: number;
+};
+
+/** Salary of the version in force on `asOf` (latest effective_from ≤ asOf), else the contract fields. */
+export function salaryAsOf(
+  versions: SalaryVersion[],
+  contractId: string,
+  asOf: string,
+  fallback: { base: number; net: number },
+): { base: number; net: number } {
+  let best: SalaryVersion | null = null;
+  for (const v of versions) {
+    if (v.contract_id !== contractId || v.effective_from.slice(0, 10) > asOf) continue;
+    if (!best || v.effective_from > best.effective_from) best = v;
+  }
+  return best ? { base: best.salaire_base_monthly, net: best.salaire_net_ref_monthly } : fallback;
+}
+
+export type OvertimeSpec = { code: string; rate: number; label_fr: string; label_ar: string };
+
+/** Overtime: hourly rate = base / legal monthly hours, paid hours × rate × (1 + premium). */
+export function overtimeLines(input: {
+  hours: Record<string, number>;
+  baseMonthly: number;
+  monthlyHours: number;
+  specs: OvertimeSpec[];
+}): PayrollLine[] {
+  if (input.baseMonthly <= 0 || input.monthlyHours <= 0) return [];
+  const hourly = input.baseMonthly / input.monthlyHours;
+  const lines: PayrollLine[] = [];
+  for (const spec of input.specs) {
+    const qty = input.hours[spec.code] ?? 0;
+    if (!(qty > 0)) continue;
+    const unitAmount = roundMoney(hourly * (1 + spec.rate));
+    lines.push({
+      rubrique_id: null,
+      exception_id: null,
+      advance_id: null,
+      source_code: "overtime",
+      code: spec.code,
+      label_ar: spec.label_ar,
+      label_fr: spec.label_fr,
+      category: "1",
+      nature: "prime",
+      unit: "hour",
+      cotisable: true,
+      taxable: true,
+      quantity: roundMoney(qty),
+      unit_amount: unitAmount,
+      amount: roundMoney(qty * hourly * (1 + spec.rate)),
+      sort_order: 0,
+    });
+  }
+  return lines;
+}
+
+export type PayrollAdvance = {
+  id: string;
+  employee_id: string;
+  kind: "ADVANCE" | "LOAN";
+  principal_amount: number;
+  installment_amount: number;
+  start_year: number;
+  start_month: number;
+  status: "ACTIVE" | "CANCELLED";
+};
+
+/**
+ * Monthly installments of active advances/loans started on or before the period, limited to
+ * the remaining balance (principal − deducted in other runs) and to the net still available.
+ */
+export function advanceDeductionLines(input: {
+  advances: PayrollAdvance[];
+  deductedElsewhere: Map<string, number>;
+  employeeId: string;
+  year: number;
+  month: number;
+  availableNet: number;
+}): { lines: PayrollLine[]; capped: boolean } {
+  const period = ymIndex(input.year, input.month);
+  let available = Math.max(0, roundMoney(input.availableNet));
+  let capped = false;
+  const lines: PayrollLine[] = [];
+  const due = input.advances
+    .filter(
+      (a) =>
+        a.employee_id === input.employeeId &&
+        a.status === "ACTIVE" &&
+        ymIndex(a.start_year, a.start_month) <= period,
+    )
+    .sort((a, b) => ymIndex(a.start_year, a.start_month) - ymIndex(b.start_year, b.start_month));
+  for (const adv of due) {
+    const remaining = roundMoney(adv.principal_amount - (input.deductedElsewhere.get(adv.id) ?? 0));
+    if (remaining <= 0) continue;
+    const wanted = Math.min(adv.installment_amount, remaining);
+    const amount = roundMoney(Math.min(wanted, available));
+    if (amount < wanted) capped = true;
+    if (amount <= 0) continue;
+    available = roundMoney(available - amount);
+    const loan = adv.kind === "LOAN";
+    lines.push({
+      rubrique_id: null,
+      exception_id: null,
+      advance_id: adv.id,
+      source_code: "advance",
+      code: loan ? "PRET" : "AVANCE",
+      label_ar: loan ? "اقتطاع قرض" : "اقتطاع تسبيق",
+      label_fr: loan ? "Remboursement prêt" : "Retenue avance",
+      category: "4",
+      nature: "retenue",
+      unit: "month",
+      cotisable: false,
+      taxable: false,
+      quantity: 1,
+      unit_amount: amount,
+      amount: -amount,
+      sort_order: 0,
+    });
+  }
+  return { lines, capped };
+}
+
 export function computeLineAmount(input: {
   unit: SalaryUnit;
   unitAmount: number;
@@ -245,7 +380,7 @@ export function resolvePermanentAssignment(
   rubriqueId: string,
   assignments: PayrollAssignment[],
   ctx: { employeeId: string; siteId: string; contractId: string },
-): { amount: number; source: Exclude<LineSource, "base" | "exception">; unit: SalaryUnit | null } | null {
+): { amount: number; source: "site" | "contract" | "employee"; unit: SalaryUnit | null } | null {
   const related = assignments.filter(
     (a) => a.rubrique_id === rubriqueId && a.is_active,
   );
@@ -299,8 +434,10 @@ export function buildPayrollLines(input: {
   rubriques: PayrollRubrique[];
   assignments: PayrollAssignment[];
   exceptions: PayrollException[];
+  /** Computed elsewhere (overtime, advances); sorted with the rest. */
+  extraLines?: PayrollLine[];
 }): PayrollLine[] {
-  const lines: PayrollLine[] = [];
+  const lines: PayrollLine[] = [...(input.extraLines ?? [])];
   let sort = 10;
   const ctx = {
     employeeId: input.employeeId,

@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { saveAttendanceMonth, type AttendanceCell } from "@/lib/actions/hr-ops";
+import { parseAttendanceImport } from "@/lib/actions/hr-attendance-import";
 import { attendanceFrozenMessage, type PayrollRunStatus } from "@/lib/hr/payroll-run-status";
 import {
   loadAttendanceSheet,
@@ -10,6 +11,7 @@ import {
 } from "@/lib/actions/hr-attendance-sheet";
 import type { LegendRow } from "@/lib/actions/hr-catalogs";
 import {
+  contractsForMonth,
   editableRowValueCodes,
   POSTE_EFFECTIF,
   visibleColumns,
@@ -123,14 +125,8 @@ function personFromContract(c: AttendanceContract): Person {
   };
 }
 
-function buildPeople(contracts: AttendanceContract[]) {
-  const map = new Map<string, Person>();
-  for (const c of contracts) {
-    if (c.status === "ENDED") continue;
-    const key = `${c.employee_id}|${c.site_id}`;
-    if (!map.has(key)) map.set(key, personFromContract(c));
-  }
-  return [...map.values()];
+function buildPeople(contracts: AttendanceContract[], year: number, month: number) {
+  return contractsForMonth(contracts, year, month).map(personFromContract);
 }
 
 export type AttendanceFocus = {
@@ -172,8 +168,12 @@ export function AttendanceManager({
 }) {
   const now = new Date();
   const [initial] = useState(() => {
-    const person = focusPerson(buildPeople(contracts), focus);
-    return { person, period: focusMonth(focus) };
+    const period = focusMonth(focus);
+    const person = focusPerson(
+      buildPeople(contracts, period?.year ?? now.getFullYear(), period?.month ?? now.getMonth() + 1),
+      focus,
+    );
+    return { person, period };
   });
   const [mode, setMode] = useState<SearchMode>(initial.person ? "employee" : "site");
   const [siteId, setSiteId] = useState(
@@ -229,7 +229,7 @@ export function AttendanceManager({
     activeLegends[0]?.code ??
     "";
 
-  const allPeople = useMemo(() => buildPeople(contracts), [contracts]);
+  const allPeople = useMemo(() => buildPeople(contracts, year, month), [contracts, year, month]);
 
   const empMatches = useMemo(() => {
     const q = empQuery.trim().toLowerCase();
@@ -433,6 +433,57 @@ export function AttendanceManager({
         }
       }
       loadMonth(year, month, siteId, `${messages.join(" · ")}. · تم اعتماد القيم.`);
+    });
+  }
+
+  function importExcel(file: File) {
+    const fd = new FormData();
+    fd.set("file", file);
+    fd.set("site_id", siteId);
+    fd.set("year", String(year));
+    fd.set("month", String(month));
+    setError(null);
+    start(async () => {
+      const r = await parseAttendanceImport(fd);
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      const { cells: imported, hours, errors, rows } = r.data;
+      let applied = 0;
+      if (imported.length && canEditDays) {
+        setCells((prev) =>
+          imported.reduce(
+            (acc, c) =>
+              paintAttendanceCells(acc, {
+                employeeId: c.employee_id,
+                siteId,
+                dates: [c.work_date],
+                code: c.legend_code,
+              }),
+            prev,
+          ),
+        );
+        setDrafts((prev) => {
+          const copy = { ...prev };
+          for (const c of imported) copy[`${c.employee_id}|${c.work_date}`] = c.legend_code;
+          return copy;
+        });
+        setDirty(true);
+        applied = imported.length;
+      }
+      let hoursApplied = 0;
+      for (const [employeeId, values] of Object.entries(hours)) {
+        for (const [code, value] of Object.entries(values)) {
+          if (!editableValues.has(code)) continue;
+          editRowValue(employeeId, code, value);
+          hoursApplied += 1;
+        }
+      }
+      setInfo(
+        `Import : ${rows} employé(s), ${applied} jour(s)${hoursApplied ? `, ${hoursApplied} valeur(s) d'heures` : ""} — vérifiez puis « Valider les valeurs renseignées ». · راجع ثم اعتمد القيم.`,
+      );
+      if (errors.length) setError(`${errors.length} anomalie(s) : ${errors.join(" · ")}`);
     });
   }
 
@@ -823,6 +874,35 @@ export function AttendanceManager({
         <ToolbarBtn className="bg-slate-800" onClick={() => setShowExtra((v) => !v)}>
           Totaux & colonnes
         </ToolbarBtn>
+        {siteId ? (
+          <a
+            className="inline-flex h-8 items-center rounded bg-teal-700 px-3 text-[11px] font-bold text-white shadow-sm"
+            href={`/api/rh/presence/modele?site=${siteId}&year=${year}&month=${month}`}
+            download
+          >
+            Modèle Excel
+          </a>
+        ) : null}
+        <label
+          className={`inline-flex h-8 cursor-pointer items-center rounded bg-teal-600 px-3 text-[11px] font-bold text-white shadow-sm ${
+            pending || !siteId || frozenMessage || (!canEditDays && editableValues.size === 0)
+              ? "pointer-events-none opacity-50"
+              : ""
+          }`}
+          title="Classeur : colonne Matricule + jours 1..31 (+ HS50 / HS75 / HS100). · ملف إكسل للأشهر السابقة"
+        >
+          Importer Excel
+          <input
+            type="file"
+            accept=".xlsx"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) importExcel(file);
+            }}
+          />
+        </label>
       </div>
 
       {(error || info) && (

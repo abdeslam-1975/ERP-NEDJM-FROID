@@ -34,6 +34,10 @@ const LEGAL_KEYS = [
   "SNMG",
   "IRG_ZONE_SUD",
   "IRG_ZONE_GRAND_SUD",
+  "HEURES_MENSUELLES",
+  "HS_TAUX_50",
+  "HS_TAUX_75",
+  "HS_TAUX_100",
 ] as const;
 
 function groupOf(key: string): LegalVarRow["group"] {

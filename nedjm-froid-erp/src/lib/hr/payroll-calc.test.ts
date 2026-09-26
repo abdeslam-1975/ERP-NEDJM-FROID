@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  advanceDeductionLines,
+  overtimeLines,
+  salaryAsOf,
+  type PayrollAdvance,
   buildPayrollLines,
   computeLineAmount,
   contractCoversPeriod,
@@ -354,5 +358,85 @@ describe("payroll calc", () => {
         grossCotisable: 40000,
       }),
     ).toEqual([]);
+  });
+});
+
+describe("salaryAsOf", () => {
+  const versions = [
+    { contract_id: "c1", effective_from: "2026-01-01", salaire_base_monthly: 40000, salaire_net_ref_monthly: 35000 },
+    { contract_id: "c1", effective_from: "2026-05-15", salaire_base_monthly: 45000, salaire_net_ref_monthly: 39000 },
+    { contract_id: "c2", effective_from: "2026-01-01", salaire_base_monthly: 99000, salaire_net_ref_monthly: 0 },
+  ];
+  const fallback = { base: 1, net: 1 };
+
+  it("picks the latest version in force at period end", () => {
+    expect(salaryAsOf(versions, "c1", "2026-04-30", fallback)).toEqual({ base: 40000, net: 35000 });
+    expect(salaryAsOf(versions, "c1", "2026-05-31", fallback)).toEqual({ base: 45000, net: 39000 });
+  });
+
+  it("falls back to the contract fields without history", () => {
+    expect(salaryAsOf(versions, "c3", "2026-05-31", fallback)).toEqual(fallback);
+    expect(salaryAsOf(versions, "c1", "2025-12-31", fallback)).toEqual(fallback);
+  });
+});
+
+describe("overtimeLines", () => {
+  const specs = [
+    { code: "HS50", rate: 0.5, label_fr: "HS 50", label_ar: "50" },
+    { code: "HS100", rate: 1, label_fr: "HS 100", label_ar: "100" },
+  ];
+
+  it("pays hours at base / monthly hours with the premium", () => {
+    const lines = overtimeLines({ hours: { HS50: 10, HS100: 2 }, baseMonthly: 17333, monthlyHours: 173.33, specs });
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({ code: "HS50", unit: "hour", quantity: 10, category: "1", source_code: "overtime" });
+    expect(lines[0].amount).toBeCloseTo(1500, 0);
+    expect(lines[1].amount).toBeCloseTo(400, 0);
+  });
+
+  it("skips empty hours and zero base", () => {
+    expect(overtimeLines({ hours: { HS50: 0 }, baseMonthly: 30000, monthlyHours: 173.33, specs })).toEqual([]);
+    expect(overtimeLines({ hours: { HS50: 5 }, baseMonthly: 0, monthlyHours: 173.33, specs })).toEqual([]);
+  });
+});
+
+describe("advanceDeductionLines", () => {
+  const adv: PayrollAdvance = {
+    id: "a1",
+    employee_id: "e1",
+    kind: "LOAN",
+    principal_amount: 30000,
+    installment_amount: 10000,
+    start_year: 2026,
+    start_month: 3,
+    status: "ACTIVE",
+  };
+  const base = { employeeId: "e1", year: 2026, month: 4, availableNet: 50000 };
+
+  it("deducts the installment as a class 4 retenue", () => {
+    const r = advanceDeductionLines({ ...base, advances: [adv], deductedElsewhere: new Map() });
+    expect(r.capped).toBe(false);
+    expect(r.lines).toHaveLength(1);
+    expect(r.lines[0]).toMatchObject({ advance_id: "a1", amount: -10000, category: "4", nature: "retenue", cotisable: false, taxable: false });
+  });
+
+  it("limits to the remaining balance and stops once repaid", () => {
+    expect(
+      advanceDeductionLines({ ...base, advances: [adv], deductedElsewhere: new Map([["a1", 25000]]) }).lines[0].amount,
+    ).toBe(-5000);
+    expect(advanceDeductionLines({ ...base, advances: [adv], deductedElsewhere: new Map([["a1", 30000]]) }).lines).toEqual([]);
+  });
+
+  it("waits for the start month and ignores cancelled advances", () => {
+    expect(advanceDeductionLines({ ...base, month: 2, advances: [adv], deductedElsewhere: new Map() }).lines).toEqual([]);
+    expect(
+      advanceDeductionLines({ ...base, advances: [{ ...adv, status: "CANCELLED" }], deductedElsewhere: new Map() }).lines,
+    ).toEqual([]);
+  });
+
+  it("never takes the net below zero", () => {
+    const r = advanceDeductionLines({ ...base, availableNet: 4000, advances: [adv], deductedElsewhere: new Map() });
+    expect(r.capped).toBe(true);
+    expect(r.lines[0].amount).toBe(-4000);
   });
 });

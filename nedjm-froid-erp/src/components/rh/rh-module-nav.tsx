@@ -10,6 +10,7 @@ const items = [
   { href: "/rh/presence", label: "Présence" },
   { href: "/rh/paie", label: "Paie" },
   { href: "/rh/paie/exceptions", label: "Exceptions" },
+  { href: "/rh/paie/avances", label: "Avances" },
   { href: "/rh/documents", label: "Documents" },
   { href: "/rh/legal", label: "Cotisations & impôts" },
   { href: "/rh/parametres", label: "Paramètres" },

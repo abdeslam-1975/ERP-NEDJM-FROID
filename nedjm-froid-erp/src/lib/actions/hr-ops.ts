@@ -22,18 +22,26 @@ import {
   type PayrollRunStatus,
 } from "@/lib/hr/payroll-run-status";
 import {
+  advanceDeductionLines,
   buildPayrollLines,
   contractCoversPeriod,
   groupContractsByEmployee,
+  overtimeLines,
   paidMonthFraction,
   PAYROLL_CONTRACT_STATUSES,
   payrollLegalWarnings,
+  salaryAsOf,
+  sortBySalaryClass,
   summarizeLines,
   type LegalPayrollRates,
+  type OvertimeSpec,
+  type PayrollAdvance,
   type PayrollAssignment,
   type PayrollException,
   type PayrollRubrique,
+  type SalaryVersion,
 } from "@/lib/hr/payroll-calc";
+import { OVERTIME_COLUMNS } from "@/lib/hr/attendance-columns";
 import type { IrgBracket, IrgRule } from "@/lib/hr/irg-calc";
 import {
   complianceLabels,
@@ -82,6 +90,7 @@ export type AttendanceRosterRow = {
   site_id: string;
   site_name: string;
   start_date: string;
+  end_date: string | null;
   status: string;
 };
 
@@ -100,6 +109,7 @@ export async function listAttendanceRoster(): Promise<ActionResult<AttendanceRos
       site_id: r.site_id,
       site_name: r.site_name ?? "",
       start_date: String(r.start_date ?? "").slice(0, 10),
+      end_date: r.end_date ? String(r.end_date).slice(0, 10) : null,
       status: r.status,
     })),
   };
@@ -600,6 +610,91 @@ async function buildAndSavePayrollRun(
     ) as PayrollException[]
   ).map((e) => ({ ...e, amount: num(e.amount) }));
 
+  const contractIds = contracts.map((c) => c.id);
+  const salaryVersions = contractIds.length
+    ? (
+        must(
+          await supabase
+            .from("hr_contract_salary_history")
+            .select("contract_id, effective_from, salaire_base_monthly, salaire_net_ref_monthly")
+            .in("contract_id", contractIds),
+          "Historique des salaires",
+        ) as SalaryVersion[]
+      ).map((v) => ({
+        ...v,
+        effective_from: String(v.effective_from).slice(0, 10),
+        salaire_base_monthly: num(v.salaire_base_monthly),
+        salaire_net_ref_monthly: num(v.salaire_net_ref_monthly),
+      }))
+    : [];
+
+  let sheetQuery = supabase
+    .from("hr_attendance_sheet_rows")
+    .select("employee_id, cell_values")
+    .eq("period_year", p.period_year)
+    .eq("period_month", p.period_month);
+  if (p.site_id) sheetQuery = sheetQuery.eq("site_id", p.site_id);
+  const hoursByEmp = new Map<string, Record<string, number>>();
+  for (const row of must(await sheetQuery, "Heures supplémentaires") as {
+    employee_id: string;
+    cell_values: Record<string, unknown> | null;
+  }[]) {
+    const acc = hoursByEmp.get(row.employee_id) ?? {};
+    for (const col of OVERTIME_COLUMNS) {
+      const h = num((row.cell_values ?? {})[col.code]);
+      if (h > 0) acc[col.code] = (acc[col.code] ?? 0) + h;
+    }
+    hoursByEmp.set(row.employee_id, acc);
+  }
+  const monthlyHours = legalVar("HEURES_MENSUELLES") || 173.33;
+  const overtimeSpecs: OvertimeSpec[] = OVERTIME_COLUMNS.map((c) => {
+    const rate = legalVars[c.rateKey] == null ? c.defaultRate : legalVar(c.rateKey);
+    const pct = Math.round(rate * 100);
+    return {
+      code: c.code,
+      rate,
+      label_fr: `Heures supplémentaires ${pct} %`,
+      label_ar: `ساعات إضافية ${pct}%`,
+    };
+  });
+
+  const advances = empIds.length
+    ? (
+        must(
+          await supabase
+            .from("hr_employee_advances")
+            .select(
+              "id, employee_id, kind, principal_amount, installment_amount, start_year, start_month, status",
+            )
+            .eq("status", "ACTIVE")
+            .in("employee_id", empIds),
+          "Avances et prêts",
+        ) as PayrollAdvance[]
+      ).map((a) => ({
+        ...a,
+        principal_amount: num(a.principal_amount),
+        installment_amount: num(a.installment_amount),
+      }))
+    : [];
+  const deductedElsewhere = new Map<string, number>();
+  if (advances.length) {
+    const taken = must(
+      await supabase
+        .from("hr_payroll_slip_lines")
+        .select("advance_id, amount, slip:hr_payroll_slips!inner(run_id)")
+        .in(
+          "advance_id",
+          advances.map((a) => a.id),
+        ),
+      "Retenues déjà effectuées",
+    ) as unknown as { advance_id: string; amount: number; slip: { run_id: string } | { run_id: string }[] }[];
+    for (const t of taken) {
+      const slip = Array.isArray(t.slip) ? t.slip[0] : t.slip;
+      if (!slip || slip.run_id === run.id) continue;
+      deductedElsewhere.set(t.advance_id, (deductedElsewhere.get(t.advance_id) ?? 0) + Math.abs(num(t.amount)));
+    }
+  }
+
   const warnings: string[] = [];
   if (!irgEngine.brackets.length) {
     warnings.push("Barème IRG introuvable pour la période : IRG = 0 · سلم الضريبة غير موجود لهذه الفترة");
@@ -640,11 +735,15 @@ async function buildAndSavePayrollRun(
         `${empById.get(ctr.employee_id)?.matricule ?? "—"} : ${mov.days_paid} jours pointés > ${group.coveredDays} jours de contrat, plafonnés · أيام الحضور تتجاوز مدة العقد`,
       );
     }
-    const lines = buildPayrollLines({
+    const salary = salaryAsOf(salaryVersions, ctr.id, end, {
+      base: num(ctr.salaire_base_monthly),
+      net: num(ctr.salaire_net_ref_monthly),
+    });
+    let lines = buildPayrollLines({
       employeeId: ctr.employee_id,
       siteId: ctr.site_id,
       contractId: ctr.id,
-      baseMonthly: num(ctr.salaire_base_monthly),
+      baseMonthly: salary.base,
       daysPaid: paid,
       daysWorked: worked,
       monthFraction,
@@ -653,6 +752,12 @@ async function buildAndSavePayrollRun(
       rubriques,
       assignments,
       exceptions,
+      extraLines: overtimeLines({
+        hours: hoursByEmp.get(ctr.employee_id) ?? {},
+        baseMonthly: salary.base,
+        monthlyHours,
+        specs: overtimeSpecs,
+      }),
     });
     const taxpayer = irgCat.get(ctr.employee_id) ?? "STANDARD";
     const resolved = resolveCompliance({
@@ -687,14 +792,34 @@ async function buildAndSavePayrollRun(
       brackets: irgEngine.brackets,
       rulesByCategory: irgEngine.rulesByCategory,
     });
-    const sum = summarizeLines(lines, { ...legal, irgAmount });
+    let sum = summarizeLines(lines, { ...legal, irgAmount });
     const emp = empById.get(ctr.employee_id);
+    const advance = advanceDeductionLines({
+      advances,
+      deductedElsewhere,
+      employeeId: ctr.employee_id,
+      year: p.period_year,
+      month: p.period_month,
+      availableNet: sum.net_payable,
+    });
+    if (advance.lines.length) {
+      lines = sortBySalaryClass([...lines, ...advance.lines]).map((line, index) => ({
+        ...line,
+        sort_order: (index + 1) * 10,
+      }));
+      sum = summarizeLines(lines, { ...legal, irgAmount });
+    }
+    if (advance.capped) {
+      warnings.push(
+        `${emp?.matricule ?? "—"} : retenue d'avance réduite pour garder un net ≥ 0 · اقتطاع التسبيق مخفّض`,
+      );
+    }
     const labels = complianceLabels(resolved, cx.zones, cx.regimes);
     warnings.push(
       ...payrollLegalWarnings({
         matricule: emp?.matricule ?? "",
         nss: emp?.nss,
-        baseMonthly: num(ctr.salaire_base_monthly),
+        baseMonthly: salary.base,
         snmg,
         grossCotisable: sum.gross_cotisable,
       }),
@@ -723,7 +848,7 @@ async function buildAndSavePayrollRun(
         days_weekend: mov.days_weekend,
         days_abandon: mov.days_abandon,
         days_rappel: mov.days_rappel,
-        net_target: num(ctr.salaire_net_ref_monthly),
+        net_target: salary.net,
         gross_amount: sum.gross_cotisable,
         employee_ss: sum.employee_ss,
         employer_ss: sum.employer_ss,
@@ -754,6 +879,7 @@ async function buildAndSavePayrollRun(
       employee_id: s.employee_id,
       rubrique_id: line.rubrique_id,
       exception_id: line.exception_id,
+      advance_id: line.advance_id ?? null,
       source_code: line.source_code,
       code: line.code,
       label_ar: line.label_ar,

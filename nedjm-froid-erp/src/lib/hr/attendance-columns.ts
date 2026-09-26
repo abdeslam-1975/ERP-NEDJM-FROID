@@ -50,6 +50,7 @@ export type AttendanceContract = Pick<
   | "poste_fr"
   | "poste_ar"
   | "start_date"
+  | "end_date"
   | "status"
   | "last_name"
   | "first_name"
@@ -59,6 +60,37 @@ export type AttendanceContract = Pick<
 
 export const POSTE_EFFECTIF = "POSTE_EFFECTIF";
 
+/** Overtime hour columns read by payroll (code → legal rate key). */
+export const OVERTIME_COLUMNS = [
+  { code: "HS50", rateKey: "HS_TAUX_50", defaultRate: 0.5 },
+  { code: "HS75", rateKey: "HS_TAUX_75", defaultRate: 0.75 },
+  { code: "HS100", rateKey: "HS_TAUX_100", defaultRate: 1 },
+] as const;
+
+/**
+ * Contracts shown on a month's sheet: those covering any day of the month (ended ones included),
+ * one per employee and site (latest start).
+ */
+export function contractsForMonth<T extends Pick<AttendanceContract, "employee_id" | "site_id" | "start_date" | "end_date">>(
+  contracts: T[],
+  year: number,
+  month: number,
+): T[] {
+  const mm = String(month).padStart(2, "0");
+  const first = `${year}-${mm}-01`;
+  const last = `${year}-${mm}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`;
+  const byKey = new Map<string, T>();
+  for (const c of contracts) {
+    const start = String(c.start_date ?? "").slice(0, 10);
+    const end = c.end_date ? String(c.end_date).slice(0, 10) : null;
+    if (!start || start > last || (end && end < first)) continue;
+    const key = `${c.employee_id}|${c.site_id}`;
+    const prev = byKey.get(key);
+    if (!prev || start > String(prev.start_date).slice(0, 10)) byKey.set(key, c);
+  }
+  return [...byKey.values()];
+}
+
 export function toAttendanceContract(c: HrContractRow): AttendanceContract {
   return {
     employee_id: c.employee_id,
@@ -67,6 +99,7 @@ export function toAttendanceContract(c: HrContractRow): AttendanceContract {
     poste_fr: c.poste_fr,
     poste_ar: c.poste_ar,
     start_date: c.start_date,
+    end_date: c.end_date,
     status: c.status,
     last_name: c.last_name,
     first_name: c.first_name,
@@ -84,6 +117,7 @@ export function rosterToAttendanceContract(r: AttendanceRosterRow): AttendanceCo
     poste_fr: r.poste || null,
     poste_ar: null,
     start_date: r.start_date,
+    end_date: r.end_date,
     status: r.status,
     last_name: r.last_name,
     first_name: r.first_name,
