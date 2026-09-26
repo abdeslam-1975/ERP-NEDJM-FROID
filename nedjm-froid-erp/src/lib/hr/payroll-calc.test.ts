@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   advanceDeductionLines,
+  contractPayableInPeriod,
+  exitSettlementLines,
   overtimeLines,
   salaryAsOf,
   type PayrollAdvance,
@@ -438,5 +440,44 @@ describe("advanceDeductionLines", () => {
     const r = advanceDeductionLines({ ...base, availableNet: 4000, advances: [adv], deductedElsewhere: new Map() });
     expect(r.capped).toBe(true);
     expect(r.lines[0].amount).toBe(-4000);
+  });
+
+  it("recovers the whole remaining balance on the final payslip", () => {
+    const r = advanceDeductionLines({
+      ...base,
+      advances: [adv],
+      deductedElsewhere: new Map([["a1", 10000]]),
+      settleAll: true,
+    });
+    expect(r.lines[0].amount).toBe(-20000);
+  });
+});
+
+describe("exitSettlementLines", () => {
+  it("maps settlement items to exit lines with their salary class", () => {
+    const lines = exitSettlementLines([
+      { code: "ICP", label_fr: "ICP", label_ar: "ت", category: "1", amount: 12000 },
+      { code: "IND", label_fr: "Indemnité", label_ar: "ت", category: "4", amount: 5000 },
+      { code: "RET", label_fr: "Retenue", label_ar: "ا", category: "4", amount: -800 },
+    ]);
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toMatchObject({ source_code: "exit", amount: 12000, cotisable: true, taxable: true, nature: "indemnite" });
+    expect(lines[1]).toMatchObject({ cotisable: false, taxable: false });
+    expect(lines[2]).toMatchObject({ amount: -800, nature: "retenue" });
+  });
+});
+
+describe("contractPayableInPeriod", () => {
+  const c = { status: "ACTIVE", start_date: "2025-01-01", end_date: null };
+  it("pays open contracts covering the period", () => {
+    expect(contractPayableInPeriod(c, "2026-04-01", "2026-04-30")).toBe(true);
+    expect(contractPayableInPeriod({ ...c, status: "SUSPENDED" }, "2026-04-01", "2026-04-30")).toBe(false);
+  });
+  it("pays an ended contract only in the month of its last day", () => {
+    const ended = { status: "ENDED", start_date: "2025-01-01", end_date: "2026-04-15" };
+    expect(contractPayableInPeriod(ended, "2026-04-01", "2026-04-30")).toBe(true);
+    expect(contractPayableInPeriod(ended, "2026-05-01", "2026-05-31")).toBe(false);
+    expect(contractPayableInPeriod(ended, "2026-03-01", "2026-03-31")).toBe(false);
+    expect(contractPayableInPeriod({ ...ended, end_date: null }, "2026-04-01", "2026-04-30")).toBe(false);
   });
 });

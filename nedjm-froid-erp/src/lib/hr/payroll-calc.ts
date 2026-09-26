@@ -13,7 +13,8 @@ export type LineSource =
   | "employee"
   | "exception"
   | "advance"
-  | "overtime";
+  | "overtime"
+  | "exit";
 export type LineUnit = SalaryUnit | "hour";
 
 export type PayrollRubrique = {
@@ -117,6 +118,21 @@ export function ymIndex(year: number, month: number) {
 }
 
 export const PAYROLL_CONTRACT_STATUSES = ["DRAFT", "ACTIVE"] as const;
+
+/** Open contracts, plus ENDED ones whose last day falls in the period (final payslip). */
+export function contractPayableInPeriod(
+  c: { status: string; start_date: string; end_date: string | null },
+  periodStart: string,
+  periodEnd: string,
+) {
+  const end = c.end_date ? c.end_date.slice(0, 10) : null;
+  if (c.status === "ENDED") {
+    if (!end || end < periodStart || end > periodEnd) return false;
+  } else if (!(PAYROLL_CONTRACT_STATUSES as readonly string[]).includes(c.status)) {
+    return false;
+  }
+  return contractCoversPeriod(c.start_date.slice(0, 10), end, periodStart, periodEnd);
+}
 
 export function contractCoversPeriod(
   startDate: string,
@@ -315,6 +331,8 @@ export function advanceDeductionLines(input: {
   year: number;
   month: number;
   availableNet: number;
+  /** Exit month: the whole remaining balance is due. */
+  settleAll?: boolean;
 }): { lines: PayrollLine[]; capped: boolean } {
   const period = ymIndex(input.year, input.month);
   let available = Math.max(0, roundMoney(input.availableNet));
@@ -331,7 +349,7 @@ export function advanceDeductionLines(input: {
   for (const adv of due) {
     const remaining = roundMoney(adv.principal_amount - (input.deductedElsewhere.get(adv.id) ?? 0));
     if (remaining <= 0) continue;
-    const wanted = Math.min(adv.installment_amount, remaining);
+    const wanted = input.settleAll ? remaining : Math.min(adv.installment_amount, remaining);
     const amount = roundMoney(Math.min(wanted, available));
     if (amount < wanted) capped = true;
     if (amount <= 0) continue;
@@ -357,6 +375,31 @@ export function advanceDeductionLines(input: {
     });
   }
   return { lines, capped };
+}
+
+/** Final-settlement lines of a validated exit (positive = indemnité, negative = retenue). */
+export function exitSettlementLines(
+  lines: { code: string; label_fr: string; label_ar: string; category: SalaryCategory; amount: number }[],
+): PayrollLine[] {
+  return lines
+    .filter((l) => Number.isFinite(l.amount) && l.amount !== 0)
+    .map((l) => ({
+      rubrique_id: null,
+      exception_id: null,
+      advance_id: null,
+      source_code: "exit" as const,
+      code: l.code,
+      label_ar: l.label_ar,
+      label_fr: l.label_fr,
+      category: l.category,
+      nature: l.amount < 0 ? ("retenue" as const) : ("indemnite" as const),
+      unit: "month" as const,
+      ...salaryClassFlags(l.category),
+      quantity: 1,
+      unit_amount: roundMoney(Math.abs(l.amount)),
+      amount: roundMoney(l.amount),
+      sort_order: 0,
+    }));
 }
 
 export function computeLineAmount(input: {

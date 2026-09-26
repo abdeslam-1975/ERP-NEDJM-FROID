@@ -24,7 +24,8 @@ import {
 import {
   advanceDeductionLines,
   buildPayrollLines,
-  contractCoversPeriod,
+  contractPayableInPeriod,
+  exitSettlementLines,
   groupContractsByEmployee,
   overtimeLines,
   paidMonthFraction,
@@ -42,6 +43,9 @@ import {
   type SalaryVersion,
 } from "@/lib/hr/payroll-calc";
 import { OVERTIME_COLUMNS } from "@/lib/hr/attendance-columns";
+import { normalizeSettlementLines, type SettlementLine } from "@/lib/hr/leave";
+
+const ANNUAL_LEAVE_LEGEND = "CA";
 import type { IrgBracket, IrgRule } from "@/lib/hr/irg-calc";
 import {
   complianceLabels,
@@ -513,14 +517,17 @@ async function buildAndSavePayrollRun(
       "id, employee_id, site_id, salaire_net_ref_monthly, salaire_base_monthly, activity_code_id, start_date, end_date, status",
     )
     .eq("affectation_principale", true)
-    .in("status", [...PAYROLL_CONTRACT_STATUSES]);
+    .in("status", [...PAYROLL_CONTRACT_STATUSES, "ENDED"]);
   if (p.site_id) contractsQuery = contractsQuery.eq("site_id", p.site_id);
   const { data: contractRows, error: cErr } = await contractsQuery;
   if (cErr) return { ok: false, error: cErr.message };
   const contracts = (contractRows ?? []).filter((c) =>
-    contractCoversPeriod(
-      String(c.start_date).slice(0, 10),
-      c.end_date ? String(c.end_date).slice(0, 10) : null,
+    contractPayableInPeriod(
+      {
+        status: String(c.status),
+        start_date: String(c.start_date),
+        end_date: c.end_date ? String(c.end_date) : null,
+      },
       start,
       end,
     ),
@@ -547,6 +554,11 @@ async function buildAndSavePayrollRun(
     legends as AttendanceLegend[],
     p.site_id ? { siteId: p.site_id } : undefined,
   );
+  const annualLeaveByEmp = new Map<string, number>();
+  for (const cell of att) {
+    if (String(cell.legend_code).toUpperCase() !== ANNUAL_LEAVE_LEGEND) continue;
+    annualLeaveByEmp.set(cell.employee_id, (annualLeaveByEmp.get(cell.employee_id) ?? 0) + 1);
+  }
 
   const activities = must(
     await supabase.from("ref_activity_codes").select("id, applies_cacobatph, applies_intemperies"),
@@ -695,6 +707,21 @@ async function buildAndSavePayrollRun(
     }
   }
 
+  const exitByEmp = new Map<string, SettlementLine[]>();
+  if (empIds.length) {
+    const exits = must(
+      await supabase
+        .from("hr_employee_exits")
+        .select("employee_id, settlement_lines")
+        .eq("status", "VALIDATED")
+        .gte("exit_date", start)
+        .lte("exit_date", end)
+        .in("employee_id", empIds),
+      "Sorties",
+    ) as { employee_id: string; settlement_lines: unknown }[];
+    for (const x of exits) exitByEmp.set(x.employee_id, normalizeSettlementLines(x.settlement_lines));
+  }
+
   const warnings: string[] = [];
   if (!irgEngine.brackets.length) {
     warnings.push("Barème IRG introuvable pour la période : IRG = 0 · سلم الضريبة غير موجود لهذه الفترة");
@@ -717,7 +744,29 @@ async function buildAndSavePayrollRun(
   )) {
     const ctr = group.contract;
     const mov = movementsByEmp.get(ctr.employee_id) ?? emptyMovements();
-    const paid = Math.min(mov.days_paid, group.coveredDays);
+    const taxpayer = irgCat.get(ctr.employee_id) ?? "STANDARD";
+    const resolved = resolveCompliance({
+      overrides: cx.overridesByContract.get(ctr.id) ?? [],
+      periodStart: start,
+      periodEnd: end,
+      employeeIrgCategory: taxpayer,
+      socialProfileCode: cx.socialProfile.get(ctr.employee_id) ?? null,
+      siteZoneCode: cx.siteZone.get(ctr.site_id)?.code ?? DEFAULT_IRG_ZONE,
+      activity: {
+        cacobatph: cacoSites.has(ctr.activity_code_id),
+        intemperies: intempSites.has(ctr.activity_code_id),
+      },
+      vars: legalVars,
+      zones: cx.zones,
+      regimes: cx.regimes,
+    });
+    const fundLeave = resolved.cacobatph.conges ? (annualLeaveByEmp.get(ctr.employee_id) ?? 0) : 0;
+    if (fundLeave > 0) {
+      warnings.push(
+        `${empById.get(ctr.employee_id)?.matricule ?? "—"} : ${fundLeave} j de congé annuel payés par la CACOBATPH, exclus du bulletin · أيام العطلة يدفعها الصندوق`,
+      );
+    }
+    const paid = Math.min(Math.max(0, mov.days_paid - fundLeave), group.coveredDays);
     const worked = Math.min(mov.days_presence_qty, group.coveredDays);
     const monthFraction = paidMonthFraction({
       daysPaid: paid,
@@ -752,28 +801,15 @@ async function buildAndSavePayrollRun(
       rubriques,
       assignments,
       exceptions,
-      extraLines: overtimeLines({
-        hours: hoursByEmp.get(ctr.employee_id) ?? {},
-        baseMonthly: salary.base,
-        monthlyHours,
-        specs: overtimeSpecs,
-      }),
-    });
-    const taxpayer = irgCat.get(ctr.employee_id) ?? "STANDARD";
-    const resolved = resolveCompliance({
-      overrides: cx.overridesByContract.get(ctr.id) ?? [],
-      periodStart: start,
-      periodEnd: end,
-      employeeIrgCategory: taxpayer,
-      socialProfileCode: cx.socialProfile.get(ctr.employee_id) ?? null,
-      siteZoneCode: cx.siteZone.get(ctr.site_id)?.code ?? DEFAULT_IRG_ZONE,
-      activity: {
-        cacobatph: cacoSites.has(ctr.activity_code_id),
-        intemperies: intempSites.has(ctr.activity_code_id),
-      },
-      vars: legalVars,
-      zones: cx.zones,
-      regimes: cx.regimes,
+      extraLines: [
+        ...overtimeLines({
+          hours: hoursByEmp.get(ctr.employee_id) ?? {},
+          baseMonthly: salary.base,
+          monthlyHours,
+          specs: overtimeSpecs,
+        }),
+        ...exitSettlementLines(exitByEmp.get(ctr.employee_id) ?? []),
+      ],
     });
     const legal: Omit<LegalPayrollRates, "irgAmount"> = {
       cnasEmployee: resolved.cnas.employee,
@@ -801,6 +837,7 @@ async function buildAndSavePayrollRun(
       year: p.period_year,
       month: p.period_month,
       availableNet: sum.net_payable,
+      settleAll: exitByEmp.has(ctr.employee_id),
     });
     if (advance.lines.length) {
       lines = sortBySalaryClass([...lines, ...advance.lines]).map((line, index) => ({

@@ -38,6 +38,7 @@ const LEGAL_KEYS = [
   "HS_TAUX_50",
   "HS_TAUX_75",
   "HS_TAUX_100",
+  "CONGE_JOURS_MOIS",
 ] as const;
 
 function groupOf(key: string): LegalVarRow["group"] {

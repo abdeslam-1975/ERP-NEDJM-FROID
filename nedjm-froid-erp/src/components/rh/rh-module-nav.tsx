@@ -8,10 +8,13 @@ const items = [
   { href: "/rh/employes", label: "Employés" },
   { href: "/rh/contrats", label: "Contrats" },
   { href: "/rh/presence", label: "Présence" },
+  { href: "/rh/conges", label: "Congés" },
   { href: "/rh/paie", label: "Paie" },
   { href: "/rh/paie/exceptions", label: "Exceptions" },
   { href: "/rh/paie/avances", label: "Avances" },
+  { href: "/rh/sorties", label: "Sorties" },
   { href: "/rh/documents", label: "Documents" },
+  { href: "/rh/attestations", label: "Attestations" },
   { href: "/rh/legal", label: "Cotisations & impôts" },
   { href: "/rh/parametres", label: "Paramètres" },
 ];
