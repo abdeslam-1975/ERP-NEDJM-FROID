@@ -392,10 +392,6 @@ export const payrollGenerateSchema = z.object({
   site_id: z.string().uuid().optional().nullable(),
 });
 
-export const payrollLockSchema = z.object({
-  slip_id: z.string().uuid(),
-});
-
 export const payrollRunActionSchema = z.object({
   run_id: z.string().uuid(),
 });

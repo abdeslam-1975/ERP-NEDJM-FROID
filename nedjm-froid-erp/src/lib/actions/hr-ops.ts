@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/server";
 import {
   attendanceSaveSchema,
   payrollGenerateSchema,
-  payrollLockSchema,
   payrollRunActionSchema,
 } from "@/lib/validations/hr";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
@@ -35,6 +34,11 @@ import {
 } from "@/lib/hr/payroll-calc";
 import { computeMonthlyIrg, type IrgBracket, type IrgRule } from "@/lib/hr/irg-calc";
 import {
+  legalVarsAsOf,
+  parseLegalSnapshot,
+  type PayrollLegalSnapshot,
+} from "@/lib/hr/legal-vars-as-of";
+import {
   accumulateAttendanceMovements,
   emptyMovements,
   type AttendanceLegend,
@@ -57,6 +61,39 @@ export type AttendanceCell = {
   correspondence_id: string | null;
   correspondence_number: string | null;
 };
+
+/** Salary-free roster for the attendance sheet (readable by site chiefs). */
+export type AttendanceRosterRow = {
+  employee_id: string;
+  matricule: string;
+  last_name: string;
+  first_name: string;
+  poste: string;
+  site_id: string;
+  site_name: string;
+  start_date: string;
+  status: string;
+};
+
+export async function listAttendanceRoster(): Promise<ActionResult<AttendanceRosterRow[]>> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("hr_attendance_roster");
+  if (error) return { ok: false, error: error.message };
+  return {
+    ok: true,
+    data: ((data ?? []) as AttendanceRosterRow[]).map((r) => ({
+      employee_id: r.employee_id,
+      matricule: r.matricule ?? "",
+      last_name: r.last_name ?? "",
+      first_name: r.first_name ?? "",
+      poste: r.poste ?? "",
+      site_id: r.site_id,
+      site_name: r.site_name ?? "",
+      start_date: String(r.start_date ?? "").slice(0, 10),
+      status: r.status,
+    })),
+  };
+}
 
 export type PayrollSlipLineRow = {
   id: string;
@@ -115,6 +152,8 @@ export type PayrollSlipRow = {
   payment_mode_code: string | null;
   account_no: string | null;
   account_key: string | null;
+  /** Legal rates of the slip period (frozen snapshot, or versions in force on the 1st of the month). */
+  legal_vars: Record<string, number>;
   lines: PayrollSlipLineRow[];
 };
 
@@ -286,27 +325,6 @@ export async function saveAttendanceMonth(
   };
 }
 
-async function currentVar(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  key: string,
-): Promise<number> {
-  const { data: row } = await supabase
-    .from("ref_global_vars")
-    .select("id")
-    .eq("key", key)
-    .maybeSingle();
-  if (!row) return 0;
-  const { data: ver } = await supabase
-    .from("ref_global_var_versions")
-    .select("value_numeric")
-    .eq("var_id", row.id)
-    .lte("effective_from", new Date().toISOString().slice(0, 10))
-    .order("effective_from", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return num(ver?.value_numeric);
-}
-
 type IrgEngine = {
   brackets: IrgBracket[];
   rulesByCategory: Record<string, IrgRule[]>;
@@ -430,16 +448,16 @@ export async function generatePayrollRun(
     run = { id: created.id };
   }
 
-  const [cnasEmp, cnasPat, cnasFos, caco, intempSal, intempPat, divisorVar, snmg] = await Promise.all([
-    currentVar(supabase, "CNAS_EMPLOYEE"),
-    currentVar(supabase, "CNAS_EMPLOYER_BASE"),
-    currentVar(supabase, "CNAS_FOS"),
-    currentVar(supabase, "CACOBATPH_CONGES"),
-    currentVar(supabase, "CACOBATPH_INTEMPERIES_SAL"),
-    currentVar(supabase, "CACOBATPH_INTEMPERIES_EMP"),
-    currentVar(supabase, "NJM_DIVISEUR_FIXED"),
-    currentVar(supabase, "SNMG"),
-  ]);
+  const legalVars = await legalVarsAsOf(supabase, start);
+  const legalVar = (key: string) => num(legalVars[key]);
+  const cnasEmp = legalVar("CNAS_EMPLOYEE");
+  const cnasPat = legalVar("CNAS_EMPLOYER_BASE");
+  const cnasFos = legalVar("CNAS_FOS");
+  const caco = legalVar("CACOBATPH_CONGES");
+  const intempSal = legalVar("CACOBATPH_INTEMPERIES_SAL");
+  const intempPat = legalVar("CACOBATPH_INTEMPERIES_EMP");
+  const divisorVar = legalVar("NJM_DIVISEUR_FIXED");
+  const snmg = legalVar("SNMG");
   const divisor = divisorVar > 0 ? divisorVar : 30;
   const irgEngine = await loadIrgEngine(supabase, start);
 
@@ -619,6 +637,11 @@ export async function generatePayrollRun(
         irg_amount: sum.irg_amount,
         net_payable: sum.net_payable,
         status_code: "DRAFT",
+        legal_snapshot: {
+          as_of: start,
+          vars: legalVars,
+          irg_category: taxpayer,
+        } satisfies PayrollLegalSnapshot,
       },
     });
   }
@@ -767,7 +790,7 @@ export async function listPayrollSlips(input: {
   const { data, error } = await supabase
     .from("hr_payroll_slips")
     .select(
-      "id, run_id, employee_id, hr_contract_id, days_worked, days_paid, days_leave, days_absence, days_weekend, days_abandon, days_rappel, net_target, gross_amount, employee_ss, employer_ss, cacobatph, intemperies_employee, intemperies_employer, irg_base, irg_amount, net_payable, status_code, employee:hr_employees ( matricule, last_name, first_name, nss, birth_date, hired_at )",
+      "id, run_id, employee_id, hr_contract_id, days_worked, days_paid, days_leave, days_absence, days_weekend, days_abandon, days_rappel, net_target, gross_amount, employee_ss, employer_ss, cacobatph, intemperies_employee, intemperies_employer, irg_base, irg_amount, net_payable, status_code, legal_snapshot, employee:hr_employees ( matricule, last_name, first_name, nss, birth_date, hired_at )",
     )
     .in("run_id", runIds);
   if (error) return { ok: false, error: error.message };
@@ -870,6 +893,12 @@ export async function listPayrollSlips(input: {
   const start = `${input.year}-${String(input.month).padStart(2, "0")}-01`;
   const endDay = new Date(input.year, input.month, 0).getDate();
   const end = `${input.year}-${String(input.month).padStart(2, "0")}-${String(endDay).padStart(2, "0")}`;
+  const snapshots = new Map(
+    (data ?? []).map((row) => [row.id, parseLegalSnapshot(row.legal_snapshot)]),
+  );
+  const periodVars = [...snapshots.values()].some((s) => !s)
+    ? await legalVarsAsOf(supabase, start)
+    : {};
   const [{ data: legendRows }, { data: attRows }] = await Promise.all([
     supabase
       .from("ref_legendes")
@@ -942,31 +971,11 @@ export async function listPayrollSlips(input: {
         payment_mode_code: bk?.payment_mode_code ?? null,
         account_no: bk?.account_no ?? null,
         account_key: bk?.account_key ?? null,
+        legal_vars: snapshots.get(row.id)?.vars ?? periodVars,
         lines: linesBySlip.get(row.id) ?? [],
       };
     }),
   };
-}
-
-export async function lockPayrollSlip(
-  input: unknown,
-): Promise<ActionResult<{ id: string }>> {
-  const parsed = payrollLockSchema.safeParse(input);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
-  }
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("hr_payroll_slips")
-    .update({ status_code: "LOCKED", locked_at: new Date().toISOString() })
-    .eq("id", parsed.data.slip_id)
-    .select("id")
-    .maybeSingle();
-  if (error) return { ok: false, error: error.message };
-  if (!data) return { ok: false, error: "Verrouillage refusé." };
-  revalidatePath("/rh/paie");
-  revalidatePath("/rh/paie/bulletins");
-  return { ok: true, data: { id: data.id } };
 }
 
 async function payrollRunPermissions() {

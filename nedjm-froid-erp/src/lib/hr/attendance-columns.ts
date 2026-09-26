@@ -1,4 +1,5 @@
 import type { HrContractRow } from "@/lib/actions/hr-contracts";
+import type { AttendanceRosterRow } from "@/lib/actions/hr-ops";
 
 export type AttendanceColumnKind = "IDENTITY" | "DAYS" | "CODE_COUNTS" | "TOTAL" | "INPUT";
 export type AttendanceValueType = "text" | "number" | "date" | "catalog";
@@ -71,6 +72,23 @@ export function toAttendanceContract(c: HrContractRow): AttendanceContract {
     first_name: c.first_name,
     employee_name: c.employee_name,
     matricule: c.matricule,
+  };
+}
+
+/** Salary-free roster row (hr_attendance_roster RPC, readable by site chiefs). */
+export function rosterToAttendanceContract(r: AttendanceRosterRow): AttendanceContract {
+  return {
+    employee_id: r.employee_id,
+    site_id: r.site_id,
+    site_name: r.site_name,
+    poste_fr: r.poste || null,
+    poste_ar: null,
+    start_date: r.start_date,
+    status: r.status,
+    last_name: r.last_name,
+    first_name: r.first_name,
+    employee_name: `${r.last_name} ${r.first_name}`.trim(),
+    matricule: r.matricule,
   };
 }
 

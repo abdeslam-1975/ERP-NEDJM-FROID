@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { hrBulletinSettingsSchema } from "@/lib/validations/hr";
 import { getHrFicheSettings } from "@/lib/actions/hr-fiche";
+import { legalVarsAsOf } from "@/lib/hr/legal-vars-as-of";
 import {
   BULLETIN_SETTINGS_ID,
+  bulletinRatesFromVars,
   DEFAULT_BULLETIN_SETTINGS,
   parseBulletinLayout,
   type BulletinLegalRates,
@@ -25,26 +27,6 @@ function revalidateBulletin() {
   revalidatePath("/rh/paie/bulletins");
   revalidatePath("/rh/paie/fiscal");
   revalidatePath("/rh/paie/social");
-}
-
-async function currentVarPct(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  key: string,
-): Promise<number | null> {
-  if (!key) return null;
-  const { data: row } = await supabase.from("ref_global_vars").select("id").eq("key", key).maybeSingle();
-  if (!row) return null;
-  const { data: ver } = await supabase
-    .from("ref_global_var_versions")
-    .select("value_numeric")
-    .eq("var_id", row.id)
-    .lte("effective_from", new Date().toISOString().slice(0, 10))
-    .order("effective_from", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const n = Number(ver?.value_numeric);
-  if (!Number.isFinite(n)) return null;
-  return Math.round(n * 10000) / 100;
 }
 
 export async function getHrBulletinSettings(): Promise<ActionResult<HrBulletinSettings>> {
@@ -78,31 +60,15 @@ export async function saveHrBulletinSettings(
   return { ok: true, data: parseBulletinLayout(data.layout) };
 }
 
+/** Rates in force on `asOf` (defaults to today, for the settings screen). */
 export async function getBulletinLegalRates(
   settings?: HrBulletinSettings,
+  asOf: string = new Date().toISOString().slice(0, 10),
 ): Promise<ActionResult<BulletinLegalRates>> {
   const layout = settings ?? DEFAULT_BULLETIN_SETTINGS;
   const supabase = await createClient();
-  const [ss, pat, fos, caco, intempSal, intempPat] = await Promise.all([
-    currentVarPct(supabase, layout.ss_var_key),
-    currentVarPct(supabase, layout.pat_var_key),
-    currentVarPct(supabase, layout.fos_var_key),
-    currentVarPct(supabase, layout.caco_var_key),
-    currentVarPct(supabase, layout.intemp_sal_var_key),
-    currentVarPct(supabase, layout.intemp_emp_var_key),
-  ]);
-  const patTotal =
-    pat == null && fos == null ? null : Math.round(((pat ?? 0) + (fos ?? 0)) * 100) / 100;
-  return {
-    ok: true,
-    data: {
-      ss_pct: ss,
-      pat_pct: patTotal,
-      caco_pct: caco,
-      intemp_sal_pct: intempSal,
-      intemp_pat_pct: intempPat,
-    },
-  };
+  const vars = await legalVarsAsOf(supabase, asOf);
+  return { ok: true, data: bulletinRatesFromVars(vars, layout) };
 }
 
 export async function loadPayrollBulletinContext() {

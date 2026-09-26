@@ -5,7 +5,6 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   closePayrollRun,
   generatePayrollRun,
-  lockPayrollSlip,
   reopenPayrollRun,
   validatePayrollRun,
   type PayrollRunRow,
@@ -32,6 +31,7 @@ import {
 import { classTitle } from "@/components/rh/contract-salary-fields";
 import { sortBySalaryClass } from "@/lib/hr/payroll-calc";
 import {
+  bulletinRatesFromVars,
   DEFAULT_BULLETIN_SETTINGS,
   tauxUnitSuffix,
   type BulletinLegalRates,
@@ -211,8 +211,8 @@ export function PayrollManager({
   const [pending, start] = useTransition();
   const currentRun = runs.find((r) => r.site_id === siteId) ?? null;
   const currentStatus = currentRun?.status_code ?? "DRAFT";
-  const runStatusById = useMemo(() => new Map(runs.map((r) => [r.id, r.status_code])), [runs]);
   const siteName = sites.find((s) => s.id === siteId)?.name_fr ?? "";
+  const periodRates = slips[0] ? bulletinRatesFromVars(slips[0].legal_vars, bulletin) : legalRates;
   const declarationsProvisional = !runs.length || runs.some((r) => r.status_code === "DRAFT");
   const [exporting, setExporting] = useState(false);
 
@@ -292,8 +292,12 @@ export function PayrollManager({
     (view === "all" ? 1 : 0) +
     1;
 
+  function toBulletin(s: PayrollSlipRow) {
+    return slipToBulletin(s, bulletin, bulletinRatesFromVars(s.legal_vars, bulletin));
+  }
+
   function openBulletin(rows: PayrollSlipRow[]) {
-    setPreview(rows.map((s) => slipToBulletin(s, bulletin, legalRates)));
+    setPreview(rows.map(toBulletin));
   }
 
   return (
@@ -350,21 +354,21 @@ export function PayrollManager({
       ) : null}
       <div className="flex flex-wrap gap-2 rounded-2xl border border-border/60 bg-surface/80 px-4 py-3 text-xs text-foreground/75 backdrop-blur-sm">
         <RhChip tone="brand">
-          {bi("CNAS salarié", "ضمان العامل")} {legalRates.ss_pct ?? "—"}
+          {bi("CNAS salarié", "ضمان العامل")} {periodRates.ss_pct ?? "—"}
           {bulletin.unit_percent}
         </RhChip>
         <RhChip tone="brand">
-          {bi("CNAS employeur", "ضمان المؤسسة")} {legalRates.pat_pct ?? "—"}
+          {bi("CNAS employeur", "ضمان المؤسسة")} {periodRates.pat_pct ?? "—"}
           {bulletin.unit_percent}
         </RhChip>
         <RhChip>
-          {bi("Congés CACOBATPH", "عطل كاكوباتف")} {legalRates.caco_pct ?? "—"}
+          {bi("Congés CACOBATPH", "عطل كاكوباتف")} {periodRates.caco_pct ?? "—"}
           {bulletin.unit_percent}
         </RhChip>
         <RhChip>
-          {bi("Intempéries", "انقطاعات الطقس")} {legalRates.intemp_sal_pct ?? "—"}
+          {bi("Intempéries", "انقطاعات الطقس")} {periodRates.intemp_sal_pct ?? "—"}
           {" / "}
-          {legalRates.intemp_pat_pct ?? "—"}
+          {periodRates.intemp_pat_pct ?? "—"}
           {bulletin.unit_percent}
         </RhChip>
         <RhChip tone="warning">
@@ -521,7 +525,7 @@ export function PayrollManager({
             <Button
               variant="secondary"
               onClick={() =>
-                printBulletins(slips.map((s) => slipToBulletin(s, bulletin, legalRates)))
+                printBulletins(slips.map(toBulletin))
               }
             >
               {bi("Imprimer les bulletins", "طباعة الكشوف")}
@@ -684,37 +688,13 @@ export function PayrollManager({
                   ) : null}
                   <td className="px-3.5 py-3">
                     <div className="flex flex-wrap gap-1">
-                      {view === "all" &&
-                      s.status_code === "DRAFT" &&
-                      (runStatusById.get(s.run_id) ?? "DRAFT") === "DRAFT" ? (
-                        <Button
-                          variant="secondary"
-                          disabled={pending}
-                          onClick={() => {
-                            start(async () => {
-                              const r = await lockPayrollSlip({ slip_id: s.id });
-                              if (!r.ok) {
-                                setError(r.error);
-                                return;
-                              }
-                              setSlips((prev) =>
-                                prev.map((x) =>
-                                  x.id === s.id ? { ...x, status_code: "LOCKED" } : x,
-                                ),
-                              );
-                            });
-                          }}
-                        >
-                          Verrouiller
-                        </Button>
-                      ) : null}
                       <Button variant="secondary" onClick={() => openBulletin([s])}>
                         {bi("Bulletin de Paie", "كشف الأجر")}
                       </Button>
                       <Button
                         variant="ghost"
                         onClick={() =>
-                          printBulletins([slipToBulletin(s, bulletin, legalRates)])
+                          printBulletins([toBulletin(s)])
                         }
                       >
                         {bi("Imprimer", "طباعة")}

@@ -315,6 +315,26 @@ export function parseBulletinLayout(raw: unknown): HrBulletinSettings {
   };
 }
 
+/** Legal variables (decimal, keyed by ref_global_vars.key) → percentages printed on the bulletin. */
+export function bulletinRatesFromVars(
+  vars: Record<string, number>,
+  settings: HrBulletinSettings,
+): BulletinLegalRates {
+  const pct = (key: string) => {
+    const n = key ? vars[key] : undefined;
+    return typeof n === "number" && Number.isFinite(n) ? Math.round(n * 10000) / 100 : null;
+  };
+  const pat = pct(settings.pat_var_key);
+  const fos = pct(settings.fos_var_key);
+  return {
+    ss_pct: pct(settings.ss_var_key),
+    pat_pct: pat == null && fos == null ? null : Math.round(((pat ?? 0) + (fos ?? 0)) * 100) / 100,
+    caco_pct: pct(settings.caco_var_key),
+    intemp_sal_pct: pct(settings.intemp_sal_var_key),
+    intemp_pat_pct: pct(settings.intemp_emp_var_key),
+  };
+}
+
 export function withPct(template: string, pct: number | null | undefined) {
   const n = pct == null || !Number.isFinite(pct) ? "" : String(pct);
   return template.replace("{pct}", n);
