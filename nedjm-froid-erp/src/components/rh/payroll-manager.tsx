@@ -311,7 +311,7 @@ export function PayrollManager({
   const totalCols =
     1 +
     (view !== "fiscal" ? 2 : 0) +
-    (view === "social" ? 5 : 0) +
+    (view === "social" ? 6 : 0) +
     (view === "fiscal" ? 2 : 0) +
     itemCols.length +
     (view === "all" ? 1 : 0) +
@@ -630,6 +630,9 @@ export function PayrollManager({
                   <th className="px-3.5 py-3 text-left" rowSpan={itemCols.length ? 2 : 1}>
                     {bi("Intemp. pat.", "طقس المؤسسة")}
                   </th>
+                  <th className="px-3.5 py-3 text-left" rowSpan={itemCols.length ? 2 : 1}>
+                    {bi("Autres cot. sal. / pat.", "اشتراكات أخرى")}
+                  </th>
                 </>
               ) : null}
               {view === "fiscal" ? (
@@ -721,6 +724,16 @@ export function PayrollManager({
                       <td className="whitespace-nowrap px-3.5 py-3">
                         {s.intemperies_employer
                           ? `${money(s.intemperies_employer)}${bulletin.unit_da}`
+                          : ""}
+                      </td>
+                      <td
+                        className="whitespace-nowrap px-3.5 py-3"
+                        title={s.extra_contributions
+                          .map((c) => `${c.code} ${c.label_fr} : ${money(c.amount)}`)
+                          .join("\n")}
+                      >
+                        {s.extra_employee || s.extra_employer
+                          ? `${money(s.extra_employee)} / ${money(s.extra_employer)}${bulletin.unit_da}`
                           : ""}
                       </td>
                     </>

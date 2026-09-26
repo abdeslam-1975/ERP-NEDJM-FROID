@@ -181,6 +181,12 @@ export function buildG50Html(input: {
       (l) => `<tr><td>${esc(l.line)}</td><td class="n">${l.employees}</td><td class="n">${money(l.irg_base)}</td><td class="n">${money(l.irg_amount)}</td></tr>`,
     )
     .join("");
+  const extraRows = decl.extras.rows
+    .map(
+      (r) =>
+        `<tr><td>${esc(`${r.label} (${r.part === "EMPLOYEE" ? "part salariale" : "part patronale"})`)}</td><td class="n">${money(r.amount)}</td></tr>`,
+    )
+    .join("");
   const ident = [
     ["Raison sociale", input.employer.name],
     ["Adresse", input.employer.address],
@@ -215,6 +221,7 @@ ${input.status === "FINAL" ? "" : '<div class="warn">Paie non validée : montant
 <tr><td>Masse salariale brute</td><td class="n">${money(decl.journal.gross_total)}</td></tr>
 <tr><td>Cotisations CNAS (salarié + employeur)</td><td class="n">${money(decl.cnas.totals.total)}</td></tr>
 <tr><td>CACOBATPH (congés + intempéries)</td><td class="n">${money(decl.cacobatph.totals.total)}</td></tr>
+${extraRows}
 <tr><td>Net à payer</td><td class="n">${money(decl.journal.net_payable)}</td></tr>
 </tbody></table>
 <p class="note">Seule la rubrique IRG / Salaires est calculée par l'application ; les autres impôts du bordereau G50 (TAP, TVA, IBS…) sont à compléter par la comptabilité.</p>

@@ -10,7 +10,13 @@ export type CostSlip = {
   irg_amount: number;
   net_payable: number;
   lines: { nature: string; source_code: string; amount: number }[];
+  /** User-defined contributions (unit 05); the tab decides the liability account. */
+  extra_contributions?: { group: string; part: "EMPLOYEE" | "EMPLOYER"; amount: number }[];
 };
+
+function extraTotal(s: CostSlip, filter: (c: NonNullable<CostSlip["extra_contributions"]>[number]) => boolean) {
+  return round2((s.extra_contributions ?? []).filter(filter).reduce((a, c) => a + c.amount, 0));
+}
 
 export type CostSite = { id: string; code: string; name_fr: string };
 
@@ -33,7 +39,9 @@ export function slipCost(s: CostSlip) {
   const otherDeductions = round2(
     s.lines.filter((l) => l.nature === "retenue" && l.source_code !== "advance").reduce((a, l) => a + l.amount, 0),
   );
-  const charges = round2(s.employer_ss + s.cacobatph + s.intemperies_employer);
+  const charges = round2(
+    s.employer_ss + s.cacobatph + s.intemperies_employer + extraTotal(s, (c) => c.part === "EMPLOYER"),
+  );
   return { brut, charges, cost: round2(brut + charges), advances, otherDeductions };
 }
 
@@ -200,9 +208,12 @@ export function buildPayrollJournal(input: {
     };
     add("salaires", c.brut);
     add("charges_sociales", c.charges);
-    totals.cnas = round2(totals.cnas + s.employee_ss + s.employer_ss);
-    totals.caco = round2(totals.caco + s.cacobatph + s.intemperies_employee + s.intemperies_employer);
-    totals.irg = round2(totals.irg + s.irg_amount);
+    totals.cnas = round2(totals.cnas + s.employee_ss + s.employer_ss + extraTotal(s, (x) => x.group === "cnas"));
+    totals.caco = round2(
+      totals.caco + s.cacobatph + s.intemperies_employee + s.intemperies_employer +
+        extraTotal(s, (x) => x.group === "cacobatph"),
+    );
+    totals.irg = round2(totals.irg + s.irg_amount + extraTotal(s, (x) => x.group !== "cnas" && x.group !== "cacobatph"));
     totals.advances = round2(totals.advances + c.advances);
     totals.other = round2(totals.other + c.otherDeductions);
     totals.net = round2(totals.net + s.net_payable);

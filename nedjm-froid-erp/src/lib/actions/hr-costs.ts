@@ -68,6 +68,7 @@ export async function loadCostReport(input: { year: number; month: number; siteI
     irg_amount: s.irg_amount,
     net_payable: s.net_payable,
     lines: (s.lines ?? []).map((l) => ({ nature: l.nature, source_code: l.source_code, amount: l.amount })),
+    extra_contributions: s.extra_contributions,
   }));
   const alloc = allocatePayrollCosts({ year: input.year, month: input.month, slips: costSlips, sites: siteRows, contracts: contractRows });
   const accounts = resolveAccounts(settings.data?.accounts);

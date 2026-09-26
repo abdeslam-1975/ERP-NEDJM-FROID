@@ -59,9 +59,15 @@ import {
 import { loadComplianceContext } from "@/lib/hr/compliance-load";
 import {
   legalVarsAsOf,
+  loadContributionDefs,
   parseLegalSnapshot,
   type PayrollLegalSnapshot,
 } from "@/lib/hr/legal-vars-as-of";
+import {
+  contributionRatesFor,
+  parseAppliedContributions,
+  type AppliedContribution,
+} from "@/lib/hr/contributions";
 import {
   accumulateAttendanceMovements,
   emptyMovements,
@@ -160,6 +166,9 @@ export type PayrollSlipRow = {
   cacobatph: number;
   intemperies_employee: number;
   intemperies_employer: number;
+  extra_employee: number;
+  extra_employer: number;
+  extra_contributions: AppliedContribution[];
   irg_base: number;
   irg_amount: number;
   net_payable: number;
@@ -514,6 +523,9 @@ async function buildAndSavePayrollRun(
   const irgLoaded = await loadIrgEngine(supabase, start);
   if (!irgLoaded.ok) return irgLoaded;
   const irgEngine = irgLoaded.data;
+  const contribLoaded = await loadContributionDefs(supabase);
+  if (!contribLoaded.ok) return contribLoaded;
+  const contributionDefs = contribLoaded.data;
 
   let contractsQuery = supabase
     .from("hr_contracts")
@@ -846,6 +858,11 @@ async function buildAndSavePayrollRun(
       intemperiesEmployer: intempPat,
       appliesCacobatph: resolved.cacobatph.conges,
       appliesIntemperies: resolved.cacobatph.intemperies,
+      extraContributions: contributionRatesFor({
+        defs: contributionDefs,
+        vars: legalVars,
+        cacobatph: resolved.cacobatph,
+      }),
     };
     const pre = summarizeLines(lines, { ...legal, irgAmount: 0 });
     const irgAmount = computeResolvedIrg({
@@ -918,6 +935,9 @@ async function buildAndSavePayrollRun(
         cacobatph: sum.cacobatph,
         intemperies_employee: sum.intemperies_employee,
         intemperies_employer: sum.intemperies_employer,
+        extra_employee: sum.extra_employee,
+        extra_employer: sum.extra_employer,
+        extra_contributions: sum.extra_contributions,
         irg_base: sum.irg_base,
         irg_amount: sum.irg_amount,
         net_payable: sum.net_payable,
@@ -1063,7 +1083,7 @@ export async function listPayrollSlips(input: {
   const { data, error } = await supabase
     .from("hr_payroll_slips")
     .select(
-      "id, run_id, employee_id, hr_contract_id, days_worked, days_paid, days_leave, days_absence, days_weekend, days_abandon, days_rappel, net_target, gross_amount, employee_ss, employer_ss, cacobatph, intemperies_employee, intemperies_employer, irg_base, irg_amount, net_payable, status_code, legal_snapshot, employee:hr_employees ( matricule, last_name, first_name, nss, birth_date, hired_at )",
+      "id, run_id, employee_id, hr_contract_id, days_worked, days_paid, days_leave, days_absence, days_weekend, days_abandon, days_rappel, net_target, gross_amount, employee_ss, employer_ss, cacobatph, intemperies_employee, intemperies_employer, extra_employee, extra_employer, extra_contributions, irg_base, irg_amount, net_payable, status_code, legal_snapshot, employee:hr_employees ( matricule, last_name, first_name, nss, birth_date, hired_at )",
     )
     .in("run_id", runIds);
   if (error) return { ok: false, error: error.message };
@@ -1205,6 +1225,9 @@ export async function listPayrollSlips(input: {
         cacobatph: num(row.cacobatph),
         intemperies_employee: num(row.intemperies_employee),
         intemperies_employer: num(row.intemperies_employer),
+        extra_employee: num(row.extra_employee),
+        extra_employer: num(row.extra_employer),
+        extra_contributions: parseAppliedContributions(row.extra_contributions),
         irg_base: num(row.irg_base),
         irg_amount: num(row.irg_amount),
         net_payable: num(row.net_payable),

@@ -322,7 +322,7 @@ export function bulletinRatesFromVars(
 ): BulletinLegalRates {
   const pct = (key: string) => {
     const n = key ? vars[key] : undefined;
-    return typeof n === "number" && Number.isFinite(n) ? Math.round(n * 10000) / 100 : null;
+    return typeof n === "number" && Number.isFinite(n) ? Math.round(n * 1_000_000) / 10_000 : null;
   };
   const pat = pct(settings.pat_var_key);
   const fos = pct(settings.fos_var_key);

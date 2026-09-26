@@ -37,6 +37,8 @@ export type BulletinModel = {
   days_absence: number;
   employee_ss: number;
   employer_ss: number;
+  charges_salariales: number;
+  charges_patronales: number;
   charges_totales: number;
   cout_global: number;
   base_cotisable: number;
@@ -117,6 +119,8 @@ export function buildBulletinLines(input: {
   ssRatePct: number;
   intemperiesEmployee?: number;
   intemperiesRatePct?: number;
+  /** Employee share of the user-defined contributions (unit 05). */
+  extraEmployee?: { code: string; label: string; base: number; ratePct: number; amount: number }[];
   settings?: HrBulletinSettings;
 }): BulletinLine[] {
   const settings = input.settings ?? DEFAULT_BULLETIN_SETTINGS;
@@ -201,6 +205,20 @@ export function buildBulletinLines(input: {
       retenue: intempAmount,
     });
   }
+  for (const extra of input.extraEmployee ?? []) {
+    if (extra.amount <= 0) continue;
+    rows.push({
+      code: extra.code,
+      label: extra.label.toUpperCase(),
+      category: "4",
+      unit: "percent",
+      nombre: extra.base,
+      taux: extra.ratePct,
+      tauxSuffix: settings.unit_percent,
+      gain: null,
+      retenue: extra.amount,
+    });
+  }
   if (!rows.some((r) => r.code === settings.irg_code) && (!hideZero || input.irgAmount > 0)) {
     const irgTaux =
       input.irgBase > 0 && input.irgAmount > 0
@@ -248,6 +266,9 @@ export type BulletinSlipInput = {
   cacobatph: number;
   intemperies_employee?: number;
   intemperies_employer?: number;
+  extra_employee?: number;
+  extra_employer?: number;
+  extra_contributions?: { code: string; label_fr: string; part: string; rate: number; base_amount: number; amount: number }[];
   irg_base?: number;
   irg_amount: number;
   net_payable: number;
@@ -278,12 +299,21 @@ export function slipToBulletin(
     ssRatePct: rates.ss_pct ?? 0,
     intemperiesEmployee: intempSal,
     intemperiesRatePct: rates.intemp_sal_pct ?? 0,
+    extraEmployee: (slip.extra_contributions ?? [])
+      .filter((c) => c.part === "EMPLOYEE")
+      .map((c) => ({
+        code: c.code,
+        label: c.label_fr,
+        base: c.base_amount,
+        ratePct: Math.round(c.rate * 1_000_000) / 10_000,
+        amount: c.amount,
+      })),
     settings,
   });
   const totalGain = lines.reduce((s, l) => s + (l.gain ?? 0), 0);
   const totalRetenue = lines.reduce((s, l) => s + (l.retenue ?? 0), 0);
-  const chargesSalariales = slip.employee_ss + intempSal;
-  const chargesPatronales = slip.employer_ss + slip.cacobatph + intempPat;
+  const chargesSalariales = slip.employee_ss + intempSal + (slip.extra_employee ?? 0);
+  const chargesPatronales = slip.employer_ss + slip.cacobatph + intempPat + (slip.extra_employer ?? 0);
   const charges = chargesSalariales + chargesPatronales;
   const residence = [slip.address_fr, slip.commune].filter(Boolean).join(" ").trim();
   const values: Record<string, string> = {
@@ -315,6 +345,8 @@ export function slipToBulletin(
     days_absence: slip.days_absence ?? 0,
     employee_ss: slip.employee_ss,
     employer_ss: slip.employer_ss,
+    charges_salariales: chargesSalariales,
+    charges_patronales: chargesPatronales,
     charges_totales: charges,
     cout_global: slip.net_payable + charges,
     base_cotisable: slip.gross_amount,
@@ -484,12 +516,12 @@ function bulletinPage(m: BulletinModel, origin = "") {
         <tr>
           <td>${escapeHtml(s.label_worked)}</td><td class="num">${formatDa(m.days_worked).replace(",00", "")}</td>
           <td>${escapeHtml(s.label_abandon)}</td><td class="num">${formatDa(m.days_abandon).replace(",00", "")}</td>
-          <td>${escapeHtml(s.label_salariales)}</td><td class="num">${formatDa(m.employee_ss + m.intemperies_employee)}</td>
+          <td>${escapeHtml(s.label_salariales)}</td><td class="num">${formatDa(m.charges_salariales)}</td>
         </tr>
         <tr>
           <td>${escapeHtml(s.label_rappel)}</td><td class="num">${formatDa(m.days_rappel).replace(",00", "")}</td>
           <td>${escapeHtml(s.label_leave)}</td><td class="num">${formatDa(m.days_leave).replace(",00", "")}</td>
-          <td>${escapeHtml(s.label_patronales)}</td><td class="num">${formatDa(m.employer_ss + m.cacobatph + m.intemperies_employer)}</td>
+          <td>${escapeHtml(s.label_patronales)}</td><td class="num">${formatDa(m.charges_patronales)}</td>
         </tr>
         <tr>
           <td>${escapeHtml(s.label_weekend)}</td><td class="num">${formatDa(m.days_weekend).replace(",00", "")}</td>

@@ -1,3 +1,10 @@
+import {
+  applyContributions,
+  sumContributions,
+  type AppliedContribution,
+  type ContributionRate,
+} from "@/lib/hr/contributions";
+
 export type SalaryCategory = "1" | "2" | "3" | "4";
 export type SalaryUnit = "day" | "month" | "percent" | "presence_day";
 export type SalaryNature =
@@ -107,6 +114,9 @@ export type PayrollSummary = {
   cacobatph: number;
   intemperies_employee: number;
   intemperies_employer: number;
+  extra_contributions: AppliedContribution[];
+  extra_employee: number;
+  extra_employer: number;
   irg_base: number;
   irg_amount: number;
   net_payable: number;
@@ -122,6 +132,8 @@ export type LegalPayrollRates = {
   appliesCacobatph: boolean;
   appliesIntemperies: boolean;
   irgAmount: number;
+  /** User-defined contributions due for this employee (unit 05). */
+  extraContributions?: readonly ContributionRate[];
 };
 
 export function salaryClassFlags(category: string): { cotisable: boolean; taxable: boolean } {
@@ -629,10 +641,19 @@ export function summarizeLines(lines: PayrollLine[], rates: LegalPayrollRates): 
   const intemperiesEmployer = rates.appliesIntemperies
     ? roundMoney(baseSs * rates.intemperiesEmployer)
     : 0;
-  const irgBase = roundMoney(Math.max(0, taxableGross - employeeSs));
+  const extra = applyContributions(rates.extraContributions ?? [], {
+    cotisable: grossCotisable,
+    taxable: taxableGross,
+  });
+  const extraEmployee = sumContributions(extra, "EMPLOYEE");
+  const extraEmployer = sumContributions(extra, "EMPLOYER");
+  const extraIrgRelief = roundMoney(
+    extra.filter((c) => c.part === "EMPLOYEE" && c.reduces_irg).reduce((s, c) => s + c.amount, 0),
+  );
+  const irgBase = roundMoney(Math.max(0, taxableGross - employeeSs - extraIrgRelief));
   const irgAmount = roundMoney(Math.max(0, rates.irgAmount));
   const netPayable = roundMoney(
-    gains + retenues - employeeSs - intemperiesEmployee - irgAmount,
+    gains + retenues - employeeSs - intemperiesEmployee - extraEmployee - irgAmount,
   );
   return {
     lines,
@@ -645,6 +666,9 @@ export function summarizeLines(lines: PayrollLine[], rates: LegalPayrollRates): 
     cacobatph,
     intemperies_employee: intemperiesEmployee,
     intemperies_employer: intemperiesEmployer,
+    extra_contributions: extra,
+    extra_employee: extraEmployee,
+    extra_employer: extraEmployer,
     irg_base: irgBase,
     irg_amount: irgAmount,
     net_payable: netPayable,

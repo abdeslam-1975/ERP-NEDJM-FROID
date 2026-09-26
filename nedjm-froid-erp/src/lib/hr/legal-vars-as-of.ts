@@ -1,5 +1,6 @@
 import type { createClient } from "@/lib/supabase/server";
 import { parseSnapshotCompliance, type SnapshotCompliance } from "@/lib/hr/compliance";
+import { contributionDefFromRow, type ContributionDef } from "@/lib/hr/contributions";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -34,6 +35,24 @@ export async function legalVarsAsOf(
     if (Number.isFinite(n)) out[key] = n;
   }
   return out;
+}
+
+/** User-defined contributions (unit 05), whatever their rate. */
+export async function loadContributionDefs(
+  supabase: Supabase,
+): Promise<{ ok: true; data: ContributionDef[] } | { ok: false; error: string }> {
+  const { data, error } = await supabase
+    .from("ref_global_vars")
+    .select("key, label_fr, label_ar, contrib_part, contrib_base, contrib_reduces_irg, contrib_scope, contrib_code, sort_order")
+    .not("contrib_part", "is", null);
+  if (error) return { ok: false, error: error.message };
+  return {
+    ok: true,
+    data: (data ?? []).flatMap((row) => {
+      const def = contributionDefFromRow(row as Record<string, unknown>);
+      return def ? [def] : [];
+    }),
+  };
 }
 
 export function parseLegalSnapshot(raw: unknown): PayrollLegalSnapshot | null {

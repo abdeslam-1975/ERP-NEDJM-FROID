@@ -80,6 +80,37 @@ describe("bulletin GAS layout helpers", () => {
     expect(model.values.employee_name).toBe("CHINE ABOUBAKR");
   });
 
+  it("prints the employee share of added contributions as deductions and counts both shares in charges", () => {
+    const model = slipToBulletin({
+      employee_name: "Test",
+      matricule: "001",
+      period_year: 2026,
+      period_month: 9,
+      days_worked: 30,
+      days_paid: 30,
+      gross_amount: 40000,
+      employee_ss: 3600,
+      employer_ss: 10200,
+      cacobatph: 0,
+      extra_employee: 200,
+      extra_employer: 400,
+      extra_contributions: [
+        { code: "992", label_fr: "Retraite anticipée", part: "EMPLOYEE", rate: 0.005, base_amount: 40000, amount: 200 },
+        { code: "993", label_fr: "Formation", part: "EMPLOYER", rate: 0.01, base_amount: 40000, amount: 400 },
+      ],
+      irg_amount: 0,
+      net_payable: 36200,
+      lines: [
+        { code: "BASE", label_fr: "Salaire de base", nature: "indemnite", unit: "month", quantity: 1, unit_amount: 40000, amount: 40000 },
+      ],
+    });
+    const extra = model.lines.find((l) => l.code === "992");
+    expect(extra).toMatchObject({ label: "RETRAITE ANTICIPÉE", nombre: 40000, taux: 0.5, retenue: 200 });
+    expect(model.lines.find((l) => l.code === "993")).toBeUndefined();
+    expect(model.charges_salariales).toBe(3800);
+    expect(model.charges_patronales).toBe(10600);
+  });
+
   it("drops extra zero lines and prints on the company letterhead", () => {
     const rows = buildBulletinLines({
       lines: [

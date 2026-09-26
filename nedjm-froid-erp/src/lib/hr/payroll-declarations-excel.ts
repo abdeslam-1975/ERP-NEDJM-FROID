@@ -32,6 +32,9 @@ const MONTHS_FR = [
   "Décembre",
 ];
 
+const EXTRA_GROUP_LABELS: Record<string, string> = { cnas: "CNAS", cacobatph: "CACOBATPH", irg: "Impôts" };
+const EXTRA_PART_LABELS = { EMPLOYEE: "salariale", EMPLOYER: "patronale" } as const;
+
 const MONEY = "#,##0.00";
 const HEADER_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8EEF9" } };
 
@@ -134,6 +137,14 @@ export async function buildMonthlyDeclarationsWorkbook(input: {
       ["CACOBATPH — intempéries salarié", d.cacobatph.totals.assiette, d.cacobatph.totals.intemperies_employee],
       ["CACOBATPH — intempéries employeur", d.cacobatph.totals.assiette, d.cacobatph.totals.intemperies_employer],
       ["CACOBATPH — total à verser", d.cacobatph.totals.assiette, d.cacobatph.totals.total],
+      ...d.extras.rows.map(
+        (r) =>
+          [`${EXTRA_GROUP_LABELS[r.group] ?? r.group} — ${r.label} (${EXTRA_PART_LABELS[r.part]})`, r.assiette, r.amount] as (
+            | string
+            | number
+            | null
+          )[],
+      ),
       ["Net à payer (virements + caisse)", null, d.transfers.total],
       ["Coût global employeur", null, d.journal.employer_cost],
     ],
@@ -170,6 +181,8 @@ export async function buildMonthlyDeclarationsWorkbook(input: {
       { header: "CNAS employeur", money: true },
       { header: "CACOBATPH congés", money: true },
       { header: "Intempéries pat.", money: true },
+      { header: "Autres cot. sal.", money: true },
+      { header: "Autres cot. pat.", money: true },
     ],
     slips.map((s) => [
       s.matricule,
@@ -186,6 +199,8 @@ export async function buildMonthlyDeclarationsWorkbook(input: {
       s.employer_ss,
       s.cacobatph,
       s.intemperies_employer,
+      s.extra_employee ?? 0,
+      s.extra_employer ?? 0,
     ]),
     [
       "TOTAL",
@@ -202,6 +217,8 @@ export async function buildMonthlyDeclarationsWorkbook(input: {
       d.journal.employer_ss,
       d.journal.cacobatph,
       d.journal.intemperies_employer,
+      d.journal.extra_employee,
+      d.journal.extra_employer,
     ],
   );
 
@@ -295,6 +312,35 @@ export async function buildMonthlyDeclarationsWorkbook(input: {
       d.cacobatph.totals.intemperies_employer,
     ],
   );
+
+  if (d.extras.rows.length) {
+    const extras = wb.addWorksheet("Cotisations supp.");
+    addTitle(extras, [`Cotisations supplémentaires (unité 05) — ${period}`, employer.name, statusLine(input.status)]);
+    addTable(
+      extras,
+      [
+        { header: "Organisme", width: 14 },
+        { header: "Code", width: 10 },
+        { header: "Cotisation", width: 34 },
+        { header: "Part", width: 12 },
+        { header: "Taux %", width: 9 },
+        { header: "Salariés", width: 9 },
+        { header: "Assiette", money: true, width: 18 },
+        { header: "Montant", money: true, width: 18 },
+      ],
+      d.extras.rows.map((r) => [
+        EXTRA_GROUP_LABELS[r.group] ?? r.group,
+        r.code,
+        r.label,
+        EXTRA_PART_LABELS[r.part],
+        Math.round(r.rate * 1_000_000) / 10_000,
+        r.employees,
+        r.assiette,
+        r.amount,
+      ]),
+      ["TOTAL", "", "", "", null, null, null, d.extras.total],
+    );
+  }
 
   const transfers = wb.addWorksheet("Virements");
   addTitle(transfers, [`Ordre de virement des salaires — ${period}`, employer.name, statusLine(input.status)]);

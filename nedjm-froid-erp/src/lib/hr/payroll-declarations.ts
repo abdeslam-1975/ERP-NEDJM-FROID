@@ -1,3 +1,5 @@
+import type { AppliedContribution } from "@/lib/hr/contributions";
+
 export type DeclarationSlip = {
   employee_id: string;
   period_year: number;
@@ -18,6 +20,9 @@ export type DeclarationSlip = {
   cacobatph: number;
   intemperies_employee: number;
   intemperies_employer: number;
+  extra_employee?: number;
+  extra_employer?: number;
+  extra_contributions?: AppliedContribution[];
   irg_base: number;
   irg_amount: number;
   net_payable: number;
@@ -86,8 +91,25 @@ export type MonthlyDeclarations = {
     cacobatph: number;
     intemperies_employee: number;
     intemperies_employer: number;
+    extra_employee: number;
+    extra_employer: number;
     net_payable: number;
     employer_cost: number;
+  };
+  /** User-defined contributions (unit 05), one row per contribution. */
+  extras: {
+    rows: {
+      key: string;
+      code: string;
+      label: string;
+      group: string;
+      part: "EMPLOYEE" | "EMPLOYER";
+      rate: number;
+      employees: number;
+      assiette: number;
+      amount: number;
+    }[];
+    total: number;
   };
   cnas: {
     rows: CnasRow[];
@@ -188,6 +210,31 @@ export function summarizeMonthlyDeclarations(slips: readonly DeclarationSlip[]):
   const irgAmount = sum(rows, (s) => s.irg_amount);
   const irgRows = rows.filter((s) => s.irg_base > 0 || s.irg_amount > 0);
   const g50Lines = [...new Set(irgRows.map(irgG50Line))].sort();
+  const extraEmployee = sum(rows, (s) => s.extra_employee ?? 0);
+  const extraEmployer = sum(rows, (s) => s.extra_employer ?? 0);
+  const extraByKey = new Map<string, MonthlyDeclarations["extras"]["rows"][number]>();
+  for (const s of rows) {
+    for (const c of s.extra_contributions ?? []) {
+      const row = extraByKey.get(c.key) ?? {
+        key: c.key,
+        code: c.code,
+        label: c.label_fr,
+        group: c.group,
+        part: c.part,
+        rate: c.rate,
+        employees: 0,
+        assiette: 0,
+        amount: 0,
+      };
+      row.employees += 1;
+      row.assiette = round2(row.assiette + c.base_amount);
+      row.amount = round2(row.amount + c.amount);
+      extraByKey.set(c.key, row);
+    }
+  }
+  const extraRows = [...extraByKey.values()].sort(
+    (a, b) => a.group.localeCompare(b.group) || a.code.localeCompare(b.code, "fr", { numeric: true }),
+  );
 
   return {
     employees: rows.length,
@@ -201,9 +248,15 @@ export function summarizeMonthlyDeclarations(slips: readonly DeclarationSlip[]):
       cacobatph,
       intemperies_employee: intempEmployee,
       intemperies_employer: intempEmployer,
+      extra_employee: extraEmployee,
+      extra_employer: extraEmployer,
       net_payable: net,
-      employer_cost: round2(net + employeeSs + intempEmployee + irgAmount + employerSs + cacobatph + intempEmployer),
+      employer_cost: round2(
+        net + employeeSs + intempEmployee + extraEmployee + irgAmount + employerSs + cacobatph + intempEmployer +
+          extraEmployer,
+      ),
     },
+    extras: { rows: extraRows, total: round2(extraEmployee + extraEmployer) },
     cnas: {
       rows: cnasRows,
       missing_nss: cnasRows.filter((r) => !r.nss).map((r) => `${r.matricule} ${r.employee_name}`.trim()),

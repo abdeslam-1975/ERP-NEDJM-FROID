@@ -73,7 +73,7 @@ test.describe("@smoke rh & administration", () => {
       await expect(page.getByRole("heading", { level: 2, name: /cotisations & impôts/i })).toBeVisible();
       await expect(page.getByRole("button", { name: /^enregistrer$/i }).first()).toBeVisible();
       await expect(page.getByText(/lecture seule : modification réservée/i)).toHaveCount(0);
-      await page.getByRole("tab", { name: /^IRG$/ }).click();
+      await page.getByRole("tab", { name: /^Impôts \(IRG\)$/ }).click();
       await expect(page.getByText(/abattement IRG par zone/i)).toBeVisible();
     });
   }

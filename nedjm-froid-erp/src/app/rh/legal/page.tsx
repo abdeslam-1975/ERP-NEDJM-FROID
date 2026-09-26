@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { RhShell } from "@/components/rh/rh-shell";
 import { LegalSettings } from "@/components/rh/legal-settings";
-import { listLegalVars } from "@/lib/actions/hr-legal-vars";
+import { listCnasRegimes, listLegalVars } from "@/lib/actions/hr-legal-vars";
 import { listIrgCatalog } from "@/lib/actions/hr-irg";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { getComplianceAccess } from "@/lib/auth/compliance-access";
@@ -25,19 +25,22 @@ export default async function RhLegalPage({
   const access = await getComplianceAccess();
   if (!access.canRead) redirect("/?error=forbidden");
 
-  const [vars, irg] = await Promise.all([listLegalVars(), listIrgCatalog()]);
+  const [vars, irg, regimes] = await Promise.all([listLegalVars(), listIrgCatalog(), listCnasRegimes()]);
 
   return (
     <RhShell title="Cotisations & impôts">
       <LegalSettings
         vars={vars.ok ? vars.data : []}
+        regimes={regimes.ok ? regimes.data : []}
         irgCatalog={
           irg.ok
             ? irg.data
             : { versions: [], brackets: [], ruleSets: [], rules: [] }
         }
         canEdit={access.canWrite}
-        loadError={(!vars.ok && vars.error) || (!irg.ok && irg.error) || undefined}
+        loadError={
+          (!vars.ok && vars.error) || (!irg.ok && irg.error) || (!regimes.ok && regimes.error) || undefined
+        }
         initialSection={initialSection}
       />
     </RhShell>
