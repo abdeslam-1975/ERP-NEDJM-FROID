@@ -27,7 +27,6 @@ import {
   RhField,
   RhPageHeader,
   RhPanel,
-  RhSectionTitle,
   RhTableWrap,
   RhTabs,
   RhToolbar,

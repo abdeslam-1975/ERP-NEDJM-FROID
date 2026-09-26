@@ -7,8 +7,9 @@ export const rhInput =
 
 export const rhSelect = rhInput;
 
-export function bi(fr: string, _ar?: string) {
+export function bi(fr: string, ar?: string) {
   // UI RH : libellés d'action / chrome en français uniquement
+  void ar;
   return fr;
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   closePayrollRun,
@@ -210,6 +211,8 @@ export function PayrollManager({
   const [info, setInfo] = useState<string | null>(null);
   const [preview, setPreview] = useState<BulletinModel[] | null>(null);
   const [pending, start] = useTransition();
+  const router = useRouter();
+  const pathname = usePathname();
   const currentRun = runs.find((r) => r.site_id === siteId) ?? null;
   const currentStatus = currentRun?.status_code ?? "DRAFT";
   const siteName = sites.find((s) => s.id === siteId)?.name_fr ?? "";
@@ -569,9 +572,8 @@ export function PayrollManager({
                   ...(r.data.warnings ?? []),
                 ].join("\n"),
               );
-              window.location.assign(
-                `${window.location.pathname}?year=${periodYear}&month=${periodMonth}`,
-              );
+              router.push(`${pathname}?year=${periodYear}&month=${periodMonth}`);
+              router.refresh();
             });
           }}
         >
