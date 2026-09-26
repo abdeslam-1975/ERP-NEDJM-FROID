@@ -39,10 +39,12 @@ export function ContractsWorkspace({
   isSuperAdmin,
   canEditSalaryValues,
   postes,
+  agencies = [],
   loadError,
   legalError,
 }: {
   postes: PosteRow[];
+  agencies?: { id: string; label: string; default_daily_rate: number }[];
   initialContracts: HrContractRow[];
   employees: HrEmployeeRow[];
   sites: readonly SiteOpt[];
@@ -91,6 +93,7 @@ export function ContractsWorkspace({
           isSuperAdmin={isSuperAdmin}
           canEditSalaryValues={canEditSalaryValues}
           postes={postes}
+          agencies={agencies}
           legalError={legalError}
           loadError={loadError}
         />

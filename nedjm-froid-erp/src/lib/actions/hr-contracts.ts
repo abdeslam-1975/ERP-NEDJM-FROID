@@ -26,6 +26,8 @@ export type HrContractRow = {
   qualification_code: string | null;
   poste_id: string | null;
   grade: string | null;
+  agency_id: string | null;
+  interim_daily_rate: number | null;
   affectation_principale: boolean;
   salaire_base_monthly: number;
   salaire_net_ref_monthly: number;
@@ -57,7 +59,7 @@ export async function listHrContracts(): Promise<ActionResult<HrContractRow[]>> 
     .select(
       `
       id, employee_id, site_id, activity_code_id, contract_type_code, work_regime_code,
-      poste_ar, poste_fr, qualification_code, poste_id, grade, affectation_principale,
+      poste_ar, poste_fr, qualification_code, poste_id, grade, agency_id, interim_daily_rate, affectation_principale,
       salaire_base_monthly, salaire_net_ref_monthly, salaire_net_recup_monthly,
       start_date, end_date, status,
       employee:hr_employees ( matricule, last_name, first_name ),
@@ -85,6 +87,8 @@ export async function listHrContracts(): Promise<ActionResult<HrContractRow[]>> 
         qualification_code: row.qualification_code,
         poste_id: row.poste_id ?? null,
         grade: row.grade ?? null,
+        agency_id: row.agency_id ?? null,
+        interim_daily_rate: row.interim_daily_rate == null ? null : Number(row.interim_daily_rate),
         affectation_principale: row.affectation_principale,
         salaire_base_monthly: Number(row.salaire_base_monthly),
         salaire_net_ref_monthly: Number(row.salaire_net_ref_monthly),
@@ -113,6 +117,9 @@ export async function upsertHrContract(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
   }
   const p = parsed.data;
+  if (p.contract_type_code === "INTERIM" && !p.agency_id) {
+    return { ok: false, error: "Contrat d'intérim : choisissez l'agence." };
+  }
   const supabase = await createClient();
   let closedPrevious = 0;
   if (p.affectation_principale) {
@@ -161,6 +168,8 @@ export async function upsertHrContract(
     qualification_code: p.qualification_code,
     poste_id: p.poste_id,
     grade: p.grade ? p.grade.toUpperCase() : null,
+    agency_id: p.contract_type_code === "INTERIM" ? p.agency_id : null,
+    interim_daily_rate: p.contract_type_code === "INTERIM" ? p.interim_daily_rate ?? null : null,
     affectation_principale: p.affectation_principale,
     salaire_base_monthly: p.salaire_base_monthly,
     salaire_net_ref_monthly: p.salaire_net_ref_monthly,

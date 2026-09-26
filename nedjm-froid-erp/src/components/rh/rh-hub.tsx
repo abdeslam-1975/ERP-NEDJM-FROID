@@ -422,6 +422,7 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
           { href: "/rh/paie", label: "Paie" },
           { href: "/rh/sorties", label: "Sorties & STC" },
           { href: "/rh/couts", label: "Coûts par chantier / contrat" },
+          { href: "/rh/interim", label: "Intérim (agences)" },
           { href: "/rh/documents", label: "Documents" },
           { href: "/rh/attestations", label: "Attestations & courriers" },
           { href: "/rh/legal", label: "Cotisations" },

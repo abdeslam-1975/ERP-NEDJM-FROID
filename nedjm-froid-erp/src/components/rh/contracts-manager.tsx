@@ -56,6 +56,8 @@ type FormState = {
   qualification_code: string;
   poste_id: string;
   grade: string;
+  agency_id: string;
+  interim_daily_rate: string;
   poste_fr: string;
   poste_ar: string;
   affectation_principale: boolean;
@@ -76,6 +78,8 @@ const emptyForm = (): FormState => ({
   qualification_code: "",
   poste_id: "",
   grade: "",
+  agency_id: "",
+  interim_daily_rate: "",
   poste_fr: "",
   poste_ar: "",
   affectation_principale: true,
@@ -103,10 +107,12 @@ export function ContractsManager({
   isSuperAdmin = false,
   canEditSalaryValues = false,
   postes = [],
+  agencies = [],
   legalError,
   loadError,
 }: {
   postes?: PosteRow[];
+  agencies?: { id: string; label: string; default_daily_rate: number }[];
   initialContracts: HrContractRow[];
   employees: HrEmployeeRow[];
   sites: readonly SiteOpt[];
@@ -215,6 +221,7 @@ export function ContractsManager({
           ? Number(form.salaire_net_recup_monthly)
           : null,
         end_date: form.end_date || null,
+        interim_daily_rate: form.interim_daily_rate.trim() ? Number(form.interim_daily_rate) : null,
         salary_lines,
       });
       if (!result.ok) {
@@ -235,6 +242,9 @@ export function ContractsManager({
         qualification_code: form.qualification_code || null,
         poste_id: form.poste_id || null,
         grade: form.grade ? form.grade.toUpperCase() : null,
+        agency_id: form.contract_type_code === "INTERIM" ? form.agency_id || null : null,
+        interim_daily_rate:
+          form.contract_type_code === "INTERIM" && form.interim_daily_rate ? Number(form.interim_daily_rate) : null,
         affectation_principale: form.affectation_principale,
         salaire_base_monthly: Number(form.salaire_base_monthly || 0),
         salaire_net_ref_monthly: Number(form.salaire_net_ref_monthly || 0),
@@ -373,6 +383,8 @@ export function ContractsManager({
                           qualification_code: row.qualification_code ?? "",
                           poste_id: row.poste_id ?? "",
                           grade: row.grade ?? "",
+                          agency_id: row.agency_id ?? "",
+                          interim_daily_rate: row.interim_daily_rate == null ? "" : String(row.interim_daily_rate),
                           poste_fr: row.poste_fr ?? "",
                           poste_ar: row.poste_ar ?? "",
                           affectation_principale: row.affectation_principale,
@@ -508,6 +520,35 @@ export function ContractsManager({
                   onChange={(v) => setForm({ ...form, contract_type_code: v })}
                 />
               </RhField>
+              {form.contract_type_code === "INTERIM" ? (
+                <>
+                  <RhField label="Agence d'intérim" hint="Intérimaire : présent au pointage, hors paie, facturé par l'agence">
+                    <select
+                      className={rhInput}
+                      value={form.agency_id}
+                      onChange={(e) => setForm({ ...form, agency_id: e.target.value })}
+                    >
+                      <option value="">—</option>
+                      {agencies.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.label}
+                        </option>
+                      ))}
+                    </select>
+                  </RhField>
+                  <RhField
+                    label="Taux journalier facturé (DA)"
+                    hint={`Vide = taux de l'agence (${agencies.find((a) => a.id === form.agency_id)?.default_daily_rate ?? 0} DA)`}
+                  >
+                    <input
+                      className={rhInput}
+                      inputMode="decimal"
+                      value={form.interim_daily_rate}
+                      onChange={(e) => setForm({ ...form, interim_daily_rate: e.target.value })}
+                    />
+                  </RhField>
+                </>
+              ) : null}
               <RhField label={bi("Régime", "نظام العمل")}>
                 <CatalogSelect
                   items={catalogs}

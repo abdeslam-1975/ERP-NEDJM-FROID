@@ -521,7 +521,8 @@ async function buildAndSavePayrollRun(
       "id, employee_id, site_id, salaire_net_ref_monthly, salaire_base_monthly, activity_code_id, start_date, end_date, status, poste_id, grade",
     )
     .eq("affectation_principale", true)
-    .in("status", [...PAYROLL_CONTRACT_STATUSES, "ENDED"]);
+    .in("status", [...PAYROLL_CONTRACT_STATUSES, "ENDED"])
+    .or("contract_type_code.is.null,contract_type_code.neq.INTERIM");
   if (p.site_id) contractsQuery = contractsQuery.eq("site_id", p.site_id);
   const { data: contractRows, error: cErr } = await contractsQuery;
   if (cErr) return { ok: false, error: cErr.message };

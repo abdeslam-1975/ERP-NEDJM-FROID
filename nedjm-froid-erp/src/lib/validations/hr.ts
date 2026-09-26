@@ -294,6 +294,11 @@ export const hrContractSchema = z.object({
     .optional()
     .transform((v) => (v ? v : null)),
   grade: optText(6),
+  agency_id: z
+    .union([z.string().uuid(), z.literal(""), z.null()])
+    .optional()
+    .transform((v) => (v ? v : null)),
+  interim_daily_rate: z.coerce.number().min(0).max(10_000_000).optional().nullable(),
   affectation_principale: z.boolean().default(true),
   salaire_base_monthly: z.coerce.number().min(0),
   salaire_net_ref_monthly: z.coerce.number().min(0),

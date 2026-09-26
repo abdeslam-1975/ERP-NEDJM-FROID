@@ -7,6 +7,7 @@ import { listSalaryAssignments, listSalaryRubriques } from "@/lib/actions/hr-sal
 import { listLegalVars } from "@/lib/actions/hr-legal-vars";
 import { listIrgCatalog } from "@/lib/actions/hr-irg";
 import { listPostes } from "@/lib/actions/hr-postes";
+import { listAgencies } from "@/lib/actions/hr-interim";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { HR_SALARY_VALUE_ROLES, workspaceHasRole } from "@/lib/auth/require-roles";
 
@@ -23,6 +24,7 @@ export default async function ContratsPage() {
     irg,
     workspace,
     postes,
+    agencies,
   ] = await Promise.all([
     listHrContracts(),
     listHrEmployeeRows(),
@@ -33,6 +35,7 @@ export default async function ContratsPage() {
     listIrgCatalog(),
     getWorkspaceProfile(),
     listPostes(),
+    listAgencies(),
   ]);
 
   const empRows = employees.ok ? employees.data : [];
@@ -67,6 +70,9 @@ export default async function ContratsPage() {
           irg.ok ? irg.data : { versions: [], brackets: [], ruleSets: [], rules: [] }
         }
         postes={postes.ok ? postes.data : []}
+        agencies={(agencies.ok ? agencies.data : [])
+          .filter((a) => a.is_active)
+          .map((a) => ({ id: a.id, label: `${a.code} · ${a.name}`, default_daily_rate: a.default_daily_rate }))}
         isSuperAdmin={workspace?.isSuperAdmin ?? false}
         canEditSalaryValues={
           workspace ? workspaceHasRole(workspace, HR_SALARY_VALUE_ROLES) : false
