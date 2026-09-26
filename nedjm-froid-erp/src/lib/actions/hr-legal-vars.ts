@@ -648,6 +648,69 @@ export async function saveCnasRegime(input: unknown): Promise<ActionResult<{ id:
   return { ok: true, data: { id: data.id } };
 }
 
+/** Erases a regime nobody uses and never applied to a closed month; payslips keep their frozen snapshot. */
+export async function deleteCnasRegime(input: unknown): Promise<ActionResult> {
+  const gate = await requireComplianceWrite();
+  if (!gate.ok) return gate;
+  const parsed = z.object({ id: z.string().uuid() }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Régime invalide." };
+  const supabase = await createClient();
+  const { data: regime } = await supabase
+    .from("hr_catalogs")
+    .select("id, code")
+    .eq("id", parsed.data.id)
+    .eq("kind", "social_profile")
+    .maybeSingle();
+  if (!regime) return { ok: false, error: "Régime introuvable." };
+  if (regime.code === "STANDARD") {
+    return { ok: false, error: "STANDARD est le régime par défaut : il ne peut pas être supprimé." };
+  }
+  const open = await openFrom(supabase);
+  const [employees, overrides, closedRates] = await Promise.all([
+    supabase
+      .from("hr_employee_social")
+      .select("employee_id", { count: "exact", head: true })
+      .eq("social_profile_code", regime.code),
+    supabase
+      .from("hr_contract_compliance")
+      .select("id", { count: "exact", head: true })
+      .eq("domain", "CNAS")
+      .eq("params->>regime_code", regime.code),
+    open
+      ? supabase
+          .from("hr_social_profile_rates")
+          .select("id", { count: "exact", head: true })
+          .eq("profile_id", regime.id)
+          .lt("effective_from", open)
+      : Promise.resolve({ count: 0, error: null }),
+  ]);
+  const failed = [employees, overrides, closedRates].find((r) => r.error);
+  if (failed?.error) return { ok: false, error: failed.error.message };
+  const users = (employees.count ?? 0) + (overrides.count ?? 0);
+  if (users > 0) {
+    return {
+      ok: false,
+      error: `Régime ${regime.code} attribué à ${users} salarié(s) ou contrat(s) : changez leur régime d'abord, ou décochez « Régime actif ».`,
+    };
+  }
+  if ((closedRates.count ?? 0) > 0) {
+    return {
+      ok: false,
+      error: `Régime ${regime.code} déjà appliqué à des paies validées : décochez « Régime actif » pour ne plus l'utiliser.`,
+    };
+  }
+  const { data, error } = await supabase
+    .from("hr_catalogs")
+    .delete()
+    .eq("id", regime.id)
+    .eq("kind", "social_profile")
+    .select("id");
+  if (error) return { ok: false, error: error.message };
+  if (!data?.length) return { ok: false, error: "Suppression refusée (droits)." };
+  revalidateLegal();
+  return { ok: true, data: undefined };
+}
+
 export async function cancelCnasRegimeRates(input: unknown): Promise<ActionResult> {
   const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;

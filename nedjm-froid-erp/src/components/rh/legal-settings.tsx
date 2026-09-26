@@ -7,6 +7,7 @@ import {
   cancelCnasRegimeRates,
   cancelLegalVarVersion,
   createContribution,
+  deleteCnasRegime,
   deleteContribution,
   saveCnasRegime,
   saveContribution,
@@ -438,21 +439,21 @@ function RubriquesPanel({
                             <Button variant="secondary" disabled={pending} onClick={() => setDialog({ kind: "edit", row })}>
                               Modifier
                             </Button>
-                            {custom && row.status !== "stopped" ? (
-                              <Button variant="ghost" disabled={pending} onClick={() => setDialog({ kind: "stop", row })}>
-                                Arrêter
-                              </Button>
-                            ) : null}
-                            {custom && row.deletable ? (
-                              <Button
-                                variant="ghost"
-                                disabled={pending}
-                                className="text-red-700"
-                                onClick={() => remove(row)}
-                              >
-                                Supprimer
-                              </Button>
-                            ) : null}
+                            <Button
+                              variant="ghost"
+                              className="text-red-700"
+                              disabled={pending || !custom || (row.status === "stopped" && !row.deletable)}
+                              title={
+                                !custom
+                                  ? "Taux légal obligatoire : modifiable, non supprimable."
+                                  : row.status === "stopped" && !row.deletable
+                                    ? "Déjà arrêtée."
+                                    : undefined
+                              }
+                              onClick={() => (row.deletable ? remove(row) : setDialog({ kind: "stop", row }))}
+                            >
+                              Supprimer
+                            </Button>
                           </div>
                         </td>
                       ) : null}
@@ -831,14 +832,14 @@ function StopDialog({ row, period, onClose }: { row: LegalVarRow; period: LegalP
     if (!from) return setError("Choisissez le mois d'arrêt.");
     run(
       () => stopContribution({ var_id: row.id, effective_from: from }),
-      `« ${row.label_fr} » arrêtée à partir de la paie de ${monthText(from)}.`,
+      `« ${row.label_fr} » retirée à partir de la paie de ${monthText(from)}.`,
       onClose,
     );
   }
 
   return (
     <QuickDialog
-      title={`Arrêter — ${row.label_fr}`}
+      title={`Supprimer — ${row.label_fr}`}
       onClose={onClose}
       footer={
         <>
@@ -846,17 +847,18 @@ function StopDialog({ row, period, onClose }: { row: LegalVarRow; period: LegalP
             Fermer
           </Button>
           <Button variant="danger" disabled={pending} onClick={submit}>
-            Arrêter
+            Supprimer
           </Button>
         </>
       }
     >
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
-      <MonthField label="Ne plus calculer à partir de la paie de" value={from} period={period} onChange={setFrom} />
-      <p className="text-sm text-foreground/70">
-        Les paies des mois précédents gardent cette cotisation et leurs montants. Vous pourrez la reprendre plus tard
-        (Modifier → Reprendre le calcul).
-      </p>
+      <RhAlert tone="warning">
+        Cette cotisation a déjà été appliquée : elle est retirée des paies à partir du mois choisi, et les paies
+        précédentes la gardent avec leurs montants.
+      </RhAlert>
+      <MonthField label="Retirer à partir de la paie de" value={from} period={period} onChange={setFrom} />
+      <p className="text-xs text-foreground/55">Vous pourrez la reprendre plus tard (Modifier → Reprendre le calcul).</p>
     </QuickDialog>
   );
 }
@@ -893,6 +895,13 @@ function RegimesPanel({
     const month = monthText(payrollMonthOf(v.effective_from));
     if (!window.confirm(`Annuler les taux prévus dès ${month} (régime ${r.code}) ?`)) return;
     run(() => cancelCnasRegimeRates({ version_id: v.id }), `Taux prévus dès ${month} annulés.`);
+  }
+
+  function removeRegime(r: CnasRegimeRow) {
+    if (!window.confirm(`Supprimer le régime ${r.code} (${r.label_fr}) ? Les bulletins déjà générés ne changent pas.`)) {
+      return;
+    }
+    run(() => deleteCnasRegime({ id: r.id }), `Régime ${r.code} supprimé.`);
   }
 
   return (
@@ -952,7 +961,14 @@ function RegimesPanel({
                           </button>
                         ) : null}
                       </td>
-                      <td className={rhTd()}>{r.label_fr}</td>
+                      <td className={rhTd()}>
+                        {r.label_fr}
+                        {r.label_ar && r.label_ar !== r.label_fr ? (
+                          <span className="mt-0.5 block text-xs text-foreground/60" dir="rtl">
+                            {r.label_ar}
+                          </span>
+                        ) : null}
+                      </td>
                       <td className={rhTd()}>{cell(r.employee_pct, legal.employee)}</td>
                       <td className={rhTd()}>{cell(r.employer_pct, legal.employer)}</td>
                       <td className={rhTd()}>{cell(r.fos_pct, legal.fos)}</td>
@@ -983,10 +999,21 @@ function RegimesPanel({
                       </td>
                       <td className={rhTd()}>{r.is_active ? "Oui" : "Non"}</td>
                       {canEdit ? (
-                        <td className={rhTd()}>
-                          <Button variant="secondary" disabled={pending} onClick={() => setDialog({ regime: r })}>
-                            Modifier
-                          </Button>
+                        <td className={`${rhTd()} whitespace-nowrap`}>
+                          <div className="flex justify-end gap-1">
+                            <Button variant="secondary" disabled={pending} onClick={() => setDialog({ regime: r })}>
+                              Modifier
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              className="text-red-700"
+                              disabled={pending || r.code === "STANDARD"}
+                              title={r.code === "STANDARD" ? "Régime par défaut : non supprimable." : undefined}
+                              onClick={() => removeRegime(r)}
+                            >
+                              Supprimer
+                            </Button>
+                          </div>
                         </td>
                       ) : null}
                     </tr>
