@@ -3,11 +3,16 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
+  closePayrollRun,
   generatePayrollRun,
   lockPayrollSlip,
+  reopenPayrollRun,
+  validatePayrollRun,
+  type PayrollRunRow,
   type PayrollSlipLineRow,
   type PayrollSlipRow,
 } from "@/lib/actions/hr-ops";
+import { runStatusLabel, type PayrollRunAction } from "@/lib/hr/payroll-run-status";
 import { Button } from "@/components/ui/button";
 import {
   RhAlert,
@@ -172,6 +177,9 @@ function BulletinPreview({
 
 export function PayrollManager({
   initialSlips,
+  initialRuns = [],
+  canValidate = false,
+  canClose = false,
   sites,
   year,
   month,
@@ -181,6 +189,9 @@ export function PayrollManager({
   loadError,
 }: {
   initialSlips: PayrollSlipRow[];
+  initialRuns?: PayrollRunRow[];
+  canValidate?: boolean;
+  canClose?: boolean;
   sites: readonly SiteOpt[];
   year: number;
   month: number;
@@ -190,6 +201,7 @@ export function PayrollManager({
   loadError?: string;
 }) {
   const [slips, setSlips] = useState(initialSlips);
+  const [runs, setRuns] = useState(initialRuns);
   const [siteId, setSiteId] = useState(sites[0]?.id ?? "");
   const [periodYear, setPeriodYear] = useState(year);
   const [periodMonth, setPeriodMonth] = useState(month);
@@ -197,6 +209,48 @@ export function PayrollManager({
   const [info, setInfo] = useState<string | null>(null);
   const [preview, setPreview] = useState<BulletinModel[] | null>(null);
   const [pending, start] = useTransition();
+  const currentRun = runs.find((r) => r.site_id === siteId) ?? null;
+  const currentStatus = currentRun?.status_code ?? "DRAFT";
+  const runStatusById = useMemo(() => new Map(runs.map((r) => [r.id, r.status_code])), [runs]);
+  const siteName = sites.find((s) => s.id === siteId)?.name_fr ?? "";
+
+  function transitionRun(action: PayrollRunAction) {
+    if (!currentRun) return;
+    if (
+      action === "close" &&
+      !window.confirm(
+        `Clôturer définitivement la paie ${String(month).padStart(2, "0")}/${year} — ${siteName} ?\n` +
+          "Bulletins et pointage du mois seront figés ; les corrections passeront en rappel le mois suivant.",
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setInfo(null);
+    const runId = currentRun.id;
+    const run =
+      action === "validate" ? validatePayrollRun : action === "reopen" ? reopenPayrollRun : closePayrollRun;
+    start(async () => {
+      const r = await run({ run_id: runId });
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      const next = r.data.status_code;
+      const from = action === "validate" ? "DRAFT" : "VALIDATED";
+      setRuns((prev) => prev.map((x) => (x.id === runId ? { ...x, status_code: next } : x)));
+      setSlips((prev) =>
+        prev.map((s) => (s.run_id === runId && s.status_code === from ? { ...s, status_code: next } : s)),
+      );
+      setInfo(
+        action === "validate"
+          ? "Paie validée : bulletins et pointage du mois figés (réouverture possible)."
+          : action === "reopen"
+            ? "Paie réouverte : pointage et bulletins de nouveau modifiables."
+            : "Paie clôturée définitivement.",
+      );
+    });
+  }
   const itemCols = useMemo(
     () => rubricColumns(slips, bulletin.hide_zero_lines),
     [slips, bulletin.hide_zero_lines],
@@ -290,6 +344,47 @@ export function PayrollManager({
           IRG {bi("barème + règles", "السلم والقواعد")}
         </RhChip>
       </div>
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border/60 bg-surface px-4 py-3 text-sm">
+        <span className="font-semibold">
+          Paie {String(month).padStart(2, "0")}/{year}
+          {siteName ? ` · ${siteName}` : ""}
+        </span>
+        {currentRun ? (
+          <>
+            <RhChip
+              tone={
+                currentStatus === "LOCKED" ? "danger" : currentStatus === "VALIDATED" ? "success" : "neutral"
+              }
+            >
+              {runStatusLabel(currentStatus).fr}
+            </RhChip>
+            <span className="text-xs text-foreground/60">{currentRun.slip_count} bulletin(s)</span>
+            <div className="ml-auto flex flex-wrap gap-2">
+              {currentStatus === "DRAFT" && canValidate ? (
+                <Button
+                  variant="secondary"
+                  disabled={pending || currentRun.slip_count === 0}
+                  onClick={() => transitionRun("validate")}
+                >
+                  Valider la paie
+                </Button>
+              ) : null}
+              {currentStatus === "VALIDATED" && canValidate ? (
+                <Button variant="ghost" disabled={pending} onClick={() => transitionRun("reopen")}>
+                  Réouvrir
+                </Button>
+              ) : null}
+              {currentStatus === "VALIDATED" && canClose ? (
+                <Button disabled={pending} onClick={() => transitionRun("close")}>
+                  Clôturer le mois
+                </Button>
+              ) : null}
+            </div>
+          </>
+        ) : (
+          <span className="text-xs text-foreground/60">Pas encore générée pour ce chantier.</span>
+        )}
+      </div>
       <RhToolbar>
         <RhField label={bi("Chantier", "الورشة")}>
           <select
@@ -323,7 +418,11 @@ export function PayrollManager({
           />
         </RhField>
         <Button
-          disabled={pending || !siteId}
+          disabled={
+            pending ||
+            !siteId ||
+            (periodYear === year && periodMonth === month && currentStatus !== "DRAFT")
+          }
           onClick={() => {
             setError(null);
             start(async () => {
@@ -524,7 +623,9 @@ export function PayrollManager({
                   ) : null}
                   <td className="px-3.5 py-3">
                     <div className="flex flex-wrap gap-1">
-                      {view === "all" && s.status_code !== "LOCKED" ? (
+                      {view === "all" &&
+                      s.status_code === "DRAFT" &&
+                      (runStatusById.get(s.run_id) ?? "DRAFT") === "DRAFT" ? (
                         <Button
                           variant="secondary"
                           disabled={pending}

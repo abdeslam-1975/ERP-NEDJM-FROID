@@ -350,6 +350,10 @@ export const payrollLockSchema = z.object({
   slip_id: z.string().uuid(),
 });
 
+export const payrollRunActionSchema = z.object({
+  run_id: z.string().uuid(),
+});
+
 export const salaryRubriqueSchema = z.object({
   id: z.string().uuid().optional(),
   code: z

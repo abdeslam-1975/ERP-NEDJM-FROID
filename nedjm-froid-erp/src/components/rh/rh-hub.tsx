@@ -18,30 +18,32 @@ function DonutChart({
   const total = parts.reduce((s, p) => s + p.value, 0) || 1;
   const r = 54;
   const c = 2 * Math.PI * r;
-  let offset = 0;
+  const arcs = parts.reduce<{ part: (typeof parts)[number]; len: number; offset: number }[]>(
+    (acc, part) => {
+      const prev = acc.at(-1);
+      acc.push({ part, len: (part.value / total) * c, offset: prev ? prev.offset + prev.len : 0 });
+      return acc;
+    },
+    [],
+  );
   return (
     <div className="flex flex-col items-center gap-4">
       <svg width="160" height="160" viewBox="0 0 140 140" className="-rotate-90">
         <circle cx="70" cy="70" r={r} fill="none" stroke="#eef2f7" strokeWidth="18" />
-        {parts.map((p) => {
-          const len = (p.value / total) * c;
-          const el = (
-            <circle
-              key={p.label}
-              cx="70"
-              cy="70"
-              r={r}
-              fill="none"
-              stroke={p.color}
-              strokeWidth="18"
-              strokeDasharray={`${len} ${c - len}`}
-              strokeDashoffset={-offset}
-              strokeLinecap="butt"
-            />
-          );
-          offset += len;
-          return el;
-        })}
+        {arcs.map(({ part: p, len, offset }) => (
+          <circle
+            key={p.label}
+            cx="70"
+            cy="70"
+            r={r}
+            fill="none"
+            stroke={p.color}
+            strokeWidth="18"
+            strokeDasharray={`${len} ${c - len}`}
+            strokeDashoffset={-offset}
+            strokeLinecap="butt"
+          />
+        ))}
       </svg>
       <ul className="w-full space-y-2 text-sm">
         {parts.map((p) => (
@@ -193,10 +195,11 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
     }));
   }, [stats.statusBreakdown]);
 
+  const [periodYear, periodMonth] = period.split("-");
   const presenceHref = siteId
-    ? `/rh/presence?site=${siteId}&period=${period}`
-    : `/rh/presence`;
-  const paieHref = `/rh/paie?period=${period}`;
+    ? `/rh/presence?site=${siteId}&mois=${period}`
+    : `/rh/presence?mois=${period}`;
+  const paieHref = `/rh/paie?year=${periodYear}&month=${Number(periodMonth)}`;
 
   return (
     <RhPage>

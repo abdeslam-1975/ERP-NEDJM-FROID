@@ -2,7 +2,26 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { attendanceSaveSchema, payrollGenerateSchema, payrollLockSchema } from "@/lib/validations/hr";
+import {
+  attendanceSaveSchema,
+  payrollGenerateSchema,
+  payrollLockSchema,
+  payrollRunActionSchema,
+} from "@/lib/validations/hr";
+import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
+import {
+  HR_PAYROLL_CLOSE_ROLES,
+  HR_SALARY_VALUE_ROLES,
+  workspaceHasRole,
+} from "@/lib/auth/require-roles";
+import {
+  attendanceFrozenMessage,
+  normalizeRunStatus,
+  periodStatus,
+  planRunTransition,
+  type PayrollRunAction,
+  type PayrollRunStatus,
+} from "@/lib/hr/payroll-run-status";
 import {
   buildPayrollLines,
   contractCoversPeriod,
@@ -98,15 +117,49 @@ export type PayrollSlipRow = {
   lines: PayrollSlipLineRow[];
 };
 
+export type PayrollRunRow = {
+  id: string;
+  period_year: number;
+  period_month: number;
+  site_id: string | null;
+  status_code: PayrollRunStatus;
+  validated_at: string | null;
+  locked_at: string | null;
+  slip_count: number;
+};
+
 function num(v: unknown) {
   return Number(v ?? 0);
+}
+
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Most restrictive run status for a site/month (site run + company-wide run). */
+async function loadPeriodStatus(
+  supabase: Supabase,
+  siteId: string,
+  year: number,
+  month: number,
+): Promise<{ ok: true; status: PayrollRunStatus | null } | { ok: false; error: string }> {
+  if (!UUID_RE.test(siteId)) return { ok: false, error: "Chantier invalide." };
+  // RPC (security definer): attendance writers may lack read access to hr_payroll_runs.
+  const { data, error } = await supabase.rpc("hr_payroll_period_status", {
+    p_site: siteId,
+    p_date: `${year}-${String(month).padStart(2, "0")}-01`,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, status: periodStatus([typeof data === "string" ? data : null]) };
 }
 
 export async function listAttendanceMonth(input: {
   site_id: string;
   year: number;
   month: number;
-}): Promise<ActionResult<{ cells: AttendanceCell[]; loaded_at: string }>> {
+}): Promise<
+  ActionResult<{ cells: AttendanceCell[]; loaded_at: string; period_status: PayrollRunStatus | null }>
+> {
   const supabase = await createClient();
   const loadedAt = new Date().toISOString();
   const start = `${input.year}-${String(input.month).padStart(2, "0")}-01`;
@@ -134,7 +187,9 @@ export async function listAttendanceMonth(input: {
       correspondence_number: corr?.number ?? null,
     };
   });
-  return { ok: true, data: { cells, loaded_at: loadedAt } };
+  const period = await loadPeriodStatus(supabase, input.site_id, input.year, input.month);
+  if (!period.ok) return period;
+  return { ok: true, data: { cells, loaded_at: loadedAt, period_status: period.status } };
 }
 
 /**
@@ -154,6 +209,10 @@ export async function saveAttendanceMonth(
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const period = await loadPeriodStatus(supabase, p.site_id, p.year, p.month);
+  if (!period.ok) return period;
+  const frozen = attendanceFrozenMessage(period.status);
+  if (frozen) return { ok: false, error: frozen };
   const start = `${p.year}-${String(p.month).padStart(2, "0")}-01`;
   const endDate = new Date(p.year, p.month, 0).getDate();
   const end = `${p.year}-${String(p.month).padStart(2, "0")}-${String(endDate).padStart(2, "0")}`;
@@ -307,21 +366,45 @@ export async function generatePayrollRun(
   const endDay = new Date(p.period_year, p.period_month, 0).getDate();
   const end = `${p.period_year}-${String(p.period_month).padStart(2, "0")}-${String(endDay).padStart(2, "0")}`;
 
-  const { data: run, error: runErr } = await supabase
+  let existingRunQuery = supabase
     .from("hr_payroll_runs")
-    .upsert(
-      {
+    .select("id, status_code")
+    .eq("period_year", p.period_year)
+    .eq("period_month", p.period_month);
+  existingRunQuery = p.site_id
+    ? existingRunQuery.eq("site_id", p.site_id)
+    : existingRunQuery.is("site_id", null);
+  const { data: existingRun, error: existingRunErr } = await existingRunQuery.maybeSingle();
+  if (existingRunErr) return { ok: false, error: existingRunErr.message };
+  const existingStatus = existingRun ? normalizeRunStatus(existingRun.status_code) : null;
+  if (existingStatus === "LOCKED") {
+    return {
+      ok: false,
+      error: "Paie clôturée : régénération impossible. · الأجور مقفلة: لا يمكن إعادة التوليد.",
+    };
+  }
+  if (existingStatus === "VALIDATED") {
+    return {
+      ok: false,
+      error: "Paie validée : réouvrez-la avant de régénérer. · الأجور معتمدة: أعد فتحها قبل إعادة التوليد.",
+    };
+  }
+  let run: { id: string } | null = existingRun ? { id: existingRun.id } : null;
+  if (!run) {
+    const { data: created, error: runErr } = await supabase
+      .from("hr_payroll_runs")
+      .insert({
         period_year: p.period_year,
         period_month: p.period_month,
         site_id: p.site_id ?? null,
         status_code: "DRAFT",
         created_by: user?.id ?? null,
-      },
-      { onConflict: "period_year,period_month,site_id" },
-    )
-    .select("id")
-    .maybeSingle();
-  if (runErr || !run) return { ok: false, error: runErr?.message ?? "Run refusé." };
+      })
+      .select("id")
+      .maybeSingle();
+    if (runErr || !created) return { ok: false, error: runErr?.message ?? "Run refusé." };
+    run = { id: created.id };
+  }
 
   const [cnasEmp, cnasPat, cnasFos, caco, intempSal, intempPat, divisorVar, snmg] = await Promise.all([
     currentVar(supabase, "CNAS_EMPLOYEE"),
@@ -606,6 +689,9 @@ export async function refreshDraftPayroll(filter: {
   if (!runIds.length) {
     // No draft run yet for this site/period: create one if year+month+site known.
     if (filter.siteId && filter.year != null && filter.month != null) {
+      const period = await loadPeriodStatus(supabase, filter.siteId, filter.year, filter.month);
+      if (!period.ok) return period;
+      if (period.status) return { ok: true, data: { count: 0 } };
       const created = await generatePayrollRun({
         period_year: filter.year,
         period_month: filter.month,
@@ -849,4 +935,116 @@ export async function lockPayrollSlip(
   revalidatePath("/rh/paie");
   revalidatePath("/rh/paie/bulletins");
   return { ok: true, data: { id: data.id } };
+}
+
+async function payrollRunPermissions() {
+  const workspace = await getWorkspaceProfile();
+  return {
+    signedIn: Boolean(workspace),
+    canValidate: workspace ? workspaceHasRole(workspace, HR_SALARY_VALUE_ROLES) : false,
+    canClose: workspace ? workspaceHasRole(workspace, HR_PAYROLL_CLOSE_ROLES) : false,
+  };
+}
+
+export async function listPayrollRuns(input: {
+  year: number;
+  month: number;
+}): Promise<ActionResult<{ runs: PayrollRunRow[]; can_validate: boolean; can_close: boolean }>> {
+  const supabase = await createClient();
+  const [{ data, error }, perms] = await Promise.all([
+    supabase
+      .from("hr_payroll_runs")
+      .select("id, period_year, period_month, site_id, status_code, validated_at, locked_at")
+      .eq("period_year", input.year)
+      .eq("period_month", input.month),
+    payrollRunPermissions(),
+  ]);
+  if (error) return { ok: false, error: error.message };
+  const runIds = (data ?? []).map((r) => r.id);
+  const { data: slipRows, error: slipErr } = runIds.length
+    ? await supabase.from("hr_payroll_slips").select("run_id").in("run_id", runIds)
+    : { data: [] as { run_id: string }[], error: null };
+  if (slipErr) return { ok: false, error: slipErr.message };
+  const counts = new Map<string, number>();
+  for (const s of slipRows ?? []) counts.set(s.run_id, (counts.get(s.run_id) ?? 0) + 1);
+  return {
+    ok: true,
+    data: {
+      runs: (data ?? []).map((r) => ({
+        id: r.id,
+        period_year: r.period_year,
+        period_month: r.period_month,
+        site_id: r.site_id ?? null,
+        status_code: normalizeRunStatus(r.status_code),
+        validated_at: r.validated_at ?? null,
+        locked_at: r.locked_at ?? null,
+        slip_count: counts.get(r.id) ?? 0,
+      })),
+      can_validate: perms.canValidate,
+      can_close: perms.canClose,
+    },
+  };
+}
+
+async function transitionPayrollRun(
+  input: unknown,
+  action: PayrollRunAction,
+): Promise<ActionResult<{ id: string; status_code: PayrollRunStatus }>> {
+  const parsed = payrollRunActionSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
+  }
+  const perms = await payrollRunPermissions();
+  if (!perms.signedIn) return { ok: false, error: "Session requise. · يلزم تسجيل الدخول." };
+  if (action === "close" ? !perms.canClose : !perms.canValidate) {
+    return {
+      ok: false,
+      error:
+        action === "close"
+          ? "Clôture réservée à SUPER_ADMIN et GERANT. · الإقفال لـ SUPER_ADMIN و GERANT."
+          : "Validation réservée à SUPER_ADMIN, ADMIN_RH et GERANT. · الاعتماد لـ SUPER_ADMIN و ADMIN_RH و GERANT.",
+    };
+  }
+  const supabase = await createClient();
+  const { data: run, error } = await supabase
+    .from("hr_payroll_runs")
+    .select("id, status_code")
+    .eq("id", parsed.data.run_id)
+    .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!run) return { ok: false, error: "Paie introuvable. · الأجور غير موجودة." };
+  const plan = planRunTransition(run.status_code, action);
+  if (!plan.ok) return plan;
+  const { data: status, error: rpcErr } = await supabase.rpc("hr_payroll_run_transition", {
+    p_run_id: run.id,
+    p_action: action,
+  });
+  if (rpcErr) return { ok: false, error: rpcErr.message };
+  revalidatePath("/rh/paie");
+  revalidatePath("/rh/paie/bulletins");
+  revalidatePath("/rh/paie/social");
+  revalidatePath("/rh/paie/fiscal");
+  revalidatePath("/rh/presence");
+  return {
+    ok: true,
+    data: { id: run.id, status_code: normalizeRunStatus(typeof status === "string" ? status : plan.to) },
+  };
+}
+
+export async function validatePayrollRun(
+  input: unknown,
+): Promise<ActionResult<{ id: string; status_code: PayrollRunStatus }>> {
+  return transitionPayrollRun(input, "validate");
+}
+
+export async function reopenPayrollRun(
+  input: unknown,
+): Promise<ActionResult<{ id: string; status_code: PayrollRunStatus }>> {
+  return transitionPayrollRun(input, "reopen");
+}
+
+export async function closePayrollRun(
+  input: unknown,
+): Promise<ActionResult<{ id: string; status_code: PayrollRunStatus }>> {
+  return transitionPayrollRun(input, "close");
 }

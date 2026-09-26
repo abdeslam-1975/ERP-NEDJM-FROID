@@ -7,6 +7,7 @@ import {
   saveAttendanceMonth,
   type AttendanceCell,
 } from "@/lib/actions/hr-ops";
+import { attendanceFrozenMessage, type PayrollRunStatus } from "@/lib/hr/payroll-run-status";
 import type { LegendRow } from "@/lib/actions/hr-catalogs";
 import type { HrContractRow } from "@/lib/actions/hr-contracts";
 import {
@@ -172,6 +173,7 @@ export function AttendanceManager({
   const [month, setMonth] = useState(initial.period?.month ?? now.getMonth() + 1);
   const [cells, setCells] = useState<AttendanceCell[]>([]);
   const [loadedAt, setLoadedAt] = useState<string | null>(null);
+  const [periodStatus, setPeriodStatus] = useState<PayrollRunStatus | null>(null);
   const [dirty, setDirty] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [empQuery, setEmpQuery] = useState(
@@ -304,6 +306,7 @@ export function AttendanceManager({
       }
       setCells(r.data.cells);
       setLoadedAt(r.data.loaded_at);
+      setPeriodStatus(r.data.period_status);
       setDirty(false);
       const nextDrafts: Record<string, string> = {};
       for (const cell of r.data.cells) {
@@ -318,6 +321,8 @@ export function AttendanceManager({
     loadMonth();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId, year, month]);
+
+  const frozenMessage = attendanceFrozenMessage(periodStatus);
 
   function save() {
     setError(null);
@@ -536,6 +541,12 @@ export function AttendanceManager({
         </div>
       )}
 
+      {frozenMessage ? (
+        <div className="print:hidden">
+          <RhAlert tone="warning">{frozenMessage}</RhAlert>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-1 print:hidden">
         {activeLegends.map((l) => (
           <span
@@ -574,7 +585,7 @@ export function AttendanceManager({
         </p>
         <Button
           className="h-9 px-4 text-[12px] font-bold"
-          disabled={pending || !siteId || people.length === 0}
+          disabled={pending || !siteId || people.length === 0 || Boolean(frozenMessage)}
           onClick={save}
         >
           اعتماد القيم المعبأة — Valider les valeurs renseignées

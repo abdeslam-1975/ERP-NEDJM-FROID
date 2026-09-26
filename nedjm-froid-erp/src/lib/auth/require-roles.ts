@@ -24,6 +24,9 @@ export const HR_SALARY_VALUE_ROLES = [
   "GERANT",
 ] as const;
 
+/** Clôture de paie is irreversible: management only. Validation follows HR_SALARY_VALUE_ROLES. */
+export const HR_PAYROLL_CLOSE_ROLES = ["SUPER_ADMIN", "GERANT"] as const;
+
 export async function requireRoles(
   allowed: string[],
 ): Promise<WorkspaceProfile> {
