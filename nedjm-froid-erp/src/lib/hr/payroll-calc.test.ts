@@ -3,7 +3,10 @@ import {
   buildPayrollLines,
   computeLineAmount,
   contractCoversPeriod,
+  coveredDaysInPeriod,
   exceptionAppliesToPeriod,
+  groupContractsByEmployee,
+  paidMonthFraction,
   payrollLegalWarnings,
   quantityForUnit,
   resolvePermanentAssignment,
@@ -54,9 +57,9 @@ const bonus: PayrollRubrique = {
 
 describe("payroll calc", () => {
   it("computes day and month quantities from attendance", () => {
-    expect(quantityForUnit("day", 22, 20, 30)).toBe(22);
-    expect(quantityForUnit("presence_day", 22, 20, 30)).toBe(20);
-    expect(quantityForUnit("month", 15, 15, 30)).toBe(0.5);
+    expect(quantityForUnit("day", 22, 20, 1)).toBe(22);
+    expect(quantityForUnit("presence_day", 22, 20, 1)).toBe(20);
+    expect(quantityForUnit("month", 15, 15, 0.5)).toBe(0.5);
     expect(computeLineAmount({
       unit: "day",
       unitAmount: 400,
@@ -81,7 +84,7 @@ describe("payroll calc", () => {
       baseMonthly: 40000,
       daysPaid: 15,
       daysWorked: 15,
-      divisor: 30,
+      monthFraction: 0.5,
       year: 2026,
       month: 9,
       rubriques: [hygiene],
@@ -126,7 +129,7 @@ describe("payroll calc", () => {
       baseMonthly: 40000,
       daysPaid: 30,
       daysWorked: 26,
-      divisor: 30,
+      monthFraction: 1,
       year: 2026,
       month: 9,
       rubriques: [panier, class2, class4, class1],
@@ -183,7 +186,7 @@ describe("payroll calc", () => {
       baseMonthly: 30000,
       daysPaid: 30,
       daysWorked: 26,
-      divisor: 30,
+      monthFraction: 1,
       year: 2026,
       month: 9,
       rubriques: [panier, hygiene, bonus],
@@ -222,7 +225,7 @@ describe("payroll calc", () => {
       baseMonthly: 40000,
       daysPaid: 30,
       daysWorked: 26,
-      divisor: 30,
+      monthFraction: 1,
       year: 2026,
       month: 9,
       rubriques: [panier],
@@ -259,7 +262,7 @@ describe("payroll calc", () => {
       baseMonthly: 40000,
       daysPaid: 30,
       daysWorked: 26,
-      divisor: 30,
+      monthFraction: 1,
       year: 2026,
       month: 9,
       rubriques: [],
@@ -282,6 +285,54 @@ describe("payroll calc", () => {
     expect(sum.intemperies_employer).toBe(150);
     expect(sum.cacobatph).toBe(4884);
     expect(sum.net_payable).toBe(36250);
+  });
+
+  it("pays a full month as 1 whatever its length, and deducts 1/30 per unpaid day", () => {
+    const full = (cal: number) =>
+      paidMonthFraction({ daysPaid: cal, coveredDays: cal, calendarDays: cal, divisor: 30 });
+    expect(full(31)).toBe(1);
+    expect(full(28)).toBe(1);
+    expect(full(30)).toBe(1);
+    expect(paidMonthFraction({ daysPaid: 30, coveredDays: 31, calendarDays: 31, divisor: 30 })).toBe(0.9667);
+    expect(paidMonthFraction({ daysPaid: 27, coveredDays: 28, calendarDays: 28, divisor: 30 })).toBe(0.9667);
+    expect(paidMonthFraction({ daysPaid: 0, coveredDays: 31, calendarDays: 31, divisor: 30 })).toBe(0);
+  });
+
+  it("caps overpaid attendance at the covered days", () => {
+    expect(paidMonthFraction({ daysPaid: 33, coveredDays: 31, calendarDays: 31, divisor: 30 })).toBe(1);
+    expect(paidMonthFraction({ daysPaid: 20, coveredDays: 12, calendarDays: 31, divisor: 30 })).toBe(0.3871);
+  });
+
+  it("makes a mid-month contract change sum to one month", () => {
+    const a = paidMonthFraction({ daysPaid: 15, coveredDays: 15, calendarDays: 31, divisor: 30 });
+    const b = paidMonthFraction({ daysPaid: 16, coveredDays: 16, calendarDays: 31, divisor: 30 });
+    expect(a + b).toBeCloseTo(1, 3);
+    const f1 = paidMonthFraction({ daysPaid: 14, coveredDays: 14, calendarDays: 28, divisor: 30 });
+    expect(f1 * 2).toBe(1);
+  });
+
+  it("counts covered days of a period, open-ended or partial", () => {
+    expect(coveredDaysInPeriod("2026-01-01", null, "2026-09-01", "2026-09-30")).toBe(30);
+    expect(coveredDaysInPeriod("2026-09-16", null, "2026-09-01", "2026-09-30")).toBe(15);
+    expect(coveredDaysInPeriod("2026-01-01", "2026-09-10", "2026-09-01", "2026-09-30")).toBe(10);
+    expect(coveredDaysInPeriod("2026-10-01", null, "2026-09-01", "2026-09-30")).toBe(0);
+  });
+
+  it("merges two principal contracts of the same month on the latest one", () => {
+    const grouped = groupContractsByEmployee(
+      [
+        { id: "old", employee_id: "e1", start_date: "2025-01-01", end_date: "2026-03-15" },
+        { id: "new", employee_id: "e1", start_date: "2026-03-16", end_date: null },
+        { id: "x", employee_id: "e2", start_date: "2024-01-01", end_date: null },
+      ],
+      "2026-03-01",
+      "2026-03-31",
+    );
+    const e1 = grouped.find((g) => g.contract.employee_id === "e1");
+    expect(grouped).toHaveLength(2);
+    expect(e1?.contract.id).toBe("new");
+    expect(e1?.coveredDays).toBe(31);
+    expect(e1?.contractCount).toBe(2);
   });
 
   it("warns when NSS is missing or base salary is below SNMG", () => {

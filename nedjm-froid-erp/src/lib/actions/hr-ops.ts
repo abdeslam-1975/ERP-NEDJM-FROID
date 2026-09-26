@@ -24,6 +24,8 @@ import {
 import {
   buildPayrollLines,
   contractCoversPeriod,
+  groupContractsByEmployee,
+  paidMonthFraction,
   PAYROLL_CONTRACT_STATUSES,
   payrollLegalWarnings,
   summarizeLines,
@@ -267,9 +269,6 @@ export async function saveAttendanceMonth(
   }
   const p = parsed.data;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
   const period = await loadPeriodStatus(supabase, p.site_id, p.year, p.month);
   if (!period.ok) return period;
   const frozen = attendanceFrozenMessage(period.status);
@@ -289,41 +288,39 @@ export async function saveAttendanceMonth(
   const start = `${p.year}-${String(p.month).padStart(2, "0")}-01`;
   const endDate = new Date(p.year, p.month, 0).getDate();
   const end = `${p.year}-${String(p.month).padStart(2, "0")}-${String(endDate).padStart(2, "0")}`;
-  let del = supabase
-    .from("hr_attendance")
-    .delete()
-    .eq("site_id", p.site_id)
-    .gte("work_date", start)
-    .lte("work_date", end);
-  if (p.employee_id) del = del.eq("employee_id", p.employee_id);
-  if (p.loaded_at) del = del.or(`status_code.eq.VALIDATED,updated_at.lte."${p.loaded_at}"`);
-  const { error: delErr } = await del;
-  if (delErr) return { ok: false, error: delErr.message };
-  if (p.cells.length) {
-    const validatedAt = new Date().toISOString();
-    const rows = p.cells.map((cell) => ({
-      employee_id: cell.employee_id,
-      site_id: cell.site_id,
-      work_date: cell.work_date,
-      legend_code: cell.legend_code,
-      source_code: cell.source_code,
-      correspondence_id: cell.source_code === "MANUAL" ? null : (cell.correspondence_id ?? null),
-      status_code: "VALIDATED",
-      validated_at: validatedAt,
-      validated_by: user?.id ?? null,
-    }));
-    const { error } = await supabase
-      .from("hr_attendance")
-      .upsert(rows, { onConflict: "employee_id,site_id,work_date" });
-    if (error) return { ok: false, error: error.message };
-  }
-  const refreshed = await refreshDraftPayroll({
-    siteId: p.site_id,
-    employeeId: p.employee_id ?? undefined,
-    year: p.year,
-    month: p.month,
+  const rows = p.cells.map((cell) => ({
+    employee_id: cell.employee_id,
+    site_id: cell.site_id,
+    work_date: cell.work_date,
+    legend_code: cell.legend_code,
+    source_code: cell.source_code,
+    correspondence_id: cell.source_code === "MANUAL" ? null : (cell.correspondence_id ?? null),
+  }));
+  const { error: saveErr } = await supabase.rpc("hr_attendance_replace_month", {
+    p_site: p.site_id,
+    p_start: start,
+    p_end: end,
+    p_employee: p.employee_id ?? null,
+    p_loaded_at: p.loaded_at ?? null,
+    p_rows: rows,
   });
-  if (!refreshed.ok) return refreshed;
+  if (saveErr) return { ok: false, error: saveErr.message };
+  // Site chiefs save attendance without payroll rights: the draft is refreshed by RH later.
+  const { data: canPayroll } = await supabase.rpc("erp_has_perm", {
+    p_screen: "hr_payroll",
+    p_action: "update",
+  });
+  let refreshedCount = 0;
+  if (canPayroll === true) {
+    const refreshed = await refreshDraftPayroll({
+      siteId: p.site_id,
+      employeeId: p.employee_id ?? undefined,
+      year: p.year,
+      month: p.month,
+    });
+    if (!refreshed.ok) return refreshed;
+    refreshedCount = refreshed.data.count;
+  }
   revalidatePath("/rh/presence");
   revalidatePath("/rh/paie");
   revalidatePath("/rh/paie/bulletins");
@@ -331,7 +328,7 @@ export async function saveAttendanceMonth(
   revalidatePath("/rh/paie/fiscal");
   return {
     ok: true,
-    data: { count: p.cells.length, refreshed_slips: refreshed.data.count },
+    data: { count: p.cells.length, refreshed_slips: refreshedCount },
   };
 }
 
@@ -343,33 +340,36 @@ type IrgEngine = {
 async function loadIrgEngine(
   supabase: Awaited<ReturnType<typeof createClient>>,
   asOf: string,
-): Promise<IrgEngine> {
-  const { data: versions } = await supabase
+): Promise<ActionResult<IrgEngine>> {
+  const { data: versions, error: vErr } = await supabase
     .from("ref_bareme_irg_versions")
     .select("id, effective_from, effective_to")
     .lte("effective_from", asOf)
     .order("effective_from", { ascending: false });
+  if (vErr) return { ok: false, error: `Barème IRG : ${vErr.message}` };
   const version = (versions ?? []).find(
     (v) => !v.effective_to || v.effective_to >= asOf,
   );
   let brackets: IrgBracket[] = [];
   if (version) {
-    const { data: rows } = await supabase
+    const { data: rows, error: bErr } = await supabase
       .from("ref_bareme_irg")
       .select("min_annual, max_annual, rate, sort_order")
       .eq("version_id", version.id)
       .order("sort_order");
+    if (bErr) return { ok: false, error: `Barème IRG : ${bErr.message}` };
     brackets = (rows ?? []).map((r) => ({
       min_annual: num(r.min_annual),
       max_annual: r.max_annual == null ? null : num(r.max_annual),
       rate: num(r.rate),
     }));
   }
-  const { data: sets } = await supabase
+  const { data: sets, error: sErr } = await supabase
     .from("ref_irg_rule_sets")
     .select("id, taxpayer_category, effective_from, effective_to")
     .lte("effective_from", asOf)
     .order("effective_from", { ascending: false });
+  if (sErr) return { ok: false, error: `Règles IRG : ${sErr.message}` };
   const chosen = new Map<string, string>();
   for (const s of sets ?? []) {
     if (s.effective_to && s.effective_to < asOf) continue;
@@ -378,11 +378,12 @@ async function loadIrgEngine(
   const setIds = [...chosen.values()];
   const rulesByCategory: Record<string, IrgRule[]> = {};
   if (setIds.length) {
-    const { data: rules } = await supabase
+    const { data: rules, error: rErr } = await supabase
       .from("ref_irg_rules")
       .select("rule_set_id, kind, params, formula, sequence")
       .in("rule_set_id", setIds)
       .order("sequence");
+    if (rErr) return { ok: false, error: `Règles IRG : ${rErr.message}` };
     const setToCat = new Map(
       [...chosen.entries()].map(([cat, id]) => [id, cat]),
     );
@@ -398,7 +399,7 @@ async function loadIrgEngine(
       rulesByCategory[cat] = list;
     }
   }
-  return { brackets, rulesByCategory };
+  return { ok: true, data: { brackets, rulesByCategory } };
 }
 
 export async function generatePayrollRun(
@@ -413,7 +414,33 @@ export async function generatePayrollRun(
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Session requise. · يلزم تسجيل الدخول." };
+  const { data: canPayroll, error: permErr } = await supabase.rpc("erp_has_perm", {
+    p_screen: "hr_payroll",
+    p_action: "update",
+  });
+  if (permErr) return { ok: false, error: permErr.message };
+  if (canPayroll !== true) {
+    return { ok: false, error: "Génération de la paie non autorisée. · توليد الأجور غير مسموح لدورك." };
+  }
+  try {
+    return await buildAndSavePayrollRun(supabase, user.id, p);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Génération de la paie impossible." };
+  }
+}
 
+/** Throws on query error: a failed read must never produce silent zero-amount slips. */
+function must<T>(res: { data: T | null; error: { message: string } | null }, what: string): T {
+  if (res.error) throw new Error(`${what} : ${res.error.message}`);
+  return (res.data ?? []) as T;
+}
+
+async function buildAndSavePayrollRun(
+  supabase: Supabase,
+  userId: string,
+  p: { period_year: number; period_month: number; site_id?: string | null },
+): Promise<ActionResult<{ run_id: string; count: number; warnings: string[] }>> {
   const start = `${p.period_year}-${String(p.period_month).padStart(2, "0")}-01`;
   const endDay = new Date(p.period_year, p.period_month, 0).getDate();
   const end = `${p.period_year}-${String(p.period_month).padStart(2, "0")}-${String(endDay).padStart(2, "0")}`;
@@ -450,7 +477,7 @@ export async function generatePayrollRun(
         period_month: p.period_month,
         site_id: p.site_id ?? null,
         status_code: "DRAFT",
-        created_by: user?.id ?? null,
+        created_by: userId,
       })
       .select("id")
       .maybeSingle();
@@ -466,7 +493,9 @@ export async function generatePayrollRun(
   const divisorVar = legalVar("NJM_DIVISEUR_FIXED");
   const snmg = legalVar("SNMG");
   const divisor = divisorVar > 0 ? divisorVar : 30;
-  const irgEngine = await loadIrgEngine(supabase, start);
+  const irgLoaded = await loadIrgEngine(supabase, start);
+  if (!irgLoaded.ok) return irgLoaded;
+  const irgEngine = irgLoaded.data;
 
   let contractsQuery = supabase
     .from("hr_contracts")
@@ -487,9 +516,12 @@ export async function generatePayrollRun(
     ),
   );
 
-  const { data: legends } = await supabase
-    .from("ref_legendes")
-    .select("code, label_fr, label_ar, coefficient, counts_as_presence");
+  const legends = must(
+    await supabase
+      .from("ref_legendes")
+      .select("code, label_fr, label_ar, coefficient, counts_as_presence"),
+    "Légendes",
+  );
 
   let attQuery = supabase
     .from("hr_attendance")
@@ -498,31 +530,32 @@ export async function generatePayrollRun(
     .gte("work_date", start)
     .lte("work_date", end);
   if (p.site_id) attQuery = attQuery.eq("site_id", p.site_id);
-  const { data: att } = await attQuery;
+  const att = must(await attQuery, "Pointage");
 
   const movementsByEmp = accumulateAttendanceMovements(
-    att ?? [],
-    (legends ?? []) as AttendanceLegend[],
+    att,
+    legends as AttendanceLegend[],
     p.site_id ? { siteId: p.site_id } : undefined,
   );
 
-  const { data: activities } = await supabase
-    .from("ref_activity_codes")
-    .select("id, applies_cacobatph, applies_intemperies");
+  const activities = must(
+    await supabase.from("ref_activity_codes").select("id, applies_cacobatph, applies_intemperies"),
+    "Codes activité",
+  );
   const cacoSites = new Set(
-    (activities ?? []).filter((a) => a.applies_cacobatph).map((a) => a.id),
+    activities.filter((a) => a.applies_cacobatph).map((a) => a.id),
   );
   const intempSites = new Set(
-    (activities ?? []).filter((a) => a.applies_intemperies).map((a) => a.id),
+    activities.filter((a) => a.applies_intemperies).map((a) => a.id),
   );
 
-  const empIds = [...new Set((contracts ?? []).map((c) => c.employee_id))];
-  const { data: employees } = empIds.length
-    ? await supabase
-        .from("hr_employees")
-        .select("id, irg_category, nss, matricule")
-        .in("id", empIds)
-    : { data: [] as { id: string; irg_category: string; nss: string | null; matricule: string }[] };
+  const empIds = [...new Set(contracts.map((c) => c.employee_id))];
+  const employees = empIds.length
+    ? must(
+        await supabase.from("hr_employees").select("id, irg_category, nss, matricule").in("id", empIds),
+        "Employés",
+      )
+    : [];
   const irgCat = new Map(
     (employees ?? []).map((e) => [e.id, e.irg_category ?? "STANDARD"]),
   );
@@ -536,55 +569,77 @@ export async function generatePayrollRun(
   if (!compliance.ok) return compliance;
   const cx = compliance.data;
 
-  const { data: rubRows } = await supabase
-    .from("hr_salary_rubriques")
-    .select(
-      "id, code, label_ar, label_fr, nature, unit, category, cotisable, taxable, is_active",
-    )
-    .eq("is_active", true);
-  const rubriques = (rubRows ?? []) as PayrollRubrique[];
+  const rubriques = must(
+    await supabase
+      .from("hr_salary_rubriques")
+      .select("id, code, label_ar, label_fr, nature, unit, category, cotisable, taxable, is_active")
+      .eq("is_active", true),
+    "Rubriques",
+  ) as PayrollRubrique[];
 
-  const { data: asgRows } = await supabase
-    .from("hr_salary_assignments")
-    .select("rubrique_id, employee_id, site_id, contract_id, amount, unit, is_active")
-    .eq("is_active", true);
-  const assignments = ((asgRows ?? []) as PayrollAssignment[]).map((a) => ({
-    ...a,
-    amount: num(a.amount),
-  }));
+  const assignments = (
+    must(
+      await supabase
+        .from("hr_salary_assignments")
+        .select("rubrique_id, employee_id, site_id, contract_id, amount, unit, is_active")
+        .eq("is_active", true),
+      "Affectations de rubriques",
+    ) as PayrollAssignment[]
+  ).map((a) => ({ ...a, amount: num(a.amount) }));
 
-  const { data: exRows } = await supabase
-    .from("hr_salary_exceptions")
-    .select(
-      "id, employee_id, rubrique_id, amount, unit, period_year, period_month, duration_mode, until_year, until_month, status_code, is_active",
-    )
-    .eq("is_active", true)
-    .eq("status_code", "APPROVED");
-  const exceptions = ((exRows ?? []) as PayrollException[]).map((e) => ({
-    ...e,
-    amount: num(e.amount),
-  }));
-
-  const { data: existingSlips } = await supabase
-    .from("hr_payroll_slips")
-    .select("id, employee_id, status_code")
-    .eq("run_id", run.id);
-  const locked = new Set(
-    (existingSlips ?? []).filter((s) => s.status_code === "LOCKED").map((s) => s.employee_id),
-  );
+  const exceptions = (
+    must(
+      await supabase
+        .from("hr_salary_exceptions")
+        .select(
+          "id, employee_id, rubrique_id, amount, unit, period_year, period_month, duration_mode, until_year, until_month, status_code, is_active",
+        )
+        .eq("is_active", true)
+        .eq("status_code", "APPROVED"),
+      "Exceptions",
+    ) as PayrollException[]
+  ).map((e) => ({ ...e, amount: num(e.amount) }));
 
   const warnings: string[] = [];
+  if (!irgEngine.brackets.length) {
+    warnings.push("Barème IRG introuvable pour la période : IRG = 0 · سلم الضريبة غير موجود لهذه الفترة");
+  }
+  const calendarDays = endDay;
   const slipPayloads: Array<{
     row: Record<string, unknown>;
     lines: ReturnType<typeof buildPayrollLines>;
     employee_id: string;
   }> = [];
 
-  for (const ctr of contracts ?? []) {
-    if (locked.has(ctr.employee_id)) continue;
+  for (const group of groupContractsByEmployee(
+    contracts.map((c) => ({
+      ...c,
+      start_date: String(c.start_date).slice(0, 10),
+      end_date: c.end_date ? String(c.end_date).slice(0, 10) : null,
+    })),
+    start,
+    end,
+  )) {
+    const ctr = group.contract;
     const mov = movementsByEmp.get(ctr.employee_id) ?? emptyMovements();
-    const paid = mov.days_paid;
-    const worked = mov.days_presence_qty;
+    const paid = Math.min(mov.days_paid, group.coveredDays);
+    const worked = Math.min(mov.days_presence_qty, group.coveredDays);
+    const monthFraction = paidMonthFraction({
+      daysPaid: paid,
+      coveredDays: group.coveredDays,
+      calendarDays,
+      divisor,
+    });
+    if (group.contractCount > 1) {
+      warnings.push(
+        `${empById.get(ctr.employee_id)?.matricule ?? "—"} : ${group.contractCount} contrats principaux ce mois, bulletin sur le plus récent · عقدان رئيسيان في نفس الشهر`,
+      );
+    }
+    if (mov.days_paid > group.coveredDays) {
+      warnings.push(
+        `${empById.get(ctr.employee_id)?.matricule ?? "—"} : ${mov.days_paid} jours pointés > ${group.coveredDays} jours de contrat, plafonnés · أيام الحضور تتجاوز مدة العقد`,
+      );
+    }
     const lines = buildPayrollLines({
       employeeId: ctr.employee_id,
       siteId: ctr.site_id,
@@ -592,7 +647,7 @@ export async function generatePayrollRun(
       baseMonthly: num(ctr.salaire_base_monthly),
       daysPaid: paid,
       daysWorked: worked,
-      divisor,
+      monthFraction,
       year: p.period_year,
       month: p.period_month,
       rubriques,
@@ -694,51 +749,32 @@ export async function generatePayrollRun(
     });
   }
 
-  if (slipPayloads.length) {
-    const { data: saved, error: sErr } = await supabase
-      .from("hr_payroll_slips")
-      .upsert(
-        slipPayloads.map((s) => s.row),
-        { onConflict: "run_id,employee_id" },
-      )
-      .select("id, employee_id");
-    if (sErr) return { ok: false, error: sErr.message };
-    const slipIdByEmp = new Map((saved ?? []).map((s) => [s.employee_id, s.id]));
-    const slipIds = [...slipIdByEmp.values()];
-    if (slipIds.length) {
-      const { error: delLinesErr } = await supabase
-        .from("hr_payroll_slip_lines")
-        .delete()
-        .in("slip_id", slipIds);
-      if (delLinesErr) return { ok: false, error: delLinesErr.message };
-    }
-    const lineRows = slipPayloads.flatMap((s) => {
-      const slipId = slipIdByEmp.get(s.employee_id);
-      if (!slipId) return [];
-      return s.lines.map((line) => ({
-        slip_id: slipId,
-        rubrique_id: line.rubrique_id,
-        exception_id: line.exception_id,
-        source_code: line.source_code,
-        code: line.code,
-        label_ar: line.label_ar,
-        label_fr: line.label_fr,
-        category: line.category,
-        nature: line.nature,
-        unit: line.unit,
-        cotisable: line.cotisable,
-        taxable: line.taxable,
-        quantity: line.quantity,
-        unit_amount: line.unit_amount,
-        amount: line.amount,
-        sort_order: line.sort_order,
-      }));
-    });
-    if (lineRows.length) {
-      const { error: lErr } = await supabase.from("hr_payroll_slip_lines").insert(lineRows);
-      if (lErr) return { ok: false, error: lErr.message };
-    }
-  }
+  const lineRows = slipPayloads.flatMap((s) =>
+    s.lines.map((line) => ({
+      employee_id: s.employee_id,
+      rubrique_id: line.rubrique_id,
+      exception_id: line.exception_id,
+      source_code: line.source_code,
+      code: line.code,
+      label_ar: line.label_ar,
+      label_fr: line.label_fr,
+      category: line.category,
+      nature: line.nature,
+      unit: line.unit,
+      cotisable: line.cotisable,
+      taxable: line.taxable,
+      quantity: line.quantity,
+      unit_amount: line.unit_amount,
+      amount: line.amount,
+      sort_order: line.sort_order,
+    })),
+  );
+  const { error: saveErr } = await supabase.rpc("hr_payroll_replace_slips", {
+    p_run_id: run.id,
+    p_slips: slipPayloads.map((s) => s.row),
+    p_lines: lineRows,
+  });
+  if (saveErr) return { ok: false, error: saveErr.message };
 
   revalidatePath("/rh/paie");
   revalidatePath("/rh/paie/bulletins");
@@ -868,7 +904,8 @@ export async function listPayrollSlips(input: {
         unit_amount: number;
         amount: number;
       }>, error: null };
-  const lineRows = linesQuery.error ? [] : (linesQuery.data ?? []);
+  if (linesQuery.error) return { ok: false, error: linesQuery.error.message };
+  const lineRows = linesQuery.data ?? [];
   const linesBySlip = new Map<string, PayrollSlipLineRow[]>();
   for (const line of lineRows ?? []) {
     const list = linesBySlip.get(line.slip_id) ?? [];
@@ -939,28 +976,12 @@ export async function listPayrollSlips(input: {
   const siteMap = new Map((sites.data ?? []).map((r) => [r.id, r.name_fr]));
 
   const start = `${input.year}-${String(input.month).padStart(2, "0")}-01`;
-  const endDay = new Date(input.year, input.month, 0).getDate();
-  const end = `${input.year}-${String(input.month).padStart(2, "0")}-${String(endDay).padStart(2, "0")}`;
   const snapshots = new Map(
     (data ?? []).map((row) => [row.id, parseLegalSnapshot(row.legal_snapshot)]),
   );
   const periodVars = [...snapshots.values()].some((s) => !s)
     ? await legalVarsAsOf(supabase, start)
     : {};
-  const [{ data: legendRows }, { data: attRows }] = await Promise.all([
-    supabase
-      .from("ref_legendes")
-      .select("code, label_fr, label_ar, coefficient, counts_as_presence"),
-    empIds.length
-      ? supabase
-          .from("hr_attendance")
-          .select("employee_id, site_id, legend_code")
-          .eq("status_code", "VALIDATED")
-          .in("employee_id", empIds)
-          .gte("work_date", start)
-          .lte("work_date", end)
-      : Promise.resolve({ data: [] as Array<{ employee_id: string; site_id: string; legend_code: string }> }),
-  ]);
 
   return {
     ok: true,
@@ -973,12 +994,6 @@ export async function listPayrollSlips(input: {
       const bk = bankMap.get(row.employee_id);
       const q = qualMap.get(row.employee_id);
       const siteId = run?.site_id ?? ctr?.site_id ?? null;
-      const mov =
-        accumulateAttendanceMovements(
-          attRows ?? [],
-          (legendRows ?? []) as AttendanceLegend[],
-          siteId ? { siteId } : undefined,
-        ).get(row.employee_id) ?? emptyMovements();
       return {
         id: row.id,
         run_id: row.run_id,
@@ -987,13 +1002,13 @@ export async function listPayrollSlips(input: {
         period_month: run?.period_month ?? input.month,
         site_id: siteId,
         hr_contract_id: row.hr_contract_id ?? null,
-        days_worked: mov.days_worked,
-        days_paid: num(row.days_paid) || mov.days_paid,
-        days_leave: mov.days_leave,
-        days_absence: mov.days_absence,
-        days_weekend: mov.days_weekend,
-        days_abandon: mov.days_abandon,
-        days_rappel: mov.days_rappel,
+        days_worked: num(row.days_worked),
+        days_paid: num(row.days_paid),
+        days_leave: num(row.days_leave),
+        days_absence: num(row.days_absence),
+        days_weekend: num(row.days_weekend),
+        days_abandon: num(row.days_abandon),
+        days_rappel: num(row.days_rappel),
         net_target: num(row.net_target),
         gross_amount: num(row.gross_amount),
         employee_ss: num(row.employee_ss),

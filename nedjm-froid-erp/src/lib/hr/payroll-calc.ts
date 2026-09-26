@@ -144,16 +144,84 @@ export function exceptionAppliesToPeriod(
   return current >= start && current <= until;
 }
 
+const DAY_MS = 86_400_000;
+
+function isoDayIndex(iso: string) {
+  return Math.floor(Date.parse(`${iso.slice(0, 10)}T00:00:00Z`) / DAY_MS);
+}
+
+/** Days of the period covered by a contract (inclusive bounds, open end allowed). */
+export function coveredDaysInPeriod(
+  startDate: string,
+  endDate: string | null | undefined,
+  periodStart: string,
+  periodEnd: string,
+) {
+  const from = Math.max(isoDayIndex(startDate), isoDayIndex(periodStart));
+  const to = Math.min(endDate ? isoDayIndex(endDate) : Number.POSITIVE_INFINITY, isoDayIndex(periodEnd));
+  return to >= from ? to - from + 1 : 0;
+}
+
+/**
+ * Share of the monthly salary earned: calendar prorata of the contract's covered days,
+ * minus 1/divisor per unpaid covered day. A fully paid month is exactly 1 whatever its length,
+ * and split contracts (mid-month transfer) sum to 1.
+ */
+export function paidMonthFraction(input: {
+  daysPaid: number;
+  coveredDays: number;
+  calendarDays: number;
+  divisor: number;
+}) {
+  const cal = input.calendarDays > 0 ? input.calendarDays : 30;
+  const den = input.divisor > 0 ? input.divisor : 30;
+  const covered = Math.min(Math.max(input.coveredDays, 0), cal);
+  const unpaid = Math.max(0, covered - Math.max(input.daysPaid, 0));
+  const fraction = covered / cal - unpaid / den;
+  return Math.min(1, Math.max(0, Math.round(fraction * 10_000) / 10_000));
+}
+
 export function quantityForUnit(
   unit: SalaryUnit,
   daysPaid: number,
   daysWorked: number,
-  divisor: number,
+  monthFraction: number,
 ) {
-  const den = divisor > 0 ? divisor : 30;
   if (unit === "day") return daysPaid;
   if (unit === "presence_day") return daysWorked;
-  return daysPaid / den;
+  return monthFraction;
+}
+
+type ContractForPeriod = {
+  id: string;
+  employee_id: string;
+  start_date: string;
+  end_date: string | null;
+};
+
+/**
+ * One slip per employee and run: several principal contracts in the same month
+ * (mid-month change) are merged on the most recent one, with their covered days summed.
+ */
+export function groupContractsByEmployee<T extends ContractForPeriod>(
+  contracts: T[],
+  periodStart: string,
+  periodEnd: string,
+): Array<{ contract: T; coveredDays: number; contractCount: number }> {
+  const byEmp = new Map<string, T[]>();
+  for (const c of contracts) {
+    const list = byEmp.get(c.employee_id) ?? [];
+    list.push(c);
+    byEmp.set(c.employee_id, list);
+  }
+  return [...byEmp.values()].map((list) => {
+    const sorted = [...list].sort((a, b) => b.start_date.localeCompare(a.start_date));
+    const coveredDays = list.reduce(
+      (sum, c) => sum + coveredDaysInPeriod(c.start_date, c.end_date, periodStart, periodEnd),
+      0,
+    );
+    return { contract: sorted[0], coveredDays, contractCount: list.length };
+  });
 }
 
 export function computeLineAmount(input: {
@@ -224,7 +292,8 @@ export function buildPayrollLines(input: {
   baseMonthly: number;
   daysPaid: number;
   daysWorked: number;
-  divisor: number;
+  /** From paidMonthFraction: quantity of monthly and percent lines. */
+  monthFraction: number;
   year: number;
   month: number;
   rubriques: PayrollRubrique[];
@@ -240,7 +309,7 @@ export function buildPayrollLines(input: {
   };
 
   if (input.baseMonthly > 0) {
-    const qty = quantityForUnit("month", input.daysPaid, input.daysWorked, input.divisor);
+    const qty = quantityForUnit("month", input.daysPaid, input.daysWorked, input.monthFraction);
     const amount = computeLineAmount({
       unit: "month",
       unitAmount: input.baseMonthly,
@@ -272,7 +341,7 @@ export function buildPayrollLines(input: {
     const picked = resolvePermanentAssignment(rub.id, input.assignments, ctx);
     if (!picked) continue;
     const unit = picked.unit ?? rub.unit;
-    const qty = quantityForUnit(unit, input.daysPaid, input.daysWorked, input.divisor);
+    const qty = quantityForUnit(unit, input.daysPaid, input.daysWorked, input.monthFraction);
     const amount = computeLineAmount({
       unit,
       unitAmount: picked.amount,
@@ -290,7 +359,7 @@ export function buildPayrollLines(input: {
     const rub = active.find((r) => r.id === ex.rubrique_id);
     if (!rub) continue;
     const unit = ex.unit ?? rub.unit;
-    const qty = quantityForUnit(unit, input.daysPaid, input.daysWorked, input.divisor);
+    const qty = quantityForUnit(unit, input.daysPaid, input.daysWorked, input.monthFraction);
     const amount = computeLineAmount({
       unit,
       unitAmount: ex.amount,
