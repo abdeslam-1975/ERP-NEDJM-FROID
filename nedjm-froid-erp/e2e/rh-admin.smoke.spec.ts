@@ -66,6 +66,20 @@ test.describe("@smoke rh & administration", () => {
     await expect(page.getByText(/taux journalier facturé/i)).toBeVisible();
   });
 
+  test("Recherche globale : trouve les bulletins, filtre la liste des bulletins", async ({ page }) => {
+    test.skip(!requireE2eAuth(), "Définir E2E_EMAIL / E2E_PASSWORD");
+    await loginAsE2eUser(page);
+    await page.goto("/rh");
+    await page.getByRole("textbox", { name: "Recherche globale" }).fill("كشف");
+    await page.getByRole("link", { name: /bulletins de paie/i }).click();
+    await expect(page).toHaveURL(/\/rh\/paie\/bulletins/);
+    const search = page.getByRole("searchbox", { name: /rechercher un bulletin/i });
+    await search.fill("zzzz-aucun-employe");
+    await expect(page.getByText(/aucun bulletin ne correspond|aucun bulletin pour cette période/i)).toBeVisible();
+    await page.goto("/rh/paie/bulletins?q=zzzz-url");
+    await expect(search).toHaveValue("zzzz-url");
+  });
+
   for (const persona of ["E2E_ADMIN_RH", "E2E_ADMIN_FINANCE"] as const) {
     test(`${persona} : unité 05 (cotisations & impôts) modifiable`, async ({ page }) => {
       test.skip(!requirePersona(persona), `Définir ${persona}_EMAIL / ${persona}_PASSWORD`);

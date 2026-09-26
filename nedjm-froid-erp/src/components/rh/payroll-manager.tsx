@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   closePayrollRun,
@@ -213,6 +213,22 @@ export function PayrollManager({
   const [pending, start] = useTransition();
   const router = useRouter();
   const pathname = usePathname();
+  const urlQuery = useSearchParams().get("q") ?? "";
+  const [query, setQuery] = useState(urlQuery);
+  const [seenUrlQuery, setSeenUrlQuery] = useState(urlQuery);
+  if (urlQuery !== seenUrlQuery) {
+    setSeenUrlQuery(urlQuery);
+    setQuery(urlQuery);
+  }
+  const visibleSlips = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return slips;
+    const terms = q.split(/\s+/);
+    return slips.filter((s) => {
+      const hay = `${s.matricule} ${s.employee_name} ${s.nss ?? ""}`.toLowerCase();
+      return terms.every((t) => hay.includes(t));
+    });
+  }, [slips, query]);
   const currentRun = runs.find((r) => r.site_id === siteId) ?? null;
   const currentStatus = currentRun?.status_code ?? "DRAFT";
   const siteName = sites.find((s) => s.id === siteId)?.name_fr ?? "";
@@ -546,6 +562,22 @@ export function PayrollManager({
           />
         </RhField>
         <Button
+          variant="secondary"
+          disabled={
+            pending ||
+            (periodYear === year && periodMonth === month) ||
+            !(periodMonth >= 1 && periodMonth <= 12) ||
+            !(periodYear >= 2000 && periodYear <= 2100)
+          }
+          onClick={() => {
+            const qs = new URLSearchParams({ year: String(periodYear), month: String(periodMonth) });
+            if (query.trim()) qs.set("q", query.trim());
+            router.push(`${pathname}?${qs.toString()}`);
+          }}
+        >
+          {bi("Voir ce mois", "عرض الشهر")}
+        </Button>
+        <Button
           disabled={
             pending ||
             !siteId ||
@@ -579,15 +611,15 @@ export function PayrollManager({
         >
           Générer
         </Button>
-        {slips.length > 0 ? (
+        {visibleSlips.length > 0 ? (
           <>
-            <Button variant="secondary" onClick={() => openBulletin(slips)}>
+            <Button variant="secondary" onClick={() => openBulletin(visibleSlips)}>
               {bi("Afficher Bulletin de Paie", "إظهار كشف الأجر")}
             </Button>
             <Button
               variant="secondary"
               onClick={() =>
-                printBulletins(slips.map(toBulletin))
+                printBulletins(visibleSlips.map(toBulletin))
               }
             >
               {bi("Imprimer les bulletins", "طباعة الكشوف")}
@@ -595,6 +627,22 @@ export function PayrollManager({
           </>
         ) : null}
       </RhToolbar>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          type="search"
+          className={`${rhInput} mt-0 max-w-md`}
+          placeholder={bi("Rechercher un employé (matricule, nom, NSS)…", "ابحث عن عامل (الرقم، الاسم، رقم الضمان)…")}
+          aria-label={bi("Rechercher un bulletin", "بحث عن كشف")}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {query.trim() ? (
+          <span className="text-xs text-foreground/60">
+            {visibleSlips.length} / {slips.length} {bi("bulletin(s)", "كشف")}
+          </span>
+        ) : null}
+      </div>
 
       <RhTableWrap>
         <table className="min-w-full text-sm">
@@ -676,14 +724,16 @@ export function PayrollManager({
             ) : null}
           </thead>
           <tbody>
-            {slips.length === 0 ? (
+            {visibleSlips.length === 0 ? (
               <tr>
                 <td className="px-3.5 py-6 text-center text-foreground/55" colSpan={totalCols}>
-                  {bi("Aucun bulletin pour cette période.", "لا توجد كشوف لهذه الفترة.")}
+                  {slips.length && query.trim()
+                    ? bi(`Aucun bulletin ne correspond à « ${query.trim()} ».`, "لا يوجد كشف مطابق للبحث.")
+                    : bi("Aucun bulletin pour cette période.", "لا توجد كشوف لهذه الفترة.")}
                 </td>
               </tr>
             ) : (
-              slips.map((s) => (
+              visibleSlips.map((s) => (
                 <tr key={s.id} className="border-b border-border/60">
                   <td className="sticky left-0 z-10 bg-surface px-3.5 py-3">
                     <span className="font-mono text-xs">{s.matricule}</span>{" "}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import {
   deleteHrEmployeeField,
@@ -104,7 +105,13 @@ export function EmployeesManager({
 }) {
   const [rows, setRows] = useState(initialEmployees);
   const [fields, setFields] = useState(initialFields);
-  const [query, setQuery] = useState("");
+  const urlQuery = useSearchParams().get("q") ?? "";
+  const [query, setQuery] = useState(urlQuery);
+  const [seenUrlQuery, setSeenUrlQuery] = useState(urlQuery);
+  if (urlQuery !== seenUrlQuery) {
+    setSeenUrlQuery(urlQuery);
+    setQuery(urlQuery);
+  }
   const [open, setOpen] = useState(false);
   const [dossierEmployee, setDossierEmployee] = useState<HrEmployeeFiche | null>(null);
   const [columnsOpen, setColumnsOpen] = useState(false);

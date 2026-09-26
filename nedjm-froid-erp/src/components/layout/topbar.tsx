@@ -1,5 +1,6 @@
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { SiteSwitcher } from "@/components/layout/site-switcher";
+import { GlobalSearch } from "@/components/layout/global-search";
 import { HistoryBackButton } from "@/components/rh/rh-back-button";
 import type { WorkspaceProfile } from "@/lib/auth/types";
 
@@ -42,18 +43,7 @@ export function Topbar({
       </div>
 
       <div className="flex flex-wrap items-center gap-2.5">
-        <div className="hidden items-center gap-2 rounded-2xl border border-border bg-surface px-3 py-2 shadow-[var(--card-shadow)] md:flex">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-foreground/35" aria-hidden>
-            <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.7" />
-            <path d="M16 16l4 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-          </svg>
-          <input
-            className="w-44 bg-transparent text-sm outline-none placeholder:text-foreground/35 lg:w-56"
-            placeholder="Rechercher… · بحث"
-            readOnly
-            aria-label="Recherche"
-          />
-        </div>
+        <GlobalSearch />
 
         <SiteSwitcher
           sites={workspace.accessibleSites}
