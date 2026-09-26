@@ -1,13 +1,14 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { SitesManager } from "@/components/sites/sites-manager";
-import { listActivityCodes, listSites } from "@/lib/actions/sites";
+import { listActivityCodes, listIrgZoneOptions, listSites } from "@/lib/actions/sites";
 
 export const dynamic = "force-dynamic";
 
 export default async function ChantiersPage() {
-  const [sitesResult, activitiesResult] = await Promise.all([
+  const [sitesResult, activitiesResult, zonesResult] = await Promise.all([
     listSites(),
     listActivityCodes(),
+    listIrgZoneOptions(),
   ]);
 
   const loadError = !sitesResult.ok
@@ -21,6 +22,7 @@ export default async function ChantiersPage() {
       <SitesManager
         initialSites={sitesResult.ok ? sitesResult.data : []}
         activityCodes={activitiesResult.ok ? activitiesResult.data : []}
+        irgZones={zonesResult.ok ? zonesResult.data : []}
         loadError={loadError}
       />
     </AppShell>

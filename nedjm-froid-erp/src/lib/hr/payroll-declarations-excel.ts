@@ -127,7 +127,9 @@ export async function buildMonthlyDeclarationsWorkbook(input: {
       [`CNAS — part salariale (N° employeur ${employer.cnas_no || "—"})`, d.cnas.totals.assiette, d.cnas.totals.part_salariale],
       ["CNAS — part patronale", d.cnas.totals.assiette, d.cnas.totals.part_patronale],
       ["CNAS — total à verser", d.cnas.totals.assiette, d.cnas.totals.total],
-      ["G50 — IRG salaires", d.irg.totals.irg_base, d.irg.totals.irg_amount],
+      ...(d.irg.by_line.length > 1
+        ? d.irg.by_line.map((l) => [`G50 — ${l.line}`, l.irg_base, l.irg_amount] as (string | number | null)[])
+        : [["G50 — IRG salaires", d.irg.totals.irg_base, d.irg.totals.irg_amount]]),
       [`CACOBATPH — congés payés (N° ${employer.cacobatph_no || "—"})`, d.cacobatph.totals.assiette, d.cacobatph.totals.conges],
       ["CACOBATPH — intempéries salarié", d.cacobatph.totals.assiette, d.cacobatph.totals.intemperies_employee],
       ["CACOBATPH — intempéries employeur", d.cacobatph.totals.assiette, d.cacobatph.totals.intemperies_employer],
@@ -241,7 +243,9 @@ export async function buildMonthlyDeclarationsWorkbook(input: {
   addTitle(irg, [
     `État des retenues IRG sur salaires — ${period}`,
     employer.name,
-    `À reporter sur la G50 : IRG salaires = ${d.irg.totals.irg_amount.toFixed(2)} DA`,
+    ...(d.irg.by_line.length
+      ? d.irg.by_line.map((l) => `À reporter sur la G50 : ${l.line} = ${l.irg_amount.toFixed(2)} DA`)
+      : [`À reporter sur la G50 : IRG salaires = ${d.irg.totals.irg_amount.toFixed(2)} DA`]),
     statusLine(input.status),
   ]);
   addTable(
@@ -249,11 +253,12 @@ export async function buildMonthlyDeclarationsWorkbook(input: {
     [
       { header: "Matricule", width: 12 },
       { header: "Nom et prénom", width: 30 },
+      { header: "Régime IRG", width: 34 },
       { header: "Base imposable", money: true, width: 18 },
       { header: "IRG retenu", money: true, width: 18 },
     ],
-    d.irg.rows.map((r) => [r.matricule, r.employee_name, r.irg_base, r.irg_amount]),
-    ["TOTAL", `${d.irg.totals.taxed_employees} imposé(s)`, d.irg.totals.irg_base, d.irg.totals.irg_amount],
+    d.irg.rows.map((r) => [r.matricule, r.employee_name, r.regime, r.irg_base, r.irg_amount]),
+    ["TOTAL", `${d.irg.totals.taxed_employees} imposé(s)`, "", d.irg.totals.irg_base, d.irg.totals.irg_amount],
   );
 
   const caco = wb.addWorksheet("CACOBATPH");

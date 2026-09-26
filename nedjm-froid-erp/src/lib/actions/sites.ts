@@ -28,6 +28,7 @@ export type SiteRow = {
   activity_code_id: string | null;
   wilaya: string | null;
   commune: string | null;
+  irg_zone_code: string | null;
   latitude: number | null;
   longitude: number | null;
   is_active: boolean;
@@ -35,6 +36,21 @@ export type SiteRow = {
   updated_at: string;
   activity: ActivityCodeOption | null;
 };
+
+export type IrgZoneOption = { code: string; label_fr: string };
+
+export async function listIrgZoneOptions(): Promise<ActionResult<IrgZoneOption[]>> {
+  const { supabase, error } = await requireSession();
+  if (error) return { ok: false, error };
+  const { data, error: qErr } = await supabase
+    .from("hr_catalogs")
+    .select("code, label_fr")
+    .eq("kind", "irg_zone")
+    .eq("is_active", true)
+    .order("sort_order");
+  if (qErr) return { ok: false, error: `Lecture zones IRG: ${qErr.message}` };
+  return { ok: true, data: (data ?? []) as IrgZoneOption[] };
+}
 
 async function requireSession() {
   const supabase = await createClient();
@@ -104,6 +120,7 @@ export async function listSites(): Promise<ActionResult<SiteRow[]>> {
       activity_code_id,
       wilaya,
       commune,
+      irg_zone_code,
       latitude,
       longitude,
       is_active,
@@ -135,6 +152,7 @@ export async function listSites(): Promise<ActionResult<SiteRow[]>> {
       activity_code_id: row.activity_code_id,
       wilaya: row.wilaya,
       commune: row.commune,
+      irg_zone_code: row.irg_zone_code ?? null,
       latitude: row.latitude == null ? null : Number(row.latitude),
       longitude: row.longitude == null ? null : Number(row.longitude),
       is_active: row.is_active,
@@ -167,6 +185,7 @@ export async function createSite(
       activity_code_id: payload.activity_code_id,
       wilaya: payload.wilaya,
       commune: payload.commune,
+      irg_zone_code: payload.irg_zone_code ?? null,
       latitude: payload.latitude,
       longitude: payload.longitude,
       is_active: payload.is_active,

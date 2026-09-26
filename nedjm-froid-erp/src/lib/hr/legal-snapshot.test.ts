@@ -54,6 +54,7 @@ describe("parseLegalSnapshot", () => {
       as_of: "2026-09-01",
       vars: { A: 1 },
       irg_category: "STANDARD",
+      compliance: null,
     });
   });
 });

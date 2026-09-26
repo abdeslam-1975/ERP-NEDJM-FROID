@@ -50,6 +50,8 @@ export type BulletinModel = {
   account_no: string;
   layout: HrBulletinSettings;
   rates: BulletinLegalRates;
+  /** Applied IRG / CNAS / CACOBATPH regime, printed under the contributions table. */
+  regime_note: string;
 };
 
 function escapeHtml(value: string) {
@@ -251,6 +253,7 @@ export type BulletinSlipInput = {
   net_payable: number;
   payment_mode_code?: string | null;
   account_no?: string | null;
+  compliance?: { labels: { irg: string; cnas: string; cacobatph: string } } | null;
   lines: SourceLine[];
 };
 
@@ -325,6 +328,9 @@ export function slipToBulletin(
     account_no: slip.account_no ?? "",
     layout: settings,
     rates,
+    regime_note: slip.compliance
+      ? `IRG : ${slip.compliance.labels.irg} · CNAS : ${slip.compliance.labels.cnas} · CACOBATPH : ${slip.compliance.labels.cacobatph}`
+      : "",
   };
 }
 
@@ -415,6 +421,7 @@ export function buildBulletinHtml(models: BulletinModel[], origin = "") {
     table.pay { width: 78%; }
     table.pay th { text-align: left; width: 28mm; font-weight: 700; }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .regime { margin: -1.5mm 0 3mm; font-size: 9px; }
   </style>
 </head>
 <body>${pages}</body>
@@ -521,6 +528,7 @@ function bulletinPage(m: BulletinModel, origin = "") {
         </tr>
       </tbody>
     </table>
+    ${m.regime_note ? `<div class="regime">${escapeHtml(m.regime_note)}</div>` : ""}
     <table class="pay">
       <tr>
         <th>${escapeHtml(s.payment_label)}</th><td>${escapeHtml(m.payment_mode)}</td>

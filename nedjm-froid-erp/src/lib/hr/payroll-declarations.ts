@@ -23,8 +23,16 @@ export type DeclarationSlip = {
   payment_mode_code: string | null;
   account_no: string | null;
   account_key?: string | null;
+  /** Frozen regime (slips generated since Module 05). */
+  compliance?: { irg: { fixed_rate: number | null }; labels: { irg: string } } | null;
   lines: { nature: string; amount: number }[];
 };
+
+/** G50 line of a slip: progressive barème, or one line per fixed rate. */
+export function irgG50Line(slip: Pick<DeclarationSlip, "compliance">) {
+  const rate = slip.compliance?.irg.fixed_rate;
+  return rate != null ? `IRG taux libératoire ${Math.round(rate * 10000) / 100} %` : "IRG salaires (barème)";
+}
 
 export type PaymentMode = "CCP" | "BANK" | "CASH" | "NONE";
 
@@ -85,8 +93,9 @@ export type MonthlyDeclarations = {
     totals: { assiette: number; part_salariale: number; part_patronale: number; total: number };
   };
   irg: {
-    rows: { matricule: string; employee_name: string; irg_base: number; irg_amount: number }[];
+    rows: { matricule: string; employee_name: string; regime: string; irg_base: number; irg_amount: number }[];
     totals: { taxed_employees: number; irg_base: number; irg_amount: number };
+    by_line: { line: string; employees: number; irg_base: number; irg_amount: number }[];
   };
   cacobatph: {
     rows: {
@@ -175,6 +184,8 @@ export function summarizeMonthlyDeclarations(slips: readonly DeclarationSlip[]):
   const employeeSs = sum(rows, (s) => s.employee_ss);
   const intempEmployee = sum(rows, (s) => s.intemperies_employee);
   const irgAmount = sum(rows, (s) => s.irg_amount);
+  const irgRows = rows.filter((s) => s.irg_base > 0 || s.irg_amount > 0);
+  const g50Lines = [...new Set(irgRows.map(irgG50Line))].sort();
 
   return {
     employees: rows.length,
@@ -202,19 +213,27 @@ export function summarizeMonthlyDeclarations(slips: readonly DeclarationSlip[]):
       },
     },
     irg: {
-      rows: rows
-        .filter((s) => s.irg_base > 0 || s.irg_amount > 0)
-        .map((s) => ({
-          matricule: s.matricule,
-          employee_name: s.employee_name,
-          irg_base: s.irg_base,
-          irg_amount: s.irg_amount,
-        })),
+      rows: irgRows.map((s) => ({
+        matricule: s.matricule,
+        employee_name: s.employee_name,
+        regime: s.compliance?.labels.irg ?? "",
+        irg_base: s.irg_base,
+        irg_amount: s.irg_amount,
+      })),
       totals: {
         taxed_employees: rows.filter((s) => s.irg_amount > 0).length,
         irg_base: sum(rows, (s) => s.irg_base),
         irg_amount: irgAmount,
       },
+      by_line: g50Lines.map((line) => {
+        const group = irgRows.filter((s) => irgG50Line(s) === line);
+        return {
+          line,
+          employees: group.length,
+          irg_base: sum(group, (s) => s.irg_base),
+          irg_amount: sum(group, (s) => s.irg_amount),
+        };
+      }),
     },
     cacobatph: {
       rows: cacoRows,

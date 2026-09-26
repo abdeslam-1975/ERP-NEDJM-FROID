@@ -204,6 +204,7 @@ export function LegalSettings({
   const [section, setSection] = useState(initialSection);
   const cnas = useMemo(() => vars.filter((v) => v.group === "cnas"), [vars]);
   const caco = useMemo(() => vars.filter((v) => v.group === "cacobatph"), [vars]);
+  const irgZones = useMemo(() => vars.filter((v) => v.group === "irg"), [vars]);
   const other = useMemo(() => vars.filter((v) => v.group === "other"), [vars]);
 
   return (
@@ -257,9 +258,26 @@ export function LegalSettings({
         />
       ) : null}
       {section === "irg" ? (
-        <RhPanel>
-          <IrgBaremeManager catalog={irgCatalog} isSuperAdmin={isSuperAdmin} />
-        </RhPanel>
+        <>
+          <VarEditor
+            rows={irgZones}
+            canEdit={isSuperAdmin}
+            titleFr="Abattement IRG par zone (Sud / Extrême Sud)"
+            titleAr="تخفيض IRG حسب المنطقة (الجنوب / أقصى الجنوب)"
+            asPercent
+          />
+          {irgZones.length ? (
+            <p className="text-xs text-foreground/55">
+              {bi(
+                "0 % tant que le taux n'est pas confirmé. La zone d'un chantier se règle sur sa fiche, ou via la liste « Wilaya → zone IRG » des paramètres RH.",
+                "0% إلى أن تُؤكَّد النسبة. منطقة الورشة تُضبط في بطاقتها أو عبر قائمة ربط الولاية بالمنطقة في إعدادات الموارد البشرية.",
+              )}
+            </p>
+          ) : null}
+          <RhPanel>
+            <IrgBaremeManager catalog={irgCatalog} isSuperAdmin={isSuperAdmin} />
+          </RhPanel>
+        </>
       ) : null}
 
       {section !== "irg" ? (

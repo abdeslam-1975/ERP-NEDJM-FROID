@@ -1,4 +1,5 @@
 import type { createClient } from "@/lib/supabase/server";
+import { parseSnapshotCompliance, type SnapshotCompliance } from "@/lib/hr/compliance";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -6,9 +7,11 @@ type Supabase = Awaited<ReturnType<typeof createClient>>;
 export type PayrollLegalSnapshot = {
   /** Date used to pick each variable version (YYYY-MM-DD). */
   as_of: string;
-  /** ref_global_vars.key → numeric value in force on as_of. */
+  /** ref_global_vars.key → numeric value applied to this slip (CNAS keys follow the slip regime). */
   vars: Record<string, number>;
   irg_category: string;
+  /** Absent on slips generated before the compliance engine. */
+  compliance?: SnapshotCompliance | null;
 };
 
 /** Numeric legal variables in force on a given date (latest version per key). */
@@ -42,5 +45,10 @@ export function parseLegalSnapshot(raw: unknown): PayrollLegalSnapshot | null {
     const n = Number(v);
     if (Number.isFinite(n)) vars[k] = n;
   }
-  return { as_of: r.as_of, vars, irg_category: String(r.irg_category ?? "STANDARD") };
+  return {
+    as_of: r.as_of,
+    vars,
+    irg_category: String(r.irg_category ?? "STANDARD"),
+    compliance: parseSnapshotCompliance(r.compliance),
+  };
 }

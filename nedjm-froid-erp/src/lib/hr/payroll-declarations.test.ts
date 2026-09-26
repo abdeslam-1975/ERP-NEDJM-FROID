@@ -84,6 +84,27 @@ describe("monthly declarations", () => {
 
   it("reports IRG withheld for the G50 and counts only taxed employees", () => {
     expect(d.irg.totals).toEqual({ taxed_employees: 1, irg_base: 72800, irg_amount: 4200 });
+    expect(d.irg.by_line).toEqual([
+      { line: "IRG salaires (barème)", employees: 2, irg_base: 72800, irg_amount: 4200 },
+    ]);
+  });
+
+  it("splits the G50 per fixed IRG rate", () => {
+    const fixed = summarizeMonthlyDeclarations([
+      ...slips,
+      slip({
+        employee_id: "e3",
+        matricule: "M003",
+        irg_base: 50000,
+        irg_amount: 5000,
+        compliance: { irg: { fixed_rate: 0.1 }, labels: { irg: "Taux libératoire 10 % · manuel" } },
+      }),
+    ]);
+    expect(fixed.irg.by_line.map((l) => [l.line, l.irg_amount])).toEqual([
+      ["IRG salaires (barème)", 4200],
+      ["IRG taux libératoire 10 %", 5000],
+    ]);
+    expect(fixed.irg.rows.find((r) => r.matricule === "M003")?.regime).toBe("Taux libératoire 10 % · manuel");
   });
 
   it("keeps only employees subject to CACOBATPH", () => {

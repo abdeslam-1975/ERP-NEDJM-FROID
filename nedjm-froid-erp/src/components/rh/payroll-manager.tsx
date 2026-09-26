@@ -30,6 +30,7 @@ import {
 } from "@/components/rh/bulletin-print";
 import { classTitle } from "@/components/rh/contract-salary-fields";
 import { sortBySalaryClass } from "@/lib/hr/payroll-calc";
+import { DEFAULT_CNAS_REGIME } from "@/lib/hr/compliance";
 import {
   bulletinRatesFromVars,
   DEFAULT_BULLETIN_SETTINGS,
@@ -212,7 +213,10 @@ export function PayrollManager({
   const currentRun = runs.find((r) => r.site_id === siteId) ?? null;
   const currentStatus = currentRun?.status_code ?? "DRAFT";
   const siteName = sites.find((s) => s.id === siteId)?.name_fr ?? "";
-  const periodRates = slips[0] ? bulletinRatesFromVars(slips[0].legal_vars, bulletin) : legalRates;
+  const rateSlip =
+    slips.find((s) => !s.compliance || s.compliance.cnas.regime_code === DEFAULT_CNAS_REGIME) ?? slips[0];
+  const periodRates = rateSlip ? bulletinRatesFromVars(rateSlip.legal_vars, bulletin) : legalRates;
+  const manualSlips = slips.filter((s) => (s.compliance?.override_ids.length ?? 0) > 0);
   const declarationsProvisional = !runs.length || runs.some((r) => r.status_code === "DRAFT");
   const [exporting, setExporting] = useState(false);
 
@@ -350,6 +354,23 @@ export function PayrollManager({
       {info && !error ? (
         <RhAlert tone="success">
           <span className="whitespace-pre-wrap">{info}</span>
+        </RhAlert>
+      ) : null}
+      {manualSlips.length ? (
+        <RhAlert tone="warning">
+          <details>
+            <summary className="cursor-pointer">
+              {manualSlips.length} {bi("salarié(s) en régime manuel (IRG / CNAS / CACOBATPH)", "عامل بوضع يدوي")}
+            </summary>
+            <ul className="mt-1 space-y-0.5 text-xs">
+              {manualSlips.map((s) => (
+                <li key={s.id}>
+                  {s.matricule} {s.employee_name} — IRG : {s.compliance?.labels.irg} · CNAS :{" "}
+                  {s.compliance?.labels.cnas} · CACOBATPH : {s.compliance?.labels.cacobatph}
+                </li>
+              ))}
+            </ul>
+          </details>
         </RhAlert>
       ) : null}
       <div className="flex flex-wrap gap-2 rounded-2xl border border-border/60 bg-surface/80 px-4 py-3 text-xs text-foreground/75 backdrop-blur-sm">

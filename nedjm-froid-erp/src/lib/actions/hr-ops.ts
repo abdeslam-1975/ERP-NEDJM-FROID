@@ -32,7 +32,15 @@ import {
   type PayrollException,
   type PayrollRubrique,
 } from "@/lib/hr/payroll-calc";
-import { computeMonthlyIrg, type IrgBracket, type IrgRule } from "@/lib/hr/irg-calc";
+import type { IrgBracket, IrgRule } from "@/lib/hr/irg-calc";
+import {
+  complianceLabels,
+  computeResolvedIrg,
+  DEFAULT_IRG_ZONE,
+  resolveCompliance,
+  type SnapshotCompliance,
+} from "@/lib/hr/compliance";
+import { loadComplianceContext } from "@/lib/hr/compliance-load";
 import {
   legalVarsAsOf,
   parseLegalSnapshot,
@@ -154,6 +162,8 @@ export type PayrollSlipRow = {
   account_key: string | null;
   /** Legal rates of the slip period (frozen snapshot, or versions in force on the 1st of the month). */
   legal_vars: Record<string, number>;
+  /** IRG / CNAS / CACOBATPH regime applied (null on slips generated before Module 05). */
+  compliance: SnapshotCompliance | null;
   lines: PayrollSlipLineRow[];
 };
 
@@ -450,9 +460,6 @@ export async function generatePayrollRun(
 
   const legalVars = await legalVarsAsOf(supabase, start);
   const legalVar = (key: string) => num(legalVars[key]);
-  const cnasEmp = legalVar("CNAS_EMPLOYEE");
-  const cnasPat = legalVar("CNAS_EMPLOYER_BASE");
-  const cnasFos = legalVar("CNAS_FOS");
   const caco = legalVar("CACOBATPH_CONGES");
   const intempSal = legalVar("CACOBATPH_INTEMPERIES_SAL");
   const intempPat = legalVar("CACOBATPH_INTEMPERIES_EMP");
@@ -521,6 +528,14 @@ export async function generatePayrollRun(
   );
   const empById = new Map((employees ?? []).map((e) => [e.id, e]));
 
+  const compliance = await loadComplianceContext(supabase, {
+    contractIds: contracts.map((c) => c.id),
+    siteIds: [...new Set(contracts.map((c) => c.site_id))],
+    employeeIds: empIds,
+  });
+  if (!compliance.ok) return compliance;
+  const cx = compliance.data;
+
   const { data: rubRows } = await supabase
     .from("hr_salary_rubriques")
     .select(
@@ -585,24 +600,41 @@ export async function generatePayrollRun(
       exceptions,
     });
     const taxpayer = irgCat.get(ctr.employee_id) ?? "STANDARD";
+    const resolved = resolveCompliance({
+      overrides: cx.overridesByContract.get(ctr.id) ?? [],
+      periodStart: start,
+      periodEnd: end,
+      employeeIrgCategory: taxpayer,
+      socialProfileCode: cx.socialProfile.get(ctr.employee_id) ?? null,
+      siteZoneCode: cx.siteZone.get(ctr.site_id)?.code ?? DEFAULT_IRG_ZONE,
+      activity: {
+        cacobatph: cacoSites.has(ctr.activity_code_id),
+        intemperies: intempSites.has(ctr.activity_code_id),
+      },
+      vars: legalVars,
+      zones: cx.zones,
+      regimes: cx.regimes,
+    });
     const legal: Omit<LegalPayrollRates, "irgAmount"> = {
-      cnasEmployee: cnasEmp,
-      cnasEmployer: cnasPat,
-      cnasFos,
+      cnasEmployee: resolved.cnas.employee,
+      cnasEmployer: resolved.cnas.employer,
+      cnasFos: resolved.cnas.fos,
       cacobatph: caco,
       intemperiesEmployee: intempSal,
       intemperiesEmployer: intempPat,
-      appliesCacobatph: cacoSites.has(ctr.activity_code_id),
-      appliesIntemperies: intempSites.has(ctr.activity_code_id),
+      appliesCacobatph: resolved.cacobatph.conges,
+      appliesIntemperies: resolved.cacobatph.intemperies,
     };
     const pre = summarizeLines(lines, { ...legal, irgAmount: 0 });
-    const irgAmount = computeMonthlyIrg({
-      irgBaseMonthly: pre.irg_base,
+    const irgAmount = computeResolvedIrg({
+      irgBase: pre.irg_base,
+      irg: resolved.irg,
       brackets: irgEngine.brackets,
-      rules: irgEngine.rulesByCategory[taxpayer] ?? irgEngine.rulesByCategory.STANDARD ?? [],
+      rulesByCategory: irgEngine.rulesByCategory,
     });
     const sum = summarizeLines(lines, { ...legal, irgAmount });
     const emp = empById.get(ctr.employee_id);
+    const labels = complianceLabels(resolved, cx.zones, cx.regimes);
     warnings.push(
       ...payrollLegalWarnings({
         matricule: emp?.matricule ?? "",
@@ -612,6 +644,16 @@ export async function generatePayrollRun(
         grossCotisable: sum.gross_cotisable,
       }),
     );
+    if (resolved.override_ids.length) {
+      const manual = [
+        resolved.irg.mode === "MANUAL" ? `IRG ${labels.irg}` : null,
+        resolved.cnas.mode === "MANUAL" ? `CNAS ${labels.cnas}` : null,
+        resolved.cacobatph.mode === "MANUAL" ? `CACOBATPH ${labels.cacobatph}` : null,
+      ].filter(Boolean);
+      warnings.push(
+        `${emp?.matricule ?? "—"} : régime manuel · وضع يدوي — ${manual.join(" ; ")}`,
+      );
+    }
     slipPayloads.push({
       employee_id: ctr.employee_id,
       lines,
@@ -639,8 +681,14 @@ export async function generatePayrollRun(
         status_code: "DRAFT",
         legal_snapshot: {
           as_of: start,
-          vars: legalVars,
-          irg_category: taxpayer,
+          vars: {
+            ...legalVars,
+            CNAS_EMPLOYEE: resolved.cnas.employee,
+            CNAS_EMPLOYER_BASE: resolved.cnas.employer,
+            CNAS_FOS: resolved.cnas.fos,
+          },
+          irg_category: resolved.irg.category,
+          compliance: { ...resolved, labels } satisfies SnapshotCompliance,
         } satisfies PayrollLegalSnapshot,
       },
     });
@@ -972,6 +1020,7 @@ export async function listPayrollSlips(input: {
         account_no: bk?.account_no ?? null,
         account_key: bk?.account_key ?? null,
         legal_vars: snapshots.get(row.id)?.vars ?? periodVars,
+        compliance: snapshots.get(row.id)?.compliance ?? null,
         lines: linesBySlip.get(row.id) ?? [],
       };
     }),

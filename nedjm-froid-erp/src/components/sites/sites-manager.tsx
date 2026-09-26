@@ -6,6 +6,7 @@ import {
   toggleSiteActive,
   updateSite,
   type ActivityCodeOption,
+  type IrgZoneOption,
   type SiteRow,
 } from "@/lib/actions/sites";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ type FormState = {
   activity_code_id: string;
   wilaya: string;
   commune: string;
+  irg_zone_code: string;
   latitude: string;
   longitude: string;
   is_active: boolean;
@@ -30,6 +32,7 @@ const emptyForm = (defaultActivityId = ""): FormState => ({
   activity_code_id: defaultActivityId,
   wilaya: "",
   commune: "",
+  irg_zone_code: "",
   latitude: "",
   longitude: "",
   is_active: true,
@@ -43,6 +46,7 @@ function toPayload(form: FormState) {
     activity_code_id: form.activity_code_id,
     wilaya: form.wilaya || null,
     commune: form.commune || null,
+    irg_zone_code: form.irg_zone_code || null,
     latitude: form.latitude === "" ? null : Number(form.latitude),
     longitude: form.longitude === "" ? null : Number(form.longitude),
     is_active: form.is_active,
@@ -62,10 +66,12 @@ function RegimeBadge({ regime }: { regime: string | undefined }) {
 export function SitesManager({
   initialSites,
   activityCodes,
+  irgZones = [],
   loadError,
 }: {
   initialSites: SiteRow[];
   activityCodes: ActivityCodeOption[];
+  irgZones?: IrgZoneOption[];
   loadError?: string;
 }) {
   const [sites, setSites] = useState(initialSites);
@@ -101,6 +107,7 @@ export function SitesManager({
       activity_code_id: site.activity_code_id ?? activityCodes[0]?.id ?? "",
       wilaya: site.wilaya ?? "",
       commune: site.commune ?? "",
+      irg_zone_code: site.irg_zone_code ?? "",
       latitude: site.latitude == null ? "" : String(site.latitude),
       longitude: site.longitude == null ? "" : String(site.longitude),
       is_active: site.is_active,
@@ -155,6 +162,7 @@ export function SitesManager({
               activity_code_id: payload.activity_code_id,
               wilaya: payload.wilaya,
               commune: payload.commune,
+              irg_zone_code: payload.irg_zone_code,
               latitude: payload.latitude,
               longitude: payload.longitude,
               is_active: payload.is_active,
@@ -419,6 +427,23 @@ export function SitesManager({
                   />
                 </Field>
               </div>
+
+              <Field label="Zone IRG" error={fieldErrors.irg_zone_code?.[0]}>
+                <select
+                  className={inputClass}
+                  value={form.irg_zone_code}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, irg_zone_code: e.target.value }))
+                  }
+                >
+                  <option value="">Automatique (selon la wilaya)</option>
+                  {irgZones.map((z) => (
+                    <option key={z.code} value={z.code}>
+                      {z.label_fr}
+                    </option>
+                  ))}
+                </select>
+              </Field>
 
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Latitude" error={fieldErrors.latitude?.[0]}>

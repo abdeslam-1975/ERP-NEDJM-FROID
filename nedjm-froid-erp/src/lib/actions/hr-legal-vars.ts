@@ -19,7 +19,7 @@ export type LegalVarRow = {
   current_numeric: number | null;
   current_text: string | null;
   effective_from: string | null;
-  group: "cnas" | "cacobatph" | "other";
+  group: "cnas" | "cacobatph" | "irg" | "other";
 };
 
 const LEGAL_KEYS = [
@@ -32,11 +32,14 @@ const LEGAL_KEYS = [
   "CACOBATPH_INTEMPERIES_SAL",
   "NJM_DIVISEUR_FIXED",
   "SNMG",
+  "IRG_ZONE_SUD",
+  "IRG_ZONE_GRAND_SUD",
 ] as const;
 
 function groupOf(key: string): LegalVarRow["group"] {
   if (key.startsWith("CNAS_")) return "cnas";
   if (key.startsWith("CACOBATPH_")) return "cacobatph";
+  if (key.startsWith("IRG_")) return "irg";
   return "other";
 }
 

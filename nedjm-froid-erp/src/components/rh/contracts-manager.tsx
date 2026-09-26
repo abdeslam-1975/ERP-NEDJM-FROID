@@ -28,6 +28,7 @@ import {
 } from "@/components/rh/rh-ui";
 import { ContractSalaryFields, type SelectedSalaryLine } from "@/components/rh/contract-salary-fields";
 import { LegalSettings } from "@/components/rh/legal-settings";
+import { ContractComplianceCards } from "@/components/rh/contract-compliance-cards";
 import {
   SalaryRubricsManager,
   type SalaryTarget,
@@ -624,12 +625,24 @@ export function ContractsManager({
           ) : null}
 
           {modalTab === "legal" ? (
-            <LegalSettings
-              vars={legalVars}
-              irgCatalog={irgCatalog}
-              isSuperAdmin={isSuperAdmin}
-              loadError={legalError}
-            />
+            <div className="space-y-6">
+              {form.id ? (
+                <ContractComplianceCards contractId={form.id} canEdit={canEditSalaryValues} />
+              ) : (
+                <RhAlert tone="info">
+                  {bi(
+                    "Enregistrez d'abord le contrat : le régime IRG / CNAS / CACOBATPH se règle ensuite ici.",
+                    "احفظ العقد أولاً، ثم اضبط نظام IRG / CNAS / CACOBATPH هنا.",
+                  )}
+                </RhAlert>
+              )}
+              <LegalSettings
+                vars={legalVars}
+                irgCatalog={irgCatalog}
+                isSuperAdmin={isSuperAdmin}
+                loadError={legalError}
+              />
+            </div>
           ) : null}
         </RhModal>
       ) : null}

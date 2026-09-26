@@ -47,6 +47,10 @@ export const siteCreateSchema = z.object({
     emptyToNull,
     z.string().trim().max(80).nullable(),
   ),
+  irg_zone_code: z.preprocess(
+    emptyToNull,
+    z.string().trim().max(40).nullable(),
+  ).optional(),
   latitude: optionalCoord(-90, 90, "Latitude invalide (−90 à 90)"),
   longitude: optionalCoord(-180, 180, "Longitude invalide (−180 à 180)"),
   is_active: z.boolean().default(true),
