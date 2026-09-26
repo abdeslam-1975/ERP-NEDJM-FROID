@@ -108,5 +108,6 @@ begin
   end;
   perform set_config('role', 'postgres', true);
 
-  raise exception 'RESULT: %', v_out;
+  if v_out like '%BAD%' or v_out not like '%stranger_insert=blocked%' then raise exception 'RESULT: FAIL %', v_out; end if;
+  raise exception 'RESULT: PASS interim statements (%)', v_out;
 end $$;
