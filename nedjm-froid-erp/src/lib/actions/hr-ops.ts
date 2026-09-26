@@ -166,6 +166,8 @@ export type PayrollSlipRow = {
   status_code: string;
   matricule: string;
   employee_name: string;
+  last_name: string;
+  first_name: string;
   nss: string | null;
   birth_date: string | null;
   hired_at: string | null;
@@ -1208,6 +1210,8 @@ export async function listPayrollSlips(input: {
         status_code: row.status_code,
         matricule: emp?.matricule ?? "",
         employee_name: `${emp?.last_name ?? ""} ${emp?.first_name ?? ""}`.trim(),
+        last_name: emp?.last_name ?? "",
+        first_name: emp?.first_name ?? "",
         nss: emp?.nss ?? null,
         birth_date: emp?.birth_date ?? null,
         hired_at: emp?.hired_at ?? null,

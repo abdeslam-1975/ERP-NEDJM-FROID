@@ -5,6 +5,8 @@ export type DeclarationSlip = {
   site_name: string | null;
   matricule: string;
   employee_name: string;
+  last_name?: string;
+  first_name?: string;
   nss: string | null;
   birth_date: string | null;
   hired_at: string | null;

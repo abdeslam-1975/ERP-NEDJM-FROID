@@ -12,6 +12,10 @@ import {
   monthlyDeclarationsFilename,
   type EmployerIdentity,
 } from "@/lib/hr/payroll-declarations-excel";
+import { buildCnasMonthlyFile, buildDasFile, buildG50Html } from "@/lib/hr/declaration-files";
+
+type Kind = "monthly" | "das" | "cnas_file" | "das_file" | "g50";
+const KINDS: readonly Kind[] = ["monthly", "das", "cnas_file", "das_file", "g50"];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -75,14 +79,15 @@ export async function GET(request: NextRequest) {
   }
 
   const params = request.nextUrl.searchParams;
-  const kind = params.get("kind") === "das" ? "das" : "monthly";
+  const kind: Kind = KINDS.find((k) => k === params.get("kind")) ?? "monthly";
+  const annual = kind === "das" || kind === "das_file";
   const { year, month } = resolvePayrollPeriod(params.get("year") ?? undefined, params.get("month") ?? undefined);
   const siteParam = params.get("site");
   const siteId = siteParam && UUID_RE.test(siteParam) ? siteParam : null;
 
   const supabase = await createClient();
   try {
-    const months = kind === "das" ? Array.from({ length: 12 }, (_, i) => i + 1) : [month];
+    const months = annual ? Array.from({ length: 12 }, (_, i) => i + 1) : [month];
     const results = await Promise.all(months.map((m) => listPayrollSlips({ year, month: m })));
     const failed = results.find((r) => !r.ok);
     if (failed && !failed.ok) return NextResponse.json({ error: failed.error }, { status: 500 });
@@ -98,10 +103,32 @@ export async function GET(request: NextRequest) {
 
     const [employer, statuses] = await Promise.all([
       loadEmployer(supabase),
-      runStatuses(supabase, year, kind === "das" ? null : month, siteId),
+      runStatuses(supabase, year, annual ? null : month, siteId),
     ]);
     const status = declarationStatus(statuses);
 
+    if (kind === "cnas_file" || kind === "das_file") {
+      const file =
+        kind === "cnas_file"
+          ? buildCnasMonthlyFile({ employer, year, month, slips })
+          : buildDasFile({ employer, year, slips });
+      return new NextResponse(file.content, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${status === "FINAL" ? "" : "PROVISOIRE_"}${file.fileName}"`,
+          "X-Missing-NSS": String(file.missing_nss.length),
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+    if (kind === "g50") {
+      const scopeLabel = siteId ? (slips[0]?.site_name ?? "Chantier") : "Tous les chantiers";
+      return new NextResponse(buildG50Html({ employer, year, month, status, scopeLabel, slips }), {
+        status: 200,
+        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+      });
+    }
     if (kind === "das") {
       const buffer = await buildAnnualDasWorkbook({ year, status, employer, slips });
       return fileResponse(buffer, annualDasFilename(year));

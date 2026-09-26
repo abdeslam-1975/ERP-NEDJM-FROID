@@ -245,6 +245,24 @@ export function PayrollManager({
     }
   }
 
+  async function printG50() {
+    setError(null);
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/rh/declarations?kind=g50&year=${year}&month=${month}`);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setError(body?.error ?? `État G50 impossible (${res.status}).`);
+        return;
+      }
+      printHtml(await res.text());
+    } catch {
+      setError("État G50 impossible : connexion interrompue.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function transitionRun(action: PayrollRunAction) {
     if (!currentRun) return;
     if (
@@ -333,6 +351,7 @@ export function PayrollManager({
                 ["/rh/paie/bulletins", "Bulletins"],
                 ["/rh/paie/exceptions", bi("Exceptions", "استثناءات")],
                 ["/rh/paie/avances", bi("Avances & prêts", "التسبيقات والقروض")],
+                ["/rh/paie/virements", "Virements"],
                 ["/rh/parametres", "Rubriques"],
               ] as const
             ).map(([href, label]) => (
@@ -469,6 +488,25 @@ export function PayrollManager({
             >
               {bi(`DAS annuelle ${year}`, `التصريح السنوي ${year}`)}
             </Button>
+            <Button
+              variant="secondary"
+              disabled={exporting}
+              onClick={() => downloadDeclarations(`kind=cnas_file&year=${year}&month=${month}`)}
+            >
+              Fichier CNAS (CSV)
+            </Button>
+            <Button variant="secondary" disabled={exporting} onClick={() => downloadDeclarations(`kind=das_file&year=${year}`)}>
+              Fichier DAS (CSV)
+            </Button>
+            <Button variant="secondary" disabled={exporting} onClick={printG50}>
+              État G50 (imprimer)
+            </Button>
+            <Link
+              href={`/rh/paie/virements?year=${year}&month=${month}`}
+              className="inline-flex items-center rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted"
+            >
+              Virements CCP / banque
+            </Link>
           </div>
         </div>
       ) : null}

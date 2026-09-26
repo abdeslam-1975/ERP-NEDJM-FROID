@@ -13,6 +13,7 @@ const items = [
   { href: "/rh/paie", label: "Paie" },
   { href: "/rh/paie/exceptions", label: "Exceptions" },
   { href: "/rh/paie/avances", label: "Avances" },
+  { href: "/rh/paie/virements", label: "Virements" },
   { href: "/rh/sorties", label: "Sorties" },
   { href: "/rh/documents", label: "Documents" },
   { href: "/rh/attestations", label: "Attestations" },
