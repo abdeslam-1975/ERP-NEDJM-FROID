@@ -340,6 +340,52 @@ export const attendanceSaveSchema = z.object({
   cells: z.array(attendanceCellSchema).max(4000),
 });
 
+export const attendanceSheetRowsSaveSchema = z.object({
+  site_id: z.string().uuid(),
+  year: z.coerce.number().int().min(2020).max(2100),
+  month: z.coerce.number().int().min(1).max(12),
+  rows: z
+    .array(
+      z.object({
+        employee_id: z.string().uuid(),
+        values: z.record(z.string().max(32), z.string().max(500)),
+      }),
+    )
+    .max(1000),
+});
+
+const attendanceColumnCode = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z][A-Z0-9_]{0,31}$/, "Code : lettres majuscules, chiffres ou _ (32 max).");
+
+export const attendanceColumnsConfigSchema = z.object({
+  columns: z
+    .array(
+      z.object({
+        id: z.string().uuid().optional(),
+        code: attendanceColumnCode,
+        label_fr: z.string().trim().min(1, "Libellé FR requis.").max(80),
+        label_ar: z.string().trim().max(80).optional().nullable(),
+        value_type: z.enum(["text", "number", "date", "catalog"]).default("text"),
+        sort_order: z.coerce.number().int().min(0).max(100000),
+        is_active: z.boolean(),
+      }),
+    )
+    .max(200),
+  grants: z
+    .array(
+      z.object({
+        column_code: attendanceColumnCode,
+        role_id: z.string().uuid(),
+        can_view: z.boolean(),
+        can_edit: z.boolean(),
+      }),
+    )
+    .max(5000),
+});
+
 export const payrollGenerateSchema = z.object({
   period_year: z.coerce.number().int().min(2020).max(2100),
   period_month: z.coerce.number().int().min(1).max(12),

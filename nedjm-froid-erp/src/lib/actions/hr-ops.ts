@@ -154,6 +154,18 @@ export async function saveAttendanceMonth(
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const { data: canEditDays, error: accessErr } = await supabase.rpc("hr_att_col_allowed", {
+    p_code: "DAYS",
+    p_edit: true,
+    p_site: p.site_id,
+  });
+  if (accessErr) return { ok: false, error: accessErr.message };
+  if (!canEditDays) {
+    return {
+      ok: false,
+      error: "Saisie des jours non autorisée pour votre rôle. · تعبئة الأيام غير مسموحة لدورك.",
+    };
+  }
   const start = `${p.year}-${String(p.month).padStart(2, "0")}-01`;
   const endDate = new Date(p.year, p.month, 0).getDate();
   const end = `${p.year}-${String(p.month).padStart(2, "0")}-${String(endDate).padStart(2, "0")}`;

@@ -1,14 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { Fragment, useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
+import { saveAttendanceMonth, type AttendanceCell } from "@/lib/actions/hr-ops";
 import {
-  listAttendanceMonth,
-  saveAttendanceMonth,
-  type AttendanceCell,
-} from "@/lib/actions/hr-ops";
+  loadAttendanceSheet,
+  saveAttendanceSheetRows,
+} from "@/lib/actions/hr-attendance-sheet";
 import type { LegendRow } from "@/lib/actions/hr-catalogs";
-import type { HrContractRow } from "@/lib/actions/hr-contracts";
+import {
+  editableRowValueCodes,
+  POSTE_EFFECTIF,
+  visibleColumns,
+  type AttendanceColumn,
+  type AttendanceColumnAccess,
+  type AttendanceContract,
+  type AttendanceSheetRow,
+} from "@/lib/hr/attendance-columns";
 import {
   cellOriginLabel,
   countPending,
@@ -52,11 +60,11 @@ type Person = {
   poste: string;
   affectation: string;
   start_date: string;
-  salaire_net: number;
-  salaire_base: number;
   site_id: string;
   site_name: string;
 };
+
+type RowValues = Record<string, Record<string, string>>;
 
 type MonthCard = {
   employeeId: string;
@@ -98,7 +106,7 @@ function ToolbarBtn({
   );
 }
 
-function personFromContract(c: HrContractRow): Person {
+function personFromContract(c: AttendanceContract): Person {
   return {
     id: c.employee_id,
     last_name: (c.last_name || c.employee_name.split(" ")[0] || "").toUpperCase(),
@@ -109,14 +117,12 @@ function personFromContract(c: HrContractRow): Person {
       .filter(Boolean)
       .join(" · "),
     start_date: c.start_date,
-    salaire_net: c.salaire_net_ref_monthly,
-    salaire_base: c.salaire_base_monthly,
     site_id: c.site_id,
     site_name: c.site_name,
   };
 }
 
-function buildPeople(contracts: HrContractRow[]) {
+function buildPeople(contracts: AttendanceContract[]) {
   const map = new Map<string, Person>();
   for (const c of contracts) {
     if (c.status === "ENDED") continue;
@@ -150,12 +156,16 @@ export function AttendanceManager({
   sites,
   contracts,
   legends,
+  columns,
+  jobTitles,
   focus,
   loadError,
 }: {
   sites: readonly SiteOpt[];
-  contracts: HrContractRow[];
+  contracts: AttendanceContract[];
   legends: LegendRow[];
+  columns: AttendanceColumn[];
+  jobTitles: string[];
   focus?: AttendanceFocus;
   loadError?: string;
 }) {
@@ -183,9 +193,24 @@ export function AttendanceManager({
   const [monthCard, setMonthCard] = useState<MonthCard | null>(null);
   const [cardDrag, setCardDrag] = useState<number | null>(null);
   const [showExtra, setShowExtra] = useState(true);
+  const [access, setAccess] = useState<AttendanceColumnAccess | null>(null);
+  const [rowValues, setRowValues] = useState<RowValues>({});
+  const [carriedPoste, setCarriedPoste] = useState<Record<string, string>>({});
+  const [rowDrafts, setRowDrafts] = useState<RowValues>({});
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [info, setInfo] = useState<string | null>(null);
   const [pending, start] = useTransition();
+
+  const shownColumns = useMemo(
+    () => (access ? visibleColumns(columns, access) : []),
+    [columns, access],
+  );
+  const canEditDays = Boolean(access?.DAYS?.edit);
+  const editableValues = useMemo(
+    () => (access ? editableRowValueCodes(columns, access) : new Set<string>()),
+    [columns, access],
+  );
+  const rowsDirty = Object.keys(rowDrafts).length > 0;
 
   const days = useMemo(() => new Date(year, month, 0).getDate(), [year, month]);
   const activeLegends = useMemo(
@@ -293,17 +318,55 @@ export function AttendanceManager({
     return true;
   }
 
+  function applySheetRows(rows: AttendanceSheetRow[]) {
+    const values: RowValues = {};
+    const carried: Record<string, string> = {};
+    for (const row of rows) {
+      values[row.employee_id] = row.values;
+      if (row.carried_poste) carried[row.employee_id] = row.carried_poste;
+    }
+    setRowValues(values);
+    setCarriedPoste(carried);
+    setRowDrafts({});
+  }
+
+  function storedRowValue(employeeId: string, code: string) {
+    return rowValues[employeeId]?.[code] ?? "";
+  }
+
+  function rowValue(employeeId: string, code: string) {
+    return rowDrafts[employeeId]?.[code] ?? storedRowValue(employeeId, code);
+  }
+
+  function editRowValue(employeeId: string, code: string, value: string) {
+    setRowDrafts((prev) => {
+      const mine = { ...(prev[employeeId] ?? {}) };
+      if (value === storedRowValue(employeeId, code)) delete mine[code];
+      else mine[code] = value;
+      const next = { ...prev };
+      if (Object.keys(mine).length) next[employeeId] = mine;
+      else delete next[employeeId];
+      return next;
+    });
+  }
+
+  function posteFor(p: Person) {
+    return rowValue(p.id, POSTE_EFFECTIF) || carriedPoste[p.id] || p.poste;
+  }
+
   function loadMonth(y = year, m = month, sid = siteId, message?: string) {
     if (!sid) return;
     start(async () => {
       setError(null);
-      const r = await listAttendanceMonth({ site_id: sid, year: y, month: m });
+      const r = await loadAttendanceSheet({ site_id: sid, year: y, month: m });
       if (!r.ok) {
         setError(r.error);
         return;
       }
       setCells(r.data.cells);
       setLoadedAt(r.data.loaded_at);
+      setAccess(r.data.access);
+      applySheetRows(r.data.rows);
       setDirty(false);
       const nextDrafts: Record<string, string> = {};
       for (const cell of r.data.cells) {
@@ -322,38 +385,49 @@ export function AttendanceManager({
   function save() {
     setError(null);
     start(async () => {
-      const scoped =
-        mode === "employee" && pickedEmployee
-          ? cells.filter((c) => c.employee_id === pickedEmployee.id)
-          : cells;
-      const r = await saveAttendanceMonth({
-        site_id: siteId,
-        year,
-        month,
-        employee_id: mode === "employee" ? pickedEmployee?.id : undefined,
-        loaded_at: loadedAt ?? undefined,
-        cells: scoped.map((c) => ({
-          employee_id: c.employee_id,
-          site_id: c.site_id,
-          work_date: c.work_date,
-          legend_code: c.legend_code,
-          source_code: c.source_code,
-          correspondence_id: c.correspondence_id,
-        })),
-      });
-      if (!r.ok) {
-        setError(r.error);
-        return;
+      const messages: string[] = [];
+      if (rowsDirty) {
+        const visible = new Set(people.map((p) => p.id));
+        const rows = Object.entries(rowDrafts)
+          .filter(([employeeId]) => visible.has(employeeId))
+          .map(([employeeId, values]) => ({ employee_id: employeeId, values }));
+        const saved = await saveAttendanceSheetRows({ site_id: siteId, year, month, rows });
+        if (!saved.ok) {
+          setError(saved.error);
+          return;
+        }
+        messages.push(`${saved.data.count} ligne(s) mise(s) à jour`);
       }
-      const slips = r.data.refreshed_slips;
-      loadMonth(
-        year,
-        month,
-        siteId,
-        slips > 0
-          ? `${r.data.count} valeurs validées · ${slips} bulletin(s) mis à jour. · تم اعتماد القيم.`
-          : `${r.data.count} valeurs validées. · تم اعتماد القيم.`,
-      );
+      if (canEditDays) {
+        const scoped =
+          mode === "employee" && pickedEmployee
+            ? cells.filter((c) => c.employee_id === pickedEmployee.id)
+            : cells;
+        const r = await saveAttendanceMonth({
+          site_id: siteId,
+          year,
+          month,
+          employee_id: mode === "employee" ? pickedEmployee?.id : undefined,
+          loaded_at: loadedAt ?? undefined,
+          cells: scoped.map((c) => ({
+            employee_id: c.employee_id,
+            site_id: c.site_id,
+            work_date: c.work_date,
+            legend_code: c.legend_code,
+            source_code: c.source_code,
+            correspondence_id: c.correspondence_id,
+          })),
+        });
+        if (!r.ok) {
+          setError(r.error);
+          return;
+        }
+        messages.push(`${r.data.count} valeurs validées`);
+        if (r.data.refreshed_slips > 0) {
+          messages.push(`${r.data.refreshed_slips} bulletin(s) mis à jour`);
+        }
+      }
+      loadMonth(year, month, siteId, `${messages.join(" · ")}. · تم اعتماد القيم.`);
     });
   }
 
@@ -407,6 +481,222 @@ export function AttendanceManager({
   const cardPerson = monthCard
     ? people.find((p) => p.id === monthCard.employeeId)
     : null;
+
+  const tableColumns = shownColumns.filter(
+    (c) => showExtra || (c.kind !== "CODE_COUNTS" && c.kind !== "TOTAL"),
+  );
+  const colCount = tableColumns.reduce(
+    (n, c) => n + (c.kind === "DAYS" ? days : c.kind === "CODE_COUNTS" ? extraCodes.length : 1),
+    0,
+  );
+  const STICKY = "sticky left-0 z-10";
+
+  function renderHeader(col: AttendanceColumn): ReactNode {
+    if (col.kind === "DAYS") {
+      return Array.from({ length: days }, (_, i) => (
+        <th
+          key={i}
+          className="min-w-[42px] border border-slate-300 px-0 py-1 text-center leading-tight"
+        >
+          <div>{i + 1}</div>
+          <div className="text-[9px] font-normal uppercase">{weekday(i + 1)}</div>
+        </th>
+      ));
+    }
+    if (col.kind === "CODE_COUNTS") {
+      return extraCodes.map((code) => (
+        <th key={code} className="min-w-[36px] border border-slate-300 bg-orange-50 px-1 py-1">
+          {code}
+        </th>
+      ));
+    }
+    const sticky = col.source === "LAST_NAME" ? `${STICKY} z-20 bg-slate-100` : "";
+    const tone = col.kind === "TOTAL" ? "min-w-[36px] bg-orange-100 px-1" : "px-2 text-left";
+    return (
+      <th
+        className={`whitespace-nowrap border border-slate-300 py-1 ${tone} ${sticky}`}
+        title={col.label_ar ?? undefined}
+      >
+        {col.label_fr}
+      </th>
+    );
+  }
+
+  function renderDayCells(p: Person): ReactNode {
+    return Array.from({ length: days }, (_, i) => {
+      const key = cellKey(p.id, i + 1);
+      const cell = grid.get(key);
+      const stored = cell?.legend_code ?? "";
+      const value = drafts[key] ?? stored;
+      const legend = value ? legendMap.get(value.toUpperCase()) : undefined;
+      const proposed = isAutoProposed(cell) && value === stored;
+      const origin = value === stored ? cellOriginLabel(cell) : "";
+      return (
+        <td key={i} className="border border-slate-200 p-0">
+          <input
+            readOnly={!canEditDays}
+            className={`h-7 w-full min-w-[42px] border-0 bg-transparent text-center text-[10px] font-bold uppercase outline-none ${
+              proposed ? "italic" : ""
+            } ${canEditDays ? "" : "cursor-default"}`}
+            style={
+              proposed
+                ? PROPOSED_STYLE
+                : {
+                    background: legend?.color_bg ?? "#ffffff",
+                    color: legend?.color_fg ?? "#111",
+                    boxShadow:
+                      value === stored && cell?.source_code === "OM"
+                        ? "inset 0 -2px 0 rgba(15, 23, 42, 0.45)"
+                        : undefined,
+                  }
+            }
+            value={value}
+            title={
+              legend
+                ? `${legend.code} · ${legend.label_fr}${origin ? `\n${origin}` : ""}`
+                : "رمز الحضور"
+            }
+            onClick={() => {
+              if (!canEditDays) return;
+              const snapshot = {
+                employeeId: p.id,
+                start: i + 1,
+                end: i + 1,
+                code: value || totauxCode || activeLegends[0]?.code || "",
+                pick: "start" as const,
+              };
+              if (cardTimer) window.clearTimeout(cardTimer);
+              cardTimer = window.setTimeout(() => setMonthCard(snapshot), 280);
+            }}
+            onChange={(e) => {
+              if (!canEditDays) return;
+              if (cardTimer) {
+                window.clearTimeout(cardTimer);
+                cardTimer = null;
+              }
+              setMonthCard(null);
+              setDrafts((prev) => ({
+                ...prev,
+                [key]: e.target.value.toUpperCase(),
+              }));
+            }}
+            onBlur={(e) => {
+              if (canEditDays) applyCellCode(p.id, i + 1, e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.currentTarget.blur();
+              }
+            }}
+          />
+        </td>
+      );
+    });
+  }
+
+  function renderValueInput(col: AttendanceColumn, p: Person, placeholder?: string) {
+    const edited = rowDrafts[p.id]?.[col.code] !== undefined;
+    return (
+      <td className="border border-slate-200 p-0">
+        <input
+          className={`h-7 w-full min-w-[120px] border-0 px-2 text-[11px] outline-none focus:bg-sky-50 ${
+            edited ? "bg-amber-50" : "bg-transparent"
+          }`}
+          type={col.value_type === "number" ? "number" : col.value_type === "date" ? "date" : "text"}
+          list={col.catalog_kind === "job_title" ? "attendance-job-titles" : undefined}
+          value={rowValue(p.id, col.code)}
+          placeholder={placeholder}
+          title={col.label_ar ?? col.label_fr}
+          onChange={(e) => editRowValue(p.id, col.code, e.target.value)}
+        />
+      </td>
+    );
+  }
+
+  function renderCell(col: AttendanceColumn, p: Person, index: number): ReactNode {
+    const td = "whitespace-nowrap border border-slate-200 px-2";
+    const editable = Boolean(access?.[col.code]?.edit);
+    switch (col.kind) {
+      case "DAYS":
+        return renderDayCells(p);
+      case "CODE_COUNTS":
+        return extraCodes.map((code) => (
+          <td key={code} className="border border-slate-200 bg-orange-50/60 px-1 text-center">
+            {countCode(p.id, code) || ""}
+          </td>
+        ));
+      case "TOTAL":
+        return (
+          <td className="border border-slate-200 bg-orange-50 px-1 text-center">
+            {col.source === "NJ" ? days : col.source === "COEF" ? coefSum(p.id) || "" : ""}
+          </td>
+        );
+      case "INPUT":
+        return editable ? (
+          renderValueInput(col, p)
+        ) : (
+          <td className={td}>{rowValue(p.id, col.code)}</td>
+        );
+      case "IDENTITY":
+        switch (col.source) {
+          case "ROW_NO":
+            return <td className="border border-slate-200 px-1 text-center">{index + 1}</td>;
+          case "MATRICULE":
+            return <td className={`${td} font-mono`}>{p.matricule}</td>;
+          case "LAST_NAME":
+            return <td className={`${td} ${STICKY} bg-white font-semibold`}>{p.last_name}</td>;
+          case "FIRST_NAME":
+            return <td className={td}>{p.first_name}</td>;
+          case POSTE_EFFECTIF:
+            return editable ? (
+              renderValueInput(col, p, carriedPoste[p.id] || p.poste)
+            ) : (
+              <td className={td}>{posteFor(p)}</td>
+            );
+          case "AFFECTATION":
+            return <td className={td}>{p.affectation}</td>;
+          case "CONTRACT_START":
+            return <td className={td}>{p.start_date}</td>;
+          default:
+            return <td className={td} />;
+        }
+    }
+    return null;
+  }
+
+  const totalsLabelCode =
+    tableColumns.find((c) => c.source === "LAST_NAME")?.code ?? tableColumns[0]?.code;
+
+  function renderFooter(col: AttendanceColumn, labelHere: boolean): ReactNode {
+    const td = "border border-slate-300";
+    if (col.kind === "DAYS") {
+      return Array.from({ length: days }, (_, i) => (
+        <td key={i} className={`${td} py-1 text-center`}>
+          {dayTotaux(i + 1) || ""}
+        </td>
+      ));
+    }
+    if (col.kind === "CODE_COUNTS") {
+      return extraCodes.map((code) => (
+        <td key={code} className={`${td} text-center`}>
+          {people.reduce((n, p) => n + countCode(p.id, code), 0) || ""}
+        </td>
+      ));
+    }
+    if (col.kind === "TOTAL") {
+      return (
+        <td className={`${td} text-center`}>
+          {col.source === "NJ"
+            ? days
+            : col.source === "COEF"
+              ? people.reduce((n, p) => n + coefSum(p.id), 0) || ""
+              : ""}
+        </td>
+      );
+    }
+    const sticky = col.source === "LAST_NAME" ? `${STICKY} bg-yellow-300` : "";
+    return <td className={`${td} px-2 ${sticky}`}>{labelHere ? "TOTAUX" : ""}</td>;
+  }
 
   return (
     <div className="-mx-2 space-y-3 sm:-mx-4 print:mx-0">
@@ -561,20 +851,27 @@ export function AttendanceManager({
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 print:hidden">
         <p className="text-[12px] text-amber-900">
-          {pendingCounts.proposed > 0 || pendingCounts.edited > 0 || dirty ? (
+          {pendingCounts.proposed > 0 || pendingCounts.edited > 0 || dirty || rowsDirty ? (
             <>
               <strong>Valeurs non validées — قيم غير معتمدة :</strong>{" "}
               {pendingCounts.proposed} proposée(s) par ordre de mission
               {pendingCounts.edited > 0 ? ` · ${pendingCounts.edited} saisie(s) manuelle(s)` : ""}
-              {dirty ? " · modifications en cours" : ""}
+              {dirty || rowsDirty ? " · modifications en cours" : ""}
             </>
+          ) : access && !canEditDays && editableValues.size === 0 ? (
+            "Consultation seule pour votre rôle. · اطلاع فقط حسب دورك."
           ) : (
             "Toutes les valeurs affichées sont validées. · جميع القيم المعروضة معتمدة."
           )}
         </p>
         <Button
           className="h-9 px-4 text-[12px] font-bold"
-          disabled={pending || !siteId || people.length === 0}
+          disabled={
+            pending ||
+            !siteId ||
+            people.length === 0 ||
+            (!canEditDays && !(editableValues.size > 0 && rowsDirty))
+          }
           onClick={save}
         >
           اعتماد القيم المعبأة — Valider les valeurs renseignées
@@ -585,49 +882,27 @@ export function AttendanceManager({
         <table className="min-w-max border-collapse text-[11px]">
           <thead>
             <tr className="bg-slate-100">
-              <th className="sticky left-0 z-20 border border-slate-300 bg-slate-100 px-1 py-1">N°</th>
-              <th className="sticky left-8 z-20 border border-slate-300 bg-slate-100 px-2 py-1 text-left">
-                NOM
-              </th>
-              <th className="border border-slate-300 px-2 py-1 text-left">PRENOM</th>
-              <th className="border border-slate-300 px-2 py-1 text-left">POSTE OCCUPE</th>
-              <th className="border border-slate-300 px-2 py-1 text-left">AFFECTATION</th>
-              {Array.from({ length: days }, (_, i) => (
-                <th
-                  key={i}
-                  className="min-w-[42px] border border-slate-300 px-0 py-1 text-center leading-tight"
-                >
-                  <div>{i + 1}</div>
-                  <div className="text-[9px] font-normal uppercase">{weekday(i + 1)}</div>
-                </th>
+              {tableColumns.map((col) => (
+                <Fragment key={col.code}>{renderHeader(col)}</Fragment>
               ))}
-              {showExtra
-                ? extraCodes.map((code) => (
-                    <th
-                      key={code}
-                      className="min-w-[36px] border border-slate-300 bg-orange-50 px-1 py-1"
-                    >
-                      {code}
-                    </th>
-                  ))
-                : null}
-              {showExtra ? (
-                <>
-                  <th className="min-w-[36px] border border-slate-300 bg-orange-100 px-1">NJ</th>
-                  <th className="min-w-[40px] border border-slate-300 bg-orange-100 px-1">
-                    Coef
-                  </th>
-                  <th className="border border-slate-300 px-2">Début contrat</th>
-                  <th className="border border-slate-300 px-2">Net réf.</th>
-                  <th className="border border-slate-300 px-2">Base</th>
-                </>
-              ) : null}
             </tr>
           </thead>
           <tbody>
-            {people.length === 0 ? (
+            {!access ? (
               <tr>
-                <td className="px-3 py-6 text-foreground/55" colSpan={6 + days}>
+                <td className="px-3 py-6 text-foreground/55" colSpan={Math.max(colCount, 1)}>
+                  Chargement… · جارٍ التحميل…
+                </td>
+              </tr>
+            ) : tableColumns.length === 0 ? (
+              <tr>
+                <td className="px-3 py-6 text-foreground/55">
+                  Aucune colonne autorisée pour votre rôle sur ce chantier. · لا توجد أعمدة مسموحة لدورك.
+                </td>
+              </tr>
+            ) : people.length === 0 ? (
+              <tr>
+                <td className="px-3 py-6 text-foreground/55" colSpan={colCount}>
                   {mode === "employee"
                     ? "Recherchez par matricule ou nom / prénom, puis sélectionnez l’employé."
                     : "Aucun contrat sur ce chantier."}
@@ -636,143 +911,30 @@ export function AttendanceManager({
             ) : (
               people.map((p, index) => (
                 <tr key={`${p.id}-${p.site_id}`} className="bg-white">
-                  <td className="sticky left-0 z-10 border border-slate-200 bg-white px-1 text-center">
-                    {index + 1}
-                  </td>
-                  <td className="sticky left-8 z-10 whitespace-nowrap border border-slate-200 bg-white px-2 font-semibold">
-                    {p.last_name}
-                  </td>
-                  <td className="whitespace-nowrap border border-slate-200 px-2">{p.first_name}</td>
-                  <td className="whitespace-nowrap border border-slate-200 px-2">{p.poste}</td>
-                  <td className="whitespace-nowrap border border-slate-200 px-2">{p.affectation}</td>
-                  {Array.from({ length: days }, (_, i) => {
-                    const key = cellKey(p.id, i + 1);
-                    const cell = grid.get(key);
-                    const stored = cell?.legend_code ?? "";
-                    const value = drafts[key] ?? stored;
-                    const legend = value ? legendMap.get(value.toUpperCase()) : undefined;
-                    const proposed = isAutoProposed(cell) && value === stored;
-                    const origin = value === stored ? cellOriginLabel(cell) : "";
-                    return (
-                      <td key={i} className="border border-slate-200 p-0">
-                        <input
-                          className={`h-7 w-full min-w-[42px] border-0 bg-transparent text-center text-[10px] font-bold uppercase outline-none ${
-                            proposed ? "italic" : ""
-                          }`}
-                          style={
-                            proposed
-                              ? PROPOSED_STYLE
-                              : {
-                                  background: legend?.color_bg ?? "#ffffff",
-                                  color: legend?.color_fg ?? "#111",
-                                  boxShadow:
-                                    value === stored && cell?.source_code === "OM"
-                                      ? "inset 0 -2px 0 rgba(15, 23, 42, 0.45)"
-                                      : undefined,
-                                }
-                          }
-                          value={value}
-                          title={
-                            legend
-                              ? `${legend.code} · ${legend.label_fr}${origin ? `\n${origin}` : ""}`
-                              : "رمز الحضور"
-                          }
-                          onClick={() => {
-                            const snapshot = {
-                              employeeId: p.id,
-                              start: i + 1,
-                              end: i + 1,
-                              code: value || totauxCode || activeLegends[0]?.code || "",
-                              pick: "start" as const,
-                            };
-                            if (cardTimer) window.clearTimeout(cardTimer);
-                            cardTimer = window.setTimeout(() => setMonthCard(snapshot), 280);
-                          }}
-                          onChange={(e) => {
-                            if (cardTimer) {
-                              window.clearTimeout(cardTimer);
-                              cardTimer = null;
-                            }
-                            setMonthCard(null);
-                            setDrafts((prev) => ({
-                              ...prev,
-                              [key]: e.target.value.toUpperCase(),
-                            }));
-                          }}
-                          onBlur={(e) => applyCellCode(p.id, i + 1, e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.currentTarget.blur();
-                            }
-                          }}
-                        />
-                      </td>
-                    );
-                  })}
-                  {showExtra
-                    ? extraCodes.map((code) => (
-                        <td
-                          key={code}
-                          className="border border-slate-200 bg-orange-50/60 px-1 text-center"
-                        >
-                          {countCode(p.id, code) || ""}
-                        </td>
-                      ))
-                    : null}
-                  {showExtra ? (
-                    <>
-                      <td className="border border-slate-200 bg-orange-50 px-1 text-center">
-                        {days}
-                      </td>
-                      <td className="border border-slate-200 bg-orange-50 px-1 text-center">
-                        {coefSum(p.id) || ""}
-                      </td>
-                      <td className="whitespace-nowrap border border-slate-200 px-2">
-                        {p.start_date}
-                      </td>
-                      <td className="border border-slate-200 px-2 text-right">
-                        {p.salaire_net || ""}
-                      </td>
-                      <td className="border border-slate-200 px-2 text-right">
-                        {p.salaire_base || ""}
-                      </td>
-                    </>
-                  ) : null}
+                  {tableColumns.map((col) => (
+                    <Fragment key={col.code}>{renderCell(col, p, index)}</Fragment>
+                  ))}
                 </tr>
               ))
             )}
-            {people.length > 0 ? (
+            {access && people.length > 0 && tableColumns.length > 0 ? (
               <tr className="bg-yellow-300 font-bold">
-                <td className="sticky left-0 z-10 border border-slate-300 bg-yellow-300" />
-                <td className="sticky left-8 z-10 border border-slate-300 bg-yellow-300" />
-                <td className="border border-slate-300" />
-                <td className="border border-slate-300" />
-                <td className="border border-slate-300 px-2">TOTAUX</td>
-                {Array.from({ length: days }, (_, i) => (
-                  <td key={i} className="border border-slate-300 py-1 text-center">
-                    {dayTotaux(i + 1) || ""}
-                  </td>
+                {tableColumns.map((col) => (
+                  <Fragment key={col.code}>
+                    {renderFooter(col, col.code === totalsLabelCode)}
+                  </Fragment>
                 ))}
-                {showExtra
-                  ? extraCodes.map((code) => (
-                      <td key={code} className="border border-slate-300 text-center">
-                        {people.reduce((n, p) => n + countCode(p.id, code), 0) || ""}
-                      </td>
-                    ))
-                  : null}
-                {showExtra ? (
-                  <>
-                    <td className="border border-slate-300 text-center">{days}</td>
-                    <td className="border border-slate-300 text-center">
-                      {people.reduce((n, p) => n + coefSum(p.id), 0) || ""}
-                    </td>
-                    <td className="border border-slate-300" colSpan={3} />
-                  </>
-                ) : null}
               </tr>
             ) : null}
           </tbody>
         </table>
+        {jobTitles.length ? (
+          <datalist id="attendance-job-titles">
+            {jobTitles.map((t) => (
+              <option key={t} value={t} />
+            ))}
+          </datalist>
+        ) : null}
       </RhTableWrap>
       <p className="text-[11px] text-foreground/55 print:hidden">
         Saisissez le code dans la cellule (codes du référentiel uniquement). Un clic ouvre la fiche du mois pour définir début, fin et code.
