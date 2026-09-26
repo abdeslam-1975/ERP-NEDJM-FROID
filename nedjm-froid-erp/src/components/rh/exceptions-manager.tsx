@@ -9,6 +9,7 @@ import {
   type SalaryExceptionRow,
 } from "@/lib/actions/hr-exceptions";
 import type { SalaryRubrique } from "@/lib/actions/hr-salary";
+import { RETENUE_CATEGORY, sortBySalaryClass, type SalaryCategory } from "@/lib/hr/payroll-calc";
 import { Button } from "@/components/ui/button";
 import {
   RhAlert,
@@ -37,7 +38,7 @@ type Emp = { id: string; label: string };
 type FormState = {
   id?: string;
   employee_id: string;
-  category: "1" | "2" | "3" | "4";
+  category: SalaryCategory;
   rubrique_id: string;
   amount: string;
   unit: SalaryUnit;
@@ -97,8 +98,8 @@ export function ExceptionsManager({
 
   const classRubriques = useMemo(
     () =>
-      rubriques.filter(
-        (r) => r.is_active && r.category === form.category,
+      sortBySalaryClass(
+        rubriques.filter((r) => r.is_active && r.category === form.category),
       ),
     [rubriques, form.category],
   );
@@ -470,9 +471,18 @@ export function ExceptionsManager({
                 ))}
               </select>
             </RhField>
-            <RhField label={`${bi("Valeur", "القيمة")} (${valueSuffix(form.unit)})`}>
+            <RhField
+              label={`${bi("Valeur", "القيمة")} (${valueSuffix(form.unit)})${
+                form.category === RETENUE_CATEGORY ? " · + / −" : ""
+              }`}
+            >
               <input
                 className={rhInput}
+                title={
+                  form.category === RETENUE_CATEGORY
+                    ? "Positif = retenu du net, négatif = rendu · موجب = يُقتطع، سالب = يُرجَع"
+                    : undefined
+                }
                 value={form.amount}
                 onChange={(e) => setForm({ ...form, amount: e.target.value })}
               />

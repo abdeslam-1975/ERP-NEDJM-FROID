@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  PAYSLIP_CNAS_SECTION,
+  PAYSLIP_IRG_SECTION,
+  amountAllowedForClass,
+  sortForPayslip,
+  suggestSalaryClass,
   advanceDeductionLines,
   contractPayableInPeriod,
   exitSettlementLines,
@@ -147,6 +152,89 @@ describe("payroll calc", () => {
     expect(codes.indexOf("111")).toBeLessThan(codes.indexOf("201"));
     expect(codes.indexOf("201")).toBeLessThan(codes.indexOf("302"));
     expect(codes.indexOf("302")).toBeLessThan(codes.indexOf("400"));
+  });
+
+  it("puts the payslip in class / CNAS / IRG order by class then code, whatever the input order", () => {
+    const rows = [
+      { code: "501", category: "5" },
+      { code: "IRG", category: PAYSLIP_IRG_SECTION },
+      { code: "410", category: "4" },
+      { code: "302", category: "3" },
+      { code: "990", category: PAYSLIP_CNAS_SECTION },
+      { code: "210", category: "2" },
+      { code: "201", category: "2" },
+      { code: "111", category: "1" },
+      { code: "100", category: "1", source_code: "base" },
+      { code: "105", category: "1" },
+    ];
+    expect(sortForPayslip(rows).map((r) => r.code)).toEqual([
+      "100",
+      "105",
+      "111",
+      "201",
+      "210",
+      "990",
+      "302",
+      "IRG",
+      "410",
+      "501",
+    ]);
+  });
+
+  it("class 5: positive amount is withheld, negative is given back, and neither touches CNAS / IRG", () => {
+    const retenue: PayrollRubrique = {
+      ...hygiene,
+      id: "r-501",
+      code: "501",
+      nature: "indemnite",
+      category: "5",
+      cotisable: true,
+      taxable: true,
+    };
+    const rendu: PayrollRubrique = { ...retenue, id: "r-502", code: "502" };
+    const lines = buildPayrollLines({
+      employeeId: "e1",
+      siteId: "s1",
+      contractId: "c1",
+      baseMonthly: 40000,
+      daysPaid: 30,
+      daysWorked: 26,
+      monthFraction: 1,
+      year: 2026,
+      month: 9,
+      rubriques: [retenue, rendu],
+      assignments: [
+        { rubrique_id: "r-501", employee_id: null, site_id: null, contract_id: "c1", amount: 2000, is_active: true },
+        { rubrique_id: "r-502", employee_id: null, site_id: null, contract_id: "c1", amount: -500, is_active: true },
+      ],
+      exceptions: [],
+    });
+    const r501 = lines.find((l) => l.code === "501");
+    const r502 = lines.find((l) => l.code === "502");
+    expect(r501).toMatchObject({ amount: -2000, nature: "retenue", cotisable: false, taxable: false });
+    expect(r502).toMatchObject({ amount: 500, nature: "retenue" });
+    const sum = summarizeLines(lines, {
+      cnasEmployee: 0.09,
+      cnasEmployer: 0.25,
+      cnasFos: 0.005,
+      cacobatph: 0,
+      intemperiesEmployee: 0,
+      intemperiesEmployer: 0,
+      appliesCacobatph: false,
+      appliesIntemperies: false,
+      irgAmount: 0,
+    });
+    expect(sum.gross_cotisable).toBe(40000);
+    expect(sum.net_payable).toBe(40000 - 3600 - 2000 + 500);
+  });
+
+  it("accepts negative amounts only in class 5 and suggests the class from the code series", () => {
+    expect(amountAllowedForClass("5", -100)).toBe(true);
+    expect(amountAllowedForClass("1", -100)).toBe(false);
+    expect(amountAllowedForClass("4", 0)).toBe(true);
+    expect(suggestSalaryClass("105")).toBe("1");
+    expect(suggestSalaryClass("512")).toBe("5");
+    expect(suggestSalaryClass("921")).toBeNull();
   });
 
   it("lets employee override contract override site", () => {
@@ -415,11 +503,11 @@ describe("advanceDeductionLines", () => {
   };
   const base = { employeeId: "e1", year: 2026, month: 4, availableNet: 50000 };
 
-  it("deducts the installment as a class 4 retenue", () => {
+  it("deducts the installment as a class 5 retenue", () => {
     const r = advanceDeductionLines({ ...base, advances: [adv], deductedElsewhere: new Map() });
     expect(r.capped).toBe(false);
     expect(r.lines).toHaveLength(1);
-    expect(r.lines[0]).toMatchObject({ advance_id: "a1", amount: -10000, category: "4", nature: "retenue", cotisable: false, taxable: false });
+    expect(r.lines[0]).toMatchObject({ advance_id: "a1", amount: -10000, category: "5", nature: "retenue", cotisable: false, taxable: false });
   });
 
   it("limits to the remaining balance and stops once repaid", () => {

@@ -10,6 +10,7 @@ import {
   valueSuffix,
   type SalaryUnit,
 } from "@/lib/hr/salary-value-mode";
+import { RETENUE_CATEGORY, sortBySalaryClass } from "@/lib/hr/payroll-calc";
 
 export type SelectedSalaryLine = { amount: string; unit: SalaryUnit };
 
@@ -18,6 +19,7 @@ export const SALARY_CLASSES = [
   { id: "2" as const, fr: "CNAS seulement", ar: "ضمان فقط" },
   { id: "3" as const, fr: "IRG seulement", ar: "ضريبة فقط" },
   { id: "4" as const, fr: "Ni CNAS ni IRG", ar: "لا ضمان ولا ضريبة" },
+  { id: "5" as const, fr: "Retenues (+ / −)", ar: "الاقتطاعات (+ / −)" },
 ];
 
 export function classTitle(id: SalaryRubrique["category"]) {
@@ -56,7 +58,9 @@ export function ContractSalaryFields({
         </p>
       </div>
       {SALARY_CLASSES.map((cls) => {
-        const ofClass = rubriques.filter((r) => r.is_active && r.category === cls.id);
+        const ofClass = sortBySalaryClass(
+          rubriques.filter((r) => r.is_active && r.category === cls.id),
+        );
         const pickable = ofClass.filter((r) => r.apply_scope !== "site");
         const inherited = siteId
           ? ofClass
@@ -157,10 +161,19 @@ export function ContractSalaryFields({
                           ))}
                         </select>
                       </RhField>
-                      <RhField label={`${bi("Valeur", "القيمة")} (${valueSuffix(unit)})`}>
+                      <RhField
+                        label={`${bi("Valeur", "القيمة")} (${valueSuffix(unit)})${
+                          r.category === RETENUE_CATEGORY ? " · + / −" : ""
+                        }`}
+                      >
                         <input
                           className={rhInput}
                           disabled={!checked}
+                          title={
+                            r.category === RETENUE_CATEGORY
+                              ? "Positif = retenu du net, négatif = rendu · موجب = يُقتطع، سالب = يُرجَع"
+                              : undefined
+                          }
                           value={current?.amount ?? ""}
                           onChange={(e) =>
                             onChange(r.id, { amount: e.target.value, unit })

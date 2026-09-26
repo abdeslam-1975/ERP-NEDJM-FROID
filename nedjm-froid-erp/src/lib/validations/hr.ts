@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SALARY_CATEGORIES } from "@/lib/hr/payroll-calc";
 import {
   digitsOnly,
   todayIsoDate,
@@ -275,7 +276,7 @@ export const hrFicheSettingsSchema = z.object({
 
 export const hrContractSalaryLineSchema = z.object({
   rubrique_id: z.string().uuid(),
-  amount: z.coerce.number().min(0).max(99_999_999),
+  amount: z.coerce.number().min(-99_999_999).max(99_999_999),
   unit: z.enum(["day", "month", "percent", "presence_day"]).optional(),
 });
 
@@ -419,11 +420,11 @@ export const salaryRubriqueSchema = z.object({
   label_fr: z.string().trim().min(1).max(160),
   nature: z.enum(["indemnite", "prime", "rappel", "remboursement", "retenue"]),
   unit: z.enum(["day", "month", "percent", "presence_day"]),
-  category: z.enum(["1", "2", "3", "4"]),
+  category: z.enum(SALARY_CATEGORIES),
   cotisable: z.boolean(),
   taxable: z.boolean(),
   apply_scope: z.enum(["employee", "site", "contract", "poste"]),
-  default_amount: z.coerce.number().min(0).max(99_999_999),
+  default_amount: z.coerce.number().min(-99_999_999).max(99_999_999),
   sort_order: z.coerce.number().int().min(0).max(9999).default(0),
   is_active: z.boolean().default(true),
 });
@@ -433,7 +434,7 @@ export const salaryAssignmentSchema = z.object({
   rubrique_id: z.string().uuid(),
   target_id: z.string().uuid(),
   target_kind: z.enum(["employee", "site", "contract", "poste"]).optional(),
-  amount: z.coerce.number().min(0).max(99_999_999),
+  amount: z.coerce.number().min(-99_999_999).max(99_999_999),
   unit: z.enum(["day", "month", "percent", "presence_day"]).optional().nullable(),
   is_active: z.boolean().default(true),
 });
@@ -448,7 +449,7 @@ export const salaryExceptionSchema = z
     id: z.string().uuid().optional(),
     employee_id: z.string().uuid(),
     rubrique_id: z.string().uuid(),
-    amount: z.coerce.number().min(0).max(99_999_999),
+    amount: z.coerce.number().min(-99_999_999).max(99_999_999),
     unit: z.enum(["day", "month", "percent", "presence_day"]).optional().nullable(),
     period_year: z.coerce.number().int().min(2020).max(2100),
     period_month: z.coerce.number().int().min(1).max(12),

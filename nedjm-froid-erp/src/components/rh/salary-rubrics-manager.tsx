@@ -21,6 +21,12 @@ import {
   type RubriqueDraft,
   type RubriqueImportPreview,
 } from "@/lib/hr/salary-rubrique-import";
+import {
+  RETENUE_CATEGORY,
+  salaryClassFlags,
+  sortBySalaryClass,
+  suggestSalaryClass,
+} from "@/lib/hr/payroll-calc";
 import { Button } from "@/components/ui/button";
 import {
   RhAlert,
@@ -56,11 +62,15 @@ const emptyRubrique = (): Omit<SalaryRubrique, "id"> & { id: string } => ({
   is_active: true,
 });
 
-function flagsForCategory(category: SalaryRubrique["category"]) {
-  if (category === "1") return { cotisable: true, taxable: true };
-  if (category === "2") return { cotisable: true, taxable: false };
-  if (category === "3") return { cotisable: false, taxable: true };
-  return { cotisable: false, taxable: false };
+function classPatch(
+  category: SalaryRubrique["category"],
+  nature: SalaryRubrique["nature"],
+): Pick<SalaryRubrique, "category" | "cotisable" | "taxable" | "nature"> {
+  return {
+    category,
+    ...salaryClassFlags(category),
+    nature: category === RETENUE_CATEGORY ? "retenue" : nature,
+  };
 }
 
 function scopeLabel(scope: Scope) {
@@ -184,7 +194,7 @@ export function SalaryRubricsManager({
   const canValues = isSuperAdmin || canEditValues;
 
   const sorted = useMemo(
-    () => rows.slice().sort((a, b) => a.sort_order - b.sort_order),
+    () => sortBySalaryClass(rows),
     [rows],
   );
   const currentRubrique = rows.find((r) => r.id === asg.rubrique_id) ?? null;
@@ -574,7 +584,15 @@ export function SalaryRubricsManager({
                   disabled={!canEdit}
                   value={form.code}
                   placeholder="302"
-                  onChange={(e) => setForm({ ...form, code: e.target.value })}
+                  onChange={(e) => {
+                    const code = e.target.value;
+                    const suggested = form.id ? null : suggestSalaryClass(code);
+                    setForm({
+                      ...form,
+                      code,
+                      ...(suggested ? classPatch(suggested, form.nature) : {}),
+                    });
+                  }}
                 />
               </RhField>
               <RhField label={bi("Libellé FR", "التسمية الفرنسية")}>
@@ -650,16 +668,23 @@ export function SalaryRubricsManager({
                   value={form.category}
                   onChange={(e) => {
                     const category = e.target.value as SalaryRubrique["category"];
-                    setForm({ ...form, category, ...flagsForCategory(category) });
+                    setForm({ ...form, ...classPatch(category, form.nature) });
                   }}
                 >
                   <option value="1">1 · CNAS + IRG</option>
                   <option value="2">2 · CNAS</option>
                   <option value="3">3 · IRG</option>
                   <option value="4">4 · {bi("Ni CNAS ni IRG", "لا ضمان ولا ضريبة")}</option>
+                  <option value="5">5 · {bi("Retenues (+ / −)", "الاقتطاعات (+ / −)")}</option>
                 </select>
               </RhField>
-              <RhField label={bi("Montant par défaut", "قيمة افتراضية")}>
+              <RhField
+                label={
+                  form.category === RETENUE_CATEGORY
+                    ? bi("Montant par défaut (+ retenu / − rendu)", "قيمة افتراضية (+ اقتطاع / − إرجاع)")
+                    : bi("Montant par défaut", "قيمة افتراضية")
+                }
+              >
                 <input
                   className={rhInput}
                   disabled={!canEdit}

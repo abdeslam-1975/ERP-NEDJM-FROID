@@ -5,6 +5,7 @@ import { requireHrSalaryValues } from "@/lib/auth/require-roles";
 import { createClient } from "@/lib/supabase/server";
 import { refreshDraftPayroll } from "@/lib/actions/hr-ops";
 import { salaryExceptionSchema } from "@/lib/validations/hr";
+import { amountAllowedForClass, NEGATIVE_AMOUNT_ERROR, type SalaryCategory } from "@/lib/hr/payroll-calc";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -36,7 +37,7 @@ export type SalaryExceptionRow = {
   rubrique_code: string;
   rubrique_label_ar: string;
   rubrique_label_fr: string;
-  category: "1" | "2" | "3" | "4";
+  category: SalaryCategory;
 };
 
 function revalidateExceptions() {
@@ -117,6 +118,14 @@ export async function upsertSalaryException(
   }
   const p = parsed.data;
   const supabase = await createClient();
+  if (p.amount < 0) {
+    const { data: rub } = await supabase
+      .from("hr_salary_rubriques")
+      .select("category")
+      .eq("id", p.rubrique_id)
+      .maybeSingle();
+    if (!amountAllowedForClass(rub?.category, p.amount)) return { ok: false, error: NEGATIVE_AMOUNT_ERROR };
+  }
   const payload = {
     employee_id: p.employee_id,
     rubrique_id: p.rubrique_id,

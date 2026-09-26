@@ -31,7 +31,7 @@ import {
   type BulletinModel,
 } from "@/components/rh/bulletin-print";
 import { classTitle } from "@/components/rh/contract-salary-fields";
-import { sortBySalaryClass } from "@/lib/hr/payroll-calc";
+import { isSalaryCategory, sortBySalaryClass, type SalaryCategory } from "@/lib/hr/payroll-calc";
 import { DEFAULT_CNAS_REGIME } from "@/lib/hr/compliance";
 import {
   bulletinRatesFromVars,
@@ -114,11 +114,9 @@ function rubricColumns(slips: PayrollSlipRow[], hideZero: boolean) {
 }
 
 function groupByClass(columns: PayrollSlipLineRow[]) {
-  const groups: { category: "1" | "2" | "3" | "4"; cols: PayrollSlipLineRow[] }[] = [];
+  const groups: { category: SalaryCategory; cols: PayrollSlipLineRow[] }[] = [];
   for (const col of columns) {
-    const category = (["1", "2", "3", "4"].includes(col.category)
-      ? col.category
-      : "1") as "1" | "2" | "3" | "4";
+    const category: SalaryCategory = isSalaryCategory(col.category) ? col.category : "1";
     const last = groups[groups.length - 1];
     if (last && last.category === category) last.cols.push(col);
     else groups.push({ category, cols: [col] });

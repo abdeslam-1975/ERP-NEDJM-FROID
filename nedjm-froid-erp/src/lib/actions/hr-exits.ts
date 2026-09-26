@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { refreshDraftPayroll } from "@/lib/actions/hr-ops";
 import { listLeaveBalances } from "@/lib/actions/hr-leave";
 import { normalizeSettlementLines, suggestSettlement, type SettlementLine } from "@/lib/hr/leave";
-import { salaryAsOf, type SalaryVersion } from "@/lib/hr/payroll-calc";
+import { SALARY_CATEGORIES, salaryAsOf, type SalaryVersion } from "@/lib/hr/payroll-calc";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -43,7 +43,7 @@ const lineSchema = z.object({
   code: z.string().trim().min(1).max(20),
   label_fr: z.string().trim().min(1, "Libellé requis · التسمية مطلوبة").max(200),
   label_ar: z.string().trim().max(200),
-  category: z.enum(["1", "2", "3", "4"]),
+  category: z.enum(SALARY_CATEGORIES),
   amount: z.coerce.number().refine((v) => v !== 0, "Montant non nul · المبلغ مطلوب"),
 });
 

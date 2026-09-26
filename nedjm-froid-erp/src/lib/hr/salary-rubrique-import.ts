@@ -1,4 +1,11 @@
-import { salaryClassFlags } from "@/lib/hr/payroll-calc";
+import {
+  amountAllowedForClass,
+  isSalaryCategory,
+  NEGATIVE_AMOUNT_ERROR,
+  RETENUE_CATEGORY,
+  salaryClassFlags,
+  type SalaryCategory,
+} from "@/lib/hr/payroll-calc";
 
 export const SALARY_IMPORT_HEADERS = [
   "code",
@@ -21,7 +28,7 @@ export type RubriqueDraft = {
   label_fr: string;
   nature: "indemnite" | "prime" | "rappel" | "remboursement" | "retenue";
   unit: "day" | "month" | "percent" | "presence_day";
-  category: "1" | "2" | "3" | "4";
+  category: SalaryCategory;
   cotisable: boolean;
   taxable: boolean;
   apply_scope: "employee" | "site" | "contract" | "poste";
@@ -132,7 +139,7 @@ function parseScope(raw: string): RubriqueDraft["apply_scope"] | null {
 function parseCategory(raw: string): RubriqueDraft["category"] | null {
   const v = raw.trim();
   if (!v) return "1";
-  if (["1", "2", "3", "4"].includes(v)) return v as RubriqueDraft["category"];
+  if (isSalaryCategory(v)) return v;
   const n = v.toLowerCase();
   if (n.includes("non cotisable") && n.includes("non imposable")) return "4";
   if (n.includes("imposable") && n.includes("non cotisable")) return "3";
@@ -182,7 +189,7 @@ export function mapObjectRow(
   }
   const category = parseCategory(pick(row, ["category", "classe", "categorie", "الصنف"]));
   if (!category) {
-    return { ok: false, fail: { code, error: "Classe invalide (1 à 4). · الصنف يجب أن يكون 1 أو 2 أو 3 أو 4." } };
+    return { ok: false, fail: { code, error: "Classe invalide (1 à 5). · الصنف يجب أن يكون من 1 إلى 5." } };
   }
   const apply_scope = parseScope(
     pick(row, ["apply_scope", "scope", "application", "يطبق_على", "يطب_ق_على"]),
@@ -194,8 +201,11 @@ export function mapObjectRow(
   const unit = parseUnit(pick(row, ["unit", "unite", "الوحدة"]), `${label_fr} ${label_ar}`);
   const amountRaw = pick(row, ["default_amount", "amount", "montant", "valeur", "المبلغ"]);
   const default_amount = amountRaw ? Number(amountRaw.replace(/\s/g, "").replace(",", ".")) : 0;
-  if (!Number.isFinite(default_amount) || default_amount < 0) {
+  if (!Number.isFinite(default_amount)) {
     return { ok: false, fail: { code, error: "Montant invalide. · المبلغ غير صالح." } };
+  }
+  if (!amountAllowedForClass(category, default_amount)) {
+    return { ok: false, fail: { code, error: NEGATIVE_AMOUNT_ERROR } };
   }
   const sortRaw = pick(row, ["sort_order", "ordre", "order"]);
   const sort_order = sortRaw
@@ -208,7 +218,7 @@ export function mapObjectRow(
       code,
       label_ar: label_ar.slice(0, 160),
       label_fr: label_fr.slice(0, 160),
-      nature,
+      nature: category === RETENUE_CATEGORY ? "retenue" : nature,
       unit,
       category,
       cotisable: derived.cotisable,

@@ -5,7 +5,21 @@ import {
   type ContributionRate,
 } from "@/lib/hr/contributions";
 
-export type SalaryCategory = "1" | "2" | "3" | "4";
+export const SALARY_CATEGORIES = ["1", "2", "3", "4", "5"] as const;
+export type SalaryCategory = (typeof SALARY_CATEGORIES)[number];
+/** Class 5 = retenues: signed amounts, positive is withheld from the net, negative is given back. */
+export const RETENUE_CATEGORY: SalaryCategory = "5";
+
+export function isSalaryCategory(value: unknown): value is SalaryCategory {
+  return SALARY_CATEGORIES.includes(String(value) as SalaryCategory);
+}
+
+export const NEGATIVE_AMOUNT_ERROR =
+  "Montant négatif accepté seulement en classe 5 (retenues). · المبلغ السالب مقبول فقط في الصنف 5 (الاقتطاعات).";
+
+export function amountAllowedForClass(category: string | null | undefined, amount: number) {
+  return amount >= 0 || category === RETENUE_CATEGORY;
+}
 export type SalaryUnit = "day" | "month" | "percent" | "presence_day";
 export type SalaryNature =
   | "indemnite"
@@ -141,6 +155,12 @@ export function salaryClassFlags(category: string): { cotisable: boolean; taxabl
   if (category === "2") return { cotisable: true, taxable: false };
   if (category === "3") return { cotisable: false, taxable: true };
   return { cotisable: false, taxable: false };
+}
+
+/** Suggested class from the code series (1xx → 1 … 5xx → 5); null when the code does not start with 1–5. */
+export function suggestSalaryClass(code: string): SalaryCategory | null {
+  const first = String(code ?? "").trim().charAt(0);
+  return isSalaryCategory(first) ? first : null;
 }
 
 export function roundMoney(n: number) {
@@ -397,7 +417,7 @@ export function advanceDeductionLines(input: {
       code: loan ? "PRET" : "AVANCE",
       label_ar: loan ? "اقتطاع قرض" : "اقتطاع تسبيق",
       label_fr: loan ? "Remboursement prêt" : "Retenue avance",
-      category: "4",
+      category: RETENUE_CATEGORY,
       nature: "retenue",
       unit: "month",
       cotisable: false,
@@ -426,7 +446,8 @@ export function exitSettlementLines(
       label_ar: l.label_ar,
       label_fr: l.label_fr,
       category: l.category,
-      nature: l.amount < 0 ? ("retenue" as const) : ("indemnite" as const),
+      nature:
+        l.amount < 0 || l.category === RETENUE_CATEGORY ? ("retenue" as const) : ("indemnite" as const),
       unit: "month" as const,
       ...salaryClassFlags(l.category),
       quantity: 1,
@@ -442,8 +463,14 @@ export function computeLineAmount(input: {
   quantity: number;
   baseMonthly: number;
   nature: SalaryNature;
+  category?: SalaryCategory;
 }) {
   const qty = input.quantity;
+  if (input.category === RETENUE_CATEGORY) {
+    const raw =
+      input.unit === "percent" ? input.baseMonthly * (input.unitAmount / 100) * qty : input.unitAmount * qty;
+    return roundMoney(-raw);
+  }
   if (input.unit === "percent") {
     const signed = input.nature === "retenue" ? -Math.abs(input.unitAmount) : input.unitAmount;
     return roundMoney(input.baseMonthly * (signed / 100) * qty);
@@ -489,7 +516,7 @@ function toLine(
     label_ar: rubrique.label_ar,
     label_fr: rubrique.label_fr,
     category: rubrique.category,
-    nature: rubrique.nature,
+    nature: rubrique.category === RETENUE_CATEGORY ? "retenue" : rubrique.nature,
     unit: rubrique.unit,
     ...salaryClassFlags(rubrique.category),
     quantity: roundMoney(quantity),
@@ -566,6 +593,7 @@ export function buildPayrollLines(input: {
       quantity: qty,
       baseMonthly: input.baseMonthly,
       nature: rub.nature,
+      category: rub.category,
     });
     lines.push(toLine({ ...rub, unit }, picked.source, picked.amount, qty, amount, sort, null));
     sort += 10;
@@ -584,6 +612,7 @@ export function buildPayrollLines(input: {
       quantity: qty,
       baseMonthly: input.baseMonthly,
       nature: rub.nature,
+      category: rub.category,
     });
     lines.push(toLine({ ...rub, unit }, "exception", ex.amount, qty, amount, sort, ex.id));
     sort += 10;
@@ -595,6 +624,11 @@ export function buildPayrollLines(input: {
   }));
 }
 
+function codeRank(code: string) {
+  const digits = Number.parseInt(String(code).replace(/\D/g, ""), 10);
+  return Number.isFinite(digits) ? Math.min(digits, 99_999) : 99_999;
+}
+
 export function salaryClassRank(row: {
   category: string;
   code: string;
@@ -602,10 +636,37 @@ export function salaryClassRank(row: {
 }) {
   if (row.source_code === "base" || row.code === "BASE") return 0;
   const cat = Number(row.category);
-  const classPart = cat >= 1 && cat <= 4 ? cat : 9;
-  const digits = Number.parseInt(String(row.code).replace(/\D/g, ""), 10);
-  const codePart = Number.isFinite(digits) ? digits : 9999;
-  return classPart * 10000 + codePart;
+  const classPart = isSalaryCategory(row.category) ? cat : 9;
+  return classPart * 100_000 + codeRank(row.code);
+}
+
+/** Payslip rows that are not salary rubriques: employee CNAS share and IRG. */
+export const PAYSLIP_CNAS_SECTION = "CNAS";
+export const PAYSLIP_IRG_SECTION = "IRG";
+
+const PAYSLIP_SLOTS: Record<string, number> = {
+  "1": 1,
+  "2": 2,
+  [PAYSLIP_CNAS_SECTION]: 3,
+  "3": 4,
+  [PAYSLIP_IRG_SECTION]: 5,
+  "4": 6,
+  "5": 7,
+};
+
+/**
+ * Payslip order: classe 1, classe 2, CNAS salarié, classe 3, IRG, classe 4, classe 5 (retenues).
+ * Rubriques sort by code inside their class; section rows keep their insertion order.
+ */
+export function payslipRank(row: { category: string; code: string; source_code?: string }) {
+  if (row.source_code === "base" || row.code === "BASE") return 0;
+  const slot = PAYSLIP_SLOTS[row.category] ?? 9;
+  const isSection = row.category === PAYSLIP_CNAS_SECTION || row.category === PAYSLIP_IRG_SECTION;
+  return slot * 1_000_000 + (isSection ? 0 : codeRank(row.code));
+}
+
+export function sortForPayslip<T extends { category: string; code: string; source_code?: string }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => payslipRank(a) - payslipRank(b));
 }
 
 export function sortBySalaryClass<T extends { category: string; code: string; source_code?: string }>(
@@ -614,7 +675,7 @@ export function sortBySalaryClass<T extends { category: string; code: string; so
   return [...rows].sort((a, b) => {
     const diff = salaryClassRank(a) - salaryClassRank(b);
     if (diff !== 0) return diff;
-    return a.code.localeCompare(b.code, "fr", { numeric: true });
+    return String(a.code).localeCompare(String(b.code), "fr", { numeric: true });
   });
 }
 

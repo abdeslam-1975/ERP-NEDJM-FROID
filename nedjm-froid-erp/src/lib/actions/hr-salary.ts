@@ -5,7 +5,12 @@ import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { requireHrSalaryValues } from "@/lib/auth/require-roles";
 import { createClient } from "@/lib/supabase/server";
 import { refreshDraftPayroll } from "@/lib/actions/hr-ops";
-import { salaryClassFlags } from "@/lib/hr/payroll-calc";
+import {
+  amountAllowedForClass,
+  NEGATIVE_AMOUNT_ERROR,
+  salaryClassFlags,
+  type SalaryCategory,
+} from "@/lib/hr/payroll-calc";
 import {
   salaryAssignmentSchema,
   salaryRubriqueSchema,
@@ -22,7 +27,7 @@ export type SalaryRubrique = {
   label_fr: string;
   nature: "indemnite" | "prime" | "rappel" | "remboursement" | "retenue";
   unit: "day" | "month" | "percent" | "presence_day";
-  category: "1" | "2" | "3" | "4";
+  category: SalaryCategory;
   cotisable: boolean;
   taxable: boolean;
   /** Default level offered for new values; values may be set at any level. */
@@ -107,6 +112,7 @@ export async function upsertSalaryRubrique(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
   }
   const p = parsed.data;
+  if (!amountAllowedForClass(p.category, p.default_amount)) return { ok: false, error: NEGATIVE_AMOUNT_ERROR };
   const supabase = await createClient();
   const cleared = false;
   const flags = salaryClassFlags(p.category);
@@ -183,11 +189,12 @@ export async function upsertSalaryAssignment(
   const supabase = await createClient();
   const { data: rub, error: rErr } = await supabase
     .from("hr_salary_rubriques")
-    .select("id, apply_scope")
+    .select("id, apply_scope, category")
     .eq("id", p.rubrique_id)
     .maybeSingle();
   if (rErr) return { ok: false, error: rErr.message };
   if (!rub) return { ok: false, error: "Rubrique introuvable. · البند غير موجود." };
+  if (!amountAllowedForClass(rub.category, p.amount)) return { ok: false, error: NEGATIVE_AMOUNT_ERROR };
 
   const level = p.target_kind ?? rub.apply_scope;
   const payload = {
@@ -259,7 +266,7 @@ export async function replaceContractSalaryLines(input: {
   const ids = [...new Set(input.lines.map((l) => l.rubrique_id))];
   const { data: rubs, error: rErr } = await supabase
     .from("hr_salary_rubriques")
-    .select("id, apply_scope, is_active, unit");
+    .select("id, apply_scope, is_active, unit, category");
   if (rErr) return { ok: false, error: rErr.message };
   const byId = new Map((rubs ?? []).map((r) => [r.id, r]));
   type Line = { rubrique_id: string; amount: number; unit?: SalaryRubrique["unit"] };
@@ -281,6 +288,7 @@ export async function replaceContractSalaryLines(input: {
   for (const line of input.lines) {
     const rub = byId.get(line.rubrique_id);
     if (!rub) continue;
+    if (!amountAllowedForClass(rub.category, line.amount)) return { ok: false, error: NEGATIVE_AMOUNT_ERROR };
     if (rub.apply_scope === "employee") employeeLines.push(line);
     else contractLines.push(line);
   }

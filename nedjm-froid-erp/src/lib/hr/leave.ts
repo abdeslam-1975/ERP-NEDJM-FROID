@@ -1,4 +1,5 @@
 /** Leave balances and end-of-employment settlement (pure helpers). */
+import { isSalaryCategory, type SalaryCategory } from "@/lib/hr/payroll-calc";
 
 export type LeaveKind = "ANNUAL" | "RECOVERY" | "SICK" | "UNPAID" | "EXCEPTIONAL";
 export type LeaveStatus = "SUBMITTED" | "APPROVED" | "REJECTED" | "CANCELLED";
@@ -135,7 +136,7 @@ export type SettlementLine = {
   label_fr: string;
   label_ar: string;
   /** 1 = cotisable + imposable, 2 = cotisable, 3 = imposable, 4 = ni l'un ni l'autre. */
-  category: "1" | "2" | "3" | "4";
+  category: SalaryCategory;
   amount: number;
 };
 
@@ -163,7 +164,7 @@ export function normalizeSettlementLines(raw: unknown): SettlementLine[] {
       code: String(l.code ?? "AUTRE").slice(0, 20),
       label_fr: String(l.label_fr ?? ""),
       label_ar: String(l.label_ar ?? ""),
-      category: (["1", "2", "3", "4"].includes(String(l.category)) ? String(l.category) : "4") as SettlementLine["category"],
+      category: isSalaryCategory(l.category) ? l.category : "4",
       amount: Number(l.amount) || 0,
     }))
     .filter((l) => l.amount !== 0);

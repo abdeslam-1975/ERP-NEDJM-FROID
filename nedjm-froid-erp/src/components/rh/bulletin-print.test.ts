@@ -183,6 +183,53 @@ describe("bulletin GAS layout helpers", () => {
     expect(html).toContain("@page { size: A4; margin: 0; }");
   });
 
+  it("orders class 1, 2, CNAS 9%, class 3, IRG, class 4, class 5 with signed retenues", () => {
+    const line = (code: string, category: string, amount: number) => ({
+      code,
+      label_fr: `R${code}`,
+      nature: "indemnite" as const,
+      unit: "month" as const,
+      category,
+      quantity: 1,
+      unit_amount: Math.abs(amount),
+      amount,
+    });
+    const rows = buildBulletinLines({
+      lines: [
+        line("502", "5", 300),
+        line("501", "5", -1500),
+        line("405", "4", 900),
+        line("302", "3", 8000),
+        line("201", "2", 2000),
+        line("111", "1", 4000),
+        line("BASE", "1", 40000),
+      ],
+      daysPaid: 30,
+      periodYear: 2026,
+      periodMonth: 1,
+      grossCotisable: 46000,
+      employeeSs: 4140,
+      irgBase: 49860,
+      irgAmount: 3000,
+      ssRatePct: 9,
+      settings: DEFAULT_BULLETIN_SETTINGS,
+    });
+    const { ss_code, irg_code } = DEFAULT_BULLETIN_SETTINGS;
+    expect(rows.map((r) => r.code)).toEqual([
+      "100",
+      "111",
+      "201",
+      ss_code,
+      "302",
+      irg_code,
+      "405",
+      "501",
+      "502",
+    ]);
+    expect(rows.find((r) => r.code === "501")).toMatchObject({ gain: null, retenue: 1500 });
+    expect(rows.find((r) => r.code === "502")).toMatchObject({ gain: null, retenue: -300 });
+  });
+
   it("sorts print lines by class and writes DA / % / DA/j", () => {
     const rows = buildBulletinLines({
       lines: [
@@ -227,7 +274,12 @@ describe("bulletin GAS layout helpers", () => {
       ssRatePct: 9,
       settings: DEFAULT_BULLETIN_SETTINGS,
     });
-    expect(rows.map((r) => r.code).slice(0, 3)).toEqual(["100", "111", "302"]);
+    expect(rows.map((r) => r.code).slice(0, 4)).toEqual([
+      "100",
+      "111",
+      DEFAULT_BULLETIN_SETTINGS.ss_code,
+      "302",
+    ]);
     const base = rows.find((r) => r.code === "100");
     expect(base?.nombre).toBe(20);
     expect(base?.taux).toBeCloseTo(40000 / 31, 2);

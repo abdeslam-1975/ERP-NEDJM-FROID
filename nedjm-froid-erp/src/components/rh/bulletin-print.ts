@@ -5,7 +5,12 @@ import {
   type BulletinLegalRates,
   type HrBulletinSettings,
 } from "@/lib/hr/bulletin-settings";
-import { sortBySalaryClass } from "@/lib/hr/payroll-calc";
+import {
+  PAYSLIP_CNAS_SECTION,
+  PAYSLIP_IRG_SECTION,
+  RETENUE_CATEGORY,
+  sortForPayslip,
+} from "@/lib/hr/payroll-calc";
 import { baseDailyTaux } from "@/lib/hr/attendance-movements";
 
 export type BulletinLine = {
@@ -120,7 +125,7 @@ export function buildBulletinLines(input: {
   intemperiesEmployee?: number;
   intemperiesRatePct?: number;
   /** Employee share of the user-defined contributions (unit 05). */
-  extraEmployee?: { code: string; label: string; base: number; ratePct: number; amount: number }[];
+  extraEmployee?: { code: string; label: string; base: number; ratePct: number; amount: number; group?: string }[];
   settings?: HrBulletinSettings;
 }): BulletinLine[] {
   const settings = input.settings ?? DEFAULT_BULLETIN_SETTINGS;
@@ -130,8 +135,7 @@ export function buildBulletinLines(input: {
     settings.irg_code,
     settings.intemp_code,
   ]);
-  const rows: BulletinLine[] = sortBySalaryClass(
-    input.lines
+  const rows: BulletinLine[] = input.lines
     .filter((line) => {
       if (!settings.hide_zero_lines) return true;
       if (keepCodes.has(mapBaseCode(line.code, settings))) return true;
@@ -139,7 +143,8 @@ export function buildBulletinLines(input: {
     })
     .map((line) => {
     const abs = Math.abs(line.amount);
-    const isRetenue = line.nature === "retenue" || line.amount < 0;
+    const classRetenue = line.category === RETENUE_CATEGORY;
+    const isRetenue = classRetenue || line.nature === "retenue" || line.amount < 0;
     const mapped = mapBaseCode(line.code, settings);
     const isBase = line.code === "BASE" || mapped === settings.base_code;
     let nombre = 0;
@@ -172,17 +177,23 @@ export function buildBulletinLines(input: {
       taux,
       tauxSuffix,
       gain: isRetenue ? null : abs,
-      retenue: isRetenue ? abs : null,
+      retenue: isRetenue ? (classRetenue ? -line.amount : abs) : null,
     };
-    }),
-  );
+    });
 
   const hideZero = settings.hide_zero_lines;
-  if (!rows.some((r) => r.code === settings.ss_code) && (!hideZero || input.employeeSs > 0)) {
+  const statutory = (code: string) => {
+    const at = rows.findIndex((r) => r.code === code);
+    return at >= 0 ? rows.splice(at, 1)[0] : null;
+  };
+  const ssRow = statutory(settings.ss_code);
+  if (ssRow) {
+    rows.push({ ...ssRow, category: PAYSLIP_CNAS_SECTION });
+  } else if (!hideZero || input.employeeSs > 0) {
     rows.push({
       code: settings.ss_code,
       label: settings.ss_label,
-      category: "4",
+      category: PAYSLIP_CNAS_SECTION,
       unit: "percent",
       nombre: input.grossCotisable,
       taux: input.ssRatePct,
@@ -192,11 +203,14 @@ export function buildBulletinLines(input: {
     });
   }
   const intempAmount = input.intemperiesEmployee ?? 0;
-  if (!rows.some((r) => r.code === settings.intemp_code) && intempAmount > 0) {
+  const intempRow = statutory(settings.intemp_code);
+  if (intempRow) {
+    rows.push({ ...intempRow, category: PAYSLIP_CNAS_SECTION });
+  } else if (intempAmount > 0) {
     rows.push({
       code: settings.intemp_code,
       label: settings.intemp_label,
-      category: "4",
+      category: PAYSLIP_CNAS_SECTION,
       unit: "percent",
       nombre: input.grossCotisable,
       taux: input.intemperiesRatePct ?? 0,
@@ -205,21 +219,23 @@ export function buildBulletinLines(input: {
       retenue: intempAmount,
     });
   }
-  for (const extra of input.extraEmployee ?? []) {
-    if (extra.amount <= 0) continue;
-    rows.push({
-      code: extra.code,
-      label: extra.label.toUpperCase(),
-      category: "4",
-      unit: "percent",
-      nombre: extra.base,
-      taux: extra.ratePct,
-      tauxSuffix: settings.unit_percent,
-      gain: null,
-      retenue: extra.amount,
-    });
-  }
-  if (!rows.some((r) => r.code === settings.irg_code) && (!hideZero || input.irgAmount > 0)) {
+  const extraRow = (extra: NonNullable<typeof input.extraEmployee>[number]): BulletinLine => ({
+    code: extra.code,
+    label: extra.label.toUpperCase(),
+    category: extra.group === "irg" ? PAYSLIP_IRG_SECTION : PAYSLIP_CNAS_SECTION,
+    unit: "percent",
+    nombre: extra.base,
+    taux: extra.ratePct,
+    tauxSuffix: settings.unit_percent,
+    gain: null,
+    retenue: extra.amount,
+  });
+  const extras = (input.extraEmployee ?? []).filter((e) => e.amount > 0);
+  for (const extra of extras.filter((e) => e.group !== "irg")) rows.push(extraRow(extra));
+  const irgRow = statutory(settings.irg_code);
+  if (irgRow) {
+    rows.push({ ...irgRow, category: PAYSLIP_IRG_SECTION });
+  } else if (!hideZero || input.irgAmount > 0) {
     const irgTaux =
       input.irgBase > 0 && input.irgAmount > 0
         ? Math.round((input.irgAmount / input.irgBase) * 10000) / 100
@@ -227,7 +243,7 @@ export function buildBulletinLines(input: {
     rows.push({
       code: settings.irg_code,
       label: settings.irg_label,
-      category: "4",
+      category: PAYSLIP_IRG_SECTION,
       unit: "percent",
       nombre: input.irgBase,
       taux: irgTaux,
@@ -236,7 +252,8 @@ export function buildBulletinLines(input: {
       retenue: input.irgAmount,
     });
   }
-  return rows;
+  for (const extra of extras.filter((e) => e.group === "irg")) rows.push(extraRow(extra));
+  return sortForPayslip(rows);
 }
 
 export type BulletinSlipInput = {
@@ -268,7 +285,15 @@ export type BulletinSlipInput = {
   intemperies_employer?: number;
   extra_employee?: number;
   extra_employer?: number;
-  extra_contributions?: { code: string; label_fr: string; part: string; rate: number; base_amount: number; amount: number }[];
+  extra_contributions?: {
+    code: string;
+    label_fr: string;
+    part: string;
+    rate: number;
+    base_amount: number;
+    amount: number;
+    group?: string;
+  }[];
   irg_base?: number;
   irg_amount: number;
   net_payable: number;
@@ -307,6 +332,7 @@ export function slipToBulletin(
         base: c.base_amount,
         ratePct: Math.round(c.rate * 1_000_000) / 10_000,
         amount: c.amount,
+        group: c.group,
       })),
     settings,
   });
