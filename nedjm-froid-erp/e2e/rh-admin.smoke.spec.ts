@@ -29,7 +29,7 @@ test.describe("@smoke rh & administration", () => {
     await loginAsE2eUser(page);
     for (const p of RH_PAGES) {
       await page.goto(p.path);
-      await expect(page.getByRole("heading", { name: p.heading })).toBeVisible();
+      await expect(page.getByRole("heading", { level: 2, name: p.heading })).toBeVisible();
     }
   });
 
@@ -65,10 +65,23 @@ test.describe("@smoke rh & administration", () => {
     await expect(page.getByText(/taux journalier facturé/i)).toBeVisible();
   });
 
-  test("READ_ONLY : intérim, coûts et rôles interdits", async ({ page }) => {
+  for (const persona of ["E2E_ADMIN_RH", "E2E_ADMIN_FINANCE"] as const) {
+    test(`${persona} : unité 05 (cotisations & impôts) modifiable`, async ({ page }) => {
+      test.skip(!requirePersona(persona), `Définir ${persona}_EMAIL / ${persona}_PASSWORD`);
+      await loginAsPersona(page, persona);
+      await page.goto("/rh/legal");
+      await expect(page.getByRole("heading", { level: 2, name: /cotisations & impôts/i })).toBeVisible();
+      await expect(page.getByRole("button", { name: /^enregistrer$/i }).first()).toBeVisible();
+      await expect(page.getByText(/lecture seule : modification réservée/i)).toHaveCount(0);
+      await page.getByRole("tab", { name: /^IRG$/ }).click();
+      await expect(page.getByText(/abattement IRG par zone/i)).toBeVisible();
+    });
+  }
+
+  test("READ_ONLY : intérim, coûts, rôles et unité 05 interdits", async ({ page }) => {
     test.skip(!requirePersona("E2E_READ_ONLY"), "Définir E2E_READ_ONLY_EMAIL / E2E_READ_ONLY_PASSWORD");
     await loginAsPersona(page, "E2E_READ_ONLY");
-    for (const p of ["/rh/interim", "/rh/couts", "/administration/roles"]) {
+    for (const p of ["/rh/interim", "/rh/couts", "/administration/roles", "/rh/legal"]) {
       await page.goto(p);
       await expect(page).toHaveURL(/error=forbidden/);
     }

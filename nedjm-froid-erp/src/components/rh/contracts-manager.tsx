@@ -106,6 +106,7 @@ export function ContractsManager({
   irgCatalog = { versions: [], brackets: [], ruleSets: [], rules: [] },
   isSuperAdmin = false,
   canEditSalaryValues = false,
+  canEditCompliance = false,
   postes = [],
   agencies = [],
   legalError,
@@ -127,6 +128,7 @@ export function ContractsManager({
   irgCatalog?: IrgCatalog;
   isSuperAdmin?: boolean;
   canEditSalaryValues?: boolean;
+  canEditCompliance?: boolean;
   legalError?: string;
   loadError?: string;
 }) {
@@ -790,7 +792,7 @@ export function ContractsManager({
           {modalTab === "legal" ? (
             <div className="space-y-6">
               {form.id ? (
-                <ContractComplianceCards contractId={form.id} canEdit={canEditSalaryValues} />
+                <ContractComplianceCards contractId={form.id} canEdit={canEditCompliance} />
               ) : (
                 <RhAlert tone="info">
                   {bi(
@@ -802,7 +804,7 @@ export function ContractsManager({
               <LegalSettings
                 vars={legalVars}
                 irgCatalog={irgCatalog}
-                isSuperAdmin={isSuperAdmin}
+                canEdit={canEditCompliance}
                 loadError={legalError}
               />
             </div>

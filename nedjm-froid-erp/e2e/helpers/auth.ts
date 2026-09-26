@@ -78,7 +78,7 @@ export async function logout(page: Page) {
 export async function gotoContracts(page: Page) {
   await page.goto("/referentiels/contrats");
   await expect(
-    page.getByRole("heading", { name: /contrats clients/i }),
+    page.getByRole("heading", { level: 2, name: /contrats clients/i }),
   ).toBeVisible();
 }
 

@@ -38,6 +38,7 @@ export function ContractsWorkspace({
   irgCatalog,
   isSuperAdmin,
   canEditSalaryValues,
+  canEditCompliance = false,
   postes,
   agencies = [],
   loadError,
@@ -59,6 +60,7 @@ export function ContractsWorkspace({
   irgCatalog: IrgCatalog;
   isSuperAdmin: boolean;
   canEditSalaryValues: boolean;
+  canEditCompliance?: boolean;
   loadError?: string;
   legalError?: string;
 }) {
@@ -94,6 +96,7 @@ export function ContractsWorkspace({
           canEditSalaryValues={canEditSalaryValues}
           postes={postes}
           agencies={agencies}
+          canEditCompliance={canEditCompliance}
           legalError={legalError}
           loadError={loadError}
         />
@@ -116,7 +119,7 @@ export function ContractsWorkspace({
         <LegalSettings
           vars={legalVars}
           irgCatalog={irgCatalog}
-          isSuperAdmin={isSuperAdmin}
+          canEdit={canEditCompliance}
           loadError={legalError}
         />
       ) : null}

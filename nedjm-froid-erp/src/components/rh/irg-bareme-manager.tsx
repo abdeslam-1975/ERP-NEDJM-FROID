@@ -114,11 +114,11 @@ function ruleForm(rule: IrgRuleRow | null, ruleSetId: string) {
 
 export function IrgBaremeManager({
   catalog,
-  isSuperAdmin,
+  canEdit,
   loadError,
 }: {
   catalog: IrgCatalog;
-  isSuperAdmin: boolean;
+  canEdit: boolean;
   loadError?: string;
 }) {
   const [versions, setVersions] = useState(catalog.versions);
@@ -245,7 +245,7 @@ export function IrgBaremeManager({
   }, [draft, previewBase, activeRules]);
 
   function saveVersion() {
-    if (!isSuperAdmin) return;
+    if (!canEdit) return;
     start(async () => {
       setError(null);
       const result = await upsertIrgVersion({
@@ -267,7 +267,7 @@ export function IrgBaremeManager({
   }
 
   function saveBrackets() {
-    if (!isSuperAdmin || !versionId) return;
+    if (!canEdit || !versionId) return;
     start(async () => {
       setError(null);
       const payload = draft.map((b) => ({
@@ -288,7 +288,7 @@ export function IrgBaremeManager({
   }
 
   function saveSet() {
-    if (!isSuperAdmin) return;
+    if (!canEdit) return;
     start(async () => {
       setError(null);
       const result = await upsertIrgRuleSet({
@@ -309,7 +309,7 @@ export function IrgBaremeManager({
   }
 
   function saveRule() {
-    if (!isSuperAdmin || !setId) return;
+    if (!canEdit || !setId) return;
     start(async () => {
       setError(null);
       const result = await upsertIrgRule({
@@ -366,7 +366,7 @@ export function IrgBaremeManager({
   }
 
   function removeRule(id: string) {
-    if (!isSuperAdmin) return;
+    if (!canEdit) return;
     start(async () => {
       const result = await deleteIrgRule(id);
       if (!result.ok) {
@@ -433,7 +433,7 @@ export function IrgBaremeManager({
 
       <RhPanel className="space-y-3">
         <RhSectionTitle>{bi("Tranches annuelles", "الشرائح السنوية")}</RhSectionTitle>
-        {isSuperAdmin ? (
+        {canEdit ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <RhField label={bi("Code", "الرمز")}>
               <input className={rhInput} value={vf.code} onChange={(e) => setVf({ ...vf, code: e.target.value })} />
@@ -510,14 +510,14 @@ export function IrgBaremeManager({
                 <th className={rhTh()}>{bi("Min annuel", "الحد الأدنى السنوي")}</th>
                 <th className={rhTh()}>{bi("Max annuel", "الحد الأعلى السنوي")}</th>
                 <th className={rhTh()}>{bi("Taux %", "النسبة %")}</th>
-                {isSuperAdmin ? <th className={rhTh()} /> : null}
+                {canEdit ? <th className={rhTh()} /> : null}
               </tr>
             </thead>
             <tbody>
               {draft.map((row, i) => (
                 <tr key={row.id ?? `n-${i}`} className="border-t border-border/60">
                   <td className={rhTd()}>
-                    {isSuperAdmin ? (
+                    {canEdit ? (
                       <input
                         className={rhInput}
                         value={row.min_annual}
@@ -532,7 +532,7 @@ export function IrgBaremeManager({
                     )}
                   </td>
                   <td className={rhTd()}>
-                    {isSuperAdmin ? (
+                    {canEdit ? (
                       <input
                         className={rhInput}
                         value={row.max_annual}
@@ -550,7 +550,7 @@ export function IrgBaremeManager({
                     )}
                   </td>
                   <td className={rhTd()}>
-                    {isSuperAdmin ? (
+                    {canEdit ? (
                       <input
                         className={rhInput}
                         value={row.rate_pct}
@@ -564,7 +564,7 @@ export function IrgBaremeManager({
                       `${row.rate_pct} %`
                     )}
                   </td>
-                  {isSuperAdmin ? (
+                  {canEdit ? (
                     <td className={rhTd()}>
                       <Button
                         variant="ghost"
@@ -579,7 +579,7 @@ export function IrgBaremeManager({
             </tbody>
           </table>
         </RhTableWrap>
-        {isSuperAdmin ? (
+        {canEdit ? (
           <RhToolbar>
             <Button
               variant="secondary"
@@ -598,7 +598,7 @@ export function IrgBaremeManager({
 
       <RhPanel className="space-y-3">
         <RhSectionTitle>{bi("Règles Art. 104", "قواعد المادة 104")}</RhSectionTitle>
-        {isSuperAdmin ? (
+        {canEdit ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <RhField label={bi("Code", "الرمز")}>
               <input className={rhInput} value={sf.code} onChange={(e) => setSf({ ...sf, code: e.target.value })} />
@@ -659,7 +659,7 @@ export function IrgBaremeManager({
                 <th className={rhTh()}>#</th>
                 <th className={rhTh()}>{bi("Règle", "القاعدة")}</th>
                 <th className={rhTh()}>{bi("Paramètres", "المعاملات")}</th>
-                {isSuperAdmin ? <th className={rhTh()} /> : null}
+                {canEdit ? <th className={rhTh()} /> : null}
               </tr>
             </thead>
             <tbody>
@@ -676,7 +676,7 @@ export function IrgBaremeManager({
                     {JSON.stringify(rule.params)}
                     {rule.formula ? ` · ${rule.formula}` : ""}
                   </td>
-                  {isSuperAdmin ? (
+                  {canEdit ? (
                     <td className={rhTd()}>
                       <Button variant="ghost" onClick={() => setRf(ruleForm(rule, setId))}>
                         {bi("Modifier", "تعديل")}
@@ -692,7 +692,7 @@ export function IrgBaremeManager({
           </table>
         </RhTableWrap>
 
-        {isSuperAdmin ? (
+        {canEdit ? (
           <div className="grid gap-3 rounded-xl border border-dashed border-border/70 p-3 sm:grid-cols-2 lg:grid-cols-3">
             <RhField label={bi("Type", "النوع")}>
               <select className={rhInput} value={rf.kind} onChange={(e) => setRf({ ...rf, kind: e.target.value })}>

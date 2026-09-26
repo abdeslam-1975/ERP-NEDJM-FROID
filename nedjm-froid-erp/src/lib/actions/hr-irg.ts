@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { requireComplianceWrite } from "@/lib/auth/compliance-access";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -66,19 +67,6 @@ function revalidateIrg() {
   revalidatePath("/rh/paie/irg");
   revalidatePath("/rh/paie/fiscal");
   revalidatePath("/referentiels/irg");
-}
-
-async function requireSuperAdmin(): Promise<ActionResult<true>> {
-  const workspace = await getWorkspaceProfile();
-  if (!workspace) return { ok: false, error: "Session requise. · يلزم تسجيل الدخول." };
-  if (!workspace.isSuperAdmin) {
-    return {
-      ok: false,
-      error:
-        "Barème IRG réservé à SUPER_ADMIN. · سلم الضريبة محصور في SUPER_ADMIN.",
-    };
-  }
-  return { ok: true, data: true };
 }
 
 function num(v: unknown) {
@@ -196,7 +184,7 @@ export async function listIrgCatalog(): Promise<ActionResult<IrgCatalog>> {
 export async function upsertIrgVersion(
   input: unknown,
 ): Promise<ActionResult<{ id: string }>> {
-  const gate = await requireSuperAdmin();
+  const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const parsed = irgVersionSchema.safeParse(input);
   if (!parsed.success) {
@@ -250,7 +238,7 @@ export async function upsertIrgVersion(
 export async function replaceIrgBrackets(
   input: unknown,
 ): Promise<ActionResult<IrgBracketRow[]>> {
-  const gate = await requireSuperAdmin();
+  const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const parsed = irgBracketsReplaceSchema.safeParse(input);
   if (!parsed.success) {
@@ -322,7 +310,7 @@ export async function replaceIrgBrackets(
 export async function upsertIrgRuleSet(
   input: unknown,
 ): Promise<ActionResult<{ id: string }>> {
-  const gate = await requireSuperAdmin();
+  const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const parsed = irgRuleSetSchema.safeParse(input);
   if (!parsed.success) {
@@ -356,7 +344,7 @@ export async function upsertIrgRuleSet(
 export async function upsertIrgRule(
   input: unknown,
 ): Promise<ActionResult<{ id: string }>> {
-  const gate = await requireSuperAdmin();
+  const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const parsed = irgRuleSchema.safeParse(input);
   if (!parsed.success) {
@@ -386,7 +374,7 @@ export async function upsertIrgRule(
 }
 
 export async function deleteIrgRule(id: string): Promise<ActionResult<true>> {
-  const gate = await requireSuperAdmin();
+  const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const supabase = await createClient();
   const { error } = await supabase.from("ref_irg_rules").delete().eq("id", id);

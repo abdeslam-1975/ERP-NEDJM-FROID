@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
+import { requireComplianceWrite } from "@/lib/auth/compliance-access";
 import { createClient } from "@/lib/supabase/server";
+import { LEGAL_KEYS } from "@/lib/hr/compliance-keys";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -22,25 +23,6 @@ export type LegalVarRow = {
   group: "cnas" | "cacobatph" | "irg" | "other";
 };
 
-const LEGAL_KEYS = [
-  "CNAS_EMPLOYEE",
-  "CNAS_EMPLOYER_BASE",
-  "CNAS_FOS",
-  "CACOBATPH_CONGES",
-  "CACOBATPH_INTEMPERIES",
-  "CACOBATPH_INTEMPERIES_EMP",
-  "CACOBATPH_INTEMPERIES_SAL",
-  "NJM_DIVISEUR_FIXED",
-  "SNMG",
-  "IRG_ZONE_SUD",
-  "IRG_ZONE_GRAND_SUD",
-  "HEURES_MENSUELLES",
-  "HS_TAUX_50",
-  "HS_TAUX_75",
-  "HS_TAUX_100",
-  "CONGE_JOURS_MOIS",
-] as const;
-
 function groupOf(key: string): LegalVarRow["group"] {
   if (key.startsWith("CNAS_")) return "cnas";
   if (key.startsWith("CACOBATPH_")) return "cacobatph";
@@ -57,18 +39,6 @@ function revalidateLegal() {
   revalidatePath("/rh/paie/social");
   revalidatePath("/referentiels/variables");
   revalidatePath("/referentiels/irg");
-}
-
-async function requireSuperAdmin(): Promise<ActionResult<true>> {
-  const workspace = await getWorkspaceProfile();
-  if (!workspace) return { ok: false, error: "Session requise. · يلزم تسجيل الدخول." };
-  if (!workspace.isSuperAdmin) {
-    return {
-      ok: false,
-      error: "Réservé à SUPER_ADMIN. · محصور في SUPER_ADMIN.",
-    };
-  }
-  return { ok: true, data: true };
 }
 
 export async function listLegalVars(): Promise<ActionResult<LegalVarRow[]>> {
@@ -119,7 +89,7 @@ const addVersionSchema = z.object({
 export async function addLegalVarVersion(
   input: unknown,
 ): Promise<ActionResult<{ id: string }>> {
-  const gate = await requireSuperAdmin();
+  const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const parsed = addVersionSchema.safeParse(input);
   if (!parsed.success) {
@@ -127,6 +97,10 @@ export async function addLegalVarVersion(
   }
   const p = parsed.data;
   const supabase = await createClient();
+  const { data: legalVar } = await supabase.from("ref_global_vars").select("key").eq("id", p.var_id).maybeSingle();
+  if (!legalVar || !(LEGAL_KEYS as readonly string[]).includes(legalVar.key)) {
+    return { ok: false, error: "Variable hors unité 05." };
+  }
   const {
     data: { user },
   } = await supabase.auth.getUser();

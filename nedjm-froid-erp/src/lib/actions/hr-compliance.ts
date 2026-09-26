@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { requireHrSalaryValues } from "@/lib/auth/require-roles";
+import { requireComplianceWrite } from "@/lib/auth/compliance-access";
 import { refreshDraftPayroll } from "@/lib/actions/hr-ops";
 import { legalVarsAsOf } from "@/lib/hr/legal-vars-as-of";
 import { loadComplianceContext, mapOverrideRow } from "@/lib/hr/compliance-load";
@@ -164,7 +164,7 @@ const saveSchema = z.object({
 export async function saveComplianceOverride(
   input: unknown,
 ): Promise<ActionResult<{ id: string; refreshed_slips: number }>> {
-  const gate = await requireHrSalaryValues();
+  const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const parsed = saveSchema.safeParse(input);
   if (!parsed.success) {
@@ -260,7 +260,7 @@ const endSchema = z.object({
 export async function endComplianceOverride(
   input: unknown,
 ): Promise<ActionResult<{ deleted: boolean; refreshed_slips: number }>> {
-  const gate = await requireHrSalaryValues();
+  const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const parsed = endSchema.safeParse(input);
   if (!parsed.success) {

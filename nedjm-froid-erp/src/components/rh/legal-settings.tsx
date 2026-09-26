@@ -179,8 +179,8 @@ function VarEditor({
       {!canEdit ? (
         <p className="mt-3 text-xs text-foreground/55">
           {bi(
-            "Modification réservée à SUPER_ADMIN.",
-            "التعديل محصور في SUPER_ADMIN.",
+            "Lecture seule : modification réservée à SUPER_ADMIN, ADMIN_RH et ADMIN_FINANCE (unité 05).",
+            "للاطلاع فقط: التعديل محصور في SUPER_ADMIN و ADMIN_RH و ADMIN_FINANCE (الوحدة 05).",
           )}
         </p>
       ) : null}
@@ -191,13 +191,13 @@ function VarEditor({
 export function LegalSettings({
   vars,
   irgCatalog,
-  isSuperAdmin,
+  canEdit,
   loadError,
   initialSection = "cnas",
 }: {
   vars: LegalVarRow[];
   irgCatalog: IrgCatalog;
-  isSuperAdmin: boolean;
+  canEdit: boolean;
   loadError?: string;
   initialSection?: "cnas" | "cacobatph" | "irg" | "other";
 }) {
@@ -233,7 +233,7 @@ export function LegalSettings({
       {section === "cnas" ? (
         <VarEditor
           rows={cnas}
-          canEdit={isSuperAdmin}
+          canEdit={canEdit}
           titleFr="CNAS — cotisations de sécurité sociale"
           titleAr="الضمان الاجتماعي — نسب الاشتراك"
           asPercent
@@ -242,7 +242,7 @@ export function LegalSettings({
       {section === "cacobatph" ? (
         <VarEditor
           rows={caco}
-          canEdit={isSuperAdmin}
+          canEdit={canEdit}
           titleFr="CACOBATPH — congés et intempéries"
           titleAr="كاكوباتف — العطل وانقطاعات الطقس"
           asPercent
@@ -251,7 +251,7 @@ export function LegalSettings({
       {section === "other" ? (
         <VarEditor
           rows={other}
-          canEdit={isSuperAdmin}
+          canEdit={canEdit}
           titleFr="Paramètres liés à la paie"
           titleAr="معاملات مرتبطة بالأجور"
           asPercent={false}
@@ -261,7 +261,7 @@ export function LegalSettings({
         <>
           <VarEditor
             rows={irgZones}
-            canEdit={isSuperAdmin}
+            canEdit={canEdit}
             titleFr="Abattement IRG par zone (Sud / Extrême Sud)"
             titleAr="تخفيض IRG حسب المنطقة (الجنوب / أقصى الجنوب)"
             asPercent
@@ -275,7 +275,7 @@ export function LegalSettings({
             </p>
           ) : null}
           <RhPanel>
-            <IrgBaremeManager catalog={irgCatalog} isSuperAdmin={isSuperAdmin} />
+            <IrgBaremeManager catalog={irgCatalog} canEdit={canEdit} />
           </RhPanel>
         </>
       ) : null}
