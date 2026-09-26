@@ -666,11 +666,15 @@ export async function deleteCnasRegime(input: unknown): Promise<ActionResult> {
     return { ok: false, error: "STANDARD est le régime par défaut : il ne peut pas être supprimé." };
   }
   const open = await openFrom(supabase);
-  const [employees, overrides, closedRates] = await Promise.all([
+  const [employees, contracts, overrides, closedRates] = await Promise.all([
     supabase
       .from("hr_employee_social")
       .select("employee_id", { count: "exact", head: true })
       .eq("social_profile_code", regime.code),
+    supabase
+      .from("hr_contracts")
+      .select("id", { count: "exact", head: true })
+      .eq("cnas_regime_code", regime.code),
     supabase
       .from("hr_contract_compliance")
       .select("id", { count: "exact", head: true })
@@ -684,9 +688,9 @@ export async function deleteCnasRegime(input: unknown): Promise<ActionResult> {
           .lt("effective_from", open)
       : Promise.resolve({ count: 0, error: null }),
   ]);
-  const failed = [employees, overrides, closedRates].find((r) => r.error);
+  const failed = [employees, contracts, overrides, closedRates].find((r) => r.error);
   if (failed?.error) return { ok: false, error: failed.error.message };
-  const users = (employees.count ?? 0) + (overrides.count ?? 0);
+  const users = (employees.count ?? 0) + (contracts.count ?? 0) + (overrides.count ?? 0);
   if (users > 0) {
     return {
       ok: false,

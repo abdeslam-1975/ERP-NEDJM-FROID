@@ -910,8 +910,12 @@ function RegimesPanel({
         <div>
           <h3 className="font-semibold">Régimes CNAS</h3>
           <p className="mt-1 text-xs text-foreground/55">
-            Taux propres à un régime (fiche employé ou contrat). Case vide = taux légal du mois. Chaque changement de
-            taux s&apos;applique à partir du mois choisi.
+            Le régime se choisit dans le contrat (« Régime CNAS ») ou, à défaut, dans la fiche employé (« Profil
+            social ») ; sinon STANDARD. Case vide = taux légal du mois. Chaque changement de taux s&apos;applique à
+            partir du mois choisi, sur le bulletin (CSS salariale, CSS patronale + FOS).
+          </p>
+          <p className="mt-0.5 text-xs text-foreground/55" dir="rtl">
+            يُختار النظام في العقد («نظام CNAS») أو في ملف العامل («ملف الاشتراك»)، وإلا يُطبَّق العادي STANDARD.
           </p>
         </div>
         {canEdit ? (
@@ -1210,7 +1214,7 @@ export function LegalSettings({
       vars
         .filter((v) => v.group === group)
         .sort((a, b) => Number(a.contribution != null) - Number(b.contribution != null));
-    return { cnas: pick("cnas"), caco: pick("cacobatph"), irg: pick("irg"), other: pick("other") };
+    return { caco: pick("cacobatph"), irg: pick("irg"), other: pick("other") };
   }, [vars]);
   const legalCnas = (key: string) => vars.find((v) => v.key === key)?.current_numeric ?? null;
 
@@ -1240,30 +1244,20 @@ export function LegalSettings({
       <PeriodBanner period={period} />
 
       {section === "cnas" ? (
-        <>
-          <RubriquesPanel
-            title="Rubriques CNAS"
-            subtitle="Taux légaux et cotisations ajoutées. Sur le bulletin : CSS salariale, CSS patronale (employeur + FOS) et une ligne par cotisation ajoutée."
-            group="cnas"
-            rows={byGroup.cnas}
+        regimes ? (
+          <RegimesPanel
+            regimes={regimes}
             canEdit={canEdit}
-            asPercent
-            allowCustom
             period={period}
+            legal={{
+              employee: legalCnas("CNAS_EMPLOYEE"),
+              employer: legalCnas("CNAS_EMPLOYER_BASE"),
+              fos: legalCnas("CNAS_FOS"),
+            }}
           />
-          {regimes ? (
-            <RegimesPanel
-              regimes={regimes}
-              canEdit={canEdit}
-              period={period}
-              legal={{
-                employee: legalCnas("CNAS_EMPLOYEE"),
-                employer: legalCnas("CNAS_EMPLOYER_BASE"),
-                fos: legalCnas("CNAS_FOS"),
-              }}
-            />
-          ) : null}
-        </>
+        ) : (
+          <RhAlert tone="info">{bi("Régimes CNAS indisponibles.", "أنظمة CNAS غير متوفرة.")}</RhAlert>
+        )
       ) : null}
 
       {section === "cacobatph" ? (

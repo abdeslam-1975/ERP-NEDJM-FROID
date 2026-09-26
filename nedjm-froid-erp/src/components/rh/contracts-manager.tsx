@@ -53,6 +53,7 @@ type FormState = {
   activity_code_id: string;
   contract_type_code: string;
   work_regime_code: string;
+  cnas_regime_code: string;
   qualification_code: string;
   poste_id: string;
   grade: string;
@@ -75,6 +76,7 @@ const emptyForm = (): FormState => ({
   activity_code_id: "",
   contract_type_code: "",
   work_regime_code: "",
+  cnas_regime_code: "",
   qualification_code: "",
   poste_id: "",
   grade: "",
@@ -243,6 +245,7 @@ export function ContractsManager({
         activity_code_id: form.activity_code_id,
         contract_type_code: form.contract_type_code || null,
         work_regime_code: form.work_regime_code || null,
+        cnas_regime_code: form.cnas_regime_code || null,
         poste_ar: form.poste_ar || null,
         poste_fr: form.poste_fr || null,
         qualification_code: form.qualification_code || null,
@@ -386,6 +389,7 @@ export function ContractsManager({
                           activity_code_id: row.activity_code_id,
                           contract_type_code: row.contract_type_code ?? "",
                           work_regime_code: row.work_regime_code ?? "",
+                          cnas_regime_code: row.cnas_regime_code ?? "",
                           qualification_code: row.qualification_code ?? "",
                           poste_id: row.poste_id ?? "",
                           grade: row.grade ?? "",
@@ -561,6 +565,20 @@ export function ContractsManager({
                   kind="work_regime"
                   value={form.work_regime_code}
                   onChange={(v) => setForm({ ...form, work_regime_code: v })}
+                />
+              </RhField>
+              <RhField
+                label={bi("Régime CNAS", "نظام الضمان الاجتماعي CNAS")}
+                hint={bi(
+                  "Vide = profil social de la fiche employé (sinon Standard)",
+                  "فارغ = ملف الاشتراك في ملف العامل (وإلا عادي)",
+                )}
+              >
+                <CatalogSelect
+                  items={catalogs}
+                  kind="social_profile"
+                  value={form.cnas_regime_code}
+                  onChange={(v) => setForm({ ...form, cnas_regime_code: v })}
                 />
               </RhField>
               <RhField label={bi("Poste (liste)", "المنصب (قائمة)")}>

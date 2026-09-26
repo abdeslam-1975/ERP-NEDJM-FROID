@@ -21,6 +21,7 @@ export type HrContractRow = {
   activity_code_id: string;
   contract_type_code: string | null;
   work_regime_code: string | null;
+  cnas_regime_code: string | null;
   poste_ar: string | null;
   poste_fr: string | null;
   qualification_code: string | null;
@@ -58,7 +59,7 @@ export async function listHrContracts(): Promise<ActionResult<HrContractRow[]>> 
     .from("hr_contracts")
     .select(
       `
-      id, employee_id, site_id, activity_code_id, contract_type_code, work_regime_code,
+      id, employee_id, site_id, activity_code_id, contract_type_code, work_regime_code, cnas_regime_code,
       poste_ar, poste_fr, qualification_code, poste_id, grade, agency_id, interim_daily_rate, affectation_principale,
       salaire_base_monthly, salaire_net_ref_monthly, salaire_net_recup_monthly,
       start_date, end_date, status,
@@ -82,6 +83,7 @@ export async function listHrContracts(): Promise<ActionResult<HrContractRow[]>> 
         activity_code_id: row.activity_code_id,
         contract_type_code: row.contract_type_code,
         work_regime_code: row.work_regime_code,
+        cnas_regime_code: row.cnas_regime_code ?? null,
         poste_ar: row.poste_ar,
         poste_fr: row.poste_fr,
         qualification_code: row.qualification_code,
@@ -163,6 +165,7 @@ export async function upsertHrContract(
     activity_code_id: p.activity_code_id,
     contract_type_code: p.contract_type_code,
     work_regime_code: p.work_regime_code,
+    cnas_regime_code: p.cnas_regime_code,
     poste_ar: p.poste_ar,
     poste_fr: p.poste_fr,
     qualification_code: p.qualification_code,

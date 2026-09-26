@@ -37,6 +37,7 @@ export type ContractCompliance = {
   site_wilaya: string | null;
   irg_category: string;
   social_profile_code: string | null;
+  social_profile_source: "contract" | "employee" | "default";
   zones: IrgZone[];
   regimes: CnasRegime[];
   zone_rates: Record<string, number>;
@@ -64,7 +65,9 @@ type Supabase = Awaited<ReturnType<typeof createClient>>;
 async function loadContract(supabase: Supabase, contractId: string) {
   return supabase
     .from("hr_contracts")
-    .select("id, employee_id, site_id, activity_code_id, contract_type_code, employee:hr_employees ( irg_category )")
+    .select(
+      "id, employee_id, site_id, activity_code_id, contract_type_code, cnas_regime_code, employee:hr_employees ( irg_category )",
+    )
     .eq("id", contractId)
     .maybeSingle();
 }
@@ -105,7 +108,8 @@ export async function getContractCompliance(
   const emp = Array.isArray(ctr.employee) ? ctr.employee[0] : ctr.employee;
   const category = (emp as { irg_category?: string } | null)?.irg_category ?? "STANDARD";
   const siteZone = cx.siteZone.get(ctr.site_id) ?? { code: DEFAULT_IRG_ZONE, source: "default" as const };
-  const socialProfile = cx.socialProfile.get(ctr.employee_id) ?? null;
+  const contractRegime = ctr.cnas_regime_code || null;
+  const socialProfile = contractRegime || cx.socialProfile.get(ctr.employee_id) || null;
   const overrides = (cx.overridesByContract.get(ctr.id) ?? []).sort((a, b) =>
     b.effective_from.localeCompare(a.effective_from),
   );
@@ -138,6 +142,7 @@ export async function getContractCompliance(
       site_wilaya: site.data?.wilaya ?? null,
       irg_category: category,
       social_profile_code: socialProfile,
+      social_profile_source: contractRegime ? "contract" : socialProfile ? "employee" : "default",
       zones: cx.zones,
       regimes: cx.regimes,
       zone_rates: zoneRates,

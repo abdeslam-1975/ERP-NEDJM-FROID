@@ -286,6 +286,7 @@ export const hrContractSchema = z.object({
   activity_code_id: z.string().uuid(),
   contract_type_code: optText(40),
   work_regime_code: optText(40),
+  cnas_regime_code: optText(40),
   poste_ar: optText(120),
   poste_fr: optText(120),
   qualification_code: optText(40),

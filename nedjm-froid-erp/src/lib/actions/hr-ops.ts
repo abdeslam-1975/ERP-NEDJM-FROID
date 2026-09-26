@@ -530,7 +530,7 @@ async function buildAndSavePayrollRun(
   let contractsQuery = supabase
     .from("hr_contracts")
     .select(
-      "id, employee_id, site_id, salaire_net_ref_monthly, salaire_base_monthly, activity_code_id, start_date, end_date, status, poste_id, grade",
+      "id, employee_id, site_id, salaire_net_ref_monthly, salaire_base_monthly, activity_code_id, start_date, end_date, status, poste_id, grade, cnas_regime_code",
     )
     .eq("affectation_principale", true)
     .in("status", [...PAYROLL_CONTRACT_STATUSES, "ENDED"])
@@ -782,7 +782,7 @@ async function buildAndSavePayrollRun(
       periodStart: start,
       periodEnd: end,
       employeeIrgCategory: taxpayer,
-      socialProfileCode: cx.socialProfile.get(ctr.employee_id) ?? null,
+      socialProfileCode: ctr.cnas_regime_code || cx.socialProfile.get(ctr.employee_id) || null,
       siteZoneCode: cx.siteZone.get(ctr.site_id)?.code ?? DEFAULT_IRG_ZONE,
       activity: {
         cacobatph: cacoSites.has(ctr.activity_code_id),

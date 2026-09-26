@@ -227,9 +227,11 @@ export function ContractComplianceCards({
       current: currentLabels.cnas,
       autoText: autoLabels.cnas,
       autoDetail: [
-        `${bi("Profil social (fiche employé)", "ملف الاشتراك (ملف العامل)")} : ${
-          info.social_profile_code ?? bi("non renseigné → Standard", "غير محدد ← عادي")
-        }`,
+        info.social_profile_source === "contract"
+          ? `${bi("Régime CNAS (contrat)", "نظام CNAS (العقد)")} : ${info.social_profile_code}`
+          : info.social_profile_source === "employee"
+            ? `${bi("Profil social (fiche employé)", "ملف الاشتراك (ملف العامل)")} : ${info.social_profile_code}`
+            : `${bi("Régime CNAS", "نظام CNAS")} : ${bi("non renseigné → Standard", "غير محدد ← عادي")}`,
       ],
       mode: info.current.cnas.mode,
     },
