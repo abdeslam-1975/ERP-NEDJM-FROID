@@ -11,7 +11,7 @@ const WORKSPACE_TABS = [
   /main-d'œuvre/i,
   /pièces/i,
   /consommation/i,
-  /facturation/i,
+  /^facturation/i,
   /solde/i,
   /pilotage/i,
   /pénalités/i,
@@ -33,7 +33,7 @@ test.describe("@critical contrats clients", () => {
     await gotoContracts(page);
     await expect(page.getByRole("button", { name: /nouveau contrat/i })).toBeVisible();
     await page
-      .getByPlaceholder(/rechercher/i)
+      .getByPlaceholder(/rechercher/i).last()
       .fill(SEED_CONTRACT);
     await expect(page.getByText(SEED_CONTRACT).first()).toBeVisible();
     await expect(page.getByText(/SONATRACH/i).first()).toBeVisible();
@@ -41,7 +41,7 @@ test.describe("@critical contrats clients", () => {
 
   test("workspace seed : onglets hub + mode AUTO / caution", async ({ page }) => {
     await gotoContracts(page);
-    await page.getByPlaceholder(/rechercher/i).fill(SEED_CONTRACT);
+    await page.getByPlaceholder(/rechercher/i).last().fill(SEED_CONTRACT);
     await page.getByRole("link", { name: /workspace/i }).first().click();
     await expect(page.getByText(SEED_CONTRACT)).toBeVisible();
 
@@ -51,7 +51,7 @@ test.describe("@critical contrats clients", () => {
 
     await page.getByRole("button", { name: /en-tête & financier/i }).click();
     await expect(
-      page.getByText(/mode total ht|AUTO — somme labor/i).first(),
+      page.getByText(/mode total ht/i).first(),
     ).toBeVisible();
     await expect(page.locator("select").filter({ hasText: /AUTO/i }).first()).toBeVisible();
 

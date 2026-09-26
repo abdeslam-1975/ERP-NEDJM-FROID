@@ -50,7 +50,7 @@ test.describe("@smoke rh & administration", () => {
     await page.getByRole("button", { name: /nouvelle agence/i }).click();
     await expect(page.getByText(/nouvelle agence d'intérim/i)).toBeVisible();
     await expect(page.getByRole("button", { name: /^enregistrer$/i })).toBeDisabled();
-    await page.getByRole("button", { name: /^fermer$/i }).click();
+    await page.getByRole("button", { name: /^fermer$/i }).last().click();
     await expect(page.getByText(/nouvelle agence d'intérim/i)).toHaveCount(0);
   });
 

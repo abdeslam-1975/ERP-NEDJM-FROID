@@ -63,7 +63,7 @@ test.describe("@critical rls négatif", () => {
     await loginAsPersona(page, "E2E_ADMIN_FINANCE");
 
     await gotoContracts(page);
-    await expect(page.getByText(/contrats clients/i)).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: /contrats clients/i })).toBeVisible();
 
     await page.goto("/parametres/utilisateurs");
     await expect(page).not.toHaveURL(/parametres\/utilisateurs/);
