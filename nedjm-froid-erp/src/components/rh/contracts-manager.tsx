@@ -163,9 +163,47 @@ export function ContractsManager({
   function openModal(next: FormState, lines: Record<string, SelectedSalaryLine>) {
     setForm(next);
     setSelectedLines(lines);
+    setError(null);
     setModalTab("contrat");
     setOpen(true);
   }
+
+  function openRow(row: HrContractRow) {
+    openModal(
+      {
+        id: row.id,
+        employee_id: row.employee_id,
+        site_id: row.site_id,
+        activity_code_id: row.activity_code_id,
+        contract_type_code: row.contract_type_code ?? "",
+        work_regime_code: row.work_regime_code ?? "",
+        cnas_regime_code: row.cnas_regime_code ?? "",
+        qualification_code: row.qualification_code ?? "",
+        poste_id: row.poste_id ?? "",
+        grade: row.grade ?? "",
+        agency_id: row.agency_id ?? "",
+        interim_daily_rate: row.interim_daily_rate == null ? "" : String(row.interim_daily_rate),
+        poste_fr: row.poste_fr ?? "",
+        poste_ar: row.poste_ar ?? "",
+        affectation_principale: row.affectation_principale,
+        salaire_base_monthly: String(row.salaire_base_monthly),
+        salaire_net_ref_monthly: String(row.salaire_net_ref_monthly),
+        salaire_net_recup_monthly:
+          row.salaire_net_recup_monthly == null ? "" : String(row.salaire_net_recup_monthly),
+        start_date: row.start_date,
+        end_date: row.end_date ?? "",
+        status: row.status as FormState["status"],
+      },
+      linesForContract(row.id, row.employee_id),
+    );
+  }
+
+  const openPrincipal =
+    !form.id && form.employee_id
+      ? rows.find(
+          (r) => r.employee_id === form.employee_id && r.affectation_principale && r.status !== "ENDED",
+        ) ?? null
+      : null;
 
   function defaultContractLines() {
     const next: Record<string, SelectedSalaryLine> = {};
@@ -221,25 +259,37 @@ export function ContractsManager({
         amount: Number(line.amount || 0),
         unit: line.unit,
       }));
-      const result = await upsertHrContract({
-        ...form,
-        salaire_base_monthly: Number(form.salaire_base_monthly || 0),
-        salaire_net_ref_monthly: Number(form.salaire_net_ref_monthly || 0),
-        salaire_net_recup_monthly: form.salaire_net_recup_monthly
-          ? Number(form.salaire_net_recup_monthly)
-          : null,
-        end_date: form.end_date || null,
-        interim_daily_rate: form.interim_daily_rate.trim() ? Number(form.interim_daily_rate) : null,
-        salary_lines,
-      });
+      let result: Awaited<ReturnType<typeof upsertHrContract>>;
+      try {
+        result = await upsertHrContract({
+          ...form,
+          salaire_base_monthly: Number(form.salaire_base_monthly || 0),
+          salaire_net_ref_monthly: Number(form.salaire_net_ref_monthly || 0),
+          salaire_net_recup_monthly: form.salaire_net_recup_monthly
+            ? Number(form.salaire_net_recup_monthly)
+            : null,
+          end_date: form.end_date || null,
+          interim_daily_rate: form.interim_daily_rate.trim() ? Number(form.interim_daily_rate) : null,
+          salary_lines,
+        });
+      } catch {
+        setError(
+          bi(
+            "Le serveur n'a pas répondu. Rechargez la page : le contrat a peut-être été enregistré, vérifiez la liste avant de réessayer.",
+            "لم يستجب الخادم. أعد تحميل الصفحة: ربما حُفظ العقد، تحقق من القائمة قبل إعادة المحاولة.",
+          ),
+        );
+        return;
+      }
       if (!result.ok) {
         setError(result.error);
         return;
       }
+      const done = result.data;
       const emp = employees.find((e) => e.id === form.employee_id);
       const site = sites.find((s) => s.id === form.site_id);
       const next: HrContractRow = {
-        id: result.data.id,
+        id: done.id,
         employee_id: form.employee_id,
         site_id: form.site_id,
         activity_code_id: form.activity_code_id,
@@ -270,7 +320,7 @@ export function ContractsManager({
         site_name: site?.name_fr ?? "",
       };
       setRows((prev) => {
-        const ended = result.data.closed_previous
+        const ended = done.closed_previous
           ? prev.map((r) =>
               r.employee_id === form.employee_id &&
               r.id !== next.id &&
@@ -282,6 +332,11 @@ export function ContractsManager({
           : prev;
         return [next, ...ended.filter((r) => r.id !== next.id)];
       });
+      if (done.warning) {
+        setForm((f) => ({ ...f, id: done.id }));
+        setError(done.warning);
+        return;
+      }
       setAsgRows((prev) => {
         const kept = prev.filter(
           (a) => a.contract_id !== next.id && a.employee_id !== form.employee_id,
@@ -306,14 +361,14 @@ export function ContractsManager({
         return [...kept, ...added];
       });
       setOpen(false);
-      const saved = result.data.closed_previous
+      const saved = done.closed_previous
         ? bi(
             "Contrat enregistré. L'ancien contrat principal a été clôturé la veille.",
             "تم حفظ العقد. أُغلق العقد الرئيسي السابق في اليوم السابق.",
           )
         : bi("Contrat enregistré.", "تم حفظ العقد.");
       setInfo(
-        result.data.refreshed_slips
+        done.refreshed_slips
           ? `${saved} ${bi(
               "Les bulletins brouillon ont été recalculés avec les nouveaux items.",
               "كشوف المسودة أُعيد حسابها بالبنود الجديدة.",
@@ -380,37 +435,7 @@ export function ContractsManager({
                 <td className={rhTd()}>
                   <Button
                     variant="secondary"
-                    onClick={() => {
-                      openModal(
-                        {
-                          id: row.id,
-                          employee_id: row.employee_id,
-                          site_id: row.site_id,
-                          activity_code_id: row.activity_code_id,
-                          contract_type_code: row.contract_type_code ?? "",
-                          work_regime_code: row.work_regime_code ?? "",
-                          cnas_regime_code: row.cnas_regime_code ?? "",
-                          qualification_code: row.qualification_code ?? "",
-                          poste_id: row.poste_id ?? "",
-                          grade: row.grade ?? "",
-                          agency_id: row.agency_id ?? "",
-                          interim_daily_rate: row.interim_daily_rate == null ? "" : String(row.interim_daily_rate),
-                          poste_fr: row.poste_fr ?? "",
-                          poste_ar: row.poste_ar ?? "",
-                          affectation_principale: row.affectation_principale,
-                          salaire_base_monthly: String(row.salaire_base_monthly),
-                          salaire_net_ref_monthly: String(row.salaire_net_ref_monthly),
-                          salaire_net_recup_monthly:
-                            row.salaire_net_recup_monthly == null
-                              ? ""
-                              : String(row.salaire_net_recup_monthly),
-                          start_date: row.start_date,
-                          end_date: row.end_date ?? "",
-                          status: row.status as FormState["status"],
-                        },
-                        linesForContract(row.id, row.employee_id),
-                      );
-                    }}
+                    onClick={() => openRow(row)}
                   >
                     {bi("Modifier", "تعديل")}
                   </Button>{" "}
@@ -448,11 +473,16 @@ export function ContractsManager({
                   {bi("Imprimer le contrat", "طباعة العقد")}
                 </Button>
               ) : null}
+              {error ? (
+                <span role="alert" className="mr-auto max-w-xl text-xs font-semibold text-alert-critical">
+                  {error}
+                </span>
+              ) : null}
               <Button variant="secondary" onClick={() => setOpen(false)}>
                 {bi("Annuler", "إلغاء")}
               </Button>
               <Button disabled={pending} onClick={submit}>
-                {bi("Enregistrer", "حفظ")}
+                {pending ? bi("Enregistrement…", "جارٍ الحفظ…") : bi("Enregistrer", "حفظ")}
               </Button>
             </>
           }
@@ -478,6 +508,21 @@ export function ContractsManager({
                     </option>
                   ))}
                 </select>
+                {openPrincipal ? (
+                  <span className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-amber-700">
+                    {bi(
+                      `Contrat principal déjà ouvert (début ${openPrincipal.start_date.split("-").reverse().join("/")}).`,
+                      "لهذا العامل عقد رئيسي مفتوح.",
+                    )}
+                    <button
+                      type="button"
+                      className="font-semibold text-brand underline"
+                      onClick={() => openRow(openPrincipal)}
+                    >
+                      {bi("Ouvrir ce contrat", "فتح هذا العقد")}
+                    </button>
+                  </span>
+                ) : null}
               </RhField>
               <RhField label={bi("Chantier", "الورشة")}>
                 <select

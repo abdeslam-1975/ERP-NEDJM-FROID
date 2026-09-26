@@ -113,7 +113,9 @@ export async function listHrContracts(): Promise<ActionResult<HrContractRow[]>> 
 
 export async function upsertHrContract(
   input: unknown,
-): Promise<ActionResult<{ id: string; closed_previous: number; refreshed_slips: number }>> {
+): Promise<
+  ActionResult<{ id: string; closed_previous: number; refreshed_slips: number; warning: string | null }>
+> {
   const parsed = hrContractSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
@@ -197,17 +199,23 @@ export async function upsertHrContract(
     return { ok: false, error: error.message };
   }
   if (!data) return { ok: false, error: "Enregistrement refusé (droits ou overlap)." };
+  // The contract row is saved from here on: later failures are reported as warnings with its id,
+  // otherwise a retry from the form would try to insert a second principal contract.
+  let warning: string | null = null;
   if (p.salary_lines) {
     const lines = await replaceContractSalaryLines({
       contract_id: data.id,
       employee_id: p.employee_id,
       lines: p.salary_lines,
     });
-    if (!lines.ok) return lines;
+    if (!lines.ok) {
+      warning = `Contrat enregistré, mais les rubriques de salaire ne l'ont pas été : ${lines.error}`;
+    }
   }
   const refreshed = await refreshDraftPayroll({
     employeeId: p.employee_id,
     contractId: data.id,
+    siteId: p.site_id,
   });
   revalidate();
   return {
@@ -216,6 +224,7 @@ export async function upsertHrContract(
       id: data.id,
       closed_previous: closedPrevious,
       refreshed_slips: refreshed.ok ? refreshed.data.count : 0,
+      warning,
     },
   };
 }

@@ -43,10 +43,10 @@ export function planPrincipalClose(
       continue;
     }
     if (other.start_date >= next.start_date) {
+      const since = other.start_date.split("-").reverse().join("/");
       return {
         ok: false,
-        error:
-          "Un contrat principal est déjà ouvert sur cette période. Modifiez-le ou terminez-le avant d'en créer un autre. · يوجد عقد رئيسي مفتوح في نفس الفترة. عدّله أو أنهِه قبل إنشاء عقد جديد.",
+        error: `Ce salarié a déjà un contrat principal ouvert (début ${since}). Fermez cette fenêtre et ouvrez-le avec « Modifier » dans la liste, ou décochez « Affectation principale ». · لهذا العامل عقد رئيسي مفتوح (بداية ${since}). أغلق النافذة وافتحه بزر «Modifier» من القائمة، أو ألغِ خانة التعيين الرئيسي.`,
       };
     }
     const end = dayBefore(next.start_date);

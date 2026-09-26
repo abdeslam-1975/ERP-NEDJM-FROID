@@ -13,6 +13,7 @@ import {
   type PayrollSlipRow,
 } from "@/lib/actions/hr-ops";
 import { runStatusLabel, type PayrollRunAction } from "@/lib/hr/payroll-run-status";
+import { searchEmployeesForPayroll, type PayrollSearchEmployee } from "@/lib/actions/global-search";
 import { Button } from "@/components/ui/button";
 import {
   RhAlert,
@@ -207,6 +208,19 @@ export function PayrollManager({
   const [siteId, setSiteId] = useState(sites[0]?.id ?? "");
   const [periodYear, setPeriodYear] = useState(year);
   const [periodMonth, setPeriodMonth] = useState(month);
+  const [seenServer, setSeenServer] = useState({ initialSlips, initialRuns, year, month });
+  if (
+    seenServer.initialSlips !== initialSlips ||
+    seenServer.initialRuns !== initialRuns ||
+    seenServer.year !== year ||
+    seenServer.month !== month
+  ) {
+    setSeenServer({ initialSlips, initialRuns, year, month });
+    setSlips(initialSlips);
+    setRuns(initialRuns);
+    setPeriodYear(year);
+    setPeriodMonth(month);
+  }
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [info, setInfo] = useState<string | null>(null);
   const [preview, setPreview] = useState<BulletinModel[] | null>(null);
@@ -229,6 +243,21 @@ export function PayrollManager({
       return terms.every((t) => hay.includes(t));
     });
   }, [slips, query]);
+  const [candidates, setCandidates] = useState<{ q: string; rows: PayrollSearchEmployee[] }>({ q: "", rows: [] });
+  const missQuery = query.trim().length >= 2 && visibleSlips.length === 0 ? query.trim() : "";
+  useEffect(() => {
+    if (!missQuery) return;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const rows = await searchEmployeesForPayroll(missQuery).catch(() => []);
+      if (!cancelled) setCandidates({ q: missQuery, rows });
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [missQuery]);
+  const missing = missQuery && candidates.q === missQuery ? candidates.rows : [];
   const currentRun = runs.find((r) => r.site_id === siteId) ?? null;
   const currentStatus = currentRun?.status_code ?? "DRAFT";
   const siteName = sites.find((s) => s.id === siteId)?.name_fr ?? "";
@@ -332,6 +361,36 @@ export function PayrollManager({
     itemCols.length +
     (view === "all" ? 1 : 0) +
     1;
+
+  function generate(site: string, y: number, m: number) {
+    setError(null);
+    start(async () => {
+      let r: Awaited<ReturnType<typeof generatePayrollRun>>;
+      try {
+        r = await generatePayrollRun({ period_year: y, period_month: m, site_id: site });
+      } catch {
+        setError(bi("Le serveur n'a pas répondu. Rechargez la page et réessayez.", "لم يستجب الخادم. أعد تحميل الصفحة."));
+        return;
+      }
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      setInfo(
+        [
+          bi(
+            `${r.data.count} bulletins générés (CNAS, IRG, CACOBATPH depuis les variables).`,
+            `${r.data.count} كشوف مولّدة (الضمان والضريبة وكاكوباتف من المتغيرات).`,
+          ),
+          ...(r.data.warnings ?? []),
+        ].join("\n"),
+      );
+      const qs = new URLSearchParams({ year: String(y), month: String(m) });
+      if (query.trim()) qs.set("q", query.trim());
+      router.push(`${pathname}?${qs.toString()}`);
+      router.refresh();
+    });
+  }
 
   function toBulletin(s: PayrollSlipRow) {
     return slipToBulletin(s, bulletin, bulletinRatesFromVars(s.legal_vars, bulletin));
@@ -583,31 +642,7 @@ export function PayrollManager({
             !siteId ||
             (periodYear === year && periodMonth === month && currentStatus !== "DRAFT")
           }
-          onClick={() => {
-            setError(null);
-            start(async () => {
-              const r = await generatePayrollRun({
-                period_year: periodYear,
-                period_month: periodMonth,
-                site_id: siteId,
-              });
-              if (!r.ok) {
-                setError(r.error);
-                return;
-              }
-              setInfo(
-                [
-                  bi(
-                    `${r.data.count} bulletins générés (CNAS, IRG, CACOBATPH depuis les variables).`,
-                    `${r.data.count} كشوف مولّدة (الضمان والضريبة وكاكوباتف من المتغيرات).`,
-                  ),
-                  ...(r.data.warnings ?? []),
-                ].join("\n"),
-              );
-              router.push(`${pathname}?year=${periodYear}&month=${periodMonth}`);
-              router.refresh();
-            });
-          }}
+          onClick={() => generate(siteId, periodYear, periodMonth)}
         >
           Générer
         </Button>
@@ -643,6 +678,51 @@ export function PayrollManager({
           </span>
         ) : null}
       </div>
+      {missing.length ? (
+        <RhAlert tone="warning">
+          <p className="font-semibold">
+            {bi(
+              `Pas encore de bulletin pour ${String(month).padStart(2, "0")}/${year} :`,
+              `لا يوجد كشف أجر بعد لشهر ${String(month).padStart(2, "0")}/${year}:`,
+            )}
+          </p>
+          <ul className="mt-1 space-y-1.5 text-sm">
+            {missing.map((e) => (
+              <li key={e.id} className="flex flex-wrap items-center gap-2">
+                <span>
+                  <span className="font-mono text-xs">{e.matricule}</span> {e.name}
+                  {e.site_name ? ` — ${e.site_name}` : ""}
+                </span>
+                {e.site_id ? (
+                  <Button
+                    variant="secondary"
+                    disabled={pending}
+                    onClick={() => {
+                      setSiteId(e.site_id ?? "");
+                      generate(e.site_id ?? "", year, month);
+                    }}
+                  >
+                    {bi(
+                      `Générer la paie ${e.site_name ?? ""} ${String(month).padStart(2, "0")}/${year}`,
+                      "توليد كشوف الورشة",
+                    )}
+                  </Button>
+                ) : (
+                  <span className="text-xs">
+                    {bi(
+                      "Aucun contrat principal : créez son contrat de travail d'abord.",
+                      "لا يوجد عقد رئيسي: أنشئ عقد العمل أولاً.",
+                    )}{" "}
+                    <Link href="/rh/contrats" className="font-semibold text-brand underline">
+                      {bi("Contrats", "العقود")}
+                    </Link>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </RhAlert>
+      ) : null}
 
       <RhTableWrap>
         <table className="min-w-full text-sm">
