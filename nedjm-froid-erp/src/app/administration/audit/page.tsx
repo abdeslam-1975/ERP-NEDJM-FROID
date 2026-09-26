@@ -1,10 +1,21 @@
-import PlaceholderScreen from "@/components/layout/placeholder-screen";
+import { AppShell } from "@/components/layout/app-shell";
+import { AuditViewer } from "@/components/admin/admin-managers";
+import { listAuditLogs, listAuditTables } from "@/lib/actions/admin-rbac";
+import { requireRoles } from "@/lib/auth/require-roles";
 
-export default function Page() {
+export const dynamic = "force-dynamic";
+
+export default async function AuditPage() {
+  await requireRoles(["SUPER_ADMIN", "GERANT", "ADMIN_RH", "ADMIN_FINANCE"]);
+  const [logs, tables] = await Promise.all([listAuditLogs({ page: 0 }), listAuditTables()]);
   return (
-    <PlaceholderScreen
-      title="Journal d'audit"
-      description="Consultation append-only de sys_audit_logs (lecture seule côté app)."
-    />
+    <AppShell title="Journal d'audit">
+      <AuditViewer
+        initialRows={logs.ok ? logs.data.rows : []}
+        initialHasMore={logs.ok && logs.data.hasMore}
+        tables={tables}
+        loadError={logs.ok ? undefined : logs.error}
+      />
+    </AppShell>
   );
 }
