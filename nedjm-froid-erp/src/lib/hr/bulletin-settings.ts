@@ -77,7 +77,22 @@ export type HrBulletinSettings = {
   intemp_sal_var_key: string;
   intemp_emp_var_key: string;
   months: string[];
+  employer_name: string;
+  employer_address: string;
+  employer_nif: string;
+  employer_nis: string;
+  employer_cnas_no: string;
+  employer_cacobatph_no: string;
 };
+
+export const EMPLOYER_IDENTITY_FIELDS = [
+  "employer_name",
+  "employer_address",
+  "employer_nif",
+  "employer_nis",
+  "employer_cnas_no",
+  "employer_cacobatph_no",
+] as const;
 
 export const BULLETIN_VALUE_FIELDS = [
   { code: "employee_name", label_fr: "Employé (nom complet)", label_ar: "اسم العامل" },
@@ -179,6 +194,12 @@ export const DEFAULT_BULLETIN_SETTINGS: HrBulletinSettings = {
     "Novembre",
     "Décembre",
   ],
+  employer_name: "",
+  employer_address: "",
+  employer_nif: "",
+  employer_nis: "",
+  employer_cnas_no: "",
+  employer_cacobatph_no: "",
 };
 
 function asIdentity(value: unknown, fallback: BulletinIdentityLine[]): BulletinIdentityLine[] {
@@ -217,6 +238,10 @@ export function parseBulletinLayout(raw: unknown): HrBulletinSettings {
   const text = (key: keyof HrBulletinSettings) => {
     const v = row[key];
     return typeof v === "string" && v.trim() ? v : (d[key] as string);
+  };
+  const optional = (key: (typeof EMPLOYER_IDENTITY_FIELDS)[number]) => {
+    const v = row[key];
+    return typeof v === "string" ? v.trim() : d[key];
   };
   return {
     title: text("title"),
@@ -281,6 +306,12 @@ export function parseBulletinLayout(raw: unknown): HrBulletinSettings {
     intemp_sal_var_key: text("intemp_sal_var_key"),
     intemp_emp_var_key: text("intemp_emp_var_key"),
     months: asMonths(row.months, d.months),
+    employer_name: optional("employer_name"),
+    employer_address: optional("employer_address"),
+    employer_nif: optional("employer_nif"),
+    employer_nis: optional("employer_nis"),
+    employer_cnas_no: optional("employer_cnas_no"),
+    employer_cacobatph_no: optional("employer_cacobatph_no"),
   };
 }
 

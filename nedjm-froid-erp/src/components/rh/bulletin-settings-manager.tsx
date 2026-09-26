@@ -439,6 +439,26 @@ export function BulletinSettingsManager({
       </RhPanel>
 
       <RhPanel>
+        <RhSectionTitle>{bi("Employeur — déclarations CNAS / G50 / CACOBATPH", "المستخدم — التصريحات")}</RhSectionTitle>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {(
+            [
+              ["employer_name", "Raison sociale"],
+              ["employer_address", "Adresse"],
+              ["employer_nif", "NIF"],
+              ["employer_nis", "NIS"],
+              ["employer_cnas_no", "N° employeur CNAS"],
+              ["employer_cacobatph_no", "N° adhérent CACOBATPH"],
+            ] as const
+          ).map(([key, label]) => (
+            <RhField key={key} label={label}>
+              <input className={rhInput} value={form[key]} onChange={(e) => set(key, e.target.value)} />
+            </RhField>
+          ))}
+        </div>
+      </RhPanel>
+
+      <RhPanel>
         <RhSectionTitle>{bi("Mois", "الشهور")}</RhSectionTitle>
         <div className="grid gap-2 sm:grid-cols-4">
           {form.months.map((month, index) => (

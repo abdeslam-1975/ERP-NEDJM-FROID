@@ -114,6 +114,7 @@ export type PayrollSlipRow = {
   qualification_code: string | null;
   payment_mode_code: string | null;
   account_no: string | null;
+  account_key: string | null;
   lines: PayrollSlipLineRow[];
 };
 
@@ -812,9 +813,16 @@ export async function listPayrollSlips(input: {
     empIds.length
       ? supabase
           .from("hr_employee_bank")
-          .select("employee_id, payment_mode_code, account_no")
+          .select("employee_id, payment_mode_code, account_no, account_key")
           .in("employee_id", empIds)
-      : { data: [] as Array<{ employee_id: string; payment_mode_code: string | null; account_no: string | null }> },
+      : {
+          data: [] as Array<{
+            employee_id: string;
+            payment_mode_code: string | null;
+            account_no: string | null;
+            account_key: string | null;
+          }>,
+        },
     empIds.length
       ? supabase
           .from("hr_employee_qualifications")
@@ -910,6 +918,7 @@ export async function listPayrollSlips(input: {
         qualification_code: ctr?.qualification_code ?? q?.level_code ?? null,
         payment_mode_code: bk?.payment_mode_code ?? null,
         account_no: bk?.account_no ?? null,
+        account_key: bk?.account_key ?? null,
         lines: linesBySlip.get(row.id) ?? [],
       };
     }),

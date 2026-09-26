@@ -213,6 +213,33 @@ export function PayrollManager({
   const currentStatus = currentRun?.status_code ?? "DRAFT";
   const runStatusById = useMemo(() => new Map(runs.map((r) => [r.id, r.status_code])), [runs]);
   const siteName = sites.find((s) => s.id === siteId)?.name_fr ?? "";
+  const declarationsProvisional = !runs.length || runs.some((r) => r.status_code === "DRAFT");
+  const [exporting, setExporting] = useState(false);
+
+  async function downloadDeclarations(query: string) {
+    setError(null);
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/rh/declarations?${query}`);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setError(body?.error ?? `Export impossible (${res.status}).`);
+        return;
+      }
+      const filename =
+        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "declarations.xlsx";
+      const url = URL.createObjectURL(await res.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Export impossible : connexion interrompue. · تعذّر التصدير.");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function transitionRun(action: PayrollRunAction) {
     if (!currentRun) return;
@@ -385,6 +412,40 @@ export function PayrollManager({
           <span className="text-xs text-foreground/60">Pas encore générée pour ce chantier.</span>
         )}
       </div>
+      {canValidate ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/60 bg-surface px-4 py-3 text-sm">
+          <span className="font-semibold">{bi("Déclarations", "التصريحات")}</span>
+          {declarationsProvisional ? (
+            <RhChip tone="warning">{bi("Provisoire : paie non validée", "مؤقت: الأجور غير معتمدة")}</RhChip>
+          ) : (
+            <RhChip tone="success">{bi("Paie validée", "الأجور معتمدة")}</RhChip>
+          )}
+          <div className="ml-auto flex flex-wrap gap-2">
+            <Button
+              disabled={exporting}
+              onClick={() => downloadDeclarations(`kind=monthly&year=${year}&month=${month}`)}
+            >
+              {bi("CNAS · G50 · CACOBATPH · Virements (Excel)", "تصدير الشهر")}
+            </Button>
+            {siteId ? (
+              <Button
+                variant="secondary"
+                disabled={exporting}
+                onClick={() => downloadDeclarations(`kind=monthly&year=${year}&month=${month}&site=${siteId}`)}
+              >
+                {bi("Ce chantier seulement", "هذه الورشة فقط")}
+              </Button>
+            ) : null}
+            <Button
+              variant="secondary"
+              disabled={exporting}
+              onClick={() => downloadDeclarations(`kind=das&year=${year}`)}
+            >
+              {bi(`DAS annuelle ${year}`, `التصريح السنوي ${year}`)}
+            </Button>
+          </div>
+        </div>
+      ) : null}
       <RhToolbar>
         <RhField label={bi("Chantier", "الورشة")}>
           <select

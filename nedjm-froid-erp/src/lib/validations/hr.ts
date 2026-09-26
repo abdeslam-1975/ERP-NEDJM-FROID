@@ -587,4 +587,10 @@ export const hrBulletinSettingsSchema = z.object({
   intemp_sal_var_key: z.string().trim().min(1).max(40),
   intemp_emp_var_key: z.string().trim().min(1).max(40),
   months: z.array(z.string().trim().min(1).max(20)).length(12),
+  employer_name: z.string().trim().max(200).optional().default(""),
+  employer_address: z.string().trim().max(300).optional().default(""),
+  employer_nif: z.string().trim().max(40).optional().default(""),
+  employer_nis: z.string().trim().max(40).optional().default(""),
+  employer_cnas_no: z.string().trim().max(40).optional().default(""),
+  employer_cacobatph_no: z.string().trim().max(40).optional().default(""),
 });
