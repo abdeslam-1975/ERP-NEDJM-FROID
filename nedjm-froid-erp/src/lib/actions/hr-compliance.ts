@@ -86,6 +86,7 @@ export async function getContractCompliance(
       contractIds: [ctr.id],
       siteIds: [ctr.site_id],
       employeeIds: [ctr.employee_id],
+      asOf,
     }),
     legalVarsAsOf(supabase, asOf),
     supabase

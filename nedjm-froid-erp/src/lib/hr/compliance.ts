@@ -72,17 +72,26 @@ export function irgZonesFromCatalog(items: readonly CatalogLike[]): IrgZone[] {
     }));
 }
 
-export function cnasRegimesFromCatalog(items: readonly CatalogLike[]): CnasRegime[] {
+export type CnasRegimeRates = Pick<CnasRegime, "employee_pct" | "employer_pct" | "fos_pct">;
+
+/** `rates`: dated rates in force for the period, by regime code (absent = legal rates). */
+export function cnasRegimesFromCatalog(
+  items: readonly CatalogLike[],
+  rates?: ReadonlyMap<string, CnasRegimeRates>,
+): CnasRegime[] {
   return items
     .filter((i) => i.kind === "social_profile" && i.is_active)
-    .map((i) => ({
-      code: i.code,
-      label_fr: i.label_fr,
-      label_ar: i.label_ar,
-      employee_pct: optPct(i.extra.employee_pct),
-      employer_pct: optPct(i.extra.employer_pct),
-      fos_pct: optPct(i.extra.fos_pct),
-    }));
+    .map((i) => {
+      const r = rates ? rates.get(i.code) : undefined;
+      return {
+        code: i.code,
+        label_fr: i.label_fr,
+        label_ar: i.label_ar,
+        employee_pct: rates ? optPct(r?.employee_pct) : optPct(i.extra.employee_pct),
+        employer_pct: rates ? optPct(r?.employer_pct) : optPct(i.extra.employer_pct),
+        fos_pct: rates ? optPct(r?.fos_pct) : optPct(i.extra.fos_pct),
+      };
+    });
 }
 
 export function normalizeWilaya(value: string | null | undefined) {

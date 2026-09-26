@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  cnasRegimesFromCatalog,
   complianceLabels,
   computeResolvedIrg,
   contractTypeAllowsFixedIrg,
@@ -205,5 +206,20 @@ describe("labels and contract type gate", () => {
     expect(contractTypeAllowsFixedIrg(items, "CDI")).toBe(false);
     expect(contractTypeAllowsFixedIrg(items, "EXPERT")).toBe(true);
     expect(contractTypeAllowsFixedIrg(items, null)).toBe(false);
+  });
+
+  it("takes regime rates from the dated versions of the period, legal rate when none", () => {
+    const items = [
+      { kind: "social_profile", code: "ABATTEMENT", label_fr: "Abattement", label_ar: "", extra: { employee_pct: 1 }, is_active: true },
+      { kind: "social_profile", code: "STANDARD", label_fr: "Standard", label_ar: "", extra: {}, is_active: true },
+    ];
+    const dated = cnasRegimesFromCatalog(
+      items,
+      new Map([["ABATTEMENT", { employee_pct: 9, employer_pct: 3, fos_pct: 0.5 }]]),
+    );
+    expect(dated.find((r) => r.code === "ABATTEMENT")).toMatchObject({ employee_pct: 9, employer_pct: 3, fos_pct: 0.5 });
+    expect(dated.find((r) => r.code === "STANDARD")).toMatchObject({ employee_pct: null, employer_pct: null });
+    expect(cnasRegimesFromCatalog(items, new Map()).find((r) => r.code === "ABATTEMENT")?.employee_pct).toBeNull();
+    expect(cnasRegimesFromCatalog(items).find((r) => r.code === "ABATTEMENT")?.employee_pct).toBe(1);
   });
 });

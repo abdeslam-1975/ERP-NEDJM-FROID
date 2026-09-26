@@ -4,7 +4,7 @@ import { listHrContracts } from "@/lib/actions/hr-contracts";
 import { listHrEmployeeRows } from "@/lib/actions/hr-employees";
 import { loadHrLookups } from "@/lib/actions/hr-lookups";
 import { listSalaryAssignments, listSalaryRubriques } from "@/lib/actions/hr-salary";
-import { listCnasRegimes, listLegalVars } from "@/lib/actions/hr-legal-vars";
+import { getLegalPeriod, listCnasRegimes, listLegalVars } from "@/lib/actions/hr-legal-vars";
 import { listIrgCatalog } from "@/lib/actions/hr-irg";
 import { listPostes } from "@/lib/actions/hr-postes";
 import { listAgencies } from "@/lib/actions/hr-interim";
@@ -28,6 +28,7 @@ export default async function ContratsPage() {
     agencies,
     compliance,
     cnasRegimes,
+    legalPeriod,
   ] = await Promise.all([
     listHrContracts(),
     listHrEmployeeRows(),
@@ -41,6 +42,7 @@ export default async function ContratsPage() {
     listAgencies(),
     getComplianceAccess(),
     listCnasRegimes(),
+    getLegalPeriod(),
   ]);
 
   const empRows = employees.ok ? employees.data : [];
@@ -72,6 +74,7 @@ export default async function ContratsPage() {
         }))}
         legalVars={legalVars.ok ? legalVars.data : []}
         cnasRegimes={cnasRegimes.ok ? cnasRegimes.data : []}
+        legalPeriod={legalPeriod}
         irgCatalog={
           irg.ok ? irg.data : { versions: [], brackets: [], ruleSets: [], rules: [] }
         }

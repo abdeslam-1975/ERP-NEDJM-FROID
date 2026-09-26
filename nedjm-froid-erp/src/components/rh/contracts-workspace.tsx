@@ -8,7 +8,7 @@ import type { HrContractRow } from "@/lib/actions/hr-contracts";
 import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import type { HrEmployeeRow } from "@/lib/actions/hr-employees";
 import type { SalaryAssignment, SalaryRubrique } from "@/lib/actions/hr-salary";
-import type { CnasRegimeRow, LegalVarRow } from "@/lib/actions/hr-legal-vars";
+import type { CnasRegimeRow, LegalPeriod, LegalVarRow } from "@/lib/actions/hr-legal-vars";
 import type { IrgCatalog } from "@/lib/actions/hr-irg";
 import type { PosteRow } from "@/lib/actions/hr-postes";
 import { RhPage, RhTabs, bi } from "@/components/rh/rh-ui";
@@ -36,6 +36,7 @@ export function ContractsWorkspace({
   salaryContracts,
   legalVars,
   cnasRegimes = [],
+  legalPeriod,
   irgCatalog,
   isSuperAdmin,
   canEditSalaryValues,
@@ -59,6 +60,7 @@ export function ContractsWorkspace({
   salaryContracts: SalaryTarget[];
   legalVars: LegalVarRow[];
   cnasRegimes?: CnasRegimeRow[];
+  legalPeriod?: LegalPeriod;
   irgCatalog: IrgCatalog;
   isSuperAdmin: boolean;
   canEditSalaryValues: boolean;
@@ -94,6 +96,7 @@ export function ContractsWorkspace({
           salaryContracts={salaryContracts}
           legalVars={legalVars}
           cnasRegimes={cnasRegimes}
+          legalPeriod={legalPeriod}
           irgCatalog={irgCatalog}
           isSuperAdmin={isSuperAdmin}
           canEditSalaryValues={canEditSalaryValues}
@@ -122,6 +125,7 @@ export function ContractsWorkspace({
         <LegalSettings
           vars={legalVars}
           regimes={cnasRegimes}
+          period={legalPeriod}
           irgCatalog={irgCatalog}
           canEdit={canEditCompliance}
           loadError={legalError}

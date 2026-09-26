@@ -37,19 +37,32 @@ export async function legalVarsAsOf(
   return out;
 }
 
-/** User-defined contributions (unit 05), whatever their rate. */
+/** User-defined contributions (unit 05) in force on `asOf`, with the settings of that version. */
 export async function loadContributionDefs(
   supabase: Supabase,
+  asOf: string,
 ): Promise<{ ok: true; data: ContributionDef[] } | { ok: false; error: string }> {
   const { data, error } = await supabase
-    .from("ref_global_vars")
-    .select("key, label_fr, label_ar, contrib_part, contrib_base, contrib_reduces_irg, contrib_scope, contrib_code, sort_order")
-    .not("contrib_part", "is", null);
+    .from("ref_global_var_versions")
+    .select(
+      "contrib_part, contrib_base, contrib_reduces_irg, contrib_scope, ref_global_vars!inner ( key, label_fr, label_ar, contrib_part, contrib_base, contrib_reduces_irg, contrib_scope, contrib_code, sort_order )",
+    )
+    .lte("effective_from", asOf)
+    .or(`effective_to.is.null,effective_to.gte.${asOf}`);
   if (error) return { ok: false, error: error.message };
   return {
     ok: true,
     data: (data ?? []).flatMap((row) => {
-      const def = contributionDefFromRow(row as Record<string, unknown>);
+      const joined = row.ref_global_vars as unknown;
+      const v = (Array.isArray(joined) ? joined[0] : joined) as Record<string, unknown> | null;
+      if (!v || (row.contrib_part == null && v.contrib_part == null)) return [];
+      const def = contributionDefFromRow({
+        ...v,
+        contrib_part: row.contrib_part ?? v.contrib_part,
+        contrib_base: row.contrib_base ?? v.contrib_base,
+        contrib_reduces_irg: row.contrib_reduces_irg ?? v.contrib_reduces_irg,
+        contrib_scope: row.contrib_scope ?? v.contrib_scope,
+      });
       return def ? [def] : [];
     }),
   };

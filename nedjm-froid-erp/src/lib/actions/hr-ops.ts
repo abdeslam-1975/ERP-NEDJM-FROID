@@ -523,7 +523,7 @@ async function buildAndSavePayrollRun(
   const irgLoaded = await loadIrgEngine(supabase, start);
   if (!irgLoaded.ok) return irgLoaded;
   const irgEngine = irgLoaded.data;
-  const contribLoaded = await loadContributionDefs(supabase);
+  const contribLoaded = await loadContributionDefs(supabase, start);
   if (!contribLoaded.ok) return contribLoaded;
   const contributionDefs = contribLoaded.data;
 
@@ -604,6 +604,7 @@ async function buildAndSavePayrollRun(
     contractIds: contracts.map((c) => c.id),
     siteIds: [...new Set(contracts.map((c) => c.site_id))],
     employeeIds: empIds,
+    asOf: start,
   });
   if (!compliance.ok) return compliance;
   const cx = compliance.data;

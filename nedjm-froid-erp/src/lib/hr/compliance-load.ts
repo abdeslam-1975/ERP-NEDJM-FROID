@@ -5,6 +5,7 @@ import {
   resolveSiteZone,
   wilayaZoneMap,
   type CnasRegime,
+  type CnasRegimeRates,
   type ComplianceDomain,
   type ComplianceOverride,
   type IrgZone,
@@ -34,14 +35,17 @@ export function mapOverrideRow(row: Record<string, unknown>): ComplianceOverride
   };
 }
 
+const numOrNull = (v: unknown) => (v == null ? null : Number(v));
+
 export async function loadComplianceContext(
   supabase: Supabase,
-  input: { contractIds: string[]; siteIds: string[]; employeeIds: string[] },
+  input: { contractIds: string[]; siteIds: string[]; employeeIds: string[]; asOf?: string },
 ): Promise<{ ok: true; data: ComplianceContext } | { ok: false; error: string }> {
-  const [catalogs, sites, social, overrides] = await Promise.all([
+  const asOf = input.asOf ?? new Date().toISOString().slice(0, 10);
+  const [catalogs, sites, social, overrides, regimeRates] = await Promise.all([
     supabase
       .from("hr_catalogs")
-      .select("kind, code, label_fr, label_ar, extra, is_active")
+      .select("id, kind, code, label_fr, label_ar, extra, is_active")
       .in("kind", ["irg_zone", "irg_zone_wilaya", "social_profile"]),
     input.siteIds.length
       ? supabase.from("ref_sites").select("id, wilaya, irg_zone_code").in("id", input.siteIds)
@@ -58,14 +62,30 @@ export async function loadComplianceContext(
           .select("id, contract_id, domain, option_code, params, reason, effective_from, effective_to")
           .in("contract_id", input.contractIds)
       : Promise.resolve({ data: [], error: null }),
+    supabase
+      .from("hr_social_profile_rates")
+      .select("profile_id, employee_pct, employer_pct, fos_pct")
+      .lte("effective_from", asOf)
+      .or(`effective_to.is.null,effective_to.gte.${asOf}`),
   ]);
-  const failed = [catalogs, sites, social, overrides].find((r) => r.error);
+  const failed = [catalogs, sites, social, overrides, regimeRates].find((r) => r.error);
   if (failed?.error) return { ok: false, error: failed.error.message };
 
   const items = (catalogs.data ?? []).map((i) => ({
     ...i,
     extra: (i.extra ?? {}) as Record<string, unknown>,
   }));
+  const codeById = new Map(items.map((i) => [i.id, i.code]));
+  const ratesByCode = new Map<string, CnasRegimeRates>();
+  for (const r of (regimeRates.data ?? []) as Record<string, unknown>[]) {
+    const code = codeById.get(String(r.profile_id));
+    if (!code) continue;
+    ratesByCode.set(code, {
+      employee_pct: numOrNull(r.employee_pct),
+      employer_pct: numOrNull(r.employer_pct),
+      fos_pct: numOrNull(r.fos_pct),
+    });
+  }
   const wilayas = wilayaZoneMap(items);
   const siteZone = new Map<string, SiteZone>();
   for (const s of (sites.data ?? []) as { id: string; wilaya: string | null; irg_zone_code: string | null }[]) {
@@ -86,7 +106,7 @@ export async function loadComplianceContext(
     ok: true,
     data: {
       zones: irgZonesFromCatalog(items),
-      regimes: cnasRegimesFromCatalog(items),
+      regimes: cnasRegimesFromCatalog(items, ratesByCode),
       siteZone,
       socialProfile,
       overridesByContract,
