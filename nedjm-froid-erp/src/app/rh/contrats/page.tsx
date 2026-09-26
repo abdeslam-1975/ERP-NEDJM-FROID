@@ -6,6 +6,7 @@ import { loadHrLookups } from "@/lib/actions/hr-lookups";
 import { listSalaryAssignments, listSalaryRubriques } from "@/lib/actions/hr-salary";
 import { listLegalVars } from "@/lib/actions/hr-legal-vars";
 import { listIrgCatalog } from "@/lib/actions/hr-irg";
+import { listPostes } from "@/lib/actions/hr-postes";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { HR_SALARY_VALUE_ROLES, workspaceHasRole } from "@/lib/auth/require-roles";
 
@@ -21,6 +22,7 @@ export default async function ContratsPage() {
     legalVars,
     irg,
     workspace,
+    postes,
   ] = await Promise.all([
     listHrContracts(),
     listHrEmployeeRows(),
@@ -30,6 +32,7 @@ export default async function ContratsPage() {
     listLegalVars(),
     listIrgCatalog(),
     getWorkspaceProfile(),
+    listPostes(),
   ]);
 
   const empRows = employees.ok ? employees.data : [];
@@ -63,6 +66,7 @@ export default async function ContratsPage() {
         irgCatalog={
           irg.ok ? irg.data : { versions: [], brackets: [], ruleSets: [], rules: [] }
         }
+        postes={postes.ok ? postes.data : []}
         isSuperAdmin={workspace?.isSuperAdmin ?? false}
         canEditSalaryValues={
           workspace ? workspaceHasRole(workspace, HR_SALARY_VALUE_ROLES) : false

@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import {
+  deleteSalaryException,
   setSalaryExceptionStatus,
   upsertSalaryException,
   type SalaryExceptionRow,
@@ -11,6 +12,7 @@ import type { SalaryRubrique } from "@/lib/actions/hr-salary";
 import { Button } from "@/components/ui/button";
 import {
   RhAlert,
+  RhChip,
   RhField,
   RhModal,
   RhPageHeader,
@@ -70,6 +72,8 @@ export function ExceptionsManager({
   employees,
   rubriques,
   canEdit,
+  currentUserId = null,
+  canApproveOwn = false,
   year,
   month,
   loadError,
@@ -78,6 +82,8 @@ export function ExceptionsManager({
   employees: Emp[];
   rubriques: SalaryRubrique[];
   canEdit: boolean;
+  currentUserId?: string | null;
+  canApproveOwn?: boolean;
   year: number;
   month: number;
   loadError?: string;
@@ -101,6 +107,61 @@ export function ExceptionsManager({
     setForm(emptyForm(year, month));
     setError(null);
     setOpen(true);
+  }
+
+  function decide(row: SalaryExceptionRow, status: "APPROVED" | "CANCELLED") {
+    let note: string | undefined;
+    if (status === "CANCELLED") {
+      const answer = window.prompt(bi("Motif de l'annulation (facultatif)", "سبب الإلغاء (اختياري)"), "");
+      if (answer === null) return;
+      note = answer;
+    }
+    setError(null);
+    setInfo(null);
+    start(async () => {
+      const r = await setSalaryExceptionStatus({ id: row.id, status_code: status, note });
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      if (r.data.result === "SHORTENED") {
+        setInfo(
+          bi(
+            "Mois déjà validés conservés : l'exception est arrêtée au dernier mois figé.",
+            "الأشهر المعتمدة محفوظة: أوقف الاستثناء عند آخر شهر مجمّد.",
+          ),
+        );
+        window.location.reload();
+        return;
+      }
+      setRows((prev) =>
+        prev.map((x) =>
+          x.id === row.id
+            ? {
+                ...x,
+                status_code: r.data.result === "APPROVED" ? "APPROVED" : "CANCELLED",
+                approved_by: status === "APPROVED" ? currentUserId : x.approved_by,
+                approved_at: status === "APPROVED" ? new Date().toISOString() : x.approved_at,
+                approver_name: status === "APPROVED" ? bi("vous", "أنت") : x.approver_name,
+                decided_note: note?.trim() || x.decided_note,
+              }
+            : x,
+        ),
+      );
+    });
+  }
+
+  function remove(row: SalaryExceptionRow) {
+    if (!window.confirm(bi("Supprimer ce brouillon ?", "حذف هذه المسودة؟"))) return;
+    setError(null);
+    start(async () => {
+      const r = await deleteSalaryException(row.id);
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      setRows((prev) => prev.filter((x) => x.id !== row.id));
+    });
   }
 
   function submit() {
@@ -137,7 +198,7 @@ export function ExceptionsManager({
         return;
       }
       setOpen(false);
-      setInfo(bi("Exception enregistrée. Rechargez si la liste n'est pas à jour.", "تم حفظ الاستثناء. أعد التحميل إن لزم."));
+      setInfo(bi("Brouillon enregistré : il doit être approuvé pour entrer en paie.", "حُفظت المسودة: يجب اعتمادها لتدخل الأجر."));
       window.location.reload();
     });
   }
@@ -147,7 +208,7 @@ export function ExceptionsManager({
       <RhPageHeader
         title={bi("Rubriques exceptionnelles", "بنود الأجر الاستثنائية")}
         description={bi(
-          "Hors contrat permanent. Motif et période obligatoires. Seules les lignes approuvées alimentent le bulletin.",
+          "Hors contrat permanent. Motif et période obligatoires. Saisie en brouillon puis approbation par une autre personne (Gérant / Super admin peuvent approuver leurs propres saisies). Seules les lignes approuvées alimentent le bulletin ; un mois validé ou clôturé ne peut plus être modifié.",
           "خارج العقد الدائم. السبب والفترة إلزاميان. المعتمد فقط يدخل الكشف.",
         )}
         actions={
@@ -202,11 +263,6 @@ export function ExceptionsManager({
                       ? ` → ${String(row.until_month).padStart(2, "0")}/${row.until_year}`
                       : ` · ${bi("une fois", "مرة واحدة")}`}
                     <span className="mt-0.5 block text-xs text-foreground/60">{row.reason}</span>
-                    {row.grantor_name ? (
-                      <span className="block text-[11px] text-foreground/50">
-                        {bi("Par", "بواسطة")} {row.grantor_name}
-                      </span>
-                    ) : null}
                   </td>
                   <td className={`${rhTd()} font-mono`}>
                     {row.amount}{" "}
@@ -224,10 +280,39 @@ export function ExceptionsManager({
                       )}
                     </span>
                   </td>
-                  <td className={rhTd()}>{row.status_code}</td>
+                  <td className={rhTd()}>
+                    <RhChip
+                      tone={
+                        row.status_code === "APPROVED"
+                          ? "success"
+                          : row.status_code === "CANCELLED"
+                            ? "danger"
+                            : "warning"
+                      }
+                    >
+                      {row.status_code === "APPROVED"
+                        ? bi("Approuvée", "معتمدة")
+                        : row.status_code === "CANCELLED"
+                          ? bi("Annulée", "ملغاة")
+                          : bi("Brouillon", "مسودة")}
+                    </RhChip>
+                    <span className="mt-1 block text-[11px] text-foreground/55">
+                      {bi("Saisie", "أدخلها")} : {row.creator_name ?? "—"}
+                    </span>
+                    {row.approved_at ? (
+                      <span className="block text-[11px] text-foreground/55">
+                        {bi("Approuvée par", "اعتمدها")} {row.approver_name ?? row.grantor_name ?? "—"} ·{" "}
+                        {new Date(row.approved_at).toLocaleDateString("fr-FR")}
+                      </span>
+                    ) : null}
+                    {row.decided_note ? (
+                      <span className="block text-[11px] italic text-foreground/55">{row.decided_note}</span>
+                    ) : null}
+                  </td>
                   <td className={rhTd()}>
                     {canEdit ? (
                       <div className="flex flex-wrap gap-1">
+                        {row.status_code === "DRAFT" ? (
                         <Button
                           variant="secondary"
                           onClick={() => {
@@ -254,54 +339,28 @@ export function ExceptionsManager({
                         >
                           {bi("Modifier", "تعديل")}
                         </Button>
-                        {row.status_code !== "APPROVED" ? (
-                          <Button
-                            disabled={pending}
-                            onClick={() => {
-                              start(async () => {
-                                const r = await setSalaryExceptionStatus({
-                                  id: row.id,
-                                  status_code: "APPROVED",
-                                });
-                                if (!r.ok) {
-                                  setError(r.error);
-                                  return;
-                                }
-                                setRows((prev) =>
-                                  prev.map((x) =>
-                                    x.id === row.id ? { ...x, status_code: "APPROVED" } : x,
-                                  ),
-                                );
-                              });
-                            }}
-                          >
-                            {bi("Approuver", "اعتماد")}
+                        ) : null}
+                        {row.status_code === "DRAFT" ? (
+                          row.created_by === currentUserId && !canApproveOwn ? (
+                            <span className="self-center text-[11px] text-foreground/55">
+                              {bi("À approuver par un autre responsable", "ينتظر اعتماد مسؤول آخر")}
+                            </span>
+                          ) : (
+                            <Button disabled={pending} onClick={() => decide(row, "APPROVED")}>
+                              {bi("Approuver", "اعتماد")}
+                            </Button>
+                          )
+                        ) : null}
+                        {row.status_code === "DRAFT" ? (
+                          <Button variant="ghost" disabled={pending} onClick={() => remove(row)}>
+                            {bi("Supprimer", "حذف")}
                           </Button>
-                        ) : (
-                          <Button
-                            variant="secondary"
-                            disabled={pending}
-                            onClick={() => {
-                              start(async () => {
-                                const r = await setSalaryExceptionStatus({
-                                  id: row.id,
-                                  status_code: "CANCELLED",
-                                });
-                                if (!r.ok) {
-                                  setError(r.error);
-                                  return;
-                                }
-                                setRows((prev) =>
-                                  prev.map((x) =>
-                                    x.id === row.id ? { ...x, status_code: "CANCELLED" } : x,
-                                  ),
-                                );
-                              });
-                            }}
-                          >
+                        ) : null}
+                        {row.status_code === "APPROVED" ? (
+                          <Button variant="secondary" disabled={pending} onClick={() => decide(row, "CANCELLED")}>
                             {bi("Annuler", "إلغاء")}
                           </Button>
-                        )}
+                        ) : null}
                       </div>
                     ) : (
                       "—"

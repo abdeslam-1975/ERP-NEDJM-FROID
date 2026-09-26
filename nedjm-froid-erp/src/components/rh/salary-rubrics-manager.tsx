@@ -67,7 +67,15 @@ function flagsForCategory(category: SalaryRubrique["category"]) {
 function scopeLabel(scope: Scope) {
   if (scope === "employee") return bi("Employé", "العامل");
   if (scope === "site") return bi("Chantier", "الورشة");
+  if (scope === "poste") return bi("Poste", "المنصب");
   return bi("Contrat", "العقد");
+}
+
+function levelOf(row: SalaryAssignment): Scope {
+  if (row.employee_id) return "employee";
+  if (row.contract_id) return "contract";
+  if (row.poste_id) return "poste";
+  return "site";
 }
 
 function unitLabel(unit: SalaryRubrique["unit"]) {
@@ -139,6 +147,7 @@ export function SalaryRubricsManager({
   employees,
   sites,
   contracts,
+  postes = [],
 }: {
   isSuperAdmin: boolean;
   canEditValues?: boolean;
@@ -147,12 +156,13 @@ export function SalaryRubricsManager({
   employees: SalaryTarget[];
   sites: SalaryTarget[];
   contracts: SalaryTarget[];
+  postes?: SalaryTarget[];
 }) {
   const [panel, setPanel] = useState<"dict" | "values" | "import">("dict");
   const [rows, setRows] = useState(rubriques);
   const [values, setValues] = useState(assignments);
   const [form, setForm] = useState(emptyRubrique());
-  const [asg, setAsg] = useState({
+  const [asg, setAsg] = useState<{ id: string; rubrique_id: string; target_id: string; amount: string; level?: Scope }>({
     id: "",
     rubrique_id: "",
     target_id: "",
@@ -179,24 +189,15 @@ export function SalaryRubricsManager({
     [rows],
   );
   const currentRubrique = rows.find((r) => r.id === asg.rubrique_id) ?? null;
-  const targetOptions =
-    currentRubrique?.apply_scope === "employee"
-      ? employees
-      : currentRubrique?.apply_scope === "site"
-        ? sites
-        : contracts;
+  const optionsFor = (level: Scope) =>
+    level === "employee" ? employees : level === "site" ? sites : level === "poste" ? postes : contracts;
+  const asgLevel: Scope = asg.level ?? currentRubrique?.apply_scope ?? "site";
+  const targetOptions = optionsFor(asgLevel);
 
   function targetName(row: SalaryAssignment) {
-    const rub = rows.find((r) => r.id === row.rubrique_id);
-    const id = row.employee_id ?? row.site_id ?? row.contract_id;
+    const id = row.employee_id ?? row.site_id ?? row.contract_id ?? row.poste_id;
     if (!id) return "—";
-    const list =
-      rub?.apply_scope === "employee"
-        ? employees
-        : rub?.apply_scope === "site"
-          ? sites
-          : contracts;
-    return list.find((x) => x.id === id)?.label ?? id;
+    return optionsFor(levelOf(row)).find((x) => x.id === id)?.label ?? id;
   }
 
   const visibleAssignments = useMemo(
@@ -271,6 +272,7 @@ export function SalaryRubricsManager({
         id: asg.id || undefined,
         rubrique_id: asg.rubrique_id,
         target_id: asg.target_id,
+        target_kind: asgLevel,
         amount: Number(asg.amount || 0),
         is_active: true,
       });
@@ -282,15 +284,16 @@ export function SalaryRubricsManager({
       const next: SalaryAssignment = {
         id: result.data.id,
         rubrique_id: asg.rubrique_id,
-        employee_id: rub?.apply_scope === "employee" ? asg.target_id : null,
-        site_id: rub?.apply_scope === "site" ? asg.target_id : null,
-        contract_id: rub?.apply_scope === "contract" ? asg.target_id : null,
+        employee_id: asgLevel === "employee" ? asg.target_id : null,
+        site_id: asgLevel === "site" ? asg.target_id : null,
+        contract_id: asgLevel === "contract" ? asg.target_id : null,
+        poste_id: asgLevel === "poste" ? asg.target_id : null,
         amount: Number(asg.amount || 0),
         unit: rub?.unit ?? null,
         is_active: true,
       };
       setValues((prev) => [...prev.filter((x) => x.id !== result.data.id), next]);
-      setAsg({ id: "", rubrique_id: asg.rubrique_id, target_id: "", amount: "0" });
+      setAsg({ id: "", rubrique_id: asg.rubrique_id, target_id: "", amount: "0", level: asg.level });
       setInfo(bi("Valeur enregistrée.", "تم حفظ القيمة."));
     });
   }
@@ -604,6 +607,7 @@ export function SalaryRubricsManager({
                   <option value="site">{bi("Chantier", "الورشة")}</option>
                   <option value="contract">{bi("Contrat", "العقد")}</option>
                   <option value="employee">{bi("Employé", "العامل")}</option>
+                  <option value="poste">{bi("Poste", "المنصب")}</option>
                 </select>
               </RhField>
               <RhField label={bi("Nature", "النوع")}>
@@ -844,13 +848,20 @@ export function SalaryRubricsManager({
                     ))}
                 </select>
               </RhField>
-              <RhField
-                label={
-                  currentRubrique
-                    ? bi("Cible", "الهدف") + ` (${scopeLabel(currentRubrique.apply_scope)})`
-                    : bi("Cible", "الهدف")
-                }
-              >
+              <RhField label={bi("Niveau", "المستوى")} hint="Priorité : employé > contrat > poste > chantier">
+                <select
+                  className={rhInput}
+                  disabled={!canValues || !currentRubrique}
+                  value={asgLevel}
+                  onChange={(e) => setAsg({ ...asg, level: e.target.value as Scope, target_id: "" })}
+                >
+                  <option value="site">{bi("Chantier", "الورشة")}</option>
+                  {postes.length ? <option value="poste">{bi("Poste", "المنصب")}</option> : null}
+                  <option value="contract">{bi("Contrat", "العقد")}</option>
+                  <option value="employee">{bi("Employé", "العامل")}</option>
+                </select>
+              </RhField>
+              <RhField label={`${bi("Cible", "الهدف")} (${scopeLabel(asgLevel)})`}>
                 <SearchSelect
                   options={targetOptions}
                   value={asg.target_id}
@@ -923,9 +934,7 @@ export function SalaryRubricsManager({
                         <td className={rhTd()}>
                           {rub ? `${rub.code} · ${rub.label_fr} — ${rub.label_ar}` : row.rubrique_id}
                         </td>
-                        <td className={rhTd()}>
-                          {rub ? scopeLabel(rub.apply_scope) : "—"}
-                        </td>
+                        <td className={rhTd()}>{scopeLabel(levelOf(row))}</td>
                         <td className={rhTd()}>{targetName(row)}</td>
                         <td className={rhTd()}>{row.amount}</td>
                         <td className={rhTd()}>
@@ -941,8 +950,10 @@ export function SalaryRubricsManager({
                                       row.employee_id ??
                                       row.site_id ??
                                       row.contract_id ??
+                                      row.poste_id ??
                                       "",
                                     amount: String(row.amount),
+                                    level: levelOf(row),
                                   })
                                 }
                               >

@@ -289,6 +289,11 @@ export const hrContractSchema = z.object({
   poste_ar: optText(120),
   poste_fr: optText(120),
   qualification_code: optText(40),
+  poste_id: z
+    .union([z.string().uuid(), z.literal(""), z.null()])
+    .optional()
+    .transform((v) => (v ? v : null)),
+  grade: optText(6),
   affectation_principale: z.boolean().default(true),
   salaire_base_monthly: z.coerce.number().min(0),
   salaire_net_ref_monthly: z.coerce.number().min(0),
@@ -411,7 +416,7 @@ export const salaryRubriqueSchema = z.object({
   category: z.enum(["1", "2", "3", "4"]),
   cotisable: z.boolean(),
   taxable: z.boolean(),
-  apply_scope: z.enum(["employee", "site", "contract"]),
+  apply_scope: z.enum(["employee", "site", "contract", "poste"]),
   default_amount: z.coerce.number().min(0).max(99_999_999),
   sort_order: z.coerce.number().int().min(0).max(9999).default(0),
   is_active: z.boolean().default(true),
@@ -421,6 +426,7 @@ export const salaryAssignmentSchema = z.object({
   id: z.string().uuid().optional(),
   rubrique_id: z.string().uuid(),
   target_id: z.string().uuid(),
+  target_kind: z.enum(["employee", "site", "contract", "poste"]).optional(),
   amount: z.coerce.number().min(0).max(99_999_999),
   unit: z.enum(["day", "month", "percent", "presence_day"]).optional().nullable(),
   is_active: z.boolean().default(true),

@@ -11,6 +11,8 @@ import type { HrEmployeeRow } from "@/lib/actions/hr-employees";
 import type { SalaryAssignment, SalaryRubrique } from "@/lib/actions/hr-salary";
 import type { LegalVarRow } from "@/lib/actions/hr-legal-vars";
 import type { IrgCatalog } from "@/lib/actions/hr-irg";
+import type { PosteRow } from "@/lib/actions/hr-postes";
+import { gridAsOf } from "@/lib/hr/payroll-calc";
 import { Button } from "@/components/ui/button";
 import {
   CatalogSelect,
@@ -52,6 +54,8 @@ type FormState = {
   contract_type_code: string;
   work_regime_code: string;
   qualification_code: string;
+  poste_id: string;
+  grade: string;
   poste_fr: string;
   poste_ar: string;
   affectation_principale: boolean;
@@ -70,6 +74,8 @@ const emptyForm = (): FormState => ({
   contract_type_code: "",
   work_regime_code: "",
   qualification_code: "",
+  poste_id: "",
+  grade: "",
   poste_fr: "",
   poste_ar: "",
   affectation_principale: true,
@@ -96,9 +102,11 @@ export function ContractsManager({
   irgCatalog = { versions: [], brackets: [], ruleSets: [], rules: [] },
   isSuperAdmin = false,
   canEditSalaryValues = false,
+  postes = [],
   legalError,
   loadError,
 }: {
+  postes?: PosteRow[];
   initialContracts: HrContractRow[];
   employees: HrEmployeeRow[];
   sites: readonly SiteOpt[];
@@ -127,6 +135,16 @@ export function ContractsManager({
   const [pending, start] = useTransition();
   const [printId, setPrintId] = useState<string | null>(null);
   const jobs = useMemo(() => catalogOptions(catalogs, "job_title"), [catalogs]);
+  const gridSuggestion = useMemo(() => {
+    const p = postes.find((x) => x.id === form.poste_id);
+    if (!p) return null;
+    return gridAsOf(
+      p.grid.map((g) => ({ ...g, poste_id: p.id })),
+      p.id,
+      form.grade,
+      form.start_date || new Date().toISOString().slice(0, 10),
+    );
+  }, [postes, form.poste_id, form.grade, form.start_date]);
 
   function openModal(next: FormState, lines: Record<string, SelectedSalaryLine>) {
     setForm(next);
@@ -215,6 +233,8 @@ export function ContractsManager({
         poste_ar: form.poste_ar || null,
         poste_fr: form.poste_fr || null,
         qualification_code: form.qualification_code || null,
+        poste_id: form.poste_id || null,
+        grade: form.grade ? form.grade.toUpperCase() : null,
         affectation_principale: form.affectation_principale,
         salaire_base_monthly: Number(form.salaire_base_monthly || 0),
         salaire_net_ref_monthly: Number(form.salaire_net_ref_monthly || 0),
@@ -256,7 +276,8 @@ export function ContractsManager({
               rubrique_id: line.rubrique_id,
               employee_id: rub.apply_scope === "employee" ? form.employee_id : null,
               site_id: null,
-              contract_id: rub.apply_scope === "contract" ? next.id : null,
+              contract_id: rub.apply_scope === "employee" ? null : next.id,
+              poste_id: null,
               amount: line.amount,
               unit: line.unit ?? rub.unit,
               is_active: true,
@@ -350,6 +371,8 @@ export function ContractsManager({
                           contract_type_code: row.contract_type_code ?? "",
                           work_regime_code: row.work_regime_code ?? "",
                           qualification_code: row.qualification_code ?? "",
+                          poste_id: row.poste_id ?? "",
+                          grade: row.grade ?? "",
                           poste_fr: row.poste_fr ?? "",
                           poste_ar: row.poste_ar ?? "",
                           affectation_principale: row.affectation_principale,
@@ -517,6 +540,70 @@ export function ContractsManager({
                   ))}
                 </select>
               </RhField>
+              {postes.length ? (
+                <>
+                  <RhField label={bi("Poste (référentiel)", "المنصب (المرجع)")}>
+                    <select
+                      className={rhInput}
+                      value={form.poste_id}
+                      onChange={(e) => {
+                        const p = postes.find((x) => x.id === e.target.value);
+                        setForm({
+                          ...form,
+                          poste_id: e.target.value,
+                          poste_fr: p?.label_fr ?? form.poste_fr,
+                          poste_ar: p?.label_ar ?? form.poste_ar,
+                          grade: form.grade || (p?.grid[0]?.grade ?? ""),
+                        });
+                      }}
+                    >
+                      <option value="">—</option>
+                      {postes
+                        .filter((p) => p.is_active || p.id === form.poste_id)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.code} · {p.label_fr}
+                          </option>
+                        ))}
+                    </select>
+                  </RhField>
+                  <RhField
+                    label={bi("Grade / échelon", "الدرجة")}
+                    hint={
+                      gridSuggestion
+                        ? `Grille : ${gridSuggestion.base_monthly.toLocaleString("fr-DZ")} DA`
+                        : form.poste_id
+                          ? "Pas de grille pour ce grade"
+                          : undefined
+                    }
+                  >
+                    <div className="flex gap-2">
+                      <input
+                        className={rhInput}
+                        value={form.grade}
+                        onChange={(e) => setForm({ ...form, grade: e.target.value.toUpperCase() })}
+                      />
+                      {gridSuggestion && Number(form.salaire_base_monthly) !== gridSuggestion.base_monthly ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() =>
+                            setForm({
+                              ...form,
+                              salaire_base_monthly: String(gridSuggestion.base_monthly),
+                              salaire_net_ref_monthly:
+                                gridSuggestion.net_ref_monthly != null
+                                  ? String(gridSuggestion.net_ref_monthly)
+                                  : form.salaire_net_ref_monthly,
+                            })
+                          }
+                        >
+                          {bi("Appliquer", "تطبيق")}
+                        </Button>
+                      ) : null}
+                    </div>
+                  </RhField>
+                </>
+              ) : null}
               <RhField label={bi("Poste FR", "المنصب FR")}>
                 <input
                   className={rhInput}

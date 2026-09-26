@@ -24,6 +24,8 @@ export type HrContractRow = {
   poste_ar: string | null;
   poste_fr: string | null;
   qualification_code: string | null;
+  poste_id: string | null;
+  grade: string | null;
   affectation_principale: boolean;
   salaire_base_monthly: number;
   salaire_net_ref_monthly: number;
@@ -55,7 +57,7 @@ export async function listHrContracts(): Promise<ActionResult<HrContractRow[]>> 
     .select(
       `
       id, employee_id, site_id, activity_code_id, contract_type_code, work_regime_code,
-      poste_ar, poste_fr, qualification_code, affectation_principale,
+      poste_ar, poste_fr, qualification_code, poste_id, grade, affectation_principale,
       salaire_base_monthly, salaire_net_ref_monthly, salaire_net_recup_monthly,
       start_date, end_date, status,
       employee:hr_employees ( matricule, last_name, first_name ),
@@ -81,6 +83,8 @@ export async function listHrContracts(): Promise<ActionResult<HrContractRow[]>> 
         poste_ar: row.poste_ar,
         poste_fr: row.poste_fr,
         qualification_code: row.qualification_code,
+        poste_id: row.poste_id ?? null,
+        grade: row.grade ?? null,
         affectation_principale: row.affectation_principale,
         salaire_base_monthly: Number(row.salaire_base_monthly),
         salaire_net_ref_monthly: Number(row.salaire_net_ref_monthly),
@@ -155,6 +159,8 @@ export async function upsertHrContract(
     poste_ar: p.poste_ar,
     poste_fr: p.poste_fr,
     qualification_code: p.qualification_code,
+    poste_id: p.poste_id,
+    grade: p.grade ? p.grade.toUpperCase() : null,
     affectation_principale: p.affectation_principale,
     salaire_base_monthly: p.salaire_base_monthly,
     salaire_net_ref_monthly: p.salaire_net_ref_monthly,

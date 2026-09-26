@@ -14,7 +14,8 @@ export type LineSource =
   | "exception"
   | "advance"
   | "overtime"
-  | "exit";
+  | "exit"
+  | "poste";
 export type LineUnit = SalaryUnit | "hour";
 
 export type PayrollRubrique = {
@@ -35,10 +36,31 @@ export type PayrollAssignment = {
   employee_id: string | null;
   site_id: string | null;
   contract_id: string | null;
+  poste_id?: string | null;
   amount: number;
   unit?: SalaryUnit | null;
   is_active: boolean;
 };
+
+export type SalaryGridRow = {
+  poste_id: string;
+  grade: string;
+  base_monthly: number;
+  net_ref_monthly: number | null;
+  effective_from: string;
+};
+
+/** Grid row in force at `asOf` for a poste and grade. */
+export function gridAsOf(grid: SalaryGridRow[], posteId: string | null | undefined, grade: string | null | undefined, asOf: string) {
+  if (!posteId) return null;
+  const g = (grade || "A").toUpperCase();
+  let best: SalaryGridRow | null = null;
+  for (const row of grid) {
+    if (row.poste_id !== posteId || row.grade.toUpperCase() !== g || row.effective_from > asOf) continue;
+    if (!best || row.effective_from > best.effective_from) best = row;
+  }
+  return best;
+}
 
 export type PayrollException = {
   id: string;
@@ -422,8 +444,8 @@ export function computeLineAmount(input: {
 export function resolvePermanentAssignment(
   rubriqueId: string,
   assignments: PayrollAssignment[],
-  ctx: { employeeId: string; siteId: string; contractId: string },
-): { amount: number; source: "site" | "contract" | "employee"; unit: SalaryUnit | null } | null {
+  ctx: { employeeId: string; siteId: string; contractId: string; posteId?: string | null },
+): { amount: number; source: "site" | "contract" | "employee" | "poste"; unit: SalaryUnit | null } | null {
   const related = assignments.filter(
     (a) => a.rubrique_id === rubriqueId && a.is_active,
   );
@@ -431,6 +453,8 @@ export function resolvePermanentAssignment(
   if (emp) return { amount: emp.amount, source: "employee", unit: emp.unit ?? null };
   const ctr = related.find((a) => a.contract_id === ctx.contractId);
   if (ctr) return { amount: ctr.amount, source: "contract", unit: ctr.unit ?? null };
+  const poste = ctx.posteId ? related.find((a) => a.poste_id === ctx.posteId) : undefined;
+  if (poste) return { amount: poste.amount, source: "poste", unit: poste.unit ?? null };
   const site = related.find((a) => a.site_id === ctx.siteId);
   if (site) return { amount: site.amount, source: "site", unit: site.unit ?? null };
   return null;
@@ -467,6 +491,7 @@ export function buildPayrollLines(input: {
   employeeId: string;
   siteId: string;
   contractId: string;
+  posteId?: string | null;
   baseMonthly: number;
   daysPaid: number;
   daysWorked: number;
@@ -486,6 +511,7 @@ export function buildPayrollLines(input: {
     employeeId: input.employeeId,
     siteId: input.siteId,
     contractId: input.contractId,
+    posteId: input.posteId ?? null,
   };
 
   if (input.baseMonthly > 0) {

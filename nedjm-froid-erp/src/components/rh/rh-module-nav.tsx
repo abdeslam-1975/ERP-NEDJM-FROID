@@ -7,6 +7,7 @@ const items = [
   { href: "/rh", label: "Tableau de bord", exact: true },
   { href: "/rh/employes", label: "Employés" },
   { href: "/rh/contrats", label: "Contrats" },
+  { href: "/rh/postes", label: "Postes & grille" },
   { href: "/rh/presence", label: "Présence" },
   { href: "/rh/conges", label: "Congés" },
   { href: "/rh/paie", label: "Paie" },

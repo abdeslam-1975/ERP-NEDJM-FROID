@@ -25,7 +25,8 @@ export type SalaryRubrique = {
   category: "1" | "2" | "3" | "4";
   cotisable: boolean;
   taxable: boolean;
-  apply_scope: "employee" | "site" | "contract";
+  /** Default level offered for new values; values may be set at any level. */
+  apply_scope: "employee" | "site" | "contract" | "poste";
   default_amount: number;
   sort_order: number;
   is_active: boolean;
@@ -37,6 +38,7 @@ export type SalaryAssignment = {
   employee_id: string | null;
   site_id: string | null;
   contract_id: string | null;
+  poste_id: string | null;
   amount: number;
   unit: SalaryRubrique["unit"] | null;
   is_active: boolean;
@@ -81,13 +83,14 @@ export async function listSalaryAssignments(): Promise<ActionResult<SalaryAssign
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("hr_salary_assignments")
-    .select("id, rubrique_id, employee_id, site_id, contract_id, amount, unit, is_active")
+    .select("id, rubrique_id, employee_id, site_id, contract_id, poste_id, amount, unit, is_active")
     .order("created_at");
   if (error) return { ok: false, error: error.message };
   return {
     ok: true,
     data: (data ?? []).map((row) => ({
       ...row,
+      poste_id: row.poste_id ?? null,
       amount: Number(row.amount),
       unit: (row.unit as SalaryAssignment["unit"]) ?? null,
     })) as SalaryAssignment[],
@@ -105,22 +108,7 @@ export async function upsertSalaryRubrique(
   }
   const p = parsed.data;
   const supabase = await createClient();
-  let cleared = false;
-  if (p.id) {
-    const { data: prev } = await supabase
-      .from("hr_salary_rubriques")
-      .select("apply_scope")
-      .eq("id", p.id)
-      .maybeSingle();
-    if (prev && prev.apply_scope !== p.apply_scope) {
-      const { error: delErr } = await supabase
-        .from("hr_salary_assignments")
-        .delete()
-        .eq("rubrique_id", p.id);
-      if (delErr) return { ok: false, error: delErr.message };
-      cleared = true;
-    }
-  }
+  const cleared = false;
   const flags = salaryClassFlags(p.category);
   const payload = {
     code: p.code,
@@ -201,11 +189,13 @@ export async function upsertSalaryAssignment(
   if (rErr) return { ok: false, error: rErr.message };
   if (!rub) return { ok: false, error: "Rubrique introuvable. · البند غير موجود." };
 
+  const level = p.target_kind ?? rub.apply_scope;
   const payload = {
     rubrique_id: p.rubrique_id,
-    employee_id: rub.apply_scope === "employee" ? p.target_id : null,
-    site_id: rub.apply_scope === "site" ? p.target_id : null,
-    contract_id: rub.apply_scope === "contract" ? p.target_id : null,
+    employee_id: level === "employee" ? p.target_id : null,
+    site_id: level === "site" ? p.target_id : null,
+    contract_id: level === "contract" ? p.target_id : null,
+    poste_id: level === "poste" ? p.target_id : null,
     amount: p.amount,
     unit: p.unit ?? null,
     is_active: p.is_active,
@@ -222,11 +212,21 @@ export async function upsertSalaryAssignment(
     return { ok: false, error: error.message };
   }
   if (!data) return { ok: false, error: "Enregistrement refusé (droits)." };
-  await refreshDraftPayroll({
-    employeeId: payload.employee_id ?? undefined,
-    contractId: payload.contract_id ?? undefined,
-    siteId: payload.site_id ?? undefined,
-  });
+  if (payload.poste_id) {
+    const { data: linked } = await supabase
+      .from("hr_contracts")
+      .select("id")
+      .eq("poste_id", payload.poste_id)
+      .in("status", ["DRAFT", "ACTIVE"])
+      .limit(200);
+    for (const c of linked ?? []) await refreshDraftPayroll({ contractId: c.id });
+  } else {
+    await refreshDraftPayroll({
+      employeeId: payload.employee_id ?? undefined,
+      contractId: payload.contract_id ?? undefined,
+      siteId: payload.site_id ?? undefined,
+    });
+  }
   revalidateSalary();
   return { ok: true, data: { id: data.id } };
 }
@@ -281,8 +281,8 @@ export async function replaceContractSalaryLines(input: {
   for (const line of input.lines) {
     const rub = byId.get(line.rubrique_id);
     if (!rub) continue;
-    if (rub.apply_scope === "contract") contractLines.push(line);
     if (rub.apply_scope === "employee") employeeLines.push(line);
+    else contractLines.push(line);
   }
   const { error: delCtr } = await supabase
     .from("hr_salary_assignments")

@@ -24,7 +24,7 @@ export type RubriqueDraft = {
   category: "1" | "2" | "3" | "4";
   cotisable: boolean;
   taxable: boolean;
-  apply_scope: "employee" | "site" | "contract";
+  apply_scope: "employee" | "site" | "contract" | "poste";
   default_amount: number;
   sort_order: number;
   is_active: boolean;
@@ -122,6 +122,7 @@ function parseScope(raw: string): RubriqueDraft["apply_scope"] | null {
   if (!v) return "employee";
   if (["site", "chantier", "workshop", "ورشة", "atelier"].includes(v)) return "site";
   if (["contract", "contrat", "عقد"].includes(v)) return "contract";
+  if (["poste", "post", "fonction", "منصب", "وظيفة"].includes(v)) return "poste";
   if (["employee", "employe", "salarie", "ouvrier", "عامل"].includes(v)) {
     return "employee";
   }

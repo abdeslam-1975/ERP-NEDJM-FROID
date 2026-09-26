@@ -29,6 +29,8 @@ export default async function ExceptionsPage() {
         }))}
         rubriques={rubriques.ok ? rubriques.data : []}
         canEdit={canEdit}
+        currentUserId={workspace?.id ?? null}
+        canApproveOwn={workspace ? workspaceHasRole(workspace, ["SUPER_ADMIN", "GERANT"]) : false}
         year={now.getFullYear()}
         month={now.getMonth() + 1}
         loadError={

@@ -26,6 +26,7 @@ import {
   buildPayrollLines,
   contractPayableInPeriod,
   exitSettlementLines,
+  gridAsOf,
   groupContractsByEmployee,
   overtimeLines,
   paidMonthFraction,
@@ -36,6 +37,7 @@ import {
   summarizeLines,
   type LegalPayrollRates,
   type OvertimeSpec,
+  type SalaryGridRow,
   type PayrollAdvance,
   type PayrollAssignment,
   type PayrollException,
@@ -514,7 +516,7 @@ async function buildAndSavePayrollRun(
   let contractsQuery = supabase
     .from("hr_contracts")
     .select(
-      "id, employee_id, site_id, salaire_net_ref_monthly, salaire_base_monthly, activity_code_id, start_date, end_date, status",
+      "id, employee_id, site_id, salaire_net_ref_monthly, salaire_base_monthly, activity_code_id, start_date, end_date, status, poste_id, grade",
     )
     .eq("affectation_principale", true)
     .in("status", [...PAYROLL_CONTRACT_STATUSES, "ENDED"]);
@@ -603,11 +605,25 @@ async function buildAndSavePayrollRun(
     must(
       await supabase
         .from("hr_salary_assignments")
-        .select("rubrique_id, employee_id, site_id, contract_id, amount, unit, is_active")
+        .select("rubrique_id, employee_id, site_id, contract_id, poste_id, amount, unit, is_active")
         .eq("is_active", true),
       "Affectations de rubriques",
     ) as PayrollAssignment[]
   ).map((a) => ({ ...a, amount: num(a.amount) }));
+
+  const grid = (
+    must(
+      await supabase
+        .from("hr_salary_grid")
+        .select("poste_id, grade, base_monthly, net_ref_monthly, effective_from"),
+      "Grille salariale",
+    ) as SalaryGridRow[]
+  ).map((g) => ({
+    ...g,
+    base_monthly: num(g.base_monthly),
+    net_ref_monthly: g.net_ref_monthly == null ? null : num(g.net_ref_monthly),
+    effective_from: String(g.effective_from).slice(0, 10),
+  }));
 
   const exceptions = (
     must(
@@ -788,10 +804,17 @@ async function buildAndSavePayrollRun(
       base: num(ctr.salaire_base_monthly),
       net: num(ctr.salaire_net_ref_monthly),
     });
+    const gridRow = gridAsOf(grid, ctr.poste_id, ctr.grade, end);
+    if (gridRow && salary.base > 0 && salary.base < gridRow.base_monthly) {
+      warnings.push(
+        `${empById.get(ctr.employee_id)?.matricule ?? "—"} : salaire de base ${salary.base.toFixed(2)} < grille ${gridRow.base_monthly.toFixed(2)} (grade ${gridRow.grade}) · الأجر أقل من الشبكة`,
+      );
+    }
     let lines = buildPayrollLines({
       employeeId: ctr.employee_id,
       siteId: ctr.site_id,
       contractId: ctr.id,
+      posteId: ctr.poste_id,
       baseMonthly: salary.base,
       daysPaid: paid,
       daysWorked: worked,

@@ -10,6 +10,7 @@ import type { HrEmployeeRow } from "@/lib/actions/hr-employees";
 import type { SalaryAssignment, SalaryRubrique } from "@/lib/actions/hr-salary";
 import type { LegalVarRow } from "@/lib/actions/hr-legal-vars";
 import type { IrgCatalog } from "@/lib/actions/hr-irg";
+import type { PosteRow } from "@/lib/actions/hr-postes";
 import { RhPage, RhTabs, bi } from "@/components/rh/rh-ui";
 
 type SiteOpt = {
@@ -37,9 +38,11 @@ export function ContractsWorkspace({
   irgCatalog,
   isSuperAdmin,
   canEditSalaryValues,
+  postes,
   loadError,
   legalError,
 }: {
+  postes: PosteRow[];
   initialContracts: HrContractRow[];
   employees: HrEmployeeRow[];
   sites: readonly SiteOpt[];
@@ -87,6 +90,7 @@ export function ContractsWorkspace({
           irgCatalog={irgCatalog}
           isSuperAdmin={isSuperAdmin}
           canEditSalaryValues={canEditSalaryValues}
+          postes={postes}
           legalError={legalError}
           loadError={loadError}
         />
@@ -101,6 +105,7 @@ export function ContractsWorkspace({
           employees={salaryEmployees}
           sites={salarySites}
           contracts={salaryContracts}
+          postes={postes.map((p) => ({ id: p.id, label: `${p.code} · ${p.label_fr}` }))}
         />
       ) : null}
 
