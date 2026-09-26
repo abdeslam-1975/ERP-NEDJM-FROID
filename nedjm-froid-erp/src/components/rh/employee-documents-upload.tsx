@@ -72,7 +72,7 @@ export function EmployeeDocumentsUpload({
 
   const doneByCode = useMemo(() => {
     const map = new Map<string, DoneDoc>();
-    for (const f of files) {
+    for (const f of employeeId ? files : []) {
       const slot = slots.find((s) => s.code === f.doc_type_code);
       map.set(f.doc_type_code, {
         code: f.doc_type_code,
@@ -93,7 +93,7 @@ export function EmployeeDocumentsUpload({
       }
     }
     return map;
-  }, [files, doneDocs, slots]);
+  }, [employeeId, files, doneDocs, slots]);
 
   const pendingSlots = slots.filter((s) => !doneByCode.has(s.code));
   const completedList = slots
@@ -119,10 +119,7 @@ export function EmployeeDocumentsUpload({
   }
 
   useEffect(() => {
-    if (!employeeId) {
-      setFiles([]);
-      return;
-    }
+    if (!employeeId) return;
     let cancelled = false;
     void (async () => {
       const result = await listHrFilesForEmployee(employeeId);

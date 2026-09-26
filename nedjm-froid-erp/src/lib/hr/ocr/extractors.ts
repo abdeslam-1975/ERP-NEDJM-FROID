@@ -248,7 +248,7 @@ function extractCni(text: string): OcrFieldSuggestion[] {
     ]) ?? null;
   push(out, "birth_date", "Date de naissance", birth, birth ? "high" : "low");
 
-  let birthPlace =
+  const birthPlace =
     afterLabel(text, [
       "مكان الميلاد",
       "LIEU DE NAISSANCE",
