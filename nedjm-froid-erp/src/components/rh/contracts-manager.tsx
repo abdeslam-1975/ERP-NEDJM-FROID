@@ -30,6 +30,7 @@ import { ContractSalaryFields, type SelectedSalaryLine } from "@/components/rh/c
 import { LegalSettings } from "@/components/rh/legal-settings";
 import { ContractComplianceCards } from "@/components/rh/contract-compliance-cards";
 import { ContractSalaryHistory } from "@/components/rh/contract-salary-history";
+import { ContractPrintDialog } from "@/components/rh/contract-print-dialog";
 import {
   SalaryRubricsManager,
   type SalaryTarget,
@@ -124,6 +125,7 @@ export function ContractsManager({
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [info, setInfo] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const [printId, setPrintId] = useState<string | null>(null);
   const jobs = useMemo(() => catalogOptions(catalogs, "job_title"), [catalogs]);
 
   function openModal(next: FormState, lines: Record<string, SelectedSalaryLine>) {
@@ -366,6 +368,9 @@ export function ContractsManager({
                     }}
                   >
                     {bi("Modifier", "تعديل")}
+                  </Button>{" "}
+                  <Button variant="secondary" onClick={() => setPrintId(row.id)}>
+                    {bi("Imprimer", "طباعة")}
                   </Button>
                 </td>
               </tr>
@@ -393,6 +398,11 @@ export function ContractsManager({
           }
           footer={
             <>
+              {form.id ? (
+                <Button variant="secondary" onClick={() => setPrintId(form.id ?? null)}>
+                  {bi("Imprimer le contrat", "طباعة العقد")}
+                </Button>
+              ) : null}
               <Button variant="secondary" onClick={() => setOpen(false)}>
                 {bi("Annuler", "إلغاء")}
               </Button>
@@ -670,6 +680,13 @@ export function ContractsManager({
             </div>
           ) : null}
         </RhModal>
+      ) : null}
+      {printId ? (
+        <ContractPrintDialog
+          contractId={printId}
+          canEditTemplate={canEditSalaryValues}
+          onClose={() => setPrintId(null)}
+        />
       ) : null}
     </div>
   );
