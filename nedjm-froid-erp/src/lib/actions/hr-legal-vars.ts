@@ -561,17 +561,28 @@ export async function listCnasRegimes(): Promise<ActionResult<CnasRegimeRow[]>> 
 }
 
 const pctOrNull = z.preprocess(
-  (v) => (v === "" || v === undefined ? null : typeof v === "string" ? Number(v.replace(",", ".")) : v),
-  z.number().min(0, "Taux ≥ 0.").max(100, "Taux ≤ 100 %.").nullable(),
+  (v) => {
+    if (v === undefined || v === null) return null;
+    if (typeof v !== "string") return v;
+    const s = v.replace(/[\s%]/g, "").replace(",", ".");
+    return s ? Number(s) : null;
+  },
+  z.number({ error: "Taux : nombre attendu (ex. 10,2)." }).min(0, "Taux ≥ 0.").max(100, "Taux ≤ 100 %.").nullable(),
 );
 
 const regimeSchema = z.object({
   id: z.string().uuid().optional().nullable(),
   code: z
     .string()
-    .trim()
-    .toUpperCase()
-    .regex(/^[A-Z0-9_]{2,30}$/, "Code : 2 à 30 caractères A-Z, 0-9, _."),
+    .transform((s) =>
+      s
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, ""),
+    )
+    .pipe(z.string().regex(/^[A-Z0-9_]{2,30}$/, "Code : au moins 2 caractères (lettres, chiffres ou _), ex. R10.")),
   label_fr: z.string().trim().min(2, "Libellé requis.").max(80),
   label_ar: z.string().trim().max(80).optional().nullable(),
   is_active: z.boolean().default(true),

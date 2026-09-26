@@ -85,10 +85,21 @@ function payrollMonthOf(iso: string) {
 }
 
 function parseNumber(raw: string) {
-  const s = raw.trim().replace(/\s/g, "").replace(",", ".");
+  const s = raw.trim().replace(/[\s%]/g, "").replace(",", ".");
   if (!s) return null;
   const v = Number(s);
   return Number.isFinite(v) ? v : null;
+}
+
+/** "R 10" → "R_10": codes accept A-Z, 0-9 and _ only. */
+function codeInput(raw: string) {
+  return raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+/, "")
+    .slice(0, 30);
 }
 
 function fallbackPeriod(): LegalPeriod {
@@ -1040,27 +1051,40 @@ function RegimeDialog({
   const placeholder = (v: number | null) => (v == null ? "légal" : `légal ${String(toPct(v)).replace(".", ",")}`);
 
   function submit() {
+    const code = form.code.replace(/_+$/, "");
+    if (!/^[A-Z0-9_]{2,30}$/.test(code)) {
+      return setError("Code : au moins 2 caractères (lettres, chiffres ou _), ex. R10 ou R_10.");
+    }
+    const rateFields = [
+      ["employee_pct", "% salarié"],
+      ["employer_pct", "% employeur"],
+      ["fos_pct", "% FOS"],
+    ] as const;
+    const rates: Record<(typeof rateFields)[number][0], number | null> = {
+      employee_pct: null,
+      employer_pct: null,
+      fos_pct: null,
+    };
+    for (const [k, label] of rateFields) {
+      const raw = form[k].trim();
+      const v = parseNumber(raw);
+      if (raw && (v == null || v < 0 || v > 100)) return setError(`${label} : saisissez un nombre entre 0 et 100 (ex. 10,2).`);
+      rates[k] = v;
+    }
     if (ratesChanged && !form.effective_from) return setError("Choisissez le mois d'effet.");
     run(
       () =>
         saveCnasRegime({
           id: regime?.id ?? null,
-          code: form.code,
+          code,
           label_fr: form.label_fr,
           label_ar: form.label_ar || null,
           is_active: form.is_active,
-          rates: ratesChanged
-            ? {
-                employee_pct: form.employee_pct,
-                employer_pct: form.employer_pct,
-                fos_pct: form.fos_pct,
-                effective_from: form.effective_from,
-              }
-            : null,
+          rates: ratesChanged ? { ...rates, effective_from: form.effective_from } : null,
         }),
       ratesChanged
-        ? `Régime ${form.code.toUpperCase()} : nouveaux taux à partir de la paie de ${monthText(form.effective_from)}.`
-        : `Régime ${form.code.toUpperCase()} enregistré.`,
+        ? `Régime ${code} : nouveaux taux à partir de la paie de ${monthText(form.effective_from)}.`
+        : `Régime ${code} enregistré.`,
       onClose,
     );
   }
@@ -1100,7 +1124,7 @@ function RegimeDialog({
             value={form.code}
             disabled={!!regime}
             placeholder="ex. ABATTEMENT"
-            onChange={(e) => set("code", e.target.value.toUpperCase())}
+            onChange={(e) => set("code", codeInput(e.target.value))}
           />
         </RhField>
         <RhField label="Libellé (FR)" required>
