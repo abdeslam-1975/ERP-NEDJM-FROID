@@ -13,6 +13,7 @@ import {
   type MissionOrderFields,
 } from "@/lib/hr/mission-order";
 import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
+import { HR_DOCS_BUCKET, hrFileDisplayUrl, hrFileHref } from "@/lib/hr/hr-file-url";
 import { buildMissionOrderHtml } from "@/components/rh/mission-order-print";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { listCatalogItems } from "@/lib/actions/hr-catalogs";
@@ -72,8 +73,7 @@ function textField(payload: Record<string, unknown>, key: string) {
 }
 
 function archiveUrlOf(payload: Record<string, unknown>) {
-  const url = textField(payload, "archive_url");
-  return url || null;
+  return hrFileDisplayUrl(textField(payload, "archive_path"), textField(payload, "archive_url"));
 }
 
 function siteOrigin() {
@@ -167,7 +167,7 @@ function mapFileRow(row: {
     id: row.id,
     employee_id: row.employee_id,
     doc_type_code: row.doc_type_code,
-    file_url: row.file_url,
+    file_url: hrFileDisplayUrl(row.storage_path, row.file_url),
     file_name: row.file_name ?? null,
     storage_path: row.storage_path ?? null,
     issued_on: row.issued_on,
@@ -315,16 +315,15 @@ export async function uploadHrEmployeeDocument(
   const safeType = docType.replace(/[^a-zA-Z0-9_-]/g, "");
   const path = `${safeId}/${safeType}-${crypto.randomUUID()}.${ext}`;
   const supabase = await createClient();
-  const { error: upErr } = await supabase.storage.from("hr-docs").upload(path, file, {
+  const { error: upErr } = await supabase.storage.from(HR_DOCS_BUCKET).upload(path, file, {
     contentType: file.type,
     upsert: false,
   });
   if (upErr) return { ok: false, error: upErr.message };
-  const { data: pub } = supabase.storage.from("hr-docs").getPublicUrl(path);
   const saved = await upsertHrFile({
     employee_id: employeeId,
     doc_type_code: docType,
-    file_url: pub.publicUrl,
+    file_url: hrFileHref(path),
     file_name: file.name || `${safeType}.${ext}`,
     storage_path: path,
   });
@@ -369,16 +368,16 @@ export async function archiveEmployeeFicheRenseignements(
     const path = `${employeeId.replace(/[^a-zA-Z0-9-]/g, "")}/FICHE_RENSEIGNEMENTS-${crypto.randomUUID()}.pdf`;
     const supabase = await createClient();
     const body = Buffer.from(bytes);
-    const { error: upErr } = await supabase.storage.from("hr-docs").upload(path, body, {
+    const { error: upErr } = await supabase.storage.from(HR_DOCS_BUCKET).upload(path, body, {
       contentType: "application/pdf",
       upsert: false,
     });
     if (upErr) return { ok: false, error: upErr.message };
-    const { data: pub } = supabase.storage.from("hr-docs").getPublicUrl(path);
+    const fileUrl = hrFileHref(path);
     const saved = await upsertHrFile({
       employee_id: employeeId,
       doc_type_code: "FICHE_RENSEIGNEMENTS",
-      file_url: pub.publicUrl,
+      file_url: fileUrl,
       file_name: fileName,
       storage_path: path,
       notes: "Générée automatiquement · مُنشأة تلقائياً",
@@ -386,7 +385,7 @@ export async function archiveEmployeeFicheRenseignements(
     if (!saved.ok) return saved;
     return {
       ok: true,
-      data: { id: saved.data.id, file_name: fileName, file_url: pub.publicUrl },
+      data: { id: saved.data.id, file_name: fileName, file_url: fileUrl },
     };
   } catch (e) {
     return {
@@ -482,16 +481,16 @@ async function archiveMissionOrderSnapshot(input: {
     const path = `${input.employeeId.replace(/[^a-zA-Z0-9-]/g, "")}/OM_ARCHIVE-${safeNum}-${crypto.randomUUID()}.html`;
     const supabase = await createClient();
     const body = Buffer.from(html, "utf8");
-    const { error: upErr } = await supabase.storage.from("hr-docs").upload(path, body, {
+    const { error: upErr } = await supabase.storage.from(HR_DOCS_BUCKET).upload(path, body, {
       contentType: "text/html; charset=utf-8",
       upsert: false,
     });
     if (upErr) return { ok: false, error: upErr.message };
-    const { data: pub } = supabase.storage.from("hr-docs").getPublicUrl(path);
+    const archiveUrl = hrFileHref(path);
     await upsertHrFile({
       employee_id: input.employeeId,
       doc_type_code: "OM_ARCHIVE",
-      file_url: pub.publicUrl,
+      file_url: archiveUrl,
       file_name: fileName,
       storage_path: path,
       notes: `Ordre de mission ${input.number} · أمر بمهمة`,
@@ -506,13 +505,13 @@ async function archiveMissionOrderSnapshot(input: {
       .update({
         payload: {
           ...((current?.payload ?? {}) as Record<string, unknown>),
-          archive_url: pub.publicUrl,
+          archive_url: archiveUrl,
           archive_path: path,
         },
       })
       .eq("id", input.correspondenceId);
     if (payErr) return { ok: false, error: payErr.message };
-    return { ok: true, data: { archive_url: pub.publicUrl, archive_path: path } };
+    return { ok: true, data: { archive_url: archiveUrl, archive_path: path } };
   } catch (e) {
     return {
       ok: false,
