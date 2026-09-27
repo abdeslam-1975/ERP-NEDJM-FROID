@@ -50,6 +50,11 @@ import {
 } from "@/lib/contracts/financial";
 import { AlertBadge } from "@/components/castle/alert-badge";
 import { Button } from "@/components/ui/button";
+import { ContractClausesTab } from "@/components/contracts/contract-clauses-tab";
+import { ContractDocumentsTab } from "@/components/contracts/contract-documents-tab";
+import { ContractExtractionPanel } from "@/components/contracts/contract-extraction-panel";
+import type { ContractDocumentRow } from "@/lib/actions/contract-documents";
+import type { ContractExtractionRow } from "@/lib/actions/contract-extractions";
 
 type Tab =
   | "header"
@@ -63,7 +68,9 @@ type Tab =
   | "penalties"
   | "margin"
   | "rh"
-  | "canva";
+  | "canva"
+  | "clauses"
+  | "documents";
 
 type SiteOpt = { id: string; code: string; name_fr: string };
 
@@ -95,11 +102,19 @@ export function ContractWorkspace({
   contract,
   sites,
   clients,
+  documents,
+  canWrite,
+  extraction,
+  ai,
   financeOptions,
 }: {
   contract: ContractDetail;
   sites: SiteOpt[];
   clients: { id: string; nom_fr: string; code_client: string | null }[];
+  documents: ContractDocumentRow[];
+  canWrite: boolean;
+  extraction: ContractExtractionRow | null;
+  ai: { configured: boolean; model: string };
   financeOptions: ContractFinanceOptions;
 }) {
   const router = useRouter();
@@ -108,6 +123,12 @@ export function ContractWorkspace({
   const [info, setInfo] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [attrs, setAttrs] = useState<ContractAttributes>(contract.attributes);
+  const serverAttrs = JSON.stringify(contract.attributes);
+  const [syncedAttrs, setSyncedAttrs] = useState(serverAttrs);
+  if (syncedAttrs !== serverAttrs) {
+    setSyncedAttrs(serverAttrs);
+    setAttrs(contract.attributes);
+  }
 
   const labor = useMemo(
     () => contract.items.filter((i) => i.item_type === "LABOR"),
@@ -131,6 +152,8 @@ export function ContractWorkspace({
     { id: "balance", label: "Solde" },
     { id: "pilotage", label: "Pilotage" },
     { id: "penalties", label: "Pénalités" },
+    { id: "clauses", label: "Clauses & résiliation" },
+    { id: "documents", label: `Documents (${documents.length})` },
     { id: "margin", label: "Gardes de marge" },
     { id: "rh", label: "RH / AN" },
     { id: "canva", label: "Canva Excel" },
@@ -445,6 +468,42 @@ export function ContractWorkspace({
           pending={pending}
           onSave={(next) =>
             saveAttributes(next, "Pénalités enregistrées.")
+          }
+        />
+      )}
+
+      {tab === "clauses" && (
+        <ContractClausesTab
+          attrs={attrs}
+          documents={documents}
+          pending={pending}
+          canWrite={canWrite}
+          onSave={(next) => saveAttributes(next, "Clauses enregistrées.")}
+        />
+      )}
+
+      {tab === "documents" && (
+        <ContractDocumentsTab
+          contractId={contract.id}
+          documents={documents}
+          canWrite={canWrite}
+          analysis={
+            <ContractExtractionPanel
+              contractId={contract.id}
+              documents={documents}
+              canWrite={canWrite}
+              aiConfigured={ai.configured}
+              model={ai.model}
+              extraction={extraction}
+              attrs={attrs}
+              header={{
+                start_date: contract.start_date,
+                end_date: contract.end_date,
+                ods_date: contract.ods_date,
+                total_amount_ht: contract.total_amount_ht,
+                caution_rate: contract.caution_rate,
+              }}
+            />
           }
         />
       )}

@@ -75,6 +75,61 @@ export const issuerAttrsSchema = z.object({
   capital: z.string().trim().max(120).default(""),
 });
 
+export const clauseCategorySchema = z.enum([
+  "RESILIATION",
+  "FORCE_MAJEURE",
+  "LITIGES",
+  "ASSURANCE",
+  "CONFIDENTIALITE",
+  "REVISION_PRIX",
+  "GARANTIE",
+  "SOUS_TRAITANCE",
+  "AUTRE",
+]);
+
+export const contractClauseSchema = z.object({
+  id: z.string().min(1),
+  category: clauseCategorySchema,
+  article_ref: z.string().trim().max(40).default(""),
+  title: z.string().trim().min(1).max(200),
+  content: z.string().trim().max(8000).default(""),
+  source_document_id: z.string().uuid().nullable().default(null),
+  source_page: z.coerce.number().int().min(1).nullable().default(null),
+});
+
+export const terminationClauseSchema = z.object({
+  article_ref: z.string().trim().max(40).default(""),
+  notice_days: z.coerce.number().int().min(0).nullable().default(null),
+  cure_days: z.coerce.number().int().min(0).nullable().default(null),
+  client_convenience: z.boolean().default(false),
+  grounds: z.array(z.string().trim().min(1).max(300)).default([]),
+  financial_consequences: z.string().trim().max(4000).default(""),
+  caution_effect: z
+    .enum(["NON_PRECISE", "RESTITUEE", "CONFISQUEE", "PARTIELLE"])
+    .default("NON_PRECISE"),
+  notes: z.string().trim().max(4000).default(""),
+  source_document_id: z.string().uuid().nullable().default(null),
+  source_page: z.coerce.number().int().min(1).nullable().default(null),
+});
+
+const emptyTermination = {
+  article_ref: "",
+  notice_days: null,
+  cure_days: null,
+  client_convenience: false,
+  grounds: [],
+  financial_consequences: "",
+  caution_effect: "NON_PRECISE" as const,
+  notes: "",
+  source_document_id: null,
+  source_page: null,
+};
+
+export const contractClausesSchema = z.object({
+  termination: terminationClauseSchema.default(emptyTermination),
+  items: z.array(contractClauseSchema).default([]),
+});
+
 export const financialAttrsSchema = z.object({
   total_mode: totalModeSchema.default("AUTO"),
   tva_mode: tvaModeSchema.default("TAXABLE"),
@@ -85,7 +140,8 @@ export const financialAttrsSchema = z.object({
   caution_sync: cautionSyncSchema.default("FROM_RATE"),
 });
 
-export const contractAttributesSchema = z.object({
+/** Loose: keys set by imports (daily_rate_ht read by the penalty SQL, source_annexe…) must survive a save. */
+export const contractAttributesSchema = z.looseObject({
   financial: financialAttrsSchema.default({
     total_mode: "AUTO",
     tva_mode: "TAXABLE",
@@ -137,11 +193,18 @@ export const contractAttributesSchema = z.object({
     email: "",
     capital: "",
   }),
+  clauses: contractClausesSchema.default({
+    termination: emptyTermination,
+    items: [],
+  }),
 });
 
 export type ContractAttributes = z.infer<typeof contractAttributesSchema>;
 export type ContreLine = z.infer<typeof contreLineSchema>;
 export type PenaltyRule = z.infer<typeof penaltyRuleSchema>;
+export type ContractClause = z.infer<typeof contractClauseSchema>;
+export type TerminationClause = z.infer<typeof terminationClauseSchema>;
+export type ClauseCategory = z.infer<typeof clauseCategorySchema>;
 
 /** El Gassi defaults — data seed for new contracts / migration of legacy attrs. */
 export function elGassiDefaultAttributes(): ContractAttributes {
@@ -293,6 +356,13 @@ export function normalizeContractAttributes(
       issuer: {
         ...base.issuer,
         ...((r.issuer as object) ?? {}),
+      },
+      clauses: {
+        termination: {
+          ...base.clauses.termination,
+          ...(((r.clauses as { termination?: object })?.termination) ?? {}),
+        },
+        items: (r.clauses as { items?: ContractClause[] })?.items ?? [],
       },
     };
     const parsed = contractAttributesSchema.safeParse(merged);

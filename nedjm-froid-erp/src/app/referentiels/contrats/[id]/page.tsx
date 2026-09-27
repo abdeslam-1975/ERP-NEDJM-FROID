@@ -2,7 +2,14 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { ContractWorkspace } from "@/components/contracts/contract-workspace";
 import { listClients } from "@/lib/actions/clients";
-import { requireContractRead } from "@/lib/auth/require-roles";
+import { listContractDocuments } from "@/lib/actions/contract-documents";
+import { getOpenContractExtraction } from "@/lib/actions/contract-extractions";
+import { geminiConfigured, geminiModel } from "@/lib/ai/gemini";
+import {
+  CONTRACT_WRITE_ROLES,
+  requireContractRead,
+  workspaceHasRole,
+} from "@/lib/auth/require-roles";
 import {
   getContract,
   listContractFinanceOptions,
@@ -10,21 +17,25 @@ import {
 } from "@/lib/actions/contracts";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 export default async function ContratDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireContractRead();
+  const workspace = await requireContractRead();
 
   const { id } = await params;
-  const [result, sitesRes, financeRes, clientsRes] = await Promise.all([
-    getContract(id),
-    listSitesForContracts(),
-    listContractFinanceOptions(),
-    listClients(),
-  ]);
+  const [result, sitesRes, financeRes, clientsRes, documentsRes, extractionRes] =
+    await Promise.all([
+      getContract(id),
+      listSitesForContracts(),
+      listContractFinanceOptions(),
+      listClients(),
+      listContractDocuments(id),
+      getOpenContractExtraction(id),
+    ]);
   if (!result.ok) notFound();
 
   return (
@@ -42,6 +53,10 @@ export default async function ContratDetailPage({
               }))
             : []
         }
+        documents={documentsRes.ok ? documentsRes.data : []}
+        canWrite={workspaceHasRole(workspace, CONTRACT_WRITE_ROLES)}
+        extraction={extractionRes.ok ? extractionRes.data : null}
+        ai={{ configured: geminiConfigured(), model: geminiModel() }}
         financeOptions={
           financeRes.ok
             ? financeRes.data

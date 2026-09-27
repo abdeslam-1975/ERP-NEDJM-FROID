@@ -80,4 +80,54 @@ describe("normalizeContractAttributes", () => {
       { from_day: 20, rate: 0.12 },
     ]);
   });
+
+  it("keeps imported keys such as daily_rate_ht used by the penalty SQL", () => {
+    const normalized = normalizeContractAttributes({
+      financial: { total_mode: "AUTO" },
+      daily_rate_ht: 232600,
+      source_annexe: "Annexe 1",
+    });
+    expect(normalized.daily_rate_ht).toBe(232600);
+    expect(normalized.source_annexe).toBe("Annexe 1");
+  });
+
+  it("starts with empty clauses and keeps saved termination and clauses", () => {
+    const empty = normalizeContractAttributes({ financial: {} });
+    expect(empty.clauses.termination.notice_days).toBeNull();
+    expect(empty.clauses.termination.caution_effect).toBe("NON_PRECISE");
+    expect(empty.clauses.items).toEqual([]);
+
+    const saved = normalizeContractAttributes({
+      financial: {},
+      clauses: {
+        termination: {
+          article_ref: "Art. 25",
+          notice_days: 30,
+          cure_days: 8,
+          grounds: ["Manquement grave aux obligations"],
+          caution_effect: "CONFISQUEE",
+        },
+        items: [
+          {
+            id: "c1",
+            category: "FORCE_MAJEURE",
+            article_ref: "Art. 27",
+            title: "Force majeure",
+            content: "Notification sous 48 heures.",
+          },
+        ],
+      },
+    });
+    expect(saved.clauses.termination.notice_days).toBe(30);
+    expect(saved.clauses.termination.cure_days).toBe(8);
+    expect(saved.clauses.termination.client_convenience).toBe(false);
+    expect(saved.clauses.termination.grounds).toEqual(["Manquement grave aux obligations"]);
+    expect(saved.clauses.items[0]).toMatchObject({
+      category: "FORCE_MAJEURE",
+      title: "Force majeure",
+      source_document_id: null,
+      source_page: null,
+    });
+    expect(saved.penalties.presets.length).toBeGreaterThan(0);
+  });
 });
