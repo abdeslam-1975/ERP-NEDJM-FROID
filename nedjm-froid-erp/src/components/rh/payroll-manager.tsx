@@ -6,9 +6,11 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   closePayrollRun,
   generatePayrollRun,
+  loadPayrollSlipDetails,
   reopenPayrollRun,
   validatePayrollRun,
   type PayrollRunRow,
+  type PayrollSlipDetail,
   type PayrollSlipLineRow,
   type PayrollSlipRow,
 } from "@/lib/actions/hr-ops";
@@ -43,6 +45,7 @@ import {
 
 type SiteOpt = { id: string; name_fr: string };
 type View = "all" | "social" | "fiscal";
+const SLIP_PAGE = 40;
 
 function printHtml(html: string) {
   const existing = document.getElementById("hr-print-frame");
@@ -241,6 +244,16 @@ export function PayrollManager({
       return terms.every((t) => hay.includes(t));
     });
   }, [slips, query]);
+  const listKey = `${year}-${month}-${query}`;
+  const [page, setPage] = useState(0);
+  const [seenListKey, setSeenListKey] = useState(listKey);
+  if (seenListKey !== listKey) {
+    setSeenListKey(listKey);
+    setPage(0);
+  }
+  const pageCount = Math.max(1, Math.ceil(visibleSlips.length / SLIP_PAGE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageSlips = visibleSlips.slice(safePage * SLIP_PAGE, safePage * SLIP_PAGE + SLIP_PAGE);
   const [candidates, setCandidates] = useState<{ q: string; rows: PayrollSearchEmployee[] }>({ q: "", rows: [] });
   const missQuery = query.trim().length >= 2 && visibleSlips.length === 0 ? query.trim() : "";
   useEffect(() => {
@@ -346,9 +359,10 @@ export function PayrollManager({
       );
     });
   }
+  const showLineColumns = slips.every((s) => s.detail_loaded !== false);
   const itemCols = useMemo(
-    () => rubricColumns(slips, bulletin.hide_zero_lines),
-    [slips, bulletin.hide_zero_lines],
+    () => (showLineColumns ? rubricColumns(slips, bulletin.hide_zero_lines) : []),
+    [showLineColumns, slips, bulletin.hide_zero_lines],
   );
   const classGroups = useMemo(() => groupByClass(itemCols), [itemCols]);
   const totalCols =
@@ -394,8 +408,41 @@ export function PayrollManager({
     return slipToBulletin(s, bulletin, bulletinRatesFromVars(s.legal_vars, bulletin));
   }
 
+  async function withDetails(rows: PayrollSlipRow[]): Promise<PayrollSlipRow[]> {
+    const missing = rows.filter((s) => s.detail_loaded === false).map((s) => s.id);
+    if (!missing.length) return rows;
+    const patches = new Map<string, PayrollSlipDetail>();
+    for (let i = 0; i < missing.length; i += SLIP_PAGE * 2) {
+      const res = await loadPayrollSlipDetails(missing.slice(i, i + SLIP_PAGE * 2));
+      if (!res.ok) throw new Error(res.error);
+      for (const patch of res.data) patches.set(patch.id, patch);
+    }
+    setSlips((prev) => prev.map((s) => (patches.has(s.id) ? { ...s, ...patches.get(s.id)! } : s)));
+    return rows.map((s) => (patches.has(s.id) ? { ...s, ...patches.get(s.id)! } : s));
+  }
+
   function openBulletin(rows: PayrollSlipRow[]) {
-    setPreview(rows.map(toBulletin));
+    setError(null);
+    start(async () => {
+      try {
+        const full = await withDetails(rows);
+        setPreview(full.map(toBulletin));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Bulletin indisponible.");
+      }
+    });
+  }
+
+  function printRows(rows: PayrollSlipRow[]) {
+    setError(null);
+    start(async () => {
+      try {
+        const full = await withDetails(rows);
+        printBulletins(full.map(toBulletin));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Impression impossible.");
+      }
+    });
   }
 
   return (
@@ -648,17 +695,12 @@ export function PayrollManager({
         >
           Générer
         </Button>
-        {visibleSlips.length > 0 ? (
+        {pageSlips.length > 0 ? (
           <>
-            <Button variant="secondary" onClick={() => openBulletin(visibleSlips)}>
+            <Button variant="secondary" disabled={pending} onClick={() => openBulletin(pageSlips)}>
               {bi("Afficher Bulletin de Paie", "إظهار كشف الأجر")}
             </Button>
-            <Button
-              variant="secondary"
-              onClick={() =>
-                printBulletins(visibleSlips.map(toBulletin))
-              }
-            >
+            <Button variant="secondary" disabled={pending} onClick={() => printRows(pageSlips)}>
               {bi("Imprimer les bulletins", "طباعة الكشوف")}
             </Button>
           </>
@@ -815,7 +857,7 @@ export function PayrollManager({
                 </td>
               </tr>
             ) : (
-              visibleSlips.map((s) => (
+              pageSlips.map((s) => (
                 <tr key={s.id} className="border-b border-border/60">
                   <td className="sticky left-0 z-10 bg-surface px-3.5 py-3">
                     <span className="font-mono text-xs">{s.matricule}</span>{" "}
@@ -900,9 +942,7 @@ export function PayrollManager({
                       </Button>
                       <Button
                         variant="ghost"
-                        onClick={() =>
-                          printBulletins([toBulletin(s)])
-                        }
+                        onClick={() => printRows([s])}
                       >
                         {bi("Imprimer", "طباعة")}
                       </Button>
@@ -914,6 +954,23 @@ export function PayrollManager({
           </tbody>
         </table>
       </RhTableWrap>
+      {pageCount > 1 ? (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <Button variant="secondary" disabled={pending || safePage === 0} onClick={() => setPage(safePage - 1)}>
+            {bi("Précédent", "السابق")}
+          </Button>
+          <span className="text-foreground/70">
+            {safePage * SLIP_PAGE + 1}–{Math.min(visibleSlips.length, (safePage + 1) * SLIP_PAGE)} / {visibleSlips.length}
+          </span>
+          <Button
+            variant="secondary"
+            disabled={pending || safePage >= pageCount - 1}
+            onClick={() => setPage(safePage + 1)}
+          >
+            {bi("Suivant", "التالي")}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

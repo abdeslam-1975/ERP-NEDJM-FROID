@@ -195,6 +195,22 @@ export type PayrollSlipRow = {
   /** IRG / CNAS / CACOBATPH regime applied (null on slips generated before Module 05). */
   compliance: SnapshotCompliance | null;
   lines: PayrollSlipLineRow[];
+  /** False when the list skipped lines and print identity. Undefined means they are present. */
+  detail_loaded?: boolean;
+};
+
+export type PayrollSlipDetail = {
+  id: string;
+  lines: PayrollSlipLineRow[];
+  marital_code: string | null;
+  address_fr: string | null;
+  commune: string | null;
+  poste_fr: string | null;
+  qualification_code: string | null;
+  payment_mode_code: string | null;
+  account_no: string | null;
+  account_key: string | null;
+  detail_loaded: true;
 };
 
 export type PayrollRunRow = {
@@ -1209,6 +1225,8 @@ export async function refreshDraftPayroll(filter: {
 export async function listPayrollSlips(input: {
   year: number;
   month: number;
+  /** List screens skip lines and print identity; declarations and costs keep the default. */
+  includeLines?: boolean;
 }): Promise<ActionResult<PayrollSlipRow[]>> {
   const supabase = await createClient();
   const { data: runs, error: rErr } = await supabase
@@ -1228,58 +1246,47 @@ export async function listPayrollSlips(input: {
     .in("run_id", runIds);
   if (error) return { ok: false, error: error.message };
 
+  const includeLines = input.includeLines !== false;
   const slipIds = (data ?? []).map((row) => row.id);
-  const linesQuery = slipIds.length
-    ? await supabase
-        .from("hr_payroll_slip_lines")
-        .select(
-          "id, slip_id, source_code, code, label_ar, label_fr, category, nature, unit, cotisable, taxable, quantity, unit_amount, amount, sort_order",
-        )
-        .in("slip_id", slipIds)
-        .order("sort_order")
-    : { data: [] as Array<{
-        id: string;
-        slip_id: string;
-        source_code: string;
-        code: string;
-        label_ar: string;
-        label_fr: string;
-        category: string;
-        nature: string;
-        unit: string;
-        cotisable: boolean;
-        taxable: boolean;
-        quantity: number;
-        unit_amount: number;
-        amount: number;
-      }>, error: null };
-  if (linesQuery.error) return { ok: false, error: linesQuery.error.message };
-  const lineRows = linesQuery.data ?? [];
   const linesBySlip = new Map<string, PayrollSlipLineRow[]>();
-  for (const line of lineRows ?? []) {
-    const list = linesBySlip.get(line.slip_id) ?? [];
-    list.push({
-      id: line.id,
-      slip_id: line.slip_id,
-      source_code: line.source_code,
-      code: line.code,
-      label_ar: line.label_ar,
-      label_fr: line.label_fr,
-      category: line.category,
-      nature: line.nature,
-      unit: line.unit,
-      cotisable: Boolean(line.cotisable),
-      taxable: Boolean(line.taxable),
-      quantity: num(line.quantity),
-      unit_amount: num(line.unit_amount),
-      amount: num(line.amount),
-    });
-    linesBySlip.set(line.slip_id, list);
+  if (includeLines && slipIds.length) {
+    const linesQuery = await supabase
+      .from("hr_payroll_slip_lines")
+      .select(
+        "id, slip_id, source_code, code, label_ar, label_fr, category, nature, unit, cotisable, taxable, quantity, unit_amount, amount, sort_order",
+      )
+      .in("slip_id", slipIds)
+      .order("sort_order");
+    if (linesQuery.error) return { ok: false, error: linesQuery.error.message };
+    for (const line of linesQuery.data ?? []) {
+      const list = linesBySlip.get(line.slip_id) ?? [];
+      list.push({
+        id: line.id,
+        slip_id: line.slip_id,
+        source_code: line.source_code,
+        code: line.code,
+        label_ar: line.label_ar,
+        label_fr: line.label_fr,
+        category: line.category,
+        nature: line.nature,
+        unit: line.unit,
+        cotisable: Boolean(line.cotisable),
+        taxable: Boolean(line.taxable),
+        quantity: num(line.quantity),
+        unit_amount: num(line.unit_amount),
+        amount: num(line.amount),
+      });
+      linesBySlip.set(line.slip_id, list);
+    }
   }
 
   const runMap = new Map((runs ?? []).map((r) => [r.id, r]));
-  const empIds = [...new Set((data ?? []).map((row) => row.employee_id))];
-  const contractIds = [...new Set((data ?? []).map((row) => row.hr_contract_id).filter(Boolean))] as string[];
+  const empIds = includeLines
+    ? [...new Set((data ?? []).map((row) => row.employee_id))]
+    : [];
+  const contractIds = includeLines
+    ? ([...new Set((data ?? []).map((row) => row.hr_contract_id).filter(Boolean))] as string[])
+    : [];
   const [civil, contacts, bank, quals, contracts, sites] = await Promise.all([
     empIds.length
       ? supabase.from("hr_employee_civil").select("employee_id, marital_code").in("employee_id", empIds)
@@ -1391,6 +1398,104 @@ export async function listPayrollSlips(input: {
         legal_vars: snapshots.get(row.id)?.vars ?? periodVars,
         compliance: snapshots.get(row.id)?.compliance ?? null,
         lines: linesBySlip.get(row.id) ?? [],
+        detail_loaded: includeLines,
+      };
+    }),
+  };
+}
+
+const SLIP_DETAIL_LIMIT = 80;
+
+export async function loadPayrollSlipDetails(
+  ids: string[],
+): Promise<ActionResult<PayrollSlipDetail[]>> {
+  const unique = [...new Set(ids)].filter((id) => UUID_RE.test(id));
+  if (!unique.length) return { ok: true, data: [] };
+  if (unique.length > SLIP_DETAIL_LIMIT) {
+    return { ok: false, error: "Trop de bulletins d'un coup. · عدد الكشوف أكبر من الحد." };
+  }
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("hr_payroll_slips")
+    .select("id, employee_id, hr_contract_id")
+    .in("id", unique);
+  if (error) return { ok: false, error: error.message };
+  if ((data ?? []).length !== unique.length) {
+    return { ok: false, error: "Bulletin introuvable. · الكشف غير موجود." };
+  }
+  const empIds = [...new Set((data ?? []).map((row) => row.employee_id))];
+  const contractIds = [...new Set((data ?? []).map((row) => row.hr_contract_id).filter(Boolean))] as string[];
+  const [linesQuery, civil, contacts, bank, quals, contracts] = await Promise.all([
+    supabase
+      .from("hr_payroll_slip_lines")
+      .select(
+        "id, slip_id, source_code, code, label_ar, label_fr, category, nature, unit, cotisable, taxable, quantity, unit_amount, amount, sort_order",
+      )
+      .in("slip_id", unique)
+      .order("sort_order"),
+    supabase.from("hr_employee_civil").select("employee_id, marital_code").in("employee_id", empIds),
+    supabase.from("hr_employee_contacts").select("employee_id, address_fr, commune").in("employee_id", empIds),
+    supabase
+      .from("hr_employee_bank")
+      .select("employee_id, payment_mode_code, account_no, account_key")
+      .in("employee_id", empIds),
+    supabase.from("hr_employee_qualifications").select("employee_id, level_code").in("employee_id", empIds),
+    contractIds.length
+      ? supabase.from("hr_contracts").select("id, poste_fr, qualification_code").in("id", contractIds)
+      : Promise.resolve({ data: [] as Array<{ id: string; poste_fr: string | null; qualification_code: string | null }>, error: null }),
+  ]);
+  if (linesQuery.error) return { ok: false, error: linesQuery.error.message };
+  if (civil.error) return { ok: false, error: civil.error.message };
+  if (contacts.error) return { ok: false, error: contacts.error.message };
+  if (bank.error) return { ok: false, error: bank.error.message };
+  if (quals.error) return { ok: false, error: quals.error.message };
+  if (contracts.error) return { ok: false, error: contracts.error.message };
+  const linesBySlip = new Map<string, PayrollSlipLineRow[]>();
+  for (const line of linesQuery.data ?? []) {
+    const list = linesBySlip.get(line.slip_id) ?? [];
+    list.push({
+      id: line.id,
+      slip_id: line.slip_id,
+      source_code: line.source_code,
+      code: line.code,
+      label_ar: line.label_ar,
+      label_fr: line.label_fr,
+      category: line.category,
+      nature: line.nature,
+      unit: line.unit,
+      cotisable: Boolean(line.cotisable),
+      taxable: Boolean(line.taxable),
+      quantity: num(line.quantity),
+      unit_amount: num(line.unit_amount),
+      amount: num(line.amount),
+    });
+    linesBySlip.set(line.slip_id, list);
+  }
+  const civilMap = new Map((civil.data ?? []).map((r) => [r.employee_id, r]));
+  const contactMap = new Map((contacts.data ?? []).map((r) => [r.employee_id, r]));
+  const bankMap = new Map((bank.data ?? []).map((r) => [r.employee_id, r]));
+  const qualMap = new Map((quals.data ?? []).map((r) => [r.employee_id, r]));
+  const contractMap = new Map((contracts.data ?? []).map((r) => [r.id, r]));
+  return {
+    ok: true,
+    data: (data ?? []).map((row) => {
+      const cv = civilMap.get(row.employee_id);
+      const ct = contactMap.get(row.employee_id);
+      const bk = bankMap.get(row.employee_id);
+      const q = qualMap.get(row.employee_id);
+      const ctr = row.hr_contract_id ? contractMap.get(row.hr_contract_id) : undefined;
+      return {
+        id: row.id,
+        lines: linesBySlip.get(row.id) ?? [],
+        marital_code: cv?.marital_code ?? null,
+        address_fr: ct?.address_fr ?? null,
+        commune: ct?.commune ?? null,
+        poste_fr: ctr?.poste_fr ?? null,
+        qualification_code: ctr?.qualification_code ?? q?.level_code ?? null,
+        payment_mode_code: bk?.payment_mode_code ?? null,
+        account_no: bk?.account_no ?? null,
+        account_key: bk?.account_key ?? null,
+        detail_loaded: true as const,
       };
     }),
   };
