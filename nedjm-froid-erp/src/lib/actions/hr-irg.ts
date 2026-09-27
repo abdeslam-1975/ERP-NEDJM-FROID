@@ -3,6 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { requireComplianceWrite } from "@/lib/auth/compliance-access";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
+import { logLegalOverride } from "@/lib/hr/log-legal-override";
+import {
+  irgBracketDeviations,
+  irgRuleDeviations,
+  legalOverrideError,
+  statutoryIrgRule,
+  takeAuthorize,
+} from "@/lib/hr/statutory";
 import { createClient } from "@/lib/supabase/server";
 import {
   irgBracketsReplaceSchema,
@@ -240,12 +248,21 @@ export async function replaceIrgBrackets(
 ): Promise<ActionResult<IrgBracketRow[]>> {
   const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
-  const parsed = irgBracketsReplaceSchema.safeParse(input);
+  const { body, authorize } = takeAuthorize(input);
+  const parsed = irgBracketsReplaceSchema.safeParse(body);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides." };
   }
   const supabase = await createClient();
   const { version_id, brackets } = parsed.data;
+  const deviations = irgBracketDeviations(
+    brackets.map((b) => ({
+      min_annual: b.min_annual,
+      max_annual: b.max_annual,
+      rate: b.rate_pct / 100,
+    })),
+  );
+  if (deviations.length && !authorize) return { ok: false, error: legalOverrideError(deviations) };
   const kept: string[] = [];
   for (let i = 0; i < brackets.length; i += 1) {
     const b = brackets[i];
@@ -294,6 +311,10 @@ export async function replaceIrgBrackets(
     .eq("version_id", version_id)
     .order("sort_order");
   if (savedErr) return { ok: false, error: savedErr.message };
+  if (deviations.length && authorize) {
+    const logged = await logLegalOverride("irg_brackets", { brackets: "LF 2022 art. 104" }, { version_id, brackets });
+    if (logged) return { ok: false, error: `Tranches enregistrées. Journal d'audit indisponible : ${logged}` };
+  }
   return {
     ok: true,
     data: (saved ?? []).map((b) => ({
@@ -346,13 +367,21 @@ export async function upsertIrgRule(
 ): Promise<ActionResult<{ id: string }>> {
   const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
-  const parsed = irgRuleSchema.safeParse(input);
+  const { body, authorize } = takeAuthorize(input);
+  const parsed = irgRuleSchema.safeParse(body);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides." };
   }
   const p = parsed.data;
   const params = buildRuleParams(p);
   const supabase = await createClient();
+  const { data: ruleSet } = await supabase
+    .from("ref_irg_rule_sets")
+    .select("taxpayer_category")
+    .eq("id", p.rule_set_id)
+    .maybeSingle();
+  const deviations = irgRuleDeviations(ruleSet?.taxpayer_category ?? "STANDARD", p.kind, params, p.formula);
+  if (deviations.length && !authorize) return { ok: false, error: legalOverrideError(deviations) };
   const row = {
     rule_set_id: p.rule_set_id,
     kind: p.kind,
@@ -361,22 +390,65 @@ export async function upsertIrgRule(
     params,
     formula: p.formula,
   };
+  const savedId = p.id;
   if (p.id) {
     const { error } = await supabase.from("ref_irg_rules").update(row).eq("id", p.id);
     if (error) return { ok: false, error: error.message };
+  } else {
+    const { data, error } = await supabase.from("ref_irg_rules").insert(row).select("id").single();
+    if (error || !data) return { ok: false, error: error?.message ?? "Règle refusée." };
+    if (deviations.length && authorize) {
+      const logged = await logLegalOverride(
+        `irg_rule:${data.id}`,
+        statutoryIrgRule(ruleSet?.taxpayer_category ?? "STANDARD", p.kind),
+        { kind: p.kind, params, formula: p.formula },
+      );
+      if (logged) return { ok: false, error: `Règle enregistrée. Journal d'audit indisponible : ${logged}` };
+    }
     revalidateIrg();
-    return { ok: true, data: { id: p.id } };
+    return { ok: true, data: { id: data.id } };
   }
-  const { data, error } = await supabase.from("ref_irg_rules").insert(row).select("id").single();
-  if (error || !data) return { ok: false, error: error?.message ?? "Règle refusée." };
+  if (deviations.length && authorize) {
+    const logged = await logLegalOverride(
+      `irg_rule:${savedId}`,
+      statutoryIrgRule(ruleSet?.taxpayer_category ?? "STANDARD", p.kind),
+      { kind: p.kind, params, formula: p.formula },
+    );
+    if (logged) return { ok: false, error: `Règle enregistrée. Journal d'audit indisponible : ${logged}` };
+  }
   revalidateIrg();
-  return { ok: true, data: { id: data.id } };
+  return { ok: true, data: { id: savedId ?? "" } };
 }
 
-export async function deleteIrgRule(id: string): Promise<ActionResult<true>> {
+export async function deleteIrgRule(id: string, authorizeOverride = false): Promise<ActionResult<true>> {
   const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const supabase = await createClient();
+  const { data: existing } = await supabase
+    .from("ref_irg_rules")
+    .select("id, kind, params, formula, rule_set_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (existing && statutoryIrgRule("STANDARD", existing.kind)) {
+    const { data: ruleSet } = await supabase
+      .from("ref_irg_rule_sets")
+      .select("taxpayer_category")
+      .eq("id", existing.rule_set_id)
+      .maybeSingle();
+    const legal = statutoryIrgRule(ruleSet?.taxpayer_category ?? "STANDARD", existing.kind);
+    if (legal && !authorizeOverride) {
+      return {
+        ok: false,
+        error: legalOverrideError([
+          `${existing.kind} : supprimer cette règle retire un élément du barème légal.`,
+        ]),
+      };
+    }
+    if (legal && authorizeOverride) {
+      const logged = await logLegalOverride(`irg_rule:${id}`, legal, { deleted: true, kind: existing.kind });
+      if (logged) return { ok: false, error: `Journal d'audit indisponible : ${logged}` };
+    }
+  }
   const { error } = await supabase.from("ref_irg_rules").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
   revalidateIrg();

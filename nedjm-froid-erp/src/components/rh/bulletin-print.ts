@@ -559,13 +559,22 @@ export function buildBulletinHtml(models: BulletinModel[], origin = "") {
     .box .k { display: inline-block; min-width: 36mm; }
     .box .v { font-weight: 700; }
     .period { margin: 3.2mm 0 2mm; font-size: 12px; }
+    .frame { border-radius: 8px; overflow: hidden; margin-bottom: 3mm; }
     table.lines { width: 100%; border-collapse: collapse; }
-    table.lines th, table.lines td { border: 1px solid #000; padding: 1.1mm 1.4mm; }
-    table.lines th { font-weight: 700; text-align: left; }
-    table.lines td.num, table.lines th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    table.lines th, table.lines td { border: 1px solid #000; padding: 1.1mm 1.4mm; text-align: center; vertical-align: middle; }
+    table.lines th { font-weight: 700; }
+    table.lines td.num, table.lines th.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
     table.lines td.code { width: 11mm; }
     table.lines .gain, table.lines .ret { width: 24mm; }
-    .net-row { margin: 3mm 0 4mm; text-align: right; font-weight: 700; }
+    .totaux {
+      display: grid;
+      grid-template-columns: 1fr 24mm 24mm;
+      margin: 0 0 2.4mm;
+      font-weight: 700;
+      text-align: center;
+      align-items: center;
+    }
+    .net-row { margin: 1mm 0 4mm; text-align: right; font-weight: 700; }
     .net-amt {
       display: inline-block;
       border: 1px solid #000;
@@ -576,27 +585,43 @@ export function buildBulletinHtml(models: BulletinModel[], origin = "") {
       font-size: 13px;
       margin-left: 4mm;
     }
-    table.mv, table.foot, table.pay { width: 100%; border-collapse: collapse; margin-bottom: 3mm; }
+    table.mv, table.foot, table.pay { width: 100%; border-collapse: collapse; }
     table.mv th, table.mv td, table.foot th, table.foot td, table.pay th, table.pay td {
-      border: 1px solid #000; padding: 1.15mm 1.6mm;
+      border: 1px solid #000; padding: 1.15mm 1.6mm; text-align: center; vertical-align: middle;
     }
-    table.mv th, table.foot th { text-align: center; font-weight: 700; }
+    table.mv th, table.foot th, table.pay th { font-weight: 700; }
     table.pay { width: 78%; }
-    table.pay th { text-align: left; width: 28mm; font-weight: 700; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .regime { margin: -1.5mm 0 3mm; font-size: 9px; }
-    table.irg { width: 100%; border-collapse: collapse; margin: 0 0 3mm; font-size: 8.5px; }
-    table.irg th, table.irg td { border: 1px solid #000; padding: 0.7mm 1.3mm; vertical-align: top; }
-    table.irg th { text-align: center; font-weight: 700; }
+    table.pay th { width: 28mm; }
+    .num { font-variant-numeric: tabular-nums; }
+    .regime { margin: -1.5mm 0 3mm; font-size: 9px; text-align: center; }
   </style>
 </head>
 <body>${pages}</body>
 </html>`;
 }
 
+function footerColumns(m: BulletinModel) {
+  const s = m.layout;
+  const cols: { label: string; value: string }[] = [{ label: s.footer_base, value: formatDa(m.base_cotisable) }];
+  const push = (rate: number | null | undefined, amount: number, label: string) => {
+    if (!((rate != null && rate > 0) || amount > 0)) return;
+    cols.push({ label, value: formatDa(amount) });
+  };
+  push(m.rates.ss_pct, m.employee_ss, withPct(s.footer_css_sal, m.rates.ss_pct));
+  push(m.rates.pat_pct, m.employer_ss, withPct(s.footer_css_pat, m.rates.pat_pct));
+  push(m.rates.fos_pct, m.fos_amount, withPct(s.footer_fos, m.rates.fos_pct));
+  push(m.rates.caco_pct, m.cacobatph, withPct(s.footer_caco, m.rates.caco_pct));
+  push(m.rates.intemp_sal_pct, m.intemperies_employee, withPct(s.footer_intemp_sal, m.rates.intemp_sal_pct));
+  push(m.rates.intemp_pat_pct, m.intemperies_employer, withPct(s.footer_intemp_pat, m.rates.intemp_pat_pct));
+  cols.push({ label: s.footer_irg_base, value: formatDa(m.irg_base) });
+  cols.push({ label: s.footer_irg, value: formatDa(m.irg_amount) });
+  return cols;
+}
+
 function bulletinPage(m: BulletinModel, origin = "") {
   const s = m.layout;
   const letterhead = resolveBulletinLetterhead(s, origin);
+  const foot = footerColumns(m);
   const lineRows = m.lines
     .map(
       (l) => `<tr>
@@ -619,6 +644,7 @@ function bulletinPage(m: BulletinModel, origin = "") {
       <div class="box">${identityRows(s.identity_right, m.values)}</div>
     </div>
     <div class="period">${escapeHtml(s.period_label)} <b>${escapeHtml(m.period_text)}</b></div>
+    <div class="frame">
     <table class="lines">
       <thead>
         <tr>
@@ -630,16 +656,16 @@ function bulletinPage(m: BulletinModel, origin = "") {
           <th class="num">${escapeHtml(s.col_retenue)}</th>
         </tr>
       </thead>
-      <tbody>${lineRows}
-        <tr>
-          <td colspan="4" class="num"><b>${escapeHtml(s.totaux_label)}</b></td>
-          <td class="num"><b>${formatDa(m.total_gain)}${escapeHtml(s.unit_da)}</b></td>
-          <td class="num"><b>${formatDa(m.total_retenue)}${escapeHtml(s.unit_da)}</b></td>
-        </tr>
-      </tbody>
+      <tbody>${lineRows}</tbody>
     </table>
+    </div>
+    <div class="totaux">
+      <span>${escapeHtml(s.totaux_label)}</span>
+      <span>${formatDa(m.total_gain)}${escapeHtml(s.unit_da)}</span>
+      <span>${formatDa(m.total_retenue)}${escapeHtml(s.unit_da)}</span>
+    </div>
     <div class="net-row">${escapeHtml(s.net_label)} <span class="net-amt">${formatDa(m.net_payable)}${escapeHtml(s.unit_da)}</span></div>
-    ${m.irg_panel}
+    <div class="frame">
     <table class="mv">
       <thead>
         <tr>
@@ -669,35 +695,15 @@ function bulletinPage(m: BulletinModel, origin = "") {
         </tr>
       </tbody>
     </table>
+    </div>
+    <div class="frame">
     <table class="foot">
-      <thead>
-        <tr>
-          <th>${escapeHtml(s.footer_base)}</th>
-          <th>${escapeHtml(withPct(s.footer_css_sal, m.rates.ss_pct))}</th>
-          <th>${escapeHtml(withPct(s.footer_css_pat, m.rates.pat_pct))}</th>
-          <th>${escapeHtml(withPct(s.footer_fos, m.rates.fos_pct))}</th>
-          <th>${escapeHtml(withPct(s.footer_caco, m.rates.caco_pct))}</th>
-          <th>${escapeHtml(withPct(s.footer_intemp_sal, m.rates.intemp_sal_pct))}</th>
-          <th>${escapeHtml(withPct(s.footer_intemp_pat, m.rates.intemp_pat_pct))}</th>
-          <th>${escapeHtml(s.footer_irg_base)}</th>
-          <th>${escapeHtml(s.footer_irg)}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>${formatDa(m.base_cotisable)}</td>
-          <td>${formatDa(m.employee_ss)}</td>
-          <td>${formatDa(m.employer_ss)}</td>
-          <td>${m.fos_amount ? formatDa(m.fos_amount) : ""}</td>
-          <td>${m.cacobatph ? formatDa(m.cacobatph) : ""}</td>
-          <td>${m.intemperies_employee ? formatDa(m.intemperies_employee) : ""}</td>
-          <td>${m.intemperies_employer ? formatDa(m.intemperies_employer) : ""}</td>
-          <td>${formatDa(m.irg_base)}</td>
-          <td>${formatDa(m.irg_amount)}</td>
-        </tr>
-      </tbody>
+      <thead><tr>${foot.map((c) => `<th>${escapeHtml(c.label)}</th>`).join("")}</tr></thead>
+      <tbody><tr>${foot.map((c) => `<td>${escapeHtml(c.value)}</td>`).join("")}</tr></tbody>
     </table>
+    </div>
     ${m.regime_note ? `<div class="regime">${escapeHtml(m.regime_note)}</div>` : ""}
+    <div class="frame">
     <table class="pay">
       <tr>
         <th>${escapeHtml(s.payment_label)}</th><td>${escapeHtml(m.payment_mode)}</td>

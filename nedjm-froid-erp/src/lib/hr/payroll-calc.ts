@@ -696,6 +696,7 @@ export function summarizeLines(lines: PayrollLine[], rates: LegalPayrollRates): 
   );
   const baseSs = Math.max(0, grossCotisable);
   const employeeSs = roundMoney(baseSs * rates.cnasEmployee);
+  // Décret 15-236: 25 % employer and 0.5 % FOS are separate. FOS must not be folded into cnasEmployer.
   const employerSs = roundMoney(baseSs * (rates.cnasEmployer + rates.cnasFos));
   const cacobatph = rates.appliesCacobatph ? roundMoney(baseSs * rates.cacobatph) : 0;
   const intemperiesEmployee = rates.appliesIntemperies

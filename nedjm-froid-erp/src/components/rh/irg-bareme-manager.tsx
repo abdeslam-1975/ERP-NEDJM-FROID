@@ -15,6 +15,13 @@ import {
   type IrgVersion,
 } from "@/lib/actions/hr-irg";
 import { computeMonthlyIrg } from "@/lib/hr/irg-calc";
+import { LegalOverrideDialog } from "@/components/rh/legal-override-dialog";
+import {
+  isLegalOverrideError,
+  legalOverrideLines,
+  STATUTORY_IRG_BRACKETS,
+  statutoryIrgRule,
+} from "@/lib/hr/statutory";
 import { Button } from "@/components/ui/button";
 import {
   RhAlert,
@@ -150,6 +157,9 @@ export function IrgBaremeManager({
   const [rf, setRf] = useState(ruleForm(null, catalog.ruleSets[0]?.id ?? ""));
   const [previewBase, setPreviewBase] = useState("40000");
   const [error, setError] = useState<string | null>(loadError ?? null);
+  const [override, setOverride] = useState<null | { lines: string[]; kind: "brackets" | "rule" | "delete"; ruleId?: string }>(
+    null,
+  );
   const [info, setInfo] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -266,21 +276,37 @@ export function IrgBaremeManager({
     });
   }
 
-  function saveBrackets() {
+  function saveBrackets(choice: "check" | "legal" | "authorize" = "check") {
     if (!canEdit || !versionId) return;
     start(async () => {
       setError(null);
-      const payload = draft.map((b) => ({
-        id: b.id,
-        min_annual: Number(b.min_annual || 0),
-        max_annual: b.max_annual === "" ? null : Number(b.max_annual),
-        rate_pct: Number(b.rate_pct || 0),
-      }));
-      const result = await replaceIrgBrackets({ version_id: versionId, brackets: payload });
+      const payload =
+        choice === "legal"
+          ? STATUTORY_IRG_BRACKETS.map((b) => ({
+              min_annual: b.min_annual,
+              max_annual: b.max_annual,
+              rate_pct: Math.round(b.rate * 10000) / 100,
+            }))
+          : draft.map((b) => ({
+              id: b.id,
+              min_annual: Number(b.min_annual || 0),
+              max_annual: b.max_annual === "" ? null : Number(b.max_annual),
+              rate_pct: Number(b.rate_pct || 0),
+            }));
+      const result = await replaceIrgBrackets({
+        version_id: versionId,
+        brackets: payload,
+        authorize_override: choice === "authorize",
+      });
       if (!result.ok) {
+        if (isLegalOverrideError(result.error)) {
+          setOverride({ lines: legalOverrideLines(result.error), kind: "brackets" });
+          return;
+        }
         setError(result.error);
         return;
       }
+      setOverride(null);
       setInfo(bi("Tranches enregistrées.", "تم حفظ الشرائح."));
       setBrackets((prev) => [...prev.filter((b) => b.version_id !== versionId), ...result.data]);
       setDraft(toDraft(result.data));
@@ -308,28 +334,36 @@ export function IrgBaremeManager({
     });
   }
 
-  function saveRule() {
+  function saveRule(choice: "check" | "legal" | "authorize" = "check") {
     if (!canEdit || !setId) return;
     start(async () => {
       setError(null);
+      const category = ruleSets.find((s) => s.id === setId)?.taxpayer_category ?? "STANDARD";
+      const legal = choice === "legal" ? statutoryIrgRule(category, rf.kind) : null;
       const result = await upsertIrgRule({
         id: rf.id || undefined,
         rule_set_id: setId,
         kind: rf.kind,
         applies_to: rf.applies_to,
         sequence: Number(rf.sequence || 10),
-        formula: rf.formula,
-        monthly_min: rf.monthly_min,
-        monthly_max: rf.monthly_max,
-        rate_pct: rf.rate_pct,
-        min_monthly: rf.min_monthly,
-        max_monthly: rf.max_monthly,
-        deduct_tokens: rf.deduct_tokens,
+        formula: legal ? legal.formula : rf.formula,
+        monthly_min: legal ? legal.params.monthly_min : rf.monthly_min,
+        monthly_max: legal ? legal.params.monthly_max : rf.monthly_max,
+        rate_pct: legal && typeof legal.params.rate === "number" ? legal.params.rate * 100 : rf.rate_pct,
+        min_monthly: legal ? legal.params.min_monthly : rf.min_monthly,
+        max_monthly: legal ? legal.params.max_monthly : rf.max_monthly,
+        deduct_tokens: legal && Array.isArray(legal.params.deduct_tokens) ? legal.params.deduct_tokens.join(",") : rf.deduct_tokens,
+        authorize_override: choice === "authorize",
       });
       if (!result.ok) {
+        if (isLegalOverrideError(result.error)) {
+          setOverride({ lines: legalOverrideLines(result.error), kind: "rule" });
+          return;
+        }
         setError(result.error);
         return;
       }
+      setOverride(null);
       setInfo(bi("Règle enregistrée.", "تم حفظ القاعدة."));
       const next: IrgRuleRow = {
         id: result.data.id,
@@ -365,14 +399,19 @@ export function IrgBaremeManager({
     });
   }
 
-  function removeRule(id: string) {
+  function removeRule(id: string, authorize = false) {
     if (!canEdit) return;
     start(async () => {
-      const result = await deleteIrgRule(id);
+      const result = await deleteIrgRule(id, authorize);
       if (!result.ok) {
+        if (isLegalOverrideError(result.error)) {
+          setOverride({ lines: legalOverrideLines(result.error), kind: "delete", ruleId: id });
+          return;
+        }
         setError(result.error);
         return;
       }
+      setOverride(null);
       setRules((prev) => prev.filter((r) => r.id !== id));
       setInfo(bi("Règle supprimée.", "تم حذف القاعدة."));
     });
@@ -589,7 +628,7 @@ export function IrgBaremeManager({
             >
               {bi("Ajouter une tranche", "إضافة شريحة")}
             </Button>
-            <Button disabled={pending || !versionId} onClick={saveBrackets}>
+            <Button disabled={pending || !versionId} onClick={() => saveBrackets()}>
               {bi("Enregistrer les tranches", "حفظ الشرائح")}
             </Button>
           </RhToolbar>
@@ -787,7 +826,7 @@ export function IrgBaremeManager({
               </RhField>
             ) : null}
             <div className="flex items-end gap-2">
-              <Button disabled={pending || !setId} onClick={saveRule}>
+              <Button disabled={pending || !setId} onClick={() => saveRule()}>
                 {rf.id ? bi("Mettre à jour", "تحديث") : bi("Ajouter la règle", "إضافة القاعدة")}
               </Button>
               {rf.id ? (
@@ -799,6 +838,23 @@ export function IrgBaremeManager({
           </div>
         ) : null}
       </RhPanel>
+      {override ? (
+        <LegalOverrideDialog
+          lines={override.lines}
+          pending={pending}
+          onClose={() => setOverride(null)}
+          onRespect={() => {
+            if (override.kind === "brackets") saveBrackets("legal");
+            else if (override.kind === "rule") saveRule("legal");
+            else setOverride(null);
+          }}
+          onAuthorize={() => {
+            if (override.kind === "brackets") saveBrackets("authorize");
+            else if (override.kind === "rule") saveRule("authorize");
+            else if (override.ruleId) removeRule(override.ruleId, true);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

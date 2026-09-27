@@ -3,6 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireComplianceWrite } from "@/lib/auth/compliance-access";
+import { logLegalOverride } from "@/lib/hr/log-legal-override";
+import {
+  regimeRateDeviations,
+  legalOverrideError,
+  STATUTORY_CNAS,
+  STATUTORY_RATES,
+  statutoryFractionDeviation,
+  takeAuthorize,
+} from "@/lib/hr/statutory";
 import { createClient } from "@/lib/supabase/server";
 import {
   complianceGroupOf,
@@ -303,7 +312,8 @@ export async function addLegalVarVersion(
 ): Promise<ActionResult<{ id: string }>> {
   const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
-  const parsed = addVersionSchema.safeParse(input);
+  const { body, authorize } = takeAuthorize(input);
+  const parsed = addVersionSchema.safeParse(body);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides." };
   }
@@ -317,15 +327,26 @@ export async function addLegalVarVersion(
     value = p.value_numeric;
   }
   const supabase = await createClient();
-  if (!(await loadComplianceVar(supabase, p.var_id))) {
+  const variable = await loadComplianceVar(supabase, p.var_id);
+  if (!variable) {
     return { ok: false, error: "Variable hors unité 05." };
   }
+  const deviation = statutoryFractionDeviation(variable.key, value);
+  if (deviation && !authorize) return { ok: false, error: legalOverrideError([deviation]) };
   const { data, error } = await supabase.rpc("hr_set_legal_var_version", {
     p_var_id: p.var_id,
     p_from: p.effective_from,
     p_value: value,
   });
   if (error) return { ok: false, error: error.message };
+  if (deviation && authorize) {
+    const logged = await logLegalOverride(
+      variable.key,
+      { fraction: STATUTORY_RATES[variable.key]?.fraction ?? null },
+      { fraction: value, effective_from: p.effective_from },
+    );
+    if (logged) return { ok: false, error: `Valeur enregistrée. Journal d'audit indisponible : ${logged}` };
+  }
   revalidateLegal();
   return { ok: true, data: { id: String(data) } };
 }
@@ -601,11 +622,14 @@ const regimeSchema = z.object({
 export async function saveCnasRegime(input: unknown): Promise<ActionResult<{ id: string }>> {
   const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
-  const parsed = regimeSchema.safeParse(input);
+  const { body, authorize } = takeAuthorize(input);
+  const parsed = regimeSchema.safeParse(body);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides." };
   }
   const p = parsed.data;
+  const deviations = p.rates ? regimeRateDeviations(p.code, p.rates) : [];
+  if (deviations.length && !authorize) return { ok: false, error: legalOverrideError(deviations) };
   const supabase = await createClient();
   const row = {
     kind: "social_profile",
@@ -642,6 +666,14 @@ export async function saveCnasRegime(input: unknown): Promise<ActionResult<{ id:
     if (rErr) {
       if (!p.id) await supabase.from("hr_catalogs").delete().eq("id", data.id);
       return { ok: false, error: rErr.message };
+    }
+    if (deviations.length && authorize) {
+      const logged = await logLegalOverride(
+        `cnas:${p.code}`,
+        STATUTORY_CNAS,
+        { ...p.rates, decision: "AUTORISER_DEPASSEMENT" },
+      );
+      if (logged) return { ok: false, error: `Taux enregistrés. Journal d'audit indisponible : ${logged}` };
     }
   }
   revalidateLegal();

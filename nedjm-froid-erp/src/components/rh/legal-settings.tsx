@@ -21,6 +21,8 @@ import {
 } from "@/lib/actions/hr-legal-vars";
 import type { ContributionGroup } from "@/lib/hr/compliance-keys";
 import { IrgBaremeManager } from "@/components/rh/irg-bareme-manager";
+import { LegalOverrideDialog } from "@/components/rh/legal-override-dialog";
+import { isLegalOverrideError, legalOverrideLines, STATUTORY_CNAS, statutoryPercent } from "@/lib/hr/statutory";
 import type { IrgCatalog } from "@/lib/actions/hr-irg";
 import { Button } from "@/components/ui/button";
 import {
@@ -115,21 +117,27 @@ function useLegalAction() {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [override, setOverride] = useState<string[] | null>(null);
   function run(action: () => Promise<{ ok: true } | { ok: false; error: string }>, success: string, after?: () => void) {
     setError(null);
     setInfo(null);
     start(async () => {
       const result = await action();
       if (!result.ok) {
+        if (isLegalOverrideError(result.error)) {
+          setOverride(legalOverrideLines(result.error));
+          return;
+        }
         setError(result.error);
         return;
       }
+      setOverride(null);
       setInfo(success);
       after?.();
       router.refresh();
     });
   }
-  return { pending, error, info, setError, setInfo, run };
+  return { pending, error, info, setError, setInfo, override, setOverride, run };
 }
 
 function Feedback({ error, info }: { error: string | null; info: string | null }) {
@@ -517,25 +525,30 @@ function ValueDialog({
   period: LegalPeriod;
   onClose: () => void;
 }) {
-  const { pending, error, setError, run } = useLegalAction();
+  const { pending, error, setError, override, setOverride, run } = useLegalAction();
   const current = lastValue(row);
   const [value, setValue] = useState(
     current == null ? "" : String(asPercent ? toPct(current) : current).replace(".", ","),
   );
   const [from, setFrom] = useState(period.default_from);
 
-  function submit() {
-    const v = parseNumber(value);
+  function submit(choice: "check" | "legal" | "authorize" = "check") {
+    const statutory = statutoryPercent(row.key);
+    const proposed = parseNumber(value);
+    const useLegal = choice === "legal" && statutory != null;
+    const v = useLegal ? statutory : proposed;
     if (v == null) return setError("Saisissez une valeur numérique.");
     if (!from) return setError("Choisissez le mois d'effet.");
+    const asPct = asPercent || useLegal;
     run(
       () =>
-        addLegalVarVersion(
-          asPercent
-            ? { var_id: row.id, effective_from: from, value_pct: v, as_percent: true }
-            : { var_id: row.id, effective_from: from, value_numeric: v, as_percent: false },
-        ),
-      `${row.label_fr} : ${String(v).replace(".", ",")}${asPercent ? " %" : ""} à partir de ${monthText(from)}.`,
+        addLegalVarVersion({
+          var_id: row.id,
+          effective_from: from,
+          ...(asPct ? { value_pct: v, as_percent: true } : { value_numeric: v, as_percent: false }),
+          authorize_override: choice === "authorize",
+        }),
+      `${row.label_fr} : ${String(v).replace(".", ",")}${asPct ? " %" : ""} à partir de ${monthText(from)}.`,
       onClose,
     );
   }
@@ -550,7 +563,7 @@ function ValueDialog({
           <Button variant="secondary" disabled={pending} onClick={onClose}>
             Fermer
           </Button>
-          <Button disabled={pending} onClick={submit}>
+          <Button disabled={pending} onClick={() => submit()}>
             {bi("Enregistrer", "حفظ")}
           </Button>
         </>
@@ -567,6 +580,15 @@ function ValueDialog({
         Les paies des mois précédents gardent l&apos;ancienne valeur. Enregistrer deux fois le même mois remplace la
         valeur prévue pour ce mois.
       </p>
+      {override ? (
+        <LegalOverrideDialog
+          lines={override}
+          pending={pending}
+          onClose={() => setOverride(null)}
+          onRespect={() => submit("legal")}
+          onAuthorize={() => submit("authorize")}
+        />
+      ) : null}
     </QuickDialog>
   );
 }
@@ -1060,7 +1082,7 @@ function RegimeDialog({
   period: LegalPeriod;
   onClose: () => void;
 }) {
-  const { pending, error, setError, run } = useLegalAction();
+  const { pending, error, setError, override, setOverride, run } = useLegalAction();
   const src = regime;
   const initialRates = {
     employee_pct: plainPct(src?.employee_pct ?? null),
@@ -1081,7 +1103,7 @@ function RegimeDialog({
   );
   const placeholder = (v: number | null) => (v == null ? "légal" : `légal ${String(toPct(v)).replace(".", ",")}`);
 
-  function submit() {
+  function submit(choice: "check" | "legal" | "authorize" = "check") {
     const code = form.code.replace(/_+$/, "");
     if (!/^[A-Z0-9_]{2,30}$/.test(code)) {
       return setError("Code : au moins 2 caractères (lettres, chiffres ou _), ex. R10 ou R_10.");
@@ -1102,7 +1124,16 @@ function RegimeDialog({
       if (raw && (v == null || v < 0 || v > 100)) return setError(`${label} : saisissez un nombre entre 0 et 100 (ex. 10,2).`);
       rates[k] = v;
     }
-    if (ratesChanged && !form.effective_from) return setError("Choisissez le mois d'effet.");
+    if ((ratesChanged || choice === "legal") && !form.effective_from) return setError("Choisissez le mois d'effet.");
+    const applied =
+      choice === "legal"
+        ? {
+            employee_pct: STATUTORY_CNAS.employee_pct,
+            employer_pct: STATUTORY_CNAS.employer_pct,
+            fos_pct: STATUTORY_CNAS.fos_pct,
+          }
+        : rates;
+    const sendRates = ratesChanged || choice === "legal" || choice === "authorize";
     run(
       () =>
         saveCnasRegime({
@@ -1111,11 +1142,14 @@ function RegimeDialog({
           label_fr: form.label_fr,
           label_ar: form.label_ar || null,
           is_active: form.is_active,
-          rates: ratesChanged ? { ...rates, effective_from: form.effective_from } : null,
+          authorize_override: choice === "authorize",
+          rates: sendRates ? { ...applied, effective_from: form.effective_from } : null,
         }),
-      ratesChanged
-        ? `Régime ${code} : nouveaux taux à partir de la paie de ${monthText(form.effective_from)}.`
-        : `Régime ${code} enregistré.`,
+      choice === "legal"
+        ? `Régime ${code} : taux légaux (9 % / 25 % / FOS 0,5 %) à partir de ${monthText(form.effective_from)}.`
+        : ratesChanged
+          ? `Régime ${code} : nouveaux taux à partir de la paie de ${monthText(form.effective_from)}.`
+          : `Régime ${code} enregistré.`,
       onClose,
     );
   }
@@ -1141,7 +1175,7 @@ function RegimeDialog({
           <Button variant="secondary" disabled={pending} onClick={onClose}>
             Fermer
           </Button>
-          <Button disabled={pending || form.label_fr.trim().length < 2 || form.code.trim().length < 2} onClick={submit}>
+          <Button disabled={pending || form.label_fr.trim().length < 2 || form.code.trim().length < 2} onClick={() => submit()}>
             {regime ? bi("Enregistrer", "حفظ") : bi("Ajouter", "إضافة")}
           </Button>
         </>
@@ -1187,6 +1221,15 @@ function RegimeDialog({
           <p className="text-xs text-foreground/55">Modifiez un taux pour choisir son mois d&apos;effet.</p>
         )}
       </div>
+      {override ? (
+        <LegalOverrideDialog
+          lines={override}
+          pending={pending}
+          onClose={() => setOverride(null)}
+          onRespect={() => submit("legal")}
+          onAuthorize={() => submit("authorize")}
+        />
+      ) : null}
     </QuickDialog>
   );
 }
