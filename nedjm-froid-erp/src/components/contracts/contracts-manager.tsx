@@ -28,10 +28,12 @@ function money(n: number) {
 }
 
 type SiteOpt = { id: string; code: string; name_fr: string };
+type ClientOpt = { id: string; nom_fr: string; code_client: string | null };
 
 type FormState = {
   id?: string;
   contract_number: string;
+  client_id: string;
   client_name: string;
   site_id: string;
   start_date: string;
@@ -50,6 +52,7 @@ type FormState = {
 
 const emptyForm = (siteId: string, taxRateCode: string): FormState => ({
   contract_number: "",
+  client_id: "",
   client_name: "",
   site_id: siteId,
   start_date: "",
@@ -71,6 +74,7 @@ function fromContract(c: ContractListRow): FormState {
   return {
     id: c.id,
     contract_number: c.contract_number,
+    client_id: c.client_id ?? "",
     client_name: c.client_name,
     site_id: c.site_id,
     start_date: c.start_date,
@@ -91,11 +95,15 @@ function fromContract(c: ContractListRow): FormState {
 export function ContractsManager({
   initialContracts,
   sites,
+  clients,
+  focusClientId,
   taxRates,
   loadError,
 }: {
   initialContracts: ContractListRow[];
   sites: SiteOpt[];
+  clients: ClientOpt[];
+  focusClientId?: string;
   taxRates: ContractFinanceOptions["tax_rates"];
   loadError?: string;
 }) {
@@ -113,24 +121,30 @@ export function ContractsManager({
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return initialContracts;
-    return initialContracts.filter(
-      (c) =>
+    return initialContracts.filter((c) => {
+      if (focusClientId && c.client_id !== focusClientId) return false;
+      if (!needle) return true;
+      return (
         c.contract_number.toLowerCase().includes(needle) ||
         c.client_name.toLowerCase().includes(needle) ||
-        (c.site_name ?? "").toLowerCase().includes(needle),
-    );
-  }, [initialContracts, q]);
+        (c.site_name ?? "").toLowerCase().includes(needle)
+      );
+    });
+  }, [initialContracts, q, focusClientId]);
 
   function openCreate() {
-    setForm(
-      emptyForm(
-        sites[0]?.id ?? "",
-        taxRates.find((rate) => rate.is_default)?.code ??
-          taxRates[0]?.code ??
-          "",
-      ),
+    const next = emptyForm(
+      sites[0]?.id ?? "",
+      taxRates.find((rate) => rate.is_default)?.code ??
+        taxRates[0]?.code ??
+        "",
     );
+    if (focusClientId) {
+      const client = clients.find((item) => item.id === focusClientId);
+      next.client_id = focusClientId;
+      next.client_name = client?.nom_fr ?? "";
+    }
+    setForm(next);
     setError(null);
     setOpen(true);
   }
@@ -158,6 +172,7 @@ export function ContractsManager({
       const result = await upsertContract({
         id: form.id,
         contract_number: form.contract_number,
+        client_id: form.client_id || null,
         client_name: form.client_name,
         site_id: form.site_id,
         start_date: form.start_date,
@@ -215,6 +230,15 @@ export function ContractsManager({
           {loadError || error}
         </div>
       )}
+
+      {focusClientId ? (
+        <p className="text-sm text-foreground/70">
+          Contrats de ce client.{" "}
+          <Link href="/referentiels/contrats" className="font-semibold text-brand hover:underline">
+            Voir tous les contrats
+          </Link>
+        </p>
+      ) : null}
 
       <input
         className="w-full max-w-md rounded-md border border-border bg-surface px-3 py-2 text-sm"
@@ -309,13 +333,40 @@ export function ContractsManager({
                 />
               </Field>
               <Field label="Client *">
-                <input
-                  className={inputClass}
-                  value={form.client_name}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, client_name: e.target.value }))
-                  }
-                />
+                {clients.length > 0 ? (
+                  <select
+                    className={inputClass}
+                    value={form.client_id}
+                    onChange={(e) => {
+                      const client = clients.find((item) => item.id === e.target.value);
+                      setForm((f) => ({
+                        ...f,
+                        client_id: e.target.value,
+                        client_name: client?.nom_fr ?? "",
+                      }));
+                    }}
+                  >
+                    <option value="">—</option>
+                    {form.client_id &&
+                    !clients.some((item) => item.id === form.client_id) ? (
+                      <option value={form.client_id}>{form.client_name}</option>
+                    ) : null}
+                    {clients.map((client) => (
+                      <option key={client.id} value={client.id}>
+                        {client.code_client ? `${client.code_client} — ` : ""}
+                        {client.nom_fr}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    className={inputClass}
+                    value={form.client_name}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, client_name: e.target.value }))
+                    }
+                  />
+                )}
               </Field>
               <Field label="Site *">
                 <select

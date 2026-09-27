@@ -46,6 +46,14 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    titleFr: "Commercial",
+    titleAr: "التجاري",
+    items: [
+      { href: "/referentiels/clients", labelFr: "Clients", labelAr: "العملاء", icon: "users" },
+      { href: "/referentiels/contrats", labelFr: "Contrats clients", labelAr: "عقود العملاء", icon: "contract" },
+    ],
+  },
+  {
     titleFr: "Finance & Achats",
     titleAr: "المالية والمشتريات",
     items: [

@@ -19,6 +19,10 @@ export const contractUpsertSchema = z
   .object({
     id: z.string().uuid().optional(),
     contract_number: z.string().trim().min(2).max(80),
+    client_id: z
+      .union([z.string().uuid(), z.literal(""), z.null()])
+      .optional()
+      .transform((value) => (value ? value : null)),
     client_name: z.string().trim().min(2).max(200),
     site_id: z.string().uuid("Site invalide"),
     start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

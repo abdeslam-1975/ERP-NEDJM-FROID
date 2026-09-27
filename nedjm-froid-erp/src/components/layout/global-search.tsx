@@ -34,6 +34,8 @@ const PAGES: PageEntry[] = [
   { href: "/rh/attestations", fr: "Attestations", ar: "الشهادات" },
   { href: "/rh/legal", fr: "Cotisations & impôts", ar: "الاشتراكات والضرائب", keywords: "cnas irg cacobatph regime" },
   { href: "/rh/parametres", fr: "Paramètres RH", ar: "إعدادات الموارد البشرية", keywords: "rubriques" },
+  { href: "/referentiels/clients", fr: "Clients", ar: "العملاء", keywords: "fiche client nif" },
+  { href: "/referentiels/contrats", fr: "Contrats clients", ar: "عقود العملاء", keywords: "commercial" },
   { href: "/referentiels/chantiers", fr: "Chantiers", ar: "الورشات", keywords: "sites" },
   { href: "/referentiels/activites", fr: "Codes d'activité", ar: "رموز النشاط" },
   { href: "/finance", fr: "Banque & caisse", ar: "البنك والصندوق" },

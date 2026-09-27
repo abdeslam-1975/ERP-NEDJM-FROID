@@ -219,6 +219,7 @@ export type ContractStats = {
 export type ContractListRow = {
   id: string;
   contract_number: string;
+  client_id: string | null;
   client_name: string;
   site_id: string;
   site_name: string | null;
@@ -337,7 +338,7 @@ export async function listContracts(): Promise<ActionResult<ContractListRow[]>> 
     .from("ref_contracts")
     .select(
       `
-      id, contract_number, client_name, site_id, start_date, end_date, ods_date,
+      id, contract_number, client_id, client_name, site_id, start_date, end_date, ods_date,
       total_amount_ht, caution_rate, caution_amount, status, attributes,
       site:ref_sites ( name_fr ),
       items:contract_items ( id, item_type )
@@ -355,6 +356,7 @@ export async function listContracts(): Promise<ActionResult<ContractListRow[]>> 
       return {
         id: c.id,
         contract_number: c.contract_number,
+        client_id: c.client_id ?? null,
         client_name: c.client_name,
         site_id: c.site_id,
         site_name: site?.name_fr ?? null,
@@ -384,7 +386,7 @@ export async function getContract(
     .from("ref_contracts")
     .select(
       `
-      id, contract_number, client_name, site_id, start_date, end_date, ods_date,
+      id, contract_number, client_id, client_name, site_id, start_date, end_date, ods_date,
       total_amount_ht, caution_rate, caution_amount, status, attributes,
       site:ref_sites ( name_fr ),
       items:contract_items (
@@ -466,6 +468,7 @@ export async function getContract(
     data: {
       id: data.id,
       contract_number: data.contract_number,
+      client_id: data.client_id ?? null,
       client_name: data.client_name,
       site_id: data.site_id,
       site_name: site?.name_fr ?? null,
@@ -528,6 +531,18 @@ export async function upsertContract(
     },
   };
 
+  let clientName = p.client_name;
+  if (p.client_id) {
+    const { data: client, error: clientError } = await supabase
+      .from("ref_clients")
+      .select("nom_fr")
+      .eq("id", p.client_id)
+      .maybeSingle();
+    if (clientError) return { ok: false, error: clientError.message };
+    if (!client) return { ok: false, error: "Client introuvable." };
+    clientName = client.nom_fr;
+  }
+
   if (p.id) {
     const fin = await recalculateFinancials(
       supabase,
@@ -542,7 +557,8 @@ export async function upsertContract(
       .from("ref_contracts")
       .update({
         contract_number: p.contract_number,
-        client_name: p.client_name,
+        client_id: p.client_id,
+        client_name: clientName,
         site_id: p.site_id,
         start_date: p.start_date,
         end_date: p.end_date,
@@ -574,7 +590,8 @@ export async function upsertContract(
     .from("ref_contracts")
     .insert({
       contract_number: p.contract_number,
-      client_name: p.client_name,
+      client_id: p.client_id,
+      client_name: clientName,
       site_id: p.site_id,
       start_date: p.start_date,
       end_date: p.end_date,

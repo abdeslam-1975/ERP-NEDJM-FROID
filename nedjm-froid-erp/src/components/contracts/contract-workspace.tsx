@@ -94,10 +94,12 @@ function uid() {
 export function ContractWorkspace({
   contract,
   sites,
+  clients,
   financeOptions,
 }: {
   contract: ContractDetail;
   sites: SiteOpt[];
+  clients: { id: string; nom_fr: string; code_client: string | null }[];
   financeOptions: ContractFinanceOptions;
 }) {
   const router = useRouter();
@@ -172,7 +174,18 @@ export function ContractWorkspace({
           <h2 className="mt-2 font-display text-2xl font-semibold">
             {contract.contract_number}
           </h2>
-          <p className="text-foreground/70">{contract.client_name}</p>
+          <p className="text-foreground/70">
+            {contract.client_id ? (
+              <Link
+                href={`/referentiels/clients/${contract.client_id}`}
+                className="font-medium text-brand hover:underline"
+              >
+                {contract.client_name}
+              </Link>
+            ) : (
+              contract.client_name
+            )}
+          </p>
           <p className="mt-1 text-xs text-foreground/55">
             Durée {duration} j · HT {money(contract.total_amount_ht)} · Caution{" "}
             {money(contract.caution_amount)} · Mode{" "}
@@ -221,6 +234,7 @@ export function ContractWorkspace({
         <HeaderTab
           contract={contract}
           sites={sites}
+          clients={clients}
           taxRates={financeOptions.tax_rates}
           attrs={attrs}
           laborHt={laborHt}
@@ -488,6 +502,7 @@ export function ContractWorkspace({
 function HeaderTab({
   contract,
   sites,
+  clients,
   taxRates,
   attrs,
   laborHt,
@@ -499,6 +514,7 @@ function HeaderTab({
 }: {
   contract: ContractDetail;
   sites: SiteOpt[];
+  clients: { id: string; nom_fr: string; code_client: string | null }[];
   taxRates: ContractFinanceOptions["tax_rates"];
   attrs: ContractAttributes;
   laborHt: number;
@@ -510,6 +526,7 @@ function HeaderTab({
 }) {
   const [form, setForm] = useState({
     contract_number: contract.contract_number,
+    client_id: contract.client_id ?? "",
     client_name: contract.client_name,
     site_id: contract.site_id,
     start_date: contract.start_date,
@@ -549,13 +566,40 @@ function HeaderTab({
           />
         </Field>
         <Field label="Client">
-          <input
-            className={inputClass}
-            value={form.client_name}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, client_name: e.target.value }))
-            }
-          />
+          {clients.length > 0 ? (
+            <select
+              className={inputClass}
+              value={form.client_id}
+              onChange={(e) => {
+                const client = clients.find((item) => item.id === e.target.value);
+                setForm((f) => ({
+                  ...f,
+                  client_id: e.target.value,
+                  client_name: client?.nom_fr ?? "",
+                }));
+              }}
+            >
+              <option value="">—</option>
+              {form.client_id &&
+              !clients.some((item) => item.id === form.client_id) ? (
+                <option value={form.client_id}>{form.client_name}</option>
+              ) : null}
+              {clients.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.code_client ? `${client.code_client} — ` : ""}
+                  {client.nom_fr}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className={inputClass}
+              value={form.client_name}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, client_name: e.target.value }))
+              }
+            />
+          )}
         </Field>
         <Field label="Site">
           <select
@@ -811,6 +855,7 @@ function HeaderTab({
           onSave({
             id: contract.id,
             contract_number: form.contract_number,
+            client_id: form.client_id || null,
             client_name: form.client_name,
             site_id: form.site_id,
             start_date: form.start_date,
