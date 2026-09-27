@@ -478,6 +478,10 @@ export function PayrollManager({
           {bi("CNAS employeur", "ضمان المؤسسة")} {periodRates.pat_pct ?? "—"}
           {bulletin.unit_percent}
         </RhChip>
+        <RhChip tone="brand">
+          FOS {periodRates.fos_pct ?? "—"}
+          {bulletin.unit_percent}
+        </RhChip>
         <RhChip>
           {bi("Congés CACOBATPH", "عطل كاكوباتف")} {periodRates.caco_pct ?? "—"}
           {bulletin.unit_percent}

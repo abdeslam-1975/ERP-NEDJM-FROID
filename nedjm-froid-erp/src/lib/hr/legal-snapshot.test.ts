@@ -3,7 +3,7 @@ import { bulletinRatesFromVars, DEFAULT_BULLETIN_SETTINGS } from "@/lib/hr/bulle
 import { parseLegalSnapshot } from "@/lib/hr/legal-vars-as-of";
 
 describe("bulletinRatesFromVars", () => {
-  it("converts decimal legal vars to bulletin percentages (employer = base + FOS)", () => {
+  it("converts decimal legal vars to bulletin percentages and keeps FOS in its own rate", () => {
     const rates = bulletinRatesFromVars(
       {
         CNAS_EMPLOYEE: 0.09,
@@ -17,7 +17,8 @@ describe("bulletinRatesFromVars", () => {
     );
     expect(rates).toEqual({
       ss_pct: 9,
-      pat_pct: 25.5,
+      pat_pct: 25,
+      fos_pct: 0.5,
       caco_pct: 12.21,
       intemp_sal_pct: 0.75,
       intemp_pat_pct: 0.75,

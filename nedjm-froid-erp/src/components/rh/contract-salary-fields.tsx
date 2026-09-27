@@ -19,7 +19,7 @@ export const SALARY_CLASSES = [
   { id: "2" as const, fr: "CNAS seulement", ar: "ضمان فقط" },
   { id: "3" as const, fr: "IRG seulement", ar: "ضريبة فقط" },
   { id: "4" as const, fr: "Ni CNAS ni IRG", ar: "لا ضمان ولا ضريبة" },
-  { id: "5" as const, fr: "Retenues (+ / −)", ar: "الاقتطاعات (+ / −)" },
+  { id: "5" as const, fr: "Retenues", ar: "الاقتطاعات" },
 ];
 
 export function classTitle(id: SalaryRubrique["category"]) {
@@ -163,7 +163,7 @@ export function ContractSalaryFields({
                       </RhField>
                       <RhField
                         label={`${bi("Valeur", "القيمة")} (${valueSuffix(unit)})${
-                          r.category === RETENUE_CATEGORY ? " · + / −" : ""
+                          r.category === RETENUE_CATEGORY ? " · " + bi("retenue", "اقتطاع") : ""
                         }`}
                       >
                         <input
@@ -171,7 +171,7 @@ export function ContractSalaryFields({
                           disabled={!checked}
                           title={
                             r.category === RETENUE_CATEGORY
-                              ? "Positif = retenu du net, négatif = rendu · موجب = يُقتطع، سالب = يُرجَع"
+                              ? "Montant positif, déduit du net sur le bulletin · مبلغ موجب يُقتطع من الصافي في الكشف"
                               : undefined
                           }
                           value={current?.amount ?? ""}

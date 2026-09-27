@@ -3,6 +3,8 @@ import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
 export type BulletinLegalRates = {
   ss_pct: number | null;
   pat_pct: number | null;
+  /** Fonds des œuvres sociales, printed in its own box (usually 0.5). */
+  fos_pct?: number | null;
   caco_pct: number | null;
   intemp_sal_pct?: number | null;
   intemp_pat_pct?: number | null;
@@ -53,6 +55,7 @@ export type HrBulletinSettings = {
   footer_base: string;
   footer_css_sal: string;
   footer_css_pat: string;
+  footer_fos: string;
   footer_caco: string;
   footer_intemp_sal: string;
   footer_intemp_pat: string;
@@ -157,6 +160,7 @@ export const DEFAULT_BULLETIN_SETTINGS: HrBulletinSettings = {
   footer_base: "Base Cotisable",
   footer_css_sal: "C.S.S. Salariale {pct}%",
   footer_css_pat: "C.S.S. Patronale {pct}%",
+  footer_fos: "FOS {pct}%",
   footer_caco: "Congés Annuels {pct}%",
   footer_intemp_sal: "Intempéries sal. {pct}%",
   footer_intemp_pat: "Intempéries pat. {pct}%",
@@ -282,6 +286,7 @@ export function parseBulletinLayout(raw: unknown): HrBulletinSettings {
     footer_base: text("footer_base"),
     footer_css_sal: text("footer_css_sal"),
     footer_css_pat: text("footer_css_pat"),
+    footer_fos: text("footer_fos"),
     footer_caco: text("footer_caco"),
     footer_intemp_sal: text("footer_intemp_sal"),
     footer_intemp_pat: text("footer_intemp_pat"),
@@ -328,7 +333,8 @@ export function bulletinRatesFromVars(
   const fos = pct(settings.fos_var_key);
   return {
     ss_pct: pct(settings.ss_var_key),
-    pat_pct: pat == null && fos == null ? null : Math.round(((pat ?? 0) + (fos ?? 0)) * 100) / 100,
+    pat_pct: pat,
+    fos_pct: fos,
     caco_pct: pct(settings.caco_var_key),
     intemp_sal_pct: pct(settings.intemp_sal_var_key),
     intemp_pat_pct: pct(settings.intemp_emp_var_key),

@@ -111,6 +111,36 @@ describe("bulletin GAS layout helpers", () => {
     expect(model.charges_patronales).toBe(10600);
   });
 
+  it("prints the 0.5% FOS in its own box, apart from the employer CNAS share", () => {
+    const model = slipToBulletin(
+      {
+        employee_name: "Test",
+        matricule: "001",
+        period_year: 2026,
+        period_month: 9,
+        days_worked: 30,
+        days_paid: 30,
+        gross_amount: 40000,
+        employee_ss: 3600,
+        employer_ss: 10200,
+        cacobatph: 0,
+        irg_amount: 0,
+        net_payable: 36400,
+        lines: [
+          { code: "BASE", label_fr: "Salaire de base", nature: "indemnite", unit: "month", quantity: 1, unit_amount: 40000, amount: 40000 },
+        ],
+      },
+      DEFAULT_BULLETIN_SETTINGS,
+      { ss_pct: 9, pat_pct: 25, fos_pct: 0.5, caco_pct: null },
+    );
+    expect(model.employer_ss).toBe(10000);
+    expect(model.fos_amount).toBe(200);
+    expect(model.charges_patronales).toBe(10200);
+    const html = buildBulletinHtml([model]);
+    expect(html).toContain("FOS 0.5%");
+    expect(html).toContain("200,00");
+  });
+
   it("drops extra zero lines and prints on the company letterhead", () => {
     const rows = buildBulletinLines({
       lines: [
@@ -227,7 +257,7 @@ describe("bulletin GAS layout helpers", () => {
       "502",
     ]);
     expect(rows.find((r) => r.code === "501")).toMatchObject({ gain: null, retenue: 1500 });
-    expect(rows.find((r) => r.code === "502")).toMatchObject({ gain: null, retenue: -300 });
+    expect(rows.find((r) => r.code === "502")).toMatchObject({ gain: null, retenue: 300 });
   });
 
   it("sorts print lines by class and writes DA / % / DA/j", () => {

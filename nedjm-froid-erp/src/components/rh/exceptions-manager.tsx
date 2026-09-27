@@ -473,14 +473,14 @@ export function ExceptionsManager({
             </RhField>
             <RhField
               label={`${bi("Valeur", "القيمة")} (${valueSuffix(form.unit)})${
-                form.category === RETENUE_CATEGORY ? " · + / −" : ""
+                form.category === RETENUE_CATEGORY ? " · " + bi("retenue", "اقتطاع") : ""
               }`}
             >
               <input
                 className={rhInput}
                 title={
                   form.category === RETENUE_CATEGORY
-                    ? "Positif = retenu du net, négatif = rendu · موجب = يُقتطع، سالب = يُرجَع"
+                    ? "Montant positif, déduit du net sur le bulletin · مبلغ موجب يُقتطع من الصافي في الكشف"
                     : undefined
                 }
                 value={form.amount}

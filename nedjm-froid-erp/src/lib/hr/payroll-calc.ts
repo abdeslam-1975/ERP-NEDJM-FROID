@@ -7,7 +7,7 @@ import {
 
 export const SALARY_CATEGORIES = ["1", "2", "3", "4", "5"] as const;
 export type SalaryCategory = (typeof SALARY_CATEGORIES)[number];
-/** Class 5 = retenues: signed amounts, positive is withheld from the net, negative is given back. */
+/** Class 5 = retenues. The amount is entered positive; the payslip deducts it from the net. */
 export const RETENUE_CATEGORY: SalaryCategory = "5";
 
 export function isSalaryCategory(value: unknown): value is SalaryCategory {
@@ -469,7 +469,7 @@ export function computeLineAmount(input: {
   if (input.category === RETENUE_CATEGORY) {
     const raw =
       input.unit === "percent" ? input.baseMonthly * (input.unitAmount / 100) * qty : input.unitAmount * qty;
-    return roundMoney(-raw);
+    return roundMoney(-Math.abs(raw));
   }
   if (input.unit === "percent") {
     const signed = input.nature === "retenue" ? -Math.abs(input.unitAmount) : input.unitAmount;
@@ -690,7 +690,9 @@ export function summarizeLines(lines: PayrollLine[], rates: LegalPayrollRates): 
     lines.filter((l) => l.nature !== "retenue").reduce((s, l) => s + l.amount, 0),
   );
   const retenues = roundMoney(
-    lines.filter((l) => l.nature === "retenue").reduce((s, l) => s + l.amount, 0),
+    lines
+      .filter((l) => l.nature === "retenue" || l.category === RETENUE_CATEGORY)
+      .reduce((s, l) => s + (l.category === RETENUE_CATEGORY ? -Math.abs(l.amount) : l.amount), 0),
   );
   const baseSs = Math.max(0, grossCotisable);
   const employeeSs = roundMoney(baseSs * rates.cnasEmployee);

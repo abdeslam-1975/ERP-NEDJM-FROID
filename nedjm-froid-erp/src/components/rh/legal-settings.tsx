@@ -912,7 +912,7 @@ function RegimesPanel({
           <p className="mt-1 text-xs text-foreground/55">
             Le régime se choisit dans le contrat (« Régime CNAS ») ou, à défaut, dans la fiche employé (« Profil
             social ») ; sinon STANDARD. Case vide = taux légal du mois. Chaque changement de taux s&apos;applique à
-            partir du mois choisi, sur le bulletin (CSS salariale, CSS patronale + FOS).
+            partir du mois choisi, sur le bulletin (CSS salariale, CSS patronale, et la case FOS à part).
           </p>
           <p className="mt-0.5 text-xs text-foreground/55" dir="rtl">
             يُختار النظام في العقد («نظام CNAS») أو في ملف العامل («ملف الاشتراك»)، وإلا يُطبَّق العادي STANDARD.

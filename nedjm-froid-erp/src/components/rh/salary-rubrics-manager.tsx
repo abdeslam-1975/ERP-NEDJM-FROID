@@ -675,13 +675,13 @@ export function SalaryRubricsManager({
                   <option value="2">2 · CNAS</option>
                   <option value="3">3 · IRG</option>
                   <option value="4">4 · {bi("Ni CNAS ni IRG", "لا ضمان ولا ضريبة")}</option>
-                  <option value="5">5 · {bi("Retenues (+ / −)", "الاقتطاعات (+ / −)")}</option>
+                  <option value="5">5 · {bi("Retenues", "الاقتطاعات")}</option>
                 </select>
               </RhField>
               <RhField
                 label={
                   form.category === RETENUE_CATEGORY
-                    ? bi("Montant par défaut (+ retenu / − rendu)", "قيمة افتراضية (+ اقتطاع / − إرجاع)")
+                    ? bi("Montant positif (retenu du net)", "مبلغ موجب (يُقتطع من الصافي)")
                     : bi("Montant par défaut", "قيمة افتراضية")
                 }
               >

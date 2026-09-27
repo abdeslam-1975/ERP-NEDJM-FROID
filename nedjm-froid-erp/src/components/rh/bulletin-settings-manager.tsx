@@ -400,6 +400,7 @@ export function BulletinSettingsManager({
             ["footer_base", "Base cotisable"],
             ["footer_css_sal", "CSS salarié ({pct})"],
             ["footer_css_pat", "CSS patronale ({pct})"],
+            ["footer_fos", "FOS ({pct})"],
             ["footer_caco", "Congés ({pct})"],
             ["footer_intemp_sal", "Intempéries sal. ({pct})"],
             ["footer_intemp_pat", "Intempéries pat. ({pct})"],

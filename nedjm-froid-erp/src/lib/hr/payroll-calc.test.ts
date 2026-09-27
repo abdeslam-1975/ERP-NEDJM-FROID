@@ -181,7 +181,7 @@ describe("payroll calc", () => {
     ]);
   });
 
-  it("class 5: positive amount is withheld, negative is given back, and neither touches CNAS / IRG", () => {
+  it("class 5: a positive amount is withheld from the net and does not touch CNAS / IRG", () => {
     const retenue: PayrollRubrique = {
       ...hygiene,
       id: "r-501",
@@ -212,7 +212,7 @@ describe("payroll calc", () => {
     const r501 = lines.find((l) => l.code === "501");
     const r502 = lines.find((l) => l.code === "502");
     expect(r501).toMatchObject({ amount: -2000, nature: "retenue", cotisable: false, taxable: false });
-    expect(r502).toMatchObject({ amount: 500, nature: "retenue" });
+    expect(r502).toMatchObject({ amount: -500, nature: "retenue" });
     const sum = summarizeLines(lines, {
       cnasEmployee: 0.09,
       cnasEmployer: 0.25,
@@ -225,7 +225,7 @@ describe("payroll calc", () => {
       irgAmount: 0,
     });
     expect(sum.gross_cotisable).toBe(40000);
-    expect(sum.net_payable).toBe(40000 - 3600 - 2000 + 500);
+    expect(sum.net_payable).toBe(40000 - 3600 - 2000 - 500);
   });
 
   it("accepts negative amounts only in class 5 and suggests the class from the code series", () => {

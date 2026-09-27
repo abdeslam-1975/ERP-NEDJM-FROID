@@ -618,6 +618,7 @@ export const hrBulletinSettingsSchema = z.object({
   footer_base: z.string().trim().min(1).max(60),
   footer_css_sal: z.string().trim().min(1).max(80),
   footer_css_pat: z.string().trim().min(1).max(80),
+  footer_fos: z.string().trim().min(1).max(80).default("FOS {pct}%"),
   footer_caco: z.string().trim().min(1).max(80),
   footer_intemp_sal: z.string().trim().min(1).max(80),
   footer_intemp_pat: z.string().trim().min(1).max(80),

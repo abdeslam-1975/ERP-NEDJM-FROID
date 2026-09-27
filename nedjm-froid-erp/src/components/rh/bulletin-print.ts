@@ -42,6 +42,8 @@ export type BulletinModel = {
   days_absence: number;
   employee_ss: number;
   employer_ss: number;
+  /** Employer FOS (0.5 %), split out of employer_ss for its own box. */
+  fos_amount: number;
   charges_salariales: number;
   charges_patronales: number;
   charges_totales: number;
@@ -177,7 +179,7 @@ export function buildBulletinLines(input: {
       taux,
       tauxSuffix,
       gain: isRetenue ? null : abs,
-      retenue: isRetenue ? (classRetenue ? -line.amount : abs) : null,
+      retenue: isRetenue ? (classRetenue ? Math.abs(line.amount) : abs) : null,
     };
     });
 
@@ -338,6 +340,13 @@ export function slipToBulletin(
   });
   const totalGain = lines.reduce((s, l) => s + (l.gain ?? 0), 0);
   const totalRetenue = lines.reduce((s, l) => s + (l.retenue ?? 0), 0);
+  const fosPct = rates.fos_pct ?? null;
+  const fosAmount =
+    fosPct != null && fosPct > 0 ? Math.round(slip.gross_amount * (fosPct / 100) * 100) / 100 : 0;
+  const fosInEmployer = fosAmount > 0 && fosAmount <= slip.employer_ss + 0.001;
+  const employerWithoutFos = fosInEmployer
+    ? Math.round((slip.employer_ss - fosAmount) * 100) / 100
+    : slip.employer_ss;
   const chargesSalariales = slip.employee_ss + intempSal + (slip.extra_employee ?? 0);
   const chargesPatronales = slip.employer_ss + slip.cacobatph + intempPat + (slip.extra_employer ?? 0);
   const charges = chargesSalariales + chargesPatronales;
@@ -370,7 +379,8 @@ export function slipToBulletin(
     days_leave: slip.days_leave ?? 0,
     days_absence: slip.days_absence ?? 0,
     employee_ss: slip.employee_ss,
-    employer_ss: slip.employer_ss,
+    employer_ss: employerWithoutFos,
+    fos_amount: fosInEmployer ? fosAmount : 0,
     charges_salariales: chargesSalariales,
     charges_patronales: chargesPatronales,
     charges_totales: charges,
@@ -566,6 +576,7 @@ function bulletinPage(m: BulletinModel, origin = "") {
           <th>${escapeHtml(s.footer_base)}</th>
           <th>${escapeHtml(withPct(s.footer_css_sal, m.rates.ss_pct))}</th>
           <th>${escapeHtml(withPct(s.footer_css_pat, m.rates.pat_pct))}</th>
+          <th>${escapeHtml(withPct(s.footer_fos, m.rates.fos_pct))}</th>
           <th>${escapeHtml(withPct(s.footer_caco, m.rates.caco_pct))}</th>
           <th>${escapeHtml(withPct(s.footer_intemp_sal, m.rates.intemp_sal_pct))}</th>
           <th>${escapeHtml(withPct(s.footer_intemp_pat, m.rates.intemp_pat_pct))}</th>
@@ -578,6 +589,7 @@ function bulletinPage(m: BulletinModel, origin = "") {
           <td>${formatDa(m.base_cotisable)}</td>
           <td>${formatDa(m.employee_ss)}</td>
           <td>${formatDa(m.employer_ss)}</td>
+          <td>${m.fos_amount ? formatDa(m.fos_amount) : ""}</td>
           <td>${m.cacobatph ? formatDa(m.cacobatph) : ""}</td>
           <td>${m.intemperies_employee ? formatDa(m.intemperies_employee) : ""}</td>
           <td>${m.intemperies_employer ? formatDa(m.intemperies_employer) : ""}</td>
