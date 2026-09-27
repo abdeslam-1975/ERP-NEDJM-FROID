@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import type {
@@ -33,8 +34,10 @@ function one<T>(value: T | T[] | null | undefined): T | null {
 /**
  * Loads auth.users + sys_users + sys_user_site_roles + ref_sites.
  * Site scoping uses ref_sites (Phase 1A schema) — there is no sys_sites table.
+ * Cached for the lifetime of one server request so the page, the shell, and
+ * role gates share a single profile read.
  */
-export async function getWorkspaceProfile(): Promise<WorkspaceProfile | null> {
+export const getWorkspaceProfile = cache(async function getWorkspaceProfile(): Promise<WorkspaceProfile | null> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -161,4 +164,4 @@ export async function getWorkspaceProfile(): Promise<WorkspaceProfile | null> {
     activeSite,
     hasGlobalScope,
   };
-}
+});
