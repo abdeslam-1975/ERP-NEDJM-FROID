@@ -9,6 +9,7 @@ import {
   loadPayrollSlipDetails,
   reopenPayrollRun,
   validatePayrollRun,
+  type PayrollIrgScales,
   type PayrollRunRow,
   type PayrollSlipDetail,
   type PayrollSlipLineRow,
@@ -190,6 +191,7 @@ export function PayrollManager({
   view = "all",
   bulletin = DEFAULT_BULLETIN_SETTINGS,
   legalRates = { ss_pct: null, pat_pct: null, caco_pct: null, intemp_sal_pct: null, intemp_pat_pct: null },
+  irgScales = null,
   loadError,
 }: {
   initialSlips: PayrollSlipRow[];
@@ -202,6 +204,7 @@ export function PayrollManager({
   view?: View;
   bulletin?: HrBulletinSettings;
   legalRates?: BulletinLegalRates;
+  irgScales?: PayrollIrgScales | null;
   loadError?: string;
 }) {
   const [slips, setSlips] = useState(initialSlips);
@@ -405,7 +408,7 @@ export function PayrollManager({
   }
 
   function toBulletin(s: PayrollSlipRow) {
-    return slipToBulletin(s, bulletin, bulletinRatesFromVars(s.legal_vars, bulletin));
+    return slipToBulletin(s, bulletin, bulletinRatesFromVars(s.legal_vars, bulletin), irgScales);
   }
 
   async function withDetails(rows: PayrollSlipRow[]): Promise<PayrollSlipRow[]> {

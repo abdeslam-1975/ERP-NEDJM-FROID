@@ -1,6 +1,6 @@
 import { RhShell } from "@/components/rh/rh-shell";
 import { PayrollManager } from "@/components/rh/payroll-manager";
-import { listPayrollRuns, listPayrollSlips } from "@/lib/actions/hr-ops";
+import { listPayrollRuns, listPayrollSlips, loadPayrollIrgScales } from "@/lib/actions/hr-ops";
 import { listSites } from "@/lib/actions/sites";
 import { loadPayrollBulletinContext } from "@/lib/actions/hr-bulletin";
 import { resolvePayrollPeriod } from "@/lib/hr/payroll-calc";
@@ -14,11 +14,12 @@ export default async function FiscalPage({
 }) {
   const sp = await searchParams;
   const { year, month } = resolvePayrollPeriod(sp.year, sp.month);
-  const [slips, runs, sites, bulletin] = await Promise.all([
+  const [slips, runs, sites, bulletin, irgScales] = await Promise.all([
     listPayrollSlips({ year, month, includeLines: false }),
     listPayrollRuns({ year, month }),
     listSites(),
     loadPayrollBulletinContext(),
+    loadPayrollIrgScales({ year, month }),
   ]);
   return (
     <RhShell title="Retenue IRG">
@@ -33,7 +34,8 @@ export default async function FiscalPage({
         view="fiscal"
         bulletin={bulletin.bulletin}
         legalRates={bulletin.legalRates}
-        loadError={(!slips.ok && slips.error) || (!runs.ok && runs.error) || (!sites.ok && sites.error) || bulletin.error}
+        irgScales={irgScales.ok ? irgScales.data : null}
+        loadError={(!slips.ok && slips.error) || (!runs.ok && runs.error) || (!sites.ok && sites.error) || bulletin.error || (!irgScales.ok ? irgScales.error : undefined)}
       />
     </RhShell>
   );

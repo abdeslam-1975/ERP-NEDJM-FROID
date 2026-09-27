@@ -9,9 +9,11 @@ import {
   PAYSLIP_CNAS_SECTION,
   PAYSLIP_IRG_SECTION,
   RETENUE_CATEGORY,
+  roundMoney,
   sortForPayslip,
 } from "@/lib/hr/payroll-calc";
 import { baseDailyTaux } from "@/lib/hr/attendance-movements";
+import { explainMonthlyIrg, type IrgBracket, type IrgRule } from "@/lib/hr/irg-calc";
 
 export type BulletinLine = {
   code: string;
@@ -24,6 +26,8 @@ export type BulletinLine = {
   tauxSuffix: string;
   gain: number | null;
   retenue: number | null;
+  /** IRG is a barème, not a single rate. */
+  hideTaux?: boolean;
 };
 
 export type BulletinModel = {
@@ -61,6 +65,8 @@ export type BulletinModel = {
   rates: BulletinLegalRates;
   /** Applied IRG / CNAS / CACOBATPH regime, printed under the contributions table. */
   regime_note: string;
+  /** Principal barème and the two secondary IRG scales, with the amount applied. */
+  irg_panel: string;
 };
 
 function escapeHtml(value: string) {
@@ -235,24 +241,20 @@ export function buildBulletinLines(input: {
   const extras = (input.extraEmployee ?? []).filter((e) => e.amount > 0);
   for (const extra of extras.filter((e) => e.group !== "irg")) rows.push(extraRow(extra));
   const irgRow = statutory(settings.irg_code);
-  if (irgRow) {
-    rows.push({ ...irgRow, category: PAYSLIP_IRG_SECTION });
-  } else if (!hideZero || input.irgAmount > 0) {
-    const irgTaux =
-      input.irgBase > 0 && input.irgAmount > 0
-        ? Math.round((input.irgAmount / input.irgBase) * 10000) / 100
-        : 0;
-    rows.push({
-      code: settings.irg_code,
-      label: settings.irg_label,
-      category: PAYSLIP_IRG_SECTION,
-      unit: "percent",
-      nombre: input.irgBase,
-      taux: irgTaux,
-      tauxSuffix: settings.unit_percent,
-      gain: null,
-      retenue: input.irgAmount,
-    });
+  const irgLine = {
+    code: settings.irg_code,
+    label: settings.irg_label,
+    category: PAYSLIP_IRG_SECTION,
+    unit: "month",
+    nombre: input.irgBase,
+    taux: 0,
+    tauxSuffix: "",
+    hideTaux: true,
+    gain: null,
+    retenue: input.irgAmount,
+  };
+  if (irgRow || !hideZero || input.irgAmount > 0) {
+    rows.push(irgLine);
   }
   for (const extra of extras.filter((e) => e.group === "irg")) rows.push(extraRow(extra));
   return sortForPayslip(rows);
@@ -301,14 +303,106 @@ export type BulletinSlipInput = {
   net_payable: number;
   payment_mode_code?: string | null;
   account_no?: string | null;
-  compliance?: { labels: { irg: string; cnas: string; cacobatph: string } } | null;
+  compliance?: {
+    labels: { irg: string; cnas: string; cacobatph: string };
+    irg?: {
+      option?: string;
+      category?: string;
+      zone_rate?: number;
+      zone_applies_to?: string;
+      fixed_rate?: number | null;
+    };
+  } | null;
   lines: SourceLine[];
 };
+
+export type PayrollIrgScales = {
+  brackets: IrgBracket[];
+  rulesByCategory: Record<string, IrgRule[]>;
+};
+
+function ruleOf(rules: IrgRule[], kind: string) {
+  return rules.find((r) => r.kind === kind);
+}
+
+function numRule(rule: IrgRule | undefined, key: string) {
+  const v = rule?.params[key];
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function irgPanelHtml(
+  slip: BulletinSlipInput,
+  scales: PayrollIrgScales | null | undefined,
+): string {
+  if (!scales?.brackets.length) return "";
+  const category = slip.compliance?.irg?.category || "STANDARD";
+  const rules = scales.rulesByCategory[category] ?? scales.rulesByCategory.STANDARD ?? [];
+  const irg = slip.compliance?.irg;
+  const principal = [...scales.brackets]
+    .sort((a, b) => a.min_annual - b.min_annual)
+    .map((b) => {
+      const from = formatDa(b.min_annual);
+      const to = b.max_annual == null ? "et +" : formatDa(b.max_annual);
+      const rate = Math.round(b.rate * 10000) / 100;
+      return `<div>${from} – ${to} : ${formatDa(rate).replace(",00", "")} %</div>`;
+    })
+    .join("");
+  const exempt = ruleOf(rules, "EXEMPTION_THRESHOLD");
+  const abatement = ruleOf(rules, "ABATEMENT_ON_TAX");
+  const lissage = ruleOf(rules, "LISSAGE");
+  const secondaire1 = abatement
+    ? `${Math.round(numRule(abatement, "rate") * 10000) / 100} % de l'IRG, min ${formatDa(numRule(abatement, "min_monthly"))} DA, max ${formatDa(numRule(abatement, "max_monthly"))} DA${
+        exempt ? `. Exonéré jusqu'à ${formatDa(numRule(exempt, "monthly_max"))} DA` : ""
+      }`
+    : "Non paramétré";
+  const secondaire2 = lissage
+    ? `De ${formatDa(numRule(lissage, "monthly_min"))} à ${formatDa(numRule(lissage, "monthly_max"))} DA`
+    : "Non paramétré";
+  let applied = "";
+  if (irg?.option === "EXEMPT") {
+    applied = "Exonéré : IRG = 0";
+  } else if (irg?.fixed_rate != null) {
+    applied = `Taux libératoire ${Math.round(irg.fixed_rate * 10000) / 100} % · IRG ${formatDa(slip.irg_amount)} DA`;
+  } else {
+    let base = slip.irg_base ?? 0;
+    if (irg?.zone_applies_to === "BASE" && (irg.zone_rate ?? 0) > 0) {
+      base = roundMoney(base * (1 - (irg.zone_rate ?? 0)));
+    }
+    const steps = explainMonthlyIrg({ irgBaseMonthly: base, brackets: scales.brackets, rules });
+    const zone =
+      irg?.zone_applies_to === "TAX" && (irg.zone_rate ?? 0) > 0
+        ? ` · zone −${Math.round((irg.zone_rate ?? 0) * 10000) / 100} %`
+        : "";
+    const lissageNote = steps.lissageApplied ? " · lissage appliqué" : "";
+    applied = steps.exempt
+      ? `Base ${formatDa(slip.irg_base ?? 0)} DA · exonéré`
+      : `Base ${formatDa(slip.irg_base ?? 0)} · barème ${formatDa(steps.rawMonthly)} · abattement ${formatDa(steps.abatement)}${lissageNote}${zone} · IRG ${formatDa(slip.irg_amount)} DA`;
+  }
+  return `<table class="irg">
+    <thead>
+      <tr>
+        <th>Barème principal (annuel)</th>
+        <th>Secondaire 1 — Abattement</th>
+        <th>Secondaire 2 — Lissage</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>${principal}</td>
+        <td>${escapeHtml(secondaire1)}</td>
+        <td>${escapeHtml(secondaire2)}</td>
+      </tr>
+      <tr><td colspan="3">${escapeHtml(applied)}</td></tr>
+    </tbody>
+  </table>`;
+}
 
 export function slipToBulletin(
   slip: BulletinSlipInput,
   settings: HrBulletinSettings = DEFAULT_BULLETIN_SETTINGS,
   rates: BulletinLegalRates = { ss_pct: null, pat_pct: null, caco_pct: null, intemp_sal_pct: null, intemp_pat_pct: null },
+  irgScales: PayrollIrgScales | null = null,
 ): BulletinModel {
   const taxable = slip.lines.filter((l) => l.taxable).reduce((s, l) => s + l.amount, 0);
   const irgBase = slip.irg_base ?? Math.max(0, taxable - slip.employee_ss);
@@ -399,6 +493,7 @@ export function slipToBulletin(
     regime_note: slip.compliance
       ? `IRG : ${slip.compliance.labels.irg} · CNAS : ${slip.compliance.labels.cnas} · CACOBATPH : ${slip.compliance.labels.cacobatph}`
       : "",
+    irg_panel: irgPanelHtml({ ...slip, irg_base: irgBase }, irgScales),
   };
 }
 
@@ -490,6 +585,9 @@ export function buildBulletinHtml(models: BulletinModel[], origin = "") {
     table.pay th { text-align: left; width: 28mm; font-weight: 700; }
     .num { text-align: right; font-variant-numeric: tabular-nums; }
     .regime { margin: -1.5mm 0 3mm; font-size: 9px; }
+    table.irg { width: 100%; border-collapse: collapse; margin: 0 0 3mm; font-size: 8.5px; }
+    table.irg th, table.irg td { border: 1px solid #000; padding: 0.7mm 1.3mm; vertical-align: top; }
+    table.irg th { text-align: center; font-weight: 700; }
   </style>
 </head>
 <body>${pages}</body>
@@ -505,7 +603,7 @@ function bulletinPage(m: BulletinModel, origin = "") {
         <td class="code">${escapeHtml(l.code)}</td>
         <td>${escapeHtml(l.label)}</td>
         <td class="num">${formatDa(l.nombre)}</td>
-        <td class="num">${formatDa(l.taux)}${escapeHtml(l.tauxSuffix)}</td>
+        <td class="num">${l.hideTaux ? "" : `${formatDa(l.taux)}${escapeHtml(l.tauxSuffix)}`}</td>
         <td class="num gain">${l.gain == null ? "" : `${formatDa(l.gain)}${escapeHtml(s.unit_da)}`}</td>
         <td class="num ret">${l.retenue == null ? "" : `${formatDa(l.retenue)}${escapeHtml(s.unit_da)}`}</td>
       </tr>`,
@@ -541,6 +639,7 @@ function bulletinPage(m: BulletinModel, origin = "") {
       </tbody>
     </table>
     <div class="net-row">${escapeHtml(s.net_label)} <span class="net-amt">${formatDa(m.net_payable)}${escapeHtml(s.unit_da)}</span></div>
+    ${m.irg_panel}
     <table class="mv">
       <thead>
         <tr>

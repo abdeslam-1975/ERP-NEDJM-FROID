@@ -432,4 +432,54 @@ describe("bulletin GAS layout helpers", () => {
     expect(html).toContain("Intempéries sal.");
     expect(html).toContain("Congés Annuels");
   });
+
+  it("prints the principal IRG scale and the two secondary scales", () => {
+    const html = buildBulletinHtml([
+      slipToBulletin(
+        {
+          employee_name: "Test",
+          matricule: "001",
+          period_year: 2026,
+          period_month: 9,
+          days_worked: 22,
+          days_paid: 22,
+          gross_amount: 80000,
+          employee_ss: 7200,
+          employer_ss: 20400,
+          cacobatph: 0,
+          irg_base: 40000,
+          irg_amount: 3100,
+          net_payable: 69700,
+          lines: [],
+        },
+        DEFAULT_BULLETIN_SETTINGS,
+        { ss_pct: 9, pat_pct: 25, caco_pct: null, intemp_sal_pct: null, intemp_pat_pct: null },
+        {
+          brackets: [
+            { min_annual: 0, max_annual: 240000, rate: 0 },
+            { min_annual: 240001, max_annual: 480000, rate: 0.23 },
+          ],
+          rulesByCategory: {
+            STANDARD: [
+              { kind: "EXEMPTION_THRESHOLD", params: { monthly_max: 30000 }, formula: null },
+              { kind: "ABATEMENT_ON_TAX", params: { rate: 0.4, min_monthly: 1000, max_monthly: 1500 }, formula: null },
+              {
+                kind: "LISSAGE",
+                params: { monthly_min: 30001, monthly_max: 35000 },
+                formula: "[IRG_AFTER_ABATEMENT] * (137/51) - (27925/8)",
+              },
+            ],
+          },
+        },
+      ),
+    ]);
+    expect(html).toContain("Barème principal (annuel)");
+    expect(html).toContain("240.001,00 – 480.000,00 : 23 %");
+    expect(html).toContain("Secondaire 1 — Abattement");
+    expect(html).toContain("Secondaire 2 — Lissage");
+    expect(html).toContain("23 %");
+    expect(html).toContain("40 % de l'IRG");
+    expect(html).toContain("IRG 3.100,00 DA");
+    expect(html).toContain("RET. I.R.G.</td>\n        <td class=\"num\">40.000,00</td>\n        <td class=\"num\"></td>");
+  });
 });

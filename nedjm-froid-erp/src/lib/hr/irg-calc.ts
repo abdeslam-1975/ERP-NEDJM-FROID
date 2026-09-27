@@ -47,44 +47,71 @@ export function progressiveAnnualTax(annual: number, brackets: IrgBracket[]) {
   return tax;
 }
 
-export function computeMonthlyIrg(input: {
+export type IrgExplanation = {
+  exempt: boolean;
+  rawMonthly: number;
+  abatement: number;
+  afterAbatement: number;
+  lissageApplied: boolean;
+  final: number;
+};
+
+export function explainMonthlyIrg(input: {
   irgBaseMonthly: number;
   brackets: IrgBracket[];
   rules: IrgRule[];
-}) {
+}): IrgExplanation {
   const base = Math.max(0, input.irgBaseMonthly);
   const exemption = input.rules.find((r) => r.kind === "EXEMPTION_THRESHOLD");
   if (exemption && base <= numParam(exemption.params, "monthly_max", 0)) {
-    return 0;
+    return {
+      exempt: true,
+      rawMonthly: 0,
+      abatement: 0,
+      afterAbatement: 0,
+      lissageApplied: false,
+      final: 0,
+    };
   }
   const annual = base * 12;
-  const annualTax = progressiveAnnualTax(annual, input.brackets);
-  let monthly = annualTax / 12;
-
-  const abatement = input.rules.find((r) => r.kind === "ABATEMENT_ON_TAX");
-  if (abatement && monthly > 0) {
-    const rate = numParam(abatement.params, "rate", 0);
-    const minM = numParam(abatement.params, "min_monthly", 0);
-    const maxM = numParam(abatement.params, "max_monthly", minM);
-    const raw = monthly * rate;
-    const deducted = Math.min(maxM, Math.max(minM, raw));
-    monthly = Math.max(0, monthly - deducted);
+  const rawMonthly = progressiveAnnualTax(annual, input.brackets) / 12;
+  let abatement = 0;
+  const abatementRule = input.rules.find((r) => r.kind === "ABATEMENT_ON_TAX");
+  if (abatementRule && rawMonthly > 0) {
+    const rate = numParam(abatementRule.params, "rate", 0);
+    const minM = numParam(abatementRule.params, "min_monthly", 0);
+    const maxM = numParam(abatementRule.params, "max_monthly", minM);
+    abatement = Math.min(maxM, Math.max(minM, rawMonthly * rate));
   }
-
+  let after = Math.max(0, rawMonthly - abatement);
+  let lissageApplied = false;
   const lissage = input.rules.find((r) => r.kind === "LISSAGE");
   if (lissage) {
     const minB = numParam(lissage.params, "monthly_min", 0);
     const maxB = numParam(lissage.params, "monthly_max", 0);
     if (base >= minB && base <= maxB && lissage.formula) {
       try {
-        monthly = evalNumericFormula(lissage.formula, {
-          IRG_AFTER_ABATEMENT: monthly,
-        });
+        after = evalNumericFormula(lissage.formula, { IRG_AFTER_ABATEMENT: after });
+        lissageApplied = true;
       } catch {
         // keep post-abatement amount when formula is unusable
       }
     }
   }
+  return {
+    exempt: false,
+    rawMonthly: roundMoney(rawMonthly),
+    abatement: roundMoney(abatement),
+    afterAbatement: roundMoney(Math.max(0, rawMonthly - abatement)),
+    lissageApplied,
+    final: roundMoney(Math.max(0, after)),
+  };
+}
 
-  return roundMoney(Math.max(0, monthly));
+export function computeMonthlyIrg(input: {
+  irgBaseMonthly: number;
+  brackets: IrgBracket[];
+  rules: IrgRule[];
+}) {
+  return explainMonthlyIrg(input).final;
 }

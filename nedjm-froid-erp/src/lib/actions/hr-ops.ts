@@ -446,6 +446,22 @@ async function loadIrgEngine(
   return { ok: true, data: { brackets, rulesByCategory } };
 }
 
+export type PayrollIrgScales = IrgEngine;
+
+export async function loadPayrollIrgScales(input: {
+  year: number;
+  month: number;
+}): Promise<ActionResult<PayrollIrgScales>> {
+  const year = Number(input.year);
+  const month = Number(input.month);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return { ok: false, error: "Période invalide." };
+  }
+  const supabase = await createClient();
+  const start = `${year}-${String(month).padStart(2, "0")}-01`;
+  return loadIrgEngine(supabase, start);
+}
+
 export async function generatePayrollRun(
   input: unknown,
   options?: { onlyEmployeeIds?: string[] },

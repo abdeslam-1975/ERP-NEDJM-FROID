@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeMonthlyIrg, progressiveAnnualTax } from "@/lib/hr/irg-calc";
+import { computeMonthlyIrg, explainMonthlyIrg, progressiveAnnualTax } from "@/lib/hr/irg-calc";
 
 const lf2022 = [
   { min_annual: 0, max_annual: 240000, rate: 0 },
@@ -46,5 +46,25 @@ describe("IRG from barème + rules", () => {
     const expected = Math.max(0, annual - 1500);
     expect(tax).toBeCloseTo(expected, 0);
     expect(tax).toBeGreaterThan(0);
+  });
+
+  it("splits the principal tax, the abatement and the smoothing slice", () => {
+    const steps = explainMonthlyIrg({
+      irgBaseMonthly: 40000,
+      brackets: lf2022,
+      rules: standardRules,
+    });
+    expect(steps.exempt).toBe(false);
+    expect(steps.lissageApplied).toBe(false);
+    expect(steps.abatement).toBe(1500);
+    expect(steps.final).toBe(computeMonthlyIrg({ irgBaseMonthly: 40000, brackets: lf2022, rules: standardRules }));
+
+    const smoothed = explainMonthlyIrg({
+      irgBaseMonthly: 32000,
+      brackets: lf2022,
+      rules: standardRules,
+    });
+    expect(smoothed.lissageApplied).toBe(true);
+    expect(smoothed.final).toBe(computeMonthlyIrg({ irgBaseMonthly: 32000, brackets: lf2022, rules: standardRules }));
   });
 });
