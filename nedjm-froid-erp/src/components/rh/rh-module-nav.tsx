@@ -11,7 +11,7 @@ const items = [
   { href: "/rh/presence", label: "Présence" },
   { href: "/rh/conges", label: "Congés" },
   { href: "/rh/paie", label: "Paie" },
-  { href: "/rh/paie/simulateur", label: "Simulateur" },
+  { href: "/simulateur", label: "Simulateur" },
   { href: "/rh/paie/exceptions", label: "Exceptions" },
   { href: "/rh/paie/avances", label: "Avances" },
   { href: "/rh/paie/virements", label: "Virements" },

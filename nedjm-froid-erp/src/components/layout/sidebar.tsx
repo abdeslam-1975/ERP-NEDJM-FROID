@@ -23,6 +23,7 @@ const navGroups: NavGroup[] = [
     titleAr: "القيادة",
     items: [
       { href: "/", labelFr: "Tableau de Bord", labelAr: "لوحة القيادة", icon: "home" },
+      { href: "/simulateur", labelFr: "Simulateur", labelAr: "المحاكي", icon: "docs" },
     ],
   },
   {

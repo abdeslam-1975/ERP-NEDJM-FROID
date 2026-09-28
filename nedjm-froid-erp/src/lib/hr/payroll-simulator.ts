@@ -1,4 +1,5 @@
 import type { BulletinSlipInput } from "@/components/rh/bulletin-print";
+import type { AttendanceMovements } from "@/lib/hr/attendance-movements";
 import {
   complianceLabels,
   DEFAULT_CNAS_REGIME,
@@ -12,6 +13,7 @@ import type { IrgBracket, IrgRule } from "@/lib/hr/irg-calc";
 import type { PayrollException, SalaryUnit } from "@/lib/hr/payroll-calc";
 import { computeSlip, slipEngineRates, type SlipResult } from "@/lib/hr/payroll-slip";
 import type { SimRubricLine, SimulatorData } from "@/lib/hr/payroll-simulator-load";
+import { overlayRecord } from "@/lib/sim/core";
 
 export type ScenarioRubric = SimRubricLine & { key: string; enabled: boolean };
 export type ScenarioException = { id: string; rubrique_id: string; amount: number; unit: SalaryUnit | null; enabled: boolean };
@@ -32,6 +34,8 @@ export type Scenario = {
   overtime: Record<string, number>;
   advances: boolean;
   exit: boolean;
+  /** Attendance counts printed on the bulletin (defaults to the loaded pointage). */
+  movements?: AttendanceMovements;
 };
 
 export function calendarDaysOf(year: number, month: number) {
@@ -255,14 +259,13 @@ export function runScenario(data: SimulatorData, s: Scenario): ScenarioOutput {
     },
   });
 
-  const bulletinVars = {
-    ...s.vars,
+  const bulletinVars = overlayRecord(s.vars, {
     CNAS_EMPLOYEE: compliance.cnas.employee,
     CNAS_EMPLOYER_BASE: compliance.cnas.employer,
     CNAS_FOS: compliance.cnas.fos,
-  };
+  });
   const sum = slip.summary;
-  const mov = subject?.movements;
+  const mov = s.movements ?? subject?.movements;
   const bulletin: BulletinSlipInput = {
     employee_name: subject?.employee.name ?? "Simulation",
     poste_fr: subject?.contract.poste_fr ?? null,

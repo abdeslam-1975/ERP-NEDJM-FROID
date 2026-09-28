@@ -64,6 +64,8 @@ export type SimException = { id: string; rubrique_id: string; amount: number; un
 
 export type SimContractField = { label: string; value: string };
 
+export type SimAttendanceCell = { work_date: string; legend_code: string; site_id: string | null };
+
 export type SimSubject = {
   employee: {
     id: string;
@@ -99,6 +101,8 @@ export type SimSubject = {
   contract_payable: boolean;
   covered_days: number;
   contract_count: number;
+  /** Validated pointage cells of the month (all sites), as used by the payroll run. */
+  attendance_days: SimAttendanceCell[];
   movements: AttendanceMovements;
   annual_leave_days: number;
   salary: { base: number; net: number };
@@ -134,6 +138,7 @@ export type SimulatorData = {
   grid: SalaryGridRow[];
   zones: IrgZone[];
   regimes: CnasRegime[];
+  legends: AttendanceLegend[];
   employees: SimEmployeeOption[];
   subject: SimSubject | null;
   notice: string | null;
@@ -175,7 +180,7 @@ async function load(
   if (!irgLoaded.ok) return irgLoaded;
   if (!contribLoaded.ok) return contribLoaded;
 
-  const [rubriqueRows, gridRows, employeeRows, baseCompliance] = await Promise.all([
+  const [rubriqueRows, gridRows, employeeRows, baseCompliance, legendRows] = await Promise.all([
     supabase
       .from("hr_salary_rubriques")
       .select("id, code, label_ar, label_fr, nature, unit, category, cotisable, taxable, is_active")
@@ -183,8 +188,13 @@ async function load(
     supabase.from("hr_salary_grid").select("poste_id, grade, base_monthly, net_ref_monthly, effective_from"),
     supabase.from("hr_employees").select("id, matricule, last_name, first_name").order("matricule"),
     loadComplianceContext(supabase, { contractIds: [], siteIds: [], employeeIds: [], asOf: start }),
+    supabase.from("ref_legendes").select("code, label_fr, label_ar, coefficient, counts_as_presence"),
   ]);
   const rubriques = must(rubriqueRows, "Rubriques") as PayrollRubrique[];
+  const legendList = (must(legendRows, "Légendes") as AttendanceLegend[]).map((l) => ({
+    ...l,
+    coefficient: num(l.coefficient),
+  }));
   const grid = (must(gridRows, "Grille salariale") as SalaryGridRow[]).map((g) => ({
     ...g,
     base_monthly: num(g.base_monthly),
@@ -207,6 +217,7 @@ async function load(
     grid,
     zones: baseCompliance.data.zones,
     regimes: baseCompliance.data.regimes,
+    legends: legendList,
     employees,
     subject: null,
     notice: null,
@@ -261,7 +272,6 @@ async function load(
     bank,
     compliance,
     attendance,
-    legends,
     activity,
     site,
     assignments,
@@ -282,12 +292,12 @@ async function load(
     loadComplianceContext(supabase, { contractIds: [ctrId], siteIds: [siteId], employeeIds: [empId], asOf: start }),
     supabase
       .from("hr_attendance")
-      .select("employee_id, site_id, legend_code")
+      .select("employee_id, site_id, legend_code, work_date")
       .eq("status_code", "VALIDATED")
       .eq("employee_id", empId)
       .gte("work_date", start)
-      .lte("work_date", end),
-    supabase.from("ref_legendes").select("code, label_fr, label_ar, coefficient, counts_as_presence"),
+      .lte("work_date", end)
+      .order("work_date"),
     supabase.from("ref_activity_codes").select("code, label_fr, applies_cacobatph, applies_intemperies").eq("id", String(ctr.activity_code_id)).maybeSingle(),
     supabase.from("ref_sites").select("name_fr").eq("id", siteId).maybeSingle(),
     supabase
@@ -335,7 +345,6 @@ async function load(
   for (const [res, what] of [
     [empRow, "Employé"],
     [attendance, "Pointage"],
-    [legends, "Légendes"],
     [assignments, "Affectations de rubriques"],
     [exceptions, "Exceptions"],
     [versions, "Historique des salaires"],
@@ -352,8 +361,7 @@ async function load(
   const cx = compliance.data;
 
   const att = attendance.data ?? [];
-  const movements =
-    accumulateAttendanceMovements(att, (legends.data ?? []) as AttendanceLegend[]).get(empId) ?? emptyMovements();
+  const movements = accumulateAttendanceMovements(att, legendList).get(empId) ?? emptyMovements();
   const annualLeave = att.filter((c) => String(c.legend_code).toUpperCase() === ANNUAL_LEAVE_LEGEND).length;
 
   const act = activity.data;
@@ -524,6 +532,11 @@ async function load(
     contract_payable: Boolean(grouped),
     covered_days: grouped?.coveredDays ?? coveredDaysInPeriod(startDate, endDate, start, end),
     contract_count: grouped?.contractCount ?? 1,
+    attendance_days: att.map((c) => ({
+      work_date: String(c.work_date).slice(0, 10),
+      legend_code: String(c.legend_code ?? ""),
+      site_id: (c.site_id as string | null) ?? null,
+    })),
     movements,
     annual_leave_days: annualLeave,
     salary,

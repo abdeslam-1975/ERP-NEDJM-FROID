@@ -420,7 +420,7 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
           { href: "/rh/presence", label: "Présence" },
           { href: "/rh/conges", label: "Congés & absences" },
           { href: "/rh/paie", label: "Paie" },
-          { href: "/rh/paie/simulateur", label: "Simulateur de paie" },
+          { href: "/simulateur", label: "Simulateur" },
           { href: "/rh/sorties", label: "Sorties & STC" },
           { href: "/rh/couts", label: "Coûts par chantier / contrat" },
           { href: "/rh/interim", label: "Intérim (agences)" },
