@@ -43,7 +43,7 @@ export async function generateStructured(input: {
         generationConfig: {
           temperature: 0,
           responseFormat: {
-            text: { mimeType: "application/json", schema: input.schema },
+            text: { mimeType: "APPLICATION_JSON", schema: input.schema },
           },
         },
       }),
