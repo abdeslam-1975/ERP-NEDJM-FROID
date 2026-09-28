@@ -26,6 +26,7 @@ const PAGES: PageEntry[] = [
   { href: "/rh/paie/fiscal", fr: "Paie — fiscal (IRG)", ar: "الضريبة" },
   { href: "/rh/paie/exceptions", fr: "Exceptions de paie", ar: "استثناءات" },
   { href: "/rh/paie/avances", fr: "Avances & prêts", ar: "التسبيقات والقروض" },
+  { href: "/rh/paie/simulateur", fr: "Simulateur de fiche de paie", ar: "محاكي كشف الأجر" },
   { href: "/rh/paie/virements", fr: "Virements des salaires", ar: "تحويل الأجور" },
   { href: "/rh/couts", fr: "Coûts de la paie", ar: "التكاليف" },
   { href: "/rh/interim", fr: "Intérim", ar: "العمل المؤقت" },

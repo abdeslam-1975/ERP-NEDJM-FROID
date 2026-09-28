@@ -21,22 +21,12 @@ import {
   type PayrollRunAction,
   type PayrollRunStatus,
 } from "@/lib/hr/payroll-run-status";
+import { computeSlip, slipEngineRates, type SlipEngine } from "@/lib/hr/payroll-slip";
 import {
-  advanceDeductionLines,
-  buildPayrollLines,
   contractPayableInPeriod,
-  exitSettlementLines,
-  gridAsOf,
   groupContractsByEmployee,
-  overtimeLines,
-  paidMonthFraction,
   PAYROLL_CONTRACT_STATUSES,
-  payrollLegalWarnings,
   salaryAsOf,
-  sortBySalaryClass,
-  summarizeLines,
-  type LegalPayrollRates,
-  type OvertimeSpec,
   type SalaryGridRow,
   type PayrollAdvance,
   type PayrollAssignment,
@@ -49,10 +39,9 @@ import { OVERTIME_COLUMNS } from "@/lib/hr/attendance-columns";
 import { normalizeSettlementLines, type SettlementLine } from "@/lib/hr/leave";
 
 const ANNUAL_LEAVE_LEGEND = "CA";
-import type { IrgBracket, IrgRule } from "@/lib/hr/irg-calc";
+import { loadIrgEngine, type IrgEngine } from "@/lib/hr/irg-engine-load";
 import {
   complianceLabels,
-  computeResolvedIrg,
   DEFAULT_IRG_ZONE,
   resolveCompliance,
   type SnapshotCompliance,
@@ -65,7 +54,6 @@ import {
   type PayrollLegalSnapshot,
 } from "@/lib/hr/legal-vars-as-of";
 import {
-  contributionRatesFor,
   parseAppliedContributions,
   type AppliedContribution,
 } from "@/lib/hr/contributions";
@@ -376,76 +364,6 @@ export async function saveAttendanceMonth(
   };
 }
 
-type IrgEngine = {
-  brackets: IrgBracket[];
-  rulesByCategory: Record<string, IrgRule[]>;
-};
-
-async function loadIrgEngine(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  asOf: string,
-): Promise<ActionResult<IrgEngine>> {
-  const { data: versions, error: vErr } = await supabase
-    .from("ref_bareme_irg_versions")
-    .select("id, effective_from, effective_to")
-    .lte("effective_from", asOf)
-    .order("effective_from", { ascending: false });
-  if (vErr) return { ok: false, error: `Barème IRG : ${vErr.message}` };
-  const version = (versions ?? []).find(
-    (v) => !v.effective_to || v.effective_to >= asOf,
-  );
-  let brackets: IrgBracket[] = [];
-  if (version) {
-    const { data: rows, error: bErr } = await supabase
-      .from("ref_bareme_irg")
-      .select("min_annual, max_annual, rate, sort_order")
-      .eq("version_id", version.id)
-      .order("sort_order");
-    if (bErr) return { ok: false, error: `Barème IRG : ${bErr.message}` };
-    brackets = (rows ?? []).map((r) => ({
-      min_annual: num(r.min_annual),
-      max_annual: r.max_annual == null ? null : num(r.max_annual),
-      rate: num(r.rate),
-    }));
-  }
-  const { data: sets, error: sErr } = await supabase
-    .from("ref_irg_rule_sets")
-    .select("id, taxpayer_category, effective_from, effective_to")
-    .lte("effective_from", asOf)
-    .order("effective_from", { ascending: false });
-  if (sErr) return { ok: false, error: `Règles IRG : ${sErr.message}` };
-  const chosen = new Map<string, string>();
-  for (const s of sets ?? []) {
-    if (s.effective_to && s.effective_to < asOf) continue;
-    if (!chosen.has(s.taxpayer_category)) chosen.set(s.taxpayer_category, s.id);
-  }
-  const setIds = [...chosen.values()];
-  const rulesByCategory: Record<string, IrgRule[]> = {};
-  if (setIds.length) {
-    const { data: rules, error: rErr } = await supabase
-      .from("ref_irg_rules")
-      .select("rule_set_id, kind, params, formula, sequence")
-      .in("rule_set_id", setIds)
-      .order("sequence");
-    if (rErr) return { ok: false, error: `Règles IRG : ${rErr.message}` };
-    const setToCat = new Map(
-      [...chosen.entries()].map(([cat, id]) => [id, cat]),
-    );
-    for (const rule of rules ?? []) {
-      const cat = setToCat.get(rule.rule_set_id);
-      if (!cat) continue;
-      const list = rulesByCategory[cat] ?? [];
-      list.push({
-        kind: rule.kind,
-        params: (rule.params ?? {}) as Record<string, unknown>,
-        formula: rule.formula ?? null,
-      });
-      rulesByCategory[cat] = list;
-    }
-  }
-  return { ok: true, data: { brackets, rulesByCategory } };
-}
-
 export type PayrollIrgScales = IrgEngine;
 
 export async function loadPayrollIrgScales(input: {
@@ -639,13 +557,6 @@ async function buildAndSavePayrollRun(
   }
 
   const legalVars = await legalVarsAsOf(supabase, start);
-  const legalVar = (key: string) => num(legalVars[key]);
-  const caco = legalVar("CACOBATPH_CONGES");
-  const intempSal = legalVar("CACOBATPH_INTEMPERIES_SAL");
-  const intempPat = legalVar("CACOBATPH_INTEMPERIES_EMP");
-  const divisorVar = legalVar("NJM_DIVISEUR_FIXED");
-  const snmg = legalVar("SNMG");
-  const divisor = divisorVar > 0 ? divisorVar : 30;
   const irgLoaded = await loadIrgEngine(supabase, start);
   if (!irgLoaded.ok) return irgLoaded;
   const irgEngine = irgLoaded.data;
@@ -822,18 +733,6 @@ async function buildAndSavePayrollRun(
     }
     hoursByEmp.set(row.employee_id, acc);
   }
-  const monthlyHours = legalVar("HEURES_MENSUELLES") || 173.33;
-  const overtimeSpecs: OvertimeSpec[] = OVERTIME_COLUMNS.map((c) => {
-    const rate = legalVars[c.rateKey] == null ? c.defaultRate : legalVar(c.rateKey);
-    const pct = Math.round(rate * 100);
-    return {
-      code: c.code,
-      rate,
-      label_fr: `Heures supplémentaires ${pct} %`,
-      label_ar: `ساعات إضافية ${pct}%`,
-    };
-  });
-
   const advances = empIds.length
     ? (
         must(
@@ -890,10 +789,19 @@ async function buildAndSavePayrollRun(
   if (!irgEngine.brackets.length) {
     warnings.push("Barème IRG introuvable pour la période : IRG = 0 · سلم الضريبة غير موجود لهذه الفترة");
   }
-  const calendarDays = endDay;
+  const engine: SlipEngine = {
+    ...slipEngineRates(legalVars),
+    contributionDefs,
+    legalVars,
+    irg: irgEngine,
+    rubriques,
+    assignments,
+    exceptions,
+    grid,
+  };
   const slipPayloads: Array<{
     row: Record<string, unknown>;
-    lines: ReturnType<typeof buildPayrollLines>;
+    lines: PayrollLine[];
     employee_id: string;
   }> = [];
 
@@ -924,119 +832,41 @@ async function buildAndSavePayrollRun(
       zones: cx.zones,
       regimes: cx.regimes,
     });
-    const fundLeave = resolved.cacobatph.conges ? (annualLeaveByEmp.get(ctr.employee_id) ?? 0) : 0;
-    if (fundLeave > 0) {
-      warnings.push(
-        `${empById.get(ctr.employee_id)?.matricule ?? "—"} : ${fundLeave} j de congé annuel payés par la CACOBATPH, exclus du bulletin · أيام العطلة يدفعها الصندوق`,
-      );
-    }
-    const paid = Math.min(Math.max(0, mov.days_paid - fundLeave), group.coveredDays);
-    const worked = Math.min(mov.days_presence_qty, group.coveredDays);
-    const monthFraction = paidMonthFraction({
-      daysPaid: paid,
-      coveredDays: group.coveredDays,
-      calendarDays,
-      divisor,
-    });
-    if (group.contractCount > 1) {
-      warnings.push(
-        `${empById.get(ctr.employee_id)?.matricule ?? "—"} : ${group.contractCount} contrats principaux ce mois, bulletin sur le plus récent · عقدان رئيسيان في نفس الشهر`,
-      );
-    }
-    if (mov.days_paid > group.coveredDays) {
-      warnings.push(
-        `${empById.get(ctr.employee_id)?.matricule ?? "—"} : ${mov.days_paid} jours pointés > ${group.coveredDays} jours de contrat, plafonnés · أيام الحضور تتجاوز مدة العقد`,
-      );
-    }
     const salary = salaryAsOf(salaryVersions, ctr.id, end, {
       base: num(ctr.salaire_base_monthly),
       net: num(ctr.salaire_net_ref_monthly),
     });
-    const gridRow = gridAsOf(grid, ctr.poste_id, ctr.grade, end);
-    if (gridRow && salary.base > 0 && salary.base < gridRow.base_monthly) {
-      warnings.push(
-        `${empById.get(ctr.employee_id)?.matricule ?? "—"} : salaire de base ${salary.base.toFixed(2)} < grille ${gridRow.base_monthly.toFixed(2)} (grade ${gridRow.grade}) · الأجر أقل من الشبكة`,
-      );
-    }
-    let lines = buildPayrollLines({
-      employeeId: ctr.employee_id,
-      siteId: ctr.site_id,
-      contractId: ctr.id,
-      posteId: ctr.poste_id,
-      baseMonthly: salary.base,
-      daysPaid: paid,
-      daysWorked: worked,
-      monthFraction,
-      year: p.period_year,
-      month: p.period_month,
-      rubriques,
-      assignments,
-      exceptions,
-      extraLines: [
-        ...overtimeLines({
-          hours: hoursByEmp.get(ctr.employee_id) ?? {},
-          baseMonthly: salary.base,
-          monthlyHours,
-          specs: overtimeSpecs,
-        }),
-        ...exitSettlementLines(exitByEmp.get(ctr.employee_id) ?? []),
-      ],
-    });
-    const legal: Omit<LegalPayrollRates, "irgAmount"> = {
-      cnasEmployee: resolved.cnas.employee,
-      cnasEmployer: resolved.cnas.employer,
-      cnasFos: resolved.cnas.fos,
-      cacobatph: caco,
-      intemperiesEmployee: intempSal,
-      intemperiesEmployer: intempPat,
-      appliesCacobatph: resolved.cacobatph.conges,
-      appliesIntemperies: resolved.cacobatph.intemperies,
-      extraContributions: contributionRatesFor({
-        defs: contributionDefs,
-        vars: legalVars,
-        cacobatph: resolved.cacobatph,
-      }),
-    };
-    const pre = summarizeLines(lines, { ...legal, irgAmount: 0 });
-    const irgAmount = computeResolvedIrg({
-      irgBase: pre.irg_base,
-      irg: resolved.irg,
-      brackets: irgEngine.brackets,
-      rulesByCategory: irgEngine.rulesByCategory,
-    });
-    let sum = summarizeLines(lines, { ...legal, irgAmount });
     const emp = empById.get(ctr.employee_id);
-    const advance = advanceDeductionLines({
-      advances,
-      deductedElsewhere,
-      employeeId: ctr.employee_id,
+    const slip = computeSlip({
       year: p.period_year,
       month: p.period_month,
-      availableNet: sum.net_payable,
-      settleAll: exitByEmp.has(ctr.employee_id),
+      engine,
+      subject: {
+        contract: {
+          id: ctr.id,
+          employee_id: ctr.employee_id,
+          site_id: ctr.site_id,
+          poste_id: ctr.poste_id,
+          grade: ctr.grade,
+        },
+        employee: { matricule: emp?.matricule ?? "", nss: emp?.nss ?? null },
+        coveredDays: group.coveredDays,
+        contractCount: group.contractCount,
+        daysPaid: mov.days_paid,
+        daysPresence: mov.days_presence_qty,
+        annualLeaveDays: annualLeaveByEmp.get(ctr.employee_id) ?? 0,
+        salary,
+        compliance: resolved,
+        overtimeHours: hoursByEmp.get(ctr.employee_id) ?? {},
+        exitLines: exitByEmp.get(ctr.employee_id) ?? null,
+        advances,
+        deductedElsewhere,
+      },
     });
-    if (advance.lines.length) {
-      lines = sortBySalaryClass([...lines, ...advance.lines]).map((line, index) => ({
-        ...line,
-        sort_order: (index + 1) * 10,
-      }));
-      sum = summarizeLines(lines, { ...legal, irgAmount });
-    }
-    if (advance.capped) {
-      warnings.push(
-        `${emp?.matricule ?? "—"} : retenue d'avance réduite pour garder un net ≥ 0 · اقتطاع التسبيق مخفّض`,
-      );
-    }
+    const { lines, summary: sum } = slip;
+    const paid = slip.days_paid;
+    warnings.push(...slip.warnings);
     const labels = complianceLabels(resolved, cx.zones, cx.regimes);
-    warnings.push(
-      ...payrollLegalWarnings({
-        matricule: emp?.matricule ?? "",
-        nss: emp?.nss,
-        baseMonthly: salary.base,
-        snmg,
-        grossCotisable: sum.gross_cotisable,
-      }),
-    );
     if (resolved.override_ids.length) {
       const manual = [
         resolved.irg.mode === "MANUAL" ? `IRG ${labels.irg}` : null,

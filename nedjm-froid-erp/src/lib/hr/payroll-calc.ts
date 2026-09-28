@@ -380,7 +380,7 @@ export type PayrollAdvance = {
  */
 export function advanceDeductionLines(input: {
   advances: PayrollAdvance[];
-  deductedElsewhere: Map<string, number>;
+  deductedElsewhere: ReadonlyMap<string, number>;
   employeeId: string;
   year: number;
   month: number;
