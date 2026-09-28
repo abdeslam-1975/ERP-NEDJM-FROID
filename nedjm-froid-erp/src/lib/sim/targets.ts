@@ -30,7 +30,7 @@ import { pointageOutput, pointageVariables } from "@/lib/sim/pointage";
 
 /** Data of the element being simulated, loaded on the server. */
 export type SimTargetData =
-  | { target: "paie"; sim: SimulatorData; bulletin: HrBulletinSettings }
+  | { target: "paie"; sim: SimulatorData; bulletin: HrBulletinSettings; template: string }
   | { target: "pointage"; sim: SimulatorData }
   | { target: "solde_conge"; leave: LeaveSimData }
   | ({ target: "titre_conge" } & TitreSimData)
@@ -60,7 +60,7 @@ function rawVariables(d: SimTargetData): SimVarDef[] {
 export function simRun(d: SimTargetData, ctx: SimContext, env: SimEnv): SimOutput {
   switch (d.target) {
     case "paie":
-      return paieOutput(d.sim, d.bulletin, ctx, env);
+      return paieOutput(d.sim, d.bulletin, d.template, ctx, env);
     case "pointage":
       return pointageOutput(d.sim, ctx);
     case "solde_conge":

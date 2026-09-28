@@ -33,6 +33,7 @@ export default async function BulletinsPage({
         month={month}
         view="all"
         bulletin={bulletin.bulletin}
+        bulletinTemplate={bulletin.template}
         legalRates={bulletin.legalRates}
         irgScales={irgScales.ok ? irgScales.data : null}
         loadError={(!slips.ok && slips.error) || (!runs.ok && runs.error) || (!sites.ok && sites.error) || bulletin.error || (!irgScales.ok ? irgScales.error : undefined)}

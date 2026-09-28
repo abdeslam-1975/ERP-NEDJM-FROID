@@ -1,10 +1,10 @@
 import {
   DEFAULT_BULLETIN_SETTINGS,
   resolveBulletinLetterhead,
-  withPct,
   type BulletinLegalRates,
   type HrBulletinSettings,
 } from "@/lib/hr/bulletin-settings";
+import { formatDa, renderTemplate } from "@/lib/doc/engine";
 import {
   PAYSLIP_CNAS_SECTION,
   PAYSLIP_IRG_SECTION,
@@ -63,27 +63,29 @@ export type BulletinModel = {
   account_no: string;
   layout: HrBulletinSettings;
   rates: BulletinLegalRates;
-  /** Applied IRG / CNAS / CACOBATPH regime, printed under the contributions table. */
-  regime_note: string;
-  /** Principal barème and the two secondary IRG scales, with the amount applied. */
-  irg_panel: string;
+  /** Applied IRG / CNAS / CACOBATPH regime labels. */
+  compliance: { irg: string; cnas: string; cacobatph: string } | null;
+  /** Principal barème, the two secondary IRG scales and how the amount was reached. */
+  irg: BulletinIrgData | null;
 };
 
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+export type BulletinIrgData = {
+  brackets: { from: number; to: number | null; rate_pct: number }[];
+  abatement: { rate_pct: number; min: number; max: number } | null;
+  exempt_max: number | null;
+  lissage: { min: number; max: number } | null;
+  mode: "EXEMPT" | "FIXED" | "BAREME";
+  fixed_rate_pct: number | null;
+  base: number;
+  raw: number;
+  abatement_amount: number;
+  lissage_applied: boolean;
+  zone_tax_pct: number;
+  exempt: boolean;
+  amount: number;
+};
 
-export function formatDa(n: number) {
-  const sign = n < 0 ? "-" : "";
-  const abs = Math.abs(n);
-  const [int, dec] = abs.toFixed(2).split(".");
-  const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return `${sign}${grouped},${dec}`;
-}
+export { formatDa };
 
 export function formatDateDot(iso: string | null | undefined) {
   if (!iso) return "";
@@ -331,71 +333,51 @@ function numRule(rule: IrgRule | undefined, key: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function irgPanelHtml(
-  slip: BulletinSlipInput,
-  scales: PayrollIrgScales | null | undefined,
-): string {
-  if (!scales?.brackets.length) return "";
+const pct100 = (rate: number) => Math.round(rate * 10000) / 100;
+
+function irgData(slip: BulletinSlipInput, scales: PayrollIrgScales | null | undefined): BulletinIrgData | null {
+  if (!scales?.brackets.length) return null;
   const category = slip.compliance?.irg?.category || "STANDARD";
   const rules = scales.rulesByCategory[category] ?? scales.rulesByCategory.STANDARD ?? [];
   const irg = slip.compliance?.irg;
-  const principal = [...scales.brackets]
-    .sort((a, b) => a.min_annual - b.min_annual)
-    .map((b) => {
-      const from = formatDa(b.min_annual);
-      const to = b.max_annual == null ? "et +" : formatDa(b.max_annual);
-      const rate = Math.round(b.rate * 10000) / 100;
-      return `<div>${from} – ${to} : ${formatDa(rate).replace(",00", "")} %</div>`;
-    })
-    .join("");
   const exempt = ruleOf(rules, "EXEMPTION_THRESHOLD");
   const abatement = ruleOf(rules, "ABATEMENT_ON_TAX");
   const lissage = ruleOf(rules, "LISSAGE");
-  const secondaire1 = abatement
-    ? `${Math.round(numRule(abatement, "rate") * 10000) / 100} % de l'IRG, min ${formatDa(numRule(abatement, "min_monthly"))} DA, max ${formatDa(numRule(abatement, "max_monthly"))} DA${
-        exempt ? `. Exonéré jusqu'à ${formatDa(numRule(exempt, "monthly_max"))} DA` : ""
-      }`
-    : "Non paramétré";
-  const secondaire2 = lissage
-    ? `De ${formatDa(numRule(lissage, "monthly_min"))} à ${formatDa(numRule(lissage, "monthly_max"))} DA`
-    : "Non paramétré";
-  let applied = "";
-  if (irg?.option === "EXEMPT") {
-    applied = "Exonéré : IRG = 0";
-  } else if (irg?.fixed_rate != null) {
-    applied = `Taux libératoire ${Math.round(irg.fixed_rate * 10000) / 100} % · IRG ${formatDa(slip.irg_amount)} DA`;
-  } else {
+  const data: BulletinIrgData = {
+    brackets: [...scales.brackets]
+      .sort((a, b) => a.min_annual - b.min_annual)
+      .map((b) => ({ from: b.min_annual, to: b.max_annual ?? null, rate_pct: pct100(b.rate) })),
+    abatement: abatement
+      ? {
+          rate_pct: pct100(numRule(abatement, "rate")),
+          min: numRule(abatement, "min_monthly"),
+          max: numRule(abatement, "max_monthly"),
+        }
+      : null,
+    exempt_max: exempt ? numRule(exempt, "monthly_max") : null,
+    lissage: lissage ? { min: numRule(lissage, "monthly_min"), max: numRule(lissage, "monthly_max") } : null,
+    mode: irg?.option === "EXEMPT" ? "EXEMPT" : irg?.fixed_rate != null ? "FIXED" : "BAREME",
+    fixed_rate_pct: irg?.fixed_rate != null ? pct100(irg.fixed_rate) : null,
+    base: slip.irg_base ?? 0,
+    raw: 0,
+    abatement_amount: 0,
+    lissage_applied: false,
+    zone_tax_pct: irg?.zone_applies_to === "TAX" && (irg.zone_rate ?? 0) > 0 ? pct100(irg.zone_rate ?? 0) : 0,
+    exempt: false,
+    amount: slip.irg_amount,
+  };
+  if (data.mode === "BAREME") {
     let base = slip.irg_base ?? 0;
     if (irg?.zone_applies_to === "BASE" && (irg.zone_rate ?? 0) > 0) {
       base = roundMoney(base * (1 - (irg.zone_rate ?? 0)));
     }
     const steps = explainMonthlyIrg({ irgBaseMonthly: base, brackets: scales.brackets, rules });
-    const zone =
-      irg?.zone_applies_to === "TAX" && (irg.zone_rate ?? 0) > 0
-        ? ` · zone −${Math.round((irg.zone_rate ?? 0) * 10000) / 100} %`
-        : "";
-    const lissageNote = steps.lissageApplied ? " · lissage appliqué" : "";
-    applied = steps.exempt
-      ? `Base ${formatDa(slip.irg_base ?? 0)} DA · exonéré`
-      : `Base ${formatDa(slip.irg_base ?? 0)} · barème ${formatDa(steps.rawMonthly)} · abattement ${formatDa(steps.abatement)}${lissageNote}${zone} · IRG ${formatDa(slip.irg_amount)} DA`;
+    data.raw = steps.rawMonthly;
+    data.abatement_amount = steps.abatement;
+    data.lissage_applied = steps.lissageApplied;
+    data.exempt = steps.exempt;
   }
-  return `<table class="irg">
-    <thead>
-      <tr>
-        <th>Barème principal (annuel)</th>
-        <th>Secondaire 1 — Abattement</th>
-        <th>Secondaire 2 — Lissage</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>${principal}</td>
-        <td>${escapeHtml(secondaire1)}</td>
-        <td>${escapeHtml(secondaire2)}</td>
-      </tr>
-      <tr><td colspan="3">${escapeHtml(applied)}</td></tr>
-    </tbody>
-  </table>`;
+  return data;
 }
 
 export function slipToBulletin(
@@ -490,227 +472,76 @@ export function slipToBulletin(
     account_no: slip.account_no ?? "",
     layout: settings,
     rates,
-    regime_note: slip.compliance
-      ? `IRG : ${slip.compliance.labels.irg} · CNAS : ${slip.compliance.labels.cnas} · CACOBATPH : ${slip.compliance.labels.cacobatph}`
-      : "",
-    irg_panel: irgPanelHtml({ ...slip, irg_base: irgBase }, irgScales),
+    compliance: slip.compliance ? { ...slip.compliance.labels } : null,
+    irg: irgData({ ...slip, irg_base: irgBase }, irgScales),
   };
 }
 
-function identityRows(lines: { label: string; field: string }[], values: Record<string, string>) {
-  return lines
-    .map(
-      (line) =>
-        `<div class="row"><span class="k">${escapeHtml(line.label)}</span> <span class="v">${escapeHtml(
-          values[line.field] ?? "",
-        )}</span></div>`,
-    )
-    .join("");
-}
-
-export function buildBulletinHtml(models: BulletinModel[], origin = "") {
-  const title = models[0]?.layout.title ?? DEFAULT_BULLETIN_SETTINGS.title;
-  const pages = models.map((m) => bulletinPage(m, origin)).join("");
-  return `<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8">
-  <title>${escapeHtml(title)}</title>
-  <style>
-    @page { size: A4; margin: 0; }
-    * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; background: #fff; color: #000; }
-    body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; }
-    .page {
-      width: 210mm;
-      min-height: 297mm;
-      position: relative;
-      page-break-after: always;
-    }
-    .page:last-child { page-break-after: auto; }
-    .letterhead-img {
-      position: absolute;
-      inset: 0;
-      width: 210mm;
-      height: 297mm;
-      z-index: 0;
-      object-fit: fill;
-    }
-    .sheet { position: relative; z-index: 1; }
-    @media print {
-      html, body, .letterhead-img {
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-      }
-    }
-    h1 {
-      display: inline-block;
-      font-family: "Times New Roman", Times, serif;
-      font-size: 22px;
-      font-style: italic;
-      font-weight: 800;
-      margin: 2mm 16mm 5mm 0;
-    }
-    .mat { display: inline-block; font-size: 12px; vertical-align: 7px; }
-    .mat b { font-size: 13px; }
-    .boxes { display: grid; grid-template-columns: 1.08fr 0.92fr; gap: 5mm; }
-    .box { border: 1px solid #000; border-radius: 11px; padding: 2mm 3.2mm 2.4mm; min-height: 28mm; }
-    .box .row { margin: 0.55mm 0; line-height: 1.35; }
-    .box .k { display: inline-block; min-width: 36mm; }
-    .box .v { font-weight: 700; }
-    .period { margin: 3.2mm 0 2mm; font-size: 12px; }
-    .frame { border-radius: 8px; overflow: hidden; margin-bottom: 3mm; }
-    table.lines { width: 100%; border-collapse: collapse; }
-    table.lines th, table.lines td { border: 1px solid #000; padding: 1.1mm 1.4mm; text-align: center; vertical-align: middle; }
-    table.lines th { font-weight: 700; }
-    table.lines td.num, table.lines th.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
-    table.lines td.code { width: 11mm; }
-    table.lines .gain, table.lines .ret { width: 24mm; }
-    .totaux {
-      display: grid;
-      grid-template-columns: 1fr 24mm 24mm;
-      margin: 0 0 2.4mm;
-      font-weight: 700;
-      text-align: center;
-      align-items: center;
-    }
-    .net-row { margin: 1mm 0 4mm; text-align: right; font-weight: 700; }
-    .net-amt {
-      display: inline-block;
-      border: 1px solid #000;
-      border-radius: 14px;
-      padding: 1.1mm 6mm;
-      min-width: 34mm;
-      text-align: center;
-      font-size: 13px;
-      margin-left: 4mm;
-    }
-    table.mv, table.foot, table.pay { width: 100%; border-collapse: collapse; }
-    table.mv th, table.mv td, table.foot th, table.foot td, table.pay th, table.pay td {
-      border: 1px solid #000; padding: 1.15mm 1.6mm; text-align: center; vertical-align: middle;
-    }
-    table.mv th, table.foot th, table.pay th { font-weight: 700; }
-    table.pay { width: 78%; }
-    table.pay th { width: 28mm; }
-    .num { font-variant-numeric: tabular-nums; }
-    .regime { margin: -1.5mm 0 3mm; font-size: 9px; text-align: center; }
-  </style>
-</head>
-<body>${pages}</body>
-</html>`;
-}
-
-function footerColumns(m: BulletinModel) {
-  const s = m.layout;
-  const cols: { label: string; value: string }[] = [{ label: s.footer_base, value: formatDa(m.base_cotisable) }];
-  const push = (rate: number | null | undefined, amount: number, label: string) => {
-    if (!((rate != null && rate > 0) || amount > 0)) return;
-    cols.push({ label, value: formatDa(amount) });
+/** Everything a bulletin template can print, one entry per page. */
+export function bulletinDocData(models: BulletinModel[], origin = "") {
+  return {
+    pages: models.map((m) => {
+      const s = m.layout;
+      return {
+        letterhead: resolveBulletinLetterhead(s, origin),
+        matricule: m.matricule,
+        period_text: m.period_text,
+        values: m.values,
+        units: { da: s.unit_da, percent: s.unit_percent, day: s.unit_day },
+        lines: m.lines.map((l) => ({
+          code: l.code,
+          label: l.label,
+          category: l.category,
+          unit: l.unit,
+          nombre: l.nombre,
+          taux: l.taux,
+          taux_suffix: l.tauxSuffix,
+          hide_taux: Boolean(l.hideTaux),
+          gain: l.gain,
+          retenue: l.retenue,
+        })),
+        total_gain: m.total_gain,
+        total_retenue: m.total_retenue,
+        net_payable: m.net_payable,
+        days_worked: m.days_worked,
+        days_weekend: m.days_weekend,
+        days_rappel: m.days_rappel,
+        days_abandon: m.days_abandon,
+        days_leave: m.days_leave,
+        days_absence: m.days_absence,
+        employee_ss: m.employee_ss,
+        employer_ss: m.employer_ss,
+        fos_amount: m.fos_amount,
+        charges_salariales: m.charges_salariales,
+        charges_patronales: m.charges_patronales,
+        charges_totales: m.charges_totales,
+        cout_global: m.cout_global,
+        base_cotisable: m.base_cotisable,
+        cacobatph: m.cacobatph,
+        intemperies_employee: m.intemperies_employee,
+        intemperies_employer: m.intemperies_employer,
+        irg_base: m.irg_base,
+        irg_amount: m.irg_amount,
+        rates: m.rates,
+        payment_mode: m.payment_mode,
+        payment_date: m.payment_date,
+        account_no: m.account_no,
+        compliance: m.compliance,
+        irg: m.irg,
+        employer: {
+          name: s.employer_name,
+          address: s.employer_address,
+          nif: s.employer_nif,
+          nis: s.employer_nis,
+          cnas_no: s.employer_cnas_no,
+          cacobatph_no: s.employer_cacobatph_no,
+        },
+      };
+    }),
   };
-  push(m.rates.ss_pct, m.employee_ss, withPct(s.footer_css_sal, m.rates.ss_pct));
-  push(m.rates.pat_pct, m.employer_ss, withPct(s.footer_css_pat, m.rates.pat_pct));
-  push(m.rates.fos_pct, m.fos_amount, withPct(s.footer_fos, m.rates.fos_pct));
-  push(m.rates.caco_pct, m.cacobatph, withPct(s.footer_caco, m.rates.caco_pct));
-  push(m.rates.intemp_sal_pct, m.intemperies_employee, withPct(s.footer_intemp_sal, m.rates.intemp_sal_pct));
-  push(m.rates.intemp_pat_pct, m.intemperies_employer, withPct(s.footer_intemp_pat, m.rates.intemp_pat_pct));
-  cols.push({ label: s.footer_irg_base, value: formatDa(m.irg_base) });
-  cols.push({ label: s.footer_irg, value: formatDa(m.irg_amount) });
-  return cols;
 }
 
-function bulletinPage(m: BulletinModel, origin = "") {
-  const s = m.layout;
-  const letterhead = resolveBulletinLetterhead(s, origin);
-  const foot = footerColumns(m);
-  const lineRows = m.lines
-    .map(
-      (l) => `<tr>
-        <td class="code">${escapeHtml(l.code)}</td>
-        <td>${escapeHtml(l.label)}</td>
-        <td class="num">${formatDa(l.nombre)}</td>
-        <td class="num">${l.hideTaux ? "" : `${formatDa(l.taux)}${escapeHtml(l.tauxSuffix)}`}</td>
-        <td class="num gain">${l.gain == null ? "" : `${formatDa(l.gain)}${escapeHtml(s.unit_da)}`}</td>
-        <td class="num ret">${l.retenue == null ? "" : `${formatDa(l.retenue)}${escapeHtml(s.unit_da)}`}</td>
-      </tr>`,
-    )
-    .join("");
-  return `<div class="page">
-    <img class="letterhead-img" src="${escapeHtml(letterhead)}" alt="">
-    <div class="sheet" style="padding:${s.pad_top_mm}mm ${s.pad_right_mm}mm ${s.pad_bottom_mm}mm ${s.pad_left_mm}mm">
-    <h1>${escapeHtml(s.title)}</h1>
-    <span class="mat">${escapeHtml(s.matricule_label)} <b>${escapeHtml(m.matricule)}</b></span>
-    <div class="boxes">
-      <div class="box">${identityRows(s.identity_left, m.values)}</div>
-      <div class="box">${identityRows(s.identity_right, m.values)}</div>
-    </div>
-    <div class="period">${escapeHtml(s.period_label)} <b>${escapeHtml(m.period_text)}</b></div>
-    <div class="frame">
-    <table class="lines">
-      <thead>
-        <tr>
-          <th>${escapeHtml(s.col_code)}</th>
-          <th>${escapeHtml(s.col_intitule)}</th>
-          <th class="num">${escapeHtml(s.col_nombre)}</th>
-          <th class="num">${escapeHtml(s.col_taux)}</th>
-          <th class="num">${escapeHtml(s.col_gain)}</th>
-          <th class="num">${escapeHtml(s.col_retenue)}</th>
-        </tr>
-      </thead>
-      <tbody>${lineRows}</tbody>
-    </table>
-    </div>
-    <div class="totaux">
-      <span>${escapeHtml(s.totaux_label)}</span>
-      <span>${formatDa(m.total_gain)}${escapeHtml(s.unit_da)}</span>
-      <span>${formatDa(m.total_retenue)}${escapeHtml(s.unit_da)}</span>
-    </div>
-    <div class="net-row">${escapeHtml(s.net_label)} <span class="net-amt">${formatDa(m.net_payable)}${escapeHtml(s.unit_da)}</span></div>
-    <div class="frame">
-    <table class="mv">
-      <thead>
-        <tr>
-          <th colspan="4">${escapeHtml(s.movements_title)}</th>
-          <th colspan="2">${escapeHtml(s.charges_title)}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>${escapeHtml(s.label_worked)}</td><td class="num">${formatDa(m.days_worked).replace(",00", "")}</td>
-          <td>${escapeHtml(s.label_abandon)}</td><td class="num">${formatDa(m.days_abandon).replace(",00", "")}</td>
-          <td>${escapeHtml(s.label_salariales)}</td><td class="num">${formatDa(m.charges_salariales)}</td>
-        </tr>
-        <tr>
-          <td>${escapeHtml(s.label_rappel)}</td><td class="num">${formatDa(m.days_rappel).replace(",00", "")}</td>
-          <td>${escapeHtml(s.label_leave)}</td><td class="num">${formatDa(m.days_leave).replace(",00", "")}</td>
-          <td>${escapeHtml(s.label_patronales)}</td><td class="num">${formatDa(m.charges_patronales)}</td>
-        </tr>
-        <tr>
-          <td>${escapeHtml(s.label_weekend)}</td><td class="num">${formatDa(m.days_weekend).replace(",00", "")}</td>
-          <td>${escapeHtml(s.label_absence)}</td><td class="num">${formatDa(m.days_absence).replace(",00", "")}</td>
-          <td>${escapeHtml(s.label_totales)}</td><td class="num">${formatDa(m.charges_totales)}</td>
-        </tr>
-        <tr>
-          <td colspan="4"></td>
-          <td>${escapeHtml(s.label_cout)}</td><td class="num">${formatDa(m.cout_global)}</td>
-        </tr>
-      </tbody>
-    </table>
-    </div>
-    <div class="frame">
-    <table class="foot">
-      <thead><tr>${foot.map((c) => `<th>${escapeHtml(c.label)}</th>`).join("")}</tr></thead>
-      <tbody><tr>${foot.map((c) => `<td>${escapeHtml(c.value)}</td>`).join("")}</tr></tbody>
-    </table>
-    </div>
-    ${m.regime_note ? `<div class="regime">${escapeHtml(m.regime_note)}</div>` : ""}
-    <div class="frame">
-    <table class="pay">
-      <tr>
-        <th>${escapeHtml(s.payment_label)}</th><td>${escapeHtml(m.payment_mode)}</td>
-        <th>${escapeHtml(s.payment_date_label)}</th><td>${escapeHtml(m.payment_date)}</td>
-      </tr>
-      <tr><th>${escapeHtml(s.account_label)}</th><td colspan="3">${escapeHtml(m.account_no)}</td></tr>
-    </table>
-    </div>
-  </div>`;
+/** Prints bulletins with a document template (the approved one, or a draft being edited). */
+export function renderBulletinHtml(template: string, models: BulletinModel[], origin = "") {
+  return renderTemplate(template, bulletinDocData(models, origin));
 }

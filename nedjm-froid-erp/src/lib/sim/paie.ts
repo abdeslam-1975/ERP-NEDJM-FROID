@@ -1,4 +1,5 @@
-import { buildBulletinHtml, slipToBulletin } from "@/components/rh/bulletin-print";
+import { bulletinDocData, slipToBulletin } from "@/components/rh/bulletin-print";
+import { renderTemplate } from "@/lib/doc/engine";
 import { OVERTIME_COLUMNS } from "@/lib/hr/attendance-columns";
 import {
   accumulateAttendanceMovements,
@@ -512,6 +513,7 @@ export function runPaie(
 export function paieOutput(
   data: SimulatorData,
   settings: HrBulletinSettings,
+  template: string,
   ctx: SimContext,
   env: SimEnv,
 ): SimOutput {
@@ -520,10 +522,12 @@ export function paieOutput(
     brackets: scenario.brackets,
     rulesByCategory: scenario.rules,
   });
+  const docData = bulletinDocData([model], env.origin);
   return {
-    html: buildBulletinHtml([model], env.origin),
+    html: renderTemplate(template, docData),
     pageWidth: BULLETIN_PAGE_WIDTH,
     figures: paieFigures(out, scenario.contract.netRef),
     warnings: out.slip.warnings,
+    doc: { type: "bulletin_paie", data: docData },
   };
 }

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { hrBulletinSettingsSchema } from "@/lib/validations/hr";
 import { getHrFicheSettings } from "@/lib/actions/hr-fiche";
 import { legalVarsAsOf } from "@/lib/hr/legal-vars-as-of";
+import { getApprovedDocTemplate } from "@/lib/actions/doc-templates";
 import {
   BULLETIN_SETTINGS_ID,
   bulletinRatesFromVars,
@@ -72,7 +73,11 @@ export async function getBulletinLegalRates(
 }
 
 export async function loadPayrollBulletinContext() {
-  const [bulletin, fiche] = await Promise.all([getHrBulletinSettings(), getHrFicheSettings()]);
+  const [bulletin, fiche, template] = await Promise.all([
+    getHrBulletinSettings(),
+    getHrFicheSettings(),
+    getApprovedDocTemplate("bulletin_paie"),
+  ]);
   const layout = bulletin.ok ? { ...bulletin.data } : { ...DEFAULT_BULLETIN_SETTINGS };
   if (!layout.letterhead_url && fiche.ok && fiche.data.letterhead_url) {
     layout.letterhead_url = fiche.data.letterhead_url;
@@ -80,6 +85,7 @@ export async function loadPayrollBulletinContext() {
   const rates = await getBulletinLegalRates(layout);
   return {
     bulletin: layout,
+    template: template.ok ? template.data : "",
     legalRates: rates.ok
       ? rates.data
       : {
@@ -93,6 +99,7 @@ export async function loadPayrollBulletinContext() {
       (!bulletin.ok && bulletin.error) ||
       (!fiche.ok && fiche.error) ||
       (!rates.ok && rates.error) ||
+      (!template.ok && template.error) ||
       undefined,
   };
 }

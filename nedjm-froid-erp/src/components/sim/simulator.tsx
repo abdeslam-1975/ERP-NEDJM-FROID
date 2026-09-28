@@ -7,6 +7,7 @@ import { formatDa } from "@/components/rh/bulletin-print";
 import { RhAlert } from "@/components/rh/rh-ui";
 import { simSelectClass } from "@/components/sim/sim-fields";
 import { DocFrame } from "@/components/sim/doc-frame";
+import { DocEditor } from "@/components/doc/doc-editor";
 import { VarCard, formatSimValue, type SimZone } from "@/components/sim/var-card";
 import { VarPicker } from "@/components/sim/var-picker";
 import type { SimEmployeeOption } from "@/lib/hr/payroll-simulator-load";
@@ -44,12 +45,14 @@ export function Simulator({
   refs,
   notice,
   employees,
+  startEditing = false,
 }: {
   nav: Nav;
   data: SimTargetData | null;
   refs: SimRefOption[];
   notice: string | null;
   employees: SimEmployeeOption[];
+  startEditing?: boolean;
 }) {
   const router = useRouter();
   const go = (patch: Partial<Nav>) => {
@@ -72,7 +75,7 @@ export function Simulator({
       {!meta ? (
         <TargetGallery onPick={(target) => go({ target })} />
       ) : data ? (
-        <Workspace key={`${meta.id}-${nav.employeeId}-${nav.year}-${nav.month}-${nav.ref}`} data={data} />
+        <Workspace key={`${meta.id}-${nav.employeeId}-${nav.year}-${nav.month}-${nav.ref}`} data={data} startEditing={startEditing} />
       ) : null}
     </div>
   );
@@ -307,7 +310,9 @@ function sameValue(a: SimValue | undefined, b: SimValue | undefined) {
   return a === b;
 }
 
-function Workspace({ data }: { data: SimTargetData }) {
+function Workspace({ data, startEditing }: { data: SimTargetData; startEditing: boolean }) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(startEditing);
   const env = useMemo(() => ({ origin: typeof window === "undefined" ? "" : window.location.origin }), []);
   const defs = useMemo(() => simVariables(data, env), [data, env]);
   const defMap = useMemo(() => new Map(defs.map((d) => [d.id, d])), [defs]);
@@ -429,6 +434,11 @@ function Workspace({ data }: { data: SimTargetData }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <FiguresStrip figures={output.figures} reference={reference} />
         <div className="flex gap-2">
+          {output.doc && !editing ? (
+            <Button variant="secondary" className="h-8 px-3 text-xs" onClick={() => setEditing(true)}>
+              Éditer la mise en page
+            </Button>
+          ) : null}
           <Button variant="secondary" className="h-8 px-3 text-xs" onClick={() => setReference(figureRecord(output.figures))}>
             Figer comme référence
           </Button>
@@ -471,6 +481,23 @@ function Workspace({ data }: { data: SimTargetData }) {
         </div>
       ) : null}
 
+      {editing && output.doc ? (
+        <div className="grid gap-3 xl:grid-cols-[18rem_minmax(0,1fr)]">
+          <aside className="space-y-4 xl:max-h-[calc(100dvh-12rem)] xl:overflow-y-auto xl:pr-1">
+            {zone("left", "Gauche")}
+            {zone("right", "Droite")}
+          </aside>
+          <section className="flex min-h-[calc(100dvh-12rem)] flex-col gap-2">
+            <DocEditor
+              docType={output.doc.type}
+              data={output.doc.data}
+              pageWidth={output.pageWidth}
+              onClose={() => setEditing(false)}
+              onApproved={() => router.refresh()}
+            />
+          </section>
+        </div>
+      ) : (
       <div className="grid gap-3 xl:h-[calc(100dvh-19rem)] xl:min-h-[36rem] xl:grid-cols-[20rem_minmax(0,1fr)_20rem]">
         <aside className="xl:overflow-y-auto xl:pr-1">{zone("left", "Gauche")}</aside>
         <section className="flex min-h-[36rem] flex-col gap-2 xl:min-h-0">
@@ -487,6 +514,7 @@ function Workspace({ data }: { data: SimTargetData }) {
         </section>
         <aside className="xl:overflow-y-auto xl:pr-1">{zone("right", "Droite")}</aside>
       </div>
+      )}
       {zone("bottom", "Bas")}
 
       {picker ? (

@@ -1,13 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { saveHrBulletinSettings } from "@/lib/actions/hr-bulletin";
 import { uploadHrFicheLetterhead } from "@/lib/actions/hr-fiche";
 import {
-  BULLETIN_VALUE_FIELDS,
   DEFAULT_BULLETIN_SETTINGS,
   resolveBulletinLetterhead,
-  type BulletinIdentityLine,
   type BulletinLegalRates,
   type HrBulletinSettings,
 } from "@/lib/hr/bulletin-settings";
@@ -22,8 +21,7 @@ import {
   bi,
   rhInput,
 } from "@/components/rh/rh-ui";
-import type { HrEmployeeField } from "@/lib/actions/hr-employees";
-import { buildBulletinHtml, slipToBulletin } from "@/components/rh/bulletin-print";
+import { renderBulletinHtml, slipToBulletin } from "@/components/rh/bulletin-print";
 
 function printHtml(html: string) {
   const existing = document.getElementById("hr-print-frame");
@@ -71,68 +69,14 @@ function printHtml(html: string) {
   }
 }
 
-function IdentityEditor({
-  lines,
-  fields,
-  onChange,
-}: {
-  lines: BulletinIdentityLine[];
-  fields: { code: string; label_fr: string }[];
-  onChange: (next: BulletinIdentityLine[]) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      {lines.map((line, index) => (
-        <div key={`${line.field}-${index}`} className="grid gap-2 sm:grid-cols-2">
-          <input
-            className={rhInput}
-            value={line.label}
-            onChange={(e) => {
-              const copy = [...lines];
-              copy[index] = { ...line, label: e.target.value };
-              onChange(copy);
-            }}
-          />
-          <div className="flex gap-2">
-            <select
-              className={rhInput}
-              value={line.field}
-              onChange={(e) => {
-                const copy = [...lines];
-                copy[index] = { ...line, field: e.target.value };
-                onChange(copy);
-              }}
-            >
-              {fields.map((f) => (
-                <option key={f.code} value={f.code}>
-                  {f.label_fr} ({f.code})
-                </option>
-              ))}
-            </select>
-            <Button variant="ghost" onClick={() => onChange(lines.filter((_, i) => i !== index))}>
-              ×
-            </Button>
-          </div>
-        </div>
-      ))}
-      <Button
-        variant="secondary"
-        onClick={() => onChange([...lines, { label: "", field: fields[0]?.code ?? "employee_name" }])}
-      >
-        {bi("Ajouter une ligne", "إضافة سطر")}
-      </Button>
-    </div>
-  );
-}
-
 export function BulletinSettingsManager({
   initial,
-  employeeFields,
+  template,
   ficheLetterheadUrl = "",
   legalRates = { ss_pct: null, pat_pct: null, caco_pct: null, intemp_sal_pct: null, intemp_pat_pct: null },
 }: {
   initial: HrBulletinSettings;
-  employeeFields: HrEmployeeField[];
+  template: string;
   ficheLetterheadUrl?: string;
   legalRates?: BulletinLegalRates;
 }) {
@@ -144,10 +88,6 @@ export function BulletinSettingsManager({
   const letterheadPreview = resolveBulletinLetterhead(
     form.letterhead_url ? form : { ...form, letterhead_url: ficheLetterheadUrl },
   );
-  const fields = [
-    ...BULLETIN_VALUE_FIELDS,
-    ...employeeFields.map((f) => ({ code: f.code, label_fr: f.label_fr })),
-  ].filter((f, i, arr) => arr.findIndex((x) => x.code === f.code) === i);
 
   function set<K extends keyof HrBulletinSettings>(key: K, value: HrBulletinSettings[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -158,31 +98,29 @@ export function BulletinSettingsManager({
       <RhPageHeader
         title={bi("Modèle de bulletin", "نموذج كشف الأجر")}
         description={bi(
-          "Tous les libellés, colonnes et codes (100, 990, 995) se règlent ici, comme le bulletin GAS de l’entreprise. Les taux CSS viennent des variables légales.",
-          "كل التسميات والأعمدة والرموز تُضبط من هنا بنفس نمط كشف المؤسسة. نسب الضمان من المتغيرات القانونية.",
+          "Données du bulletin : en-tête, unités, codes (100, 990, 995), variables légales, employeur et mois. Les taux CSS viennent des variables légales.",
+          "بيانات الكشف: الترويسة والوحدات والرموز والمتغيرات القانونية والمستخدم والشهور. نسب الضمان من المتغيرات القانونية.",
         )}
       />
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
       {info && !error ? <RhAlert tone="success">{info}</RhAlert> : null}
 
-      <RhPanel className="grid gap-3 sm:grid-cols-3">
-        <RhField label={bi("Titre", "العنوان")}>
-          <input className={rhInput} value={form.title} onChange={(e) => set("title", e.target.value)} />
-        </RhField>
-        <RhField label={bi("Libellé matricule", "تسمية الرقم")}>
-          <input
-            className={rhInput}
-            value={form.matricule_label}
-            onChange={(e) => set("matricule_label", e.target.value)}
-          />
-        </RhField>
-        <RhField label={bi("Libellé période", "تسمية الفترة")}>
-          <input
-            className={rhInput}
-            value={form.period_label}
-            onChange={(e) => set("period_label", e.target.value)}
-          />
-        </RhField>
+      <RhPanel className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <RhSectionTitle>{bi("Mise en page, textes et styles", "التصميم والنصوص والتنسيق")}</RhSectionTitle>
+          <p className="text-sm text-foreground/60">
+            {bi(
+              "Titres, libellés, colonnes, marges, polices et tableaux se modifient directement sur le bulletin, dans l’éditeur de documents du simulateur.",
+              "العناوين والتسميات والأعمدة والهوامش والخطوط والجداول تُعدَّل مباشرة على الكشف من محرر الوثائق في المحاكي.",
+            )}
+          </p>
+        </div>
+        <Link
+          href="/simulateur?cible=paie&edition=1"
+          className="inline-flex h-9 items-center rounded-lg bg-brand px-3 text-sm font-medium text-white hover:bg-brand/90"
+        >
+          {bi("Ouvrir l’éditeur", "فتح المحرر")}
+        </Link>
       </RhPanel>
 
       <RhPanel>
@@ -230,42 +168,6 @@ export function BulletinSettingsManager({
             ) : null}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <RhField label={bi("Marge haut (mm)", "الهامش العلوي")}>
-              <input
-                className={rhInput}
-                type="number"
-                step="0.5"
-                value={form.pad_top_mm}
-                onChange={(e) => set("pad_top_mm", Number(e.target.value))}
-              />
-            </RhField>
-            <RhField label={bi("Marge bas (mm)", "الهامش السفلي")}>
-              <input
-                className={rhInput}
-                type="number"
-                step="0.5"
-                value={form.pad_bottom_mm}
-                onChange={(e) => set("pad_bottom_mm", Number(e.target.value))}
-              />
-            </RhField>
-            <RhField label={bi("Marge gauche (mm)", "الهامش الأيسر")}>
-              <input
-                className={rhInput}
-                type="number"
-                step="0.5"
-                value={form.pad_left_mm}
-                onChange={(e) => set("pad_left_mm", Number(e.target.value))}
-              />
-            </RhField>
-            <RhField label={bi("Marge droite (mm)", "الهامش الأيمن")}>
-              <input
-                className={rhInput}
-                type="number"
-                step="0.5"
-                value={form.pad_right_mm}
-                onChange={(e) => set("pad_right_mm", Number(e.target.value))}
-              />
-            </RhField>
             <label className="flex items-center gap-2 text-sm sm:col-span-2">
               <input
                 type="checkbox"
@@ -289,42 +191,6 @@ export function BulletinSettingsManager({
             </RhField>
           </div>
         </div>
-      </RhPanel>
-
-      <RhPanel className="grid gap-4 lg:grid-cols-2">
-        <div>
-          <RhSectionTitle>{bi("Identité gauche", "الهوية يسار")}</RhSectionTitle>
-          <IdentityEditor
-            lines={form.identity_left}
-            fields={fields}
-            onChange={(next) => set("identity_left", next)}
-          />
-        </div>
-        <div>
-          <RhSectionTitle>{bi("Identité droite", "الهوية يمين")}</RhSectionTitle>
-          <IdentityEditor
-            lines={form.identity_right}
-            fields={fields}
-            onChange={(next) => set("identity_right", next)}
-          />
-        </div>
-      </RhPanel>
-
-      <RhPanel className="grid gap-3 sm:grid-cols-3">
-        {(
-          [
-            ["col_code", "Colonne code"],
-            ["col_intitule", "Intitulé"],
-            ["col_nombre", "Nombre"],
-            ["col_taux", "Taux"],
-            ["col_gain", "Gain"],
-            ["col_retenue", "Retenue"],
-          ] as const
-        ).map(([key, label]) => (
-          <RhField key={key} label={label}>
-            <input className={rhInput} value={form[key]} onChange={(e) => set(key, e.target.value)} />
-          </RhField>
-        ))}
       </RhPanel>
 
       <RhPanel className="grid gap-3 sm:grid-cols-3">
@@ -381,60 +247,11 @@ export function BulletinSettingsManager({
       </RhPanel>
 
       <RhPanel className="grid gap-3 sm:grid-cols-3">
-        {(
-          [
-            ["totaux_label", "Totaux"],
-            ["net_label", "Net à payer"],
-            ["movements_title", "Mouvements"],
-            ["charges_title", "Charges"],
-            ["label_worked", "Travaillés"],
-            ["label_rappel", "Rappel"],
-            ["label_weekend", "Week-end / fériés"],
-            ["label_abandon", "Abandon"],
-            ["label_leave", "Congés"],
-            ["label_absence", "Absences"],
-            ["label_salariales", "Salariales"],
-            ["label_patronales", "Patronales"],
-            ["label_totales", "Totales"],
-            ["label_cout", "Coût global"],
-            ["footer_base", "Base cotisable"],
-            ["footer_css_sal", "CSS salarié ({pct})"],
-            ["footer_css_pat", "CSS patronale ({pct})"],
-            ["footer_fos", "FOS ({pct})"],
-            ["footer_caco", "Congés ({pct})"],
-            ["footer_intemp_sal", "Intempéries sal. ({pct})"],
-            ["footer_intemp_pat", "Intempéries pat. ({pct})"],
-            ["footer_irg_base", "Base IRG"],
-            ["footer_irg", "IRG"],
-            ["payment_date_label", "Date paiement"],
-          ] as const
-        ).map(([key, label]) => (
-          <RhField key={key} label={label}>
-            <input className={rhInput} value={form[key]} onChange={(e) => set(key, e.target.value)} />
-          </RhField>
-        ))}
-      </RhPanel>
-
-      <RhPanel className="grid gap-3 sm:grid-cols-3">
         <RhField label={bi("Paiement par défaut", "الدفع الافتراضي")}>
           <input
             className={rhInput}
             value={form.default_payment}
             onChange={(e) => set("default_payment", e.target.value)}
-          />
-        </RhField>
-        <RhField label={form.payment_label}>
-          <input
-            className={rhInput}
-            value={form.payment_label}
-            onChange={(e) => set("payment_label", e.target.value)}
-          />
-        </RhField>
-        <RhField label={form.account_label}>
-          <input
-            className={rhInput}
-            value={form.account_label}
-            onChange={(e) => set("account_label", e.target.value)}
           />
         </RhField>
       </RhPanel>
@@ -499,7 +316,8 @@ export function BulletinSettingsManager({
           variant="secondary"
           onClick={() =>
             printHtml(
-              buildBulletinHtml(
+              renderBulletinHtml(
+                template,
                 [
                 slipToBulletin(
                   {

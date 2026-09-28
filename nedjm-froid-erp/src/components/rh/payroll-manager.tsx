@@ -29,7 +29,7 @@ import {
   rhInput,
 } from "@/components/rh/rh-ui";
 import {
-  buildBulletinHtml,
+  renderBulletinHtml,
   slipToBulletin,
   type BulletinModel,
 } from "@/components/rh/bulletin-print";
@@ -96,8 +96,8 @@ function printHtml(html: string) {
   }
 }
 
-function printBulletins(models: BulletinModel[]) {
-  printHtml(buildBulletinHtml(models, window.location.origin));
+function printBulletins(template: string, models: BulletinModel[]) {
+  printHtml(renderBulletinHtml(template, models, window.location.origin));
 }
 
 function money(n: number) {
@@ -133,16 +133,18 @@ function lineForCode(lines: PayrollSlipLineRow[] | undefined, code: string) {
 }
 
 function BulletinPreview({
+  template,
   models,
   onClose,
 }: {
+  template: string;
   models: BulletinModel[];
   onClose: () => void;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const html = useMemo(
-    () => buildBulletinHtml(models, typeof window !== "undefined" ? window.location.origin : ""),
-    [models],
+    () => renderBulletinHtml(template, models, typeof window !== "undefined" ? window.location.origin : ""),
+    [template, models],
   );
 
   useEffect(() => {
@@ -162,7 +164,7 @@ function BulletinPreview({
             {bi("Bulletin de Paie", "كشف الأجر")}
           </h3>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" onClick={() => printBulletins(models)}>
+            <Button variant="secondary" onClick={() => printBulletins(template, models)}>
               {bi("Imprimer / PDF", "طباعة / PDF")}
             </Button>
             <Button variant="ghost" onClick={onClose}>
@@ -190,6 +192,7 @@ export function PayrollManager({
   month,
   view = "all",
   bulletin = DEFAULT_BULLETIN_SETTINGS,
+  bulletinTemplate = "",
   legalRates = { ss_pct: null, pat_pct: null, caco_pct: null, intemp_sal_pct: null, intemp_pat_pct: null },
   irgScales = null,
   loadError,
@@ -203,6 +206,7 @@ export function PayrollManager({
   month: number;
   view?: View;
   bulletin?: HrBulletinSettings;
+  bulletinTemplate?: string;
   legalRates?: BulletinLegalRates;
   irgScales?: PayrollIrgScales | null;
   loadError?: string;
@@ -441,7 +445,7 @@ export function PayrollManager({
     start(async () => {
       try {
         const full = await withDetails(rows);
-        printBulletins(full.map(toBulletin));
+        printBulletins(bulletinTemplate, full.map(toBulletin));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Impression impossible.");
       }
@@ -451,7 +455,7 @@ export function PayrollManager({
   return (
     <div className="space-y-5">
       {preview ? (
-        <BulletinPreview models={preview} onClose={() => setPreview(null)} />
+        <BulletinPreview template={bulletinTemplate} models={preview} onClose={() => setPreview(null)} />
       ) : null}
       <RhPageHeader
         title="Paie"

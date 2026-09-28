@@ -4,6 +4,7 @@ import { emptyLetterValues } from "@/lib/hr/hr-letters";
 import { computeLeaveBalance } from "@/lib/hr/leave";
 import { initialScenario, runScenario } from "@/lib/hr/payroll-simulator";
 import { simData } from "@/lib/hr/payroll-simulator.fixture";
+import { seededTemplate } from "@/lib/doc/migration-templates";
 import { influenceOf, SimContext, trackedRecord, type SimOverrides, type SimVarDef } from "@/lib/sim/core";
 import type { OmSimData } from "@/lib/sim/documents";
 import type { LeaveSimData } from "@/lib/sim/leave";
@@ -61,7 +62,12 @@ describe("simulation context", () => {
 });
 
 describe("fiche de paie element", () => {
-  const data: SimTargetData = { target: "paie", sim: simData(true), bulletin: DEFAULT_BULLETIN_SETTINGS };
+  const data: SimTargetData = {
+    target: "paie",
+    sim: simData(true),
+    bulletin: DEFAULT_BULLETIN_SETTINGS,
+    template: seededTemplate("bulletin_paie"),
+  };
 
   it("gives the payroll run result when nothing is changed", () => {
     const { run } = setup(data);

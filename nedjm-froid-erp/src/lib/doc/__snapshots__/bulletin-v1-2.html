@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>BULLETIN DE PAIE</title>
+  <style>
+    @page { size: A4; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; }
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      position: relative;
+      page-break-after: always;
+    }
+    .page:last-child { page-break-after: auto; }
+    .letterhead-img {
+      position: absolute;
+      inset: 0;
+      width: 210mm;
+      height: 297mm;
+      z-index: 0;
+      object-fit: fill;
+    }
+    .sheet { position: relative; z-index: 1; }
+    @media print {
+      html, body, .letterhead-img {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    }
+    h1 {
+      display: inline-block;
+      font-family: "Times New Roman", Times, serif;
+      font-size: 22px;
+      font-style: italic;
+      font-weight: 800;
+      margin: 2mm 16mm 5mm 0;
+    }
+    .mat { display: inline-block; font-size: 12px; vertical-align: 7px; }
+    .mat b { font-size: 13px; }
+    .boxes { display: grid; grid-template-columns: 1.08fr 0.92fr; gap: 5mm; }
+    .box { border: 1px solid #000; border-radius: 11px; padding: 2mm 3.2mm 2.4mm; min-height: 28mm; }
+    .box .row { margin: 0.55mm 0; line-height: 1.35; }
+    .box .k { display: inline-block; min-width: 36mm; }
+    .box .v { font-weight: 700; }
+    .period { margin: 3.2mm 0 2mm; font-size: 12px; }
+    .frame { border-radius: 8px; overflow: hidden; margin-bottom: 3mm; }
+    table.lines { width: 100%; border-collapse: collapse; }
+    table.lines th, table.lines td { border: 1px solid #000; padding: 1.1mm 1.4mm; text-align: center; vertical-align: middle; }
+    table.lines th { font-weight: 700; }
+    table.lines td.num, table.lines th.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    table.lines td.code { width: 11mm; }
+    table.lines .gain, table.lines .ret { width: 24mm; }
+    .totaux {
+      display: grid;
+      grid-template-columns: 1fr 24mm 24mm;
+      margin: 0 0 2.4mm;
+      font-weight: 700;
+      text-align: center;
+      align-items: center;
+    }
+    .net-row { margin: 1mm 0 4mm; text-align: right; font-weight: 700; }
+    .net-amt {
+      display: inline-block;
+      border: 1px solid #000;
+      border-radius: 14px;
+      padding: 1.1mm 6mm;
+      min-width: 34mm;
+      text-align: center;
+      font-size: 13px;
+      margin-left: 4mm;
+    }
+    table.mv, table.foot, table.pay { width: 100%; border-collapse: collapse; }
+    table.mv th, table.mv td, table.foot th, table.foot td, table.pay th, table.pay td {
+      border: 1px solid #000; padding: 1.15mm 1.6mm; text-align: center; vertical-align: middle;
+    }
+    table.mv th, table.foot th, table.pay th { font-weight: 700; }
+    table.pay { width: 78%; }
+    table.pay th { width: 28mm; }
+    .num { font-variant-numeric: tabular-nums; }
+    .regime { margin: -1.5mm 0 3mm; font-size: 9px; text-align: center; }
+  </style>
+</head>
+<body><div class="page">
+    <img class="letterhead-img" src="https://nedjm-froid-erp.vercel.app/hr-letterhead.png" alt="">
+    <div class="sheet" style="padding:32.5mm 16mm 28mm 16mm">
+    <h1>BULLETIN DE PAIE</h1>
+    <span class="mat">Matricule : <b>0042</b></span>
+    <div class="boxes">
+      <div class="box"><div class="row"><span class="k">Employé :</span> <span class="v">BEN ALI &lt;TEST&gt; &amp; &quot;FILS&quot;</span></div><div class="row"><span class="k">Fonction :</span> <span class="v">SOUDEUR</span></div><div class="row"><span class="k">Affectation :</span> <span class="v">CHANTIER D'ORAN</span></div><div class="row"><span class="k">Date d'entrée :</span> <span class="v">01.03.2024</span></div><div class="row"><span class="k">N°SS :</span> <span class="v">901234567890</span></div></div>
+      <div class="box"><div class="row"><span class="k">Date de Naissance :</span> <span class="v">12.05.1990</span></div><div class="row"><span class="k">Situation Familiale :</span> <span class="v">M</span></div><div class="row"><span class="k">Résidence :</span> <span class="v">CITÉ 20 AOÛT ORAN</span></div><div class="row"><span class="k">Catégorie :</span> <span class="v">C3</span></div></div>
+    </div>
+    <div class="period">Période : <b>Septembre / 2026</b></div>
+    <div class="frame">
+    <table class="lines">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Intitulé</th>
+          <th class="num">Nombre / Base</th>
+          <th class="num">Taux</th>
+          <th class="num">Gain</th>
+          <th class="num">Retenue</th>
+        </tr>
+      </thead>
+      <tbody><tr>
+        <td class="code">100</td>
+        <td>SALAIRE DE BASE</td>
+        <td class="num">30,00</td>
+        <td class="num">1.333,33 DA/j</td>
+        <td class="num gain">40.000,00 DA</td>
+        <td class="num ret"></td>
+      </tr><tr>
+        <td class="code">111</td>
+        <td>IEP</td>
+        <td class="num">40.000,00</td>
+        <td class="num">10,00 %</td>
+        <td class="num gain">4.000,00 DA</td>
+        <td class="num ret"></td>
+      </tr><tr>
+        <td class="code">990</td>
+        <td>RET.SECURITE SOCIALE</td>
+        <td class="num">52.340,50</td>
+        <td class="num">0,00 %</td>
+        <td class="num gain"></td>
+        <td class="num ret">4.710,65 DA</td>
+      </tr><tr>
+        <td class="code">302</td>
+        <td>PANIER</td>
+        <td class="num">22,00</td>
+        <td class="num">400,00 DA/j</td>
+        <td class="num gain">8.800,00 DA</td>
+        <td class="num ret"></td>
+      </tr><tr>
+        <td class="code">995</td>
+        <td>RET. I.R.G.</td>
+        <td class="num">47.629,85</td>
+        <td class="num"></td>
+        <td class="num gain"></td>
+        <td class="num ret">4.210,00 DA</td>
+      </tr><tr>
+        <td class="code">405</td>
+        <td>AVANCE</td>
+        <td class="num">1,00</td>
+        <td class="num">3.000,00 DA</td>
+        <td class="num gain"></td>
+        <td class="num ret">3.000,00 DA</td>
+      </tr></tbody>
+    </table>
+    </div>
+    <div class="totaux">
+      <span>Totaux</span>
+      <span>52.800,00 DA</span>
+      <span>11.920,65 DA</span>
+    </div>
+    <div class="net-row">Net à Payer <span class="net-amt">43.419,85 DA</span></div>
+    <div class="frame">
+    <table class="mv">
+      <thead>
+        <tr>
+          <th colspan="4">Mouvements du Mois &quot;Nombre Jours&quot;</th>
+          <th colspan="2">Charges</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Travaillés</td><td class="num">22</td>
+          <td>Abandonnement de Poste</td><td class="num">0</td>
+          <td>Salariales</td><td class="num">4.960,65</td>
+        </tr>
+        <tr>
+          <td>Rappel Salaire</td><td class="num">0,50</td>
+          <td>Congés</td><td class="num">2</td>
+          <td>Patronales</td><td class="num">13.846,83</td>
+        </tr>
+        <tr>
+          <td>Week-End et Fériés du Mois</td><td class="num">8</td>
+          <td>Absences</td><td class="num">1</td>
+          <td>Totales</td><td class="num">18.807,48</td>
+        </tr>
+        <tr>
+          <td colspan="4"></td>
+          <td>Coût Global</td><td class="num">62.227,33</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="frame">
+    <table class="foot">
+      <thead><tr><th>Base Cotisable</th><th>C.S.S. Salariale %</th><th>C.S.S. Patronale %</th><th>Base IRG</th><th>IRG</th></tr></thead>
+      <tbody><tr><td>52.340,50</td><td>4.710,65</td><td>13.346,83</td><td>47.629,85</td><td>4.210,00</td></tr></tbody>
+    </table>
+    </div>
+    
+    <div class="frame">
+    <table class="pay">
+      <tr>
+        <th>Paiement</th><td>CCP VIREMENT</td>
+        <th>Le</th><td></td>
+      </tr>
+      <tr><th>C.C.P N°</th><td colspan="3">0012345 67</td></tr>
+    </table>
+    </div>
+  </div></div></body>
+</html>

@@ -1,5 +1,7 @@
 /** Generic simulation engine: typed variables, overrides and influence tracking. */
 
+import type { DocRender } from "@/lib/doc/registry";
+
 export type SimValue = number | string | boolean;
 
 export type SimVarKind =
@@ -53,6 +55,8 @@ export type SimOutput = {
   pageWidth: number;
   figures: SimFigure[];
   warnings: string[];
+  /** Set when the document comes from an editable template: its type and the data it is rendered with. */
+  doc?: DocRender;
 };
 
 export type SimEnv = { origin: string };

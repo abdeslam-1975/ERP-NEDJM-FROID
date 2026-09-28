@@ -73,6 +73,7 @@ export default async function RhParametresPage() {
           }`,
         }))}
         bulletin={bulletin.bulletin}
+        bulletinTemplate={bulletin.template}
         legalRates={bulletin.legalRates}
         attendanceAdmin={attendanceAdmin.ok ? attendanceAdmin.data : null}
         loadError={

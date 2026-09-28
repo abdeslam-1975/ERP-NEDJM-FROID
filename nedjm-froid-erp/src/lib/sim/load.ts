@@ -61,8 +61,12 @@ async function load(
       if (!sim.data.subject) return empty(sim.data.notice ?? "Aucun contrat pour ce salarié.");
       return { ok: true, data: { data: { target, sim: sim.data }, refs: [], ref: null, notice: sim.data.notice } };
     }
-    const { bulletin } = await loadPayrollBulletinContext();
-    return { ok: true, data: { data: { target, sim: sim.data, bulletin }, refs: [], ref: null, notice: sim.data.notice } };
+    const { bulletin, template, error } = await loadPayrollBulletinContext();
+    if (!template) return { ok: false, error: error ?? "Modèle du bulletin introuvable." };
+    return {
+      ok: true,
+      data: { data: { target, sim: sim.data, bulletin, template }, refs: [], ref: null, notice: sim.data.notice },
+    };
   }
 
   if (!employeeId) return empty("Choisissez un salarié.");

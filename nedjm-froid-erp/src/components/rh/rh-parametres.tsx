@@ -32,6 +32,7 @@ export function RhParametres({
   sites,
   contracts,
   bulletin,
+  bulletinTemplate = "",
   legalRates,
   attendanceAdmin,
   loadError,
@@ -49,6 +50,7 @@ export function RhParametres({
   sites: SalaryTarget[];
   contracts: SalaryTarget[];
   bulletin: HrBulletinSettings;
+  bulletinTemplate?: string;
   legalRates?: BulletinLegalRates;
   attendanceAdmin?: AttendanceColumnsAdmin | null;
   loadError?: string;
@@ -102,7 +104,7 @@ export function RhParametres({
       ) : tab === "bulletin" ? (
         <BulletinSettingsManager
           initial={bulletin}
-          employeeFields={fields}
+          template={bulletinTemplate}
           ficheLetterheadUrl={fiche.letterhead_url ?? ""}
           legalRates={legalRates}
         />

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildBulletinHtml, buildBulletinLines, formatDa, formatDateDot, slipToBulletin } from "@/components/rh/bulletin-print";
+import { buildBulletinLines, formatDa, formatDateDot, renderBulletinHtml, slipToBulletin } from "@/components/rh/bulletin-print";
+import { seededTemplate } from "@/lib/doc/migration-templates";
+
+const TPL = seededTemplate("bulletin_paie");
+const buildBulletinHtml = (models: Parameters<typeof renderBulletinHtml>[1], origin = "") => renderBulletinHtml(TPL, models, origin);
 import { DEFAULT_BULLETIN_SETTINGS } from "@/lib/hr/bulletin-settings";
 
 describe("bulletin GAS layout helpers", () => {
@@ -510,12 +514,12 @@ describe("bulletin GAS layout helpers", () => {
         },
       },
     );
-    expect(model.irg_panel).toContain("Barème principal (annuel)");
-    expect(model.irg_panel).toContain("240.001,00 – 480.000,00 : 23 %");
-    expect(model.irg_panel).toContain("Secondaire 1 — Abattement");
-    expect(model.irg_panel).toContain("Secondaire 2 — Lissage");
-    expect(model.irg_panel).toContain("40 % de l'IRG");
-    expect(model.irg_panel).toContain("IRG 3.100,00 DA");
+    expect(model.irg?.brackets[1]).toEqual({ from: 240001, to: 480000, rate_pct: 23 });
+    expect(model.irg?.abatement).toEqual({ rate_pct: 40, min: 1000, max: 1500 });
+    expect(model.irg?.exempt_max).toBe(30000);
+    expect(model.irg?.lissage).toEqual({ min: 30001, max: 35000 });
+    expect(model.irg?.mode).toBe("BAREME");
+    expect(model.irg?.amount).toBe(3100);
     expect(html).not.toContain("Barème principal");
     expect(html).toContain("RET. I.R.G.</td>\n        <td class=\"num\">40.000,00</td>\n        <td class=\"num\"></td>");
     const linesTable = html.slice(html.indexOf('<table class="lines">'), html.indexOf("</table>"));

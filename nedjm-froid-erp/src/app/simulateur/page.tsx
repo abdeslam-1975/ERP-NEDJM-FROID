@@ -14,7 +14,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export default async function SimulatorPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cible?: string; employe?: string; annee?: string; mois?: string; ref?: string }>;
+  searchParams: Promise<{ cible?: string; employe?: string; annee?: string; mois?: string; ref?: string; edition?: string }>;
 }) {
   const sp = await searchParams;
   const { year, month } = resolvePayrollPeriod(sp.annee, sp.mois);
@@ -53,6 +53,7 @@ export default async function SimulatorPage({
           refs={loaded?.ok ? loaded.data.refs : []}
           notice={loaded?.ok ? loaded.data.notice : null}
           employees={employees}
+          startEditing={sp.edition === "1"}
         />
       )}
     </AppShell>
