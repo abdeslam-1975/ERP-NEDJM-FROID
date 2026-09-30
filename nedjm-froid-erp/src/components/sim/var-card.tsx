@@ -63,7 +63,7 @@ export function InfluenceBadge({ kind, via }: { kind: SimInfluenceKind; via: str
   );
 }
 
-function ValueEditor({
+export function ValueEditor({
   def,
   value,
   onChange,

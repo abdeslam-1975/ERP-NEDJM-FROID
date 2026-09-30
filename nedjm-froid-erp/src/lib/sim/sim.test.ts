@@ -9,7 +9,7 @@ import { influenceOf, SimContext, trackedRecord, type SimOverrides, type SimVarD
 import type { OmSimData } from "@/lib/sim/documents";
 import type { LeaveSimData } from "@/lib/sim/leave";
 import { leaveBalanceFromCtx } from "@/lib/sim/leave";
-import { runSimulation, simVariables, type SimTargetData } from "@/lib/sim/targets";
+import { linkedVariables, runSimulation, simVariables, type SimTargetData } from "@/lib/sim/targets";
 
 const env = { origin: "" };
 
@@ -109,6 +109,21 @@ describe("fiche de paie element", () => {
     const { map } = setup(data);
     expect(map.get("pointage.jours_payes")?.base).toBe(30);
     expect(map.get("cnas.part_salariale")?.base).toBeCloseTo(0.09, 6);
+  });
+
+  it("links a pointage shown beside the payslip: one day cell changes both", () => {
+    const pointage: SimTargetData = { target: "pointage", sim: data.target === "paie" ? data.sim : simData(true) };
+    const defs = linkedVariables([data, pointage], env);
+    const map = new Map(defs.map((d) => [d.id, d]));
+    const figure = (target: SimTargetData, overrides: SimOverrides, key: string) =>
+      runSimulation(target, map, overrides, env).output.figures.find((f) => f.key === key)?.value ?? NaN;
+    const change = { "pointage.2026-09-02": "AN" };
+
+    expect(defs.filter((d) => d.id === "pointage.2026-09-02")).toHaveLength(1);
+    expect(figure(pointage, change, "paid")).toBe(figure(pointage, {}, "paid") - 1);
+    expect(figure(data, change, "gross")).toBeLessThan(figure(data, {}, "gross"));
+    const html = runSimulation(pointage, map, change, env).output.html ?? "";
+    expect(html).toContain('data-sim-var="pointage.2026-09-02" class="chg"');
   });
 });
 

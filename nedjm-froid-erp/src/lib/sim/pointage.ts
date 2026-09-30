@@ -38,11 +38,12 @@ export function pointageOutput(data: SimulatorData, ctx: SimContext): SimOutput 
   for (let i = 0; i < firstDow; i += 1) cells.push(`<td class="pad"></td>`);
   for (let d = 1; d <= days; d += 1) {
     const date = `${prefix}${String(d).padStart(2, "0")}`;
-    const codes = [ctx.str(`pointage.${date}`), ctx.str(`pointage.${date}~2`)].filter((c) => c.trim());
+    const id = `pointage.${date}`;
+    const codes = [ctx.str(id), ctx.str(`${id}~2`)].filter((c) => c.trim());
     const legend = codes[0] ? legendByCode.get(codes[0].toUpperCase()) : undefined;
     const bg = legend ? BUCKET_STYLE[legendMovementBucket(legend)] : "#ffffff";
     cells.push(
-      `<td style="background:${bg}"><div class="d">${d}</div><div class="c">${esc(codes.join(" / ") || "·")}</div>${
+      `<td data-sim-var="${id}"${ctx.isOverridden(id) ? ' class="chg"' : ""} style="background:${bg}"><div class="d">${d}</div><div class="c">${esc(codes.join(" / ") || "·")}</div>${
         legend ? `<div class="l">×${legend.coefficient}</div>` : ""
       }</td>`,
     );
@@ -80,6 +81,7 @@ export function pointageOutput(data: SimulatorData, ctx: SimContext): SimOutput 
     table.cal th{font-size:11px;color:#666;padding:4px;border-bottom:1px solid #ddd}
     table.cal td{border:1px solid #e2e8f0;height:62px;vertical-align:top;padding:4px}
     td.pad{border:none;background:transparent}
+    td.chg{box-shadow:inset 0 0 0 2px #f59e0b}
     .d{font-size:10px;color:#64748b}.c{font-size:15px;font-weight:700;text-align:center;margin-top:6px}.l{font-size:9px;color:#64748b;text-align:right}
     table.sum{margin-top:16px;border-collapse:collapse;width:60%}
     table.sum td{border-bottom:1px solid #eee;padding:5px 8px;font-size:13px}

@@ -95,3 +95,8 @@ export function simVariables(d: SimTargetData, env: SimEnv): SimVarDef[] {
   const { ctx } = runSimulation(d, map, {}, env);
   return defs.map((v) => (v.derived && ctx.derivedValues.has(v.id) ? { ...v, base: ctx.derivedValues.get(v.id)! } : v));
 }
+
+/** Catalogue of elements shown side by side: a variable id read by several elements is one shared value. */
+export function linkedVariables(list: readonly SimTargetData[], env: SimEnv): SimVarDef[] {
+  return mergeVarDefs(...list.map((d) => simVariables(d, env)));
+}
