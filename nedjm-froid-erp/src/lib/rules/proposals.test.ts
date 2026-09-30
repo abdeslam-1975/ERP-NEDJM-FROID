@@ -68,12 +68,25 @@ describe("D2 application month", () => {
 });
 
 describe("rule source", () => {
-  it("requires a legal source and the text's effective date", () => {
+  const citations = [
+    { document_id: "0b7c6f2e-3a1d-4c5e-9f80-1a2b3c4d5e6f", article: "art. 12", page: 7, excerpt: "Le taux est fixé à 9 %." },
+  ];
+
+  it("requires a legal source, the text's effective date and a supporting document", () => {
+    expect(
+      ruleSourceSchema.safeParse({ source_ref: "LF 2026 art. 12", text_effective_date: "2026-01-01", citations }).success,
+    ).toBe(true);
+    expect(ruleSourceSchema.safeParse({ source_ref: "  ", text_effective_date: "2026-01-01", citations }).success).toBe(false);
+    expect(ruleSourceSchema.safeParse({ source_ref: "LF 2026", text_effective_date: "", citations }).success).toBe(false);
+  });
+
+  it("refuses a source without any citation from the register", () => {
+    const r = ruleSourceSchema.safeParse({ source_ref: "LF 2026 art. 12", text_effective_date: "2026-01-01", citations: [] });
+    expect(r.success).toBe(false);
+    expect(r.error?.issues[0]?.message).toMatch(/registre des documents juridiques/);
     expect(ruleSourceSchema.safeParse({ source_ref: "LF 2026 art. 12", text_effective_date: "2026-01-01" }).success).toBe(
-      true,
+      false,
     );
-    expect(ruleSourceSchema.safeParse({ source_ref: "  ", text_effective_date: "2026-01-01" }).success).toBe(false);
-    expect(ruleSourceSchema.safeParse({ source_ref: "LF 2026", text_effective_date: "" }).success).toBe(false);
   });
 });
 

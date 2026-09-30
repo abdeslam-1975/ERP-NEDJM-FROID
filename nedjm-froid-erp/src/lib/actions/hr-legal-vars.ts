@@ -390,6 +390,7 @@ function proposeLegalVar(
     text_effective_date: input.source.text_effective_date,
     requested_month: input.month,
     submit: true,
+    citations: input.source.citations,
   });
 }
 
@@ -604,6 +605,7 @@ export async function stopContribution(input: unknown): Promise<ActionResult<{ m
     text_effective_date: p.source.text_effective_date,
     requested_month: p.effective_from,
     submit: true,
+    citations: p.source.citations,
   });
   if (!saved.ok) return saved;
   revalidateLegal();
@@ -796,6 +798,7 @@ export async function saveCnasRegime(input: unknown): Promise<ActionResult<{ id:
       text_effective_date: p.rates.source.text_effective_date,
       requested_month: p.rates.effective_from,
       submit: true,
+      citations: p.rates.source.citations,
     });
     if (!saved.ok) {
       if (!p.id) await supabase.from("hr_catalogs").delete().eq("id", data.id);

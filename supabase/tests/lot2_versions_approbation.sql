@@ -8,9 +8,24 @@ create or replace function pg_temp.as_user(p uuid) returns void language sql as 
          set_config('ref.rule_apply', '', true);
 $$;
 
+-- Lot 4: every submitted proposal cites a register document. The test document is inserted directly (run as postgres).
+create or replace function pg_temp.cite() returns jsonb language plpgsql as $$
+declare
+  v_id uuid := gen_random_uuid();
+begin
+  insert into ref_legal_documents (id, doc_type, title, reference, applies_from, language, origin, storage_path,
+                                   file_name, mime_type, size_bytes, sha256, created_by)
+  values (v_id, 'DECRET_EXECUTIF', 'Texte test lot 2', 'Décret test lot 2', date '2020-01-01', 'FR', 'Test local',
+          v_id::text || '/' || gen_random_uuid()::text || '.pdf', 'test.pdf', 'application/pdf', 1,
+          md5(v_id::text) || md5(v_id::text), coalesce(auth.uid(), (select id from sys_users limit 1)));
+  return jsonb_build_array(jsonb_build_object('document_id', v_id, 'article', 'art. 1', 'page', 1,
+                                              'excerpt', 'Extrait du texte de test.'));
+end;
+$$;
+
 do $$
 declare
-  boss uuid; rh uuid; fin uuid;
+  boss uuid; rh uuid; fin uuid; cites jsonb;
   snmg uuid; snmg_old uuid; hours_ver uuid; hs_ver uuid; std uuid; legacy_bareme uuid; draft uuid; v_ver uuid;
   p1 uuid; p2 uuid; p3 uuid; p4 uuid; p5 uuid; p6 uuid; p7 uuid;
   d1 uuid; d2 uuid; d3 uuid; d4 uuid; d5 uuid; d7 uuid;
@@ -40,6 +55,7 @@ begin
   if public.hr_first_open_payroll_month() > date '2031-01-01' then
     raise exception 'RESULT: SKIP (payroll already processed beyond 01/2031)';
   end if;
+  cites := pg_temp.cite();
 
   -- Exposure: internal appliers are not callable, the proposal RPC is (authenticated only)
   if has_function_privilege('authenticated', 'public.ref_rule_apply_d2(uuid)', 'execute')
@@ -53,8 +69,8 @@ begin
      or has_function_privilege('authenticated', 'public.hr_cancel_social_profile_rates(uuid)', 'execute') then
     bad := bad || 'internal_function_exposed ';
   end if;
-  if not has_function_privilege('authenticated', 'public.ref_rule_proposal_save(uuid,text,text,uuid,text,jsonb,text,text,date,date,boolean)', 'execute')
-     or has_function_privilege('anon', 'public.ref_rule_proposal_save(uuid,text,text,uuid,text,jsonb,text,text,date,date,boolean)', 'execute')
+  if not has_function_privilege('authenticated', 'public.ref_rule_proposal_save(uuid,text,text,uuid,text,jsonb,text,text,date,date,boolean,jsonb)', 'execute')
+     or has_function_privilege('anon', 'public.ref_rule_proposal_save(uuid,text,text,uuid,text,jsonb,text,text,date,date,boolean,jsonb)', 'execute')
      or has_function_privilege('anon', 'public.ref_rule_proposal_approve(uuid,text)', 'execute') then
     bad := bad || 'rpc_grants ';
   end if;
@@ -92,7 +108,7 @@ begin
   if m = '-' then bad := bad || 'month_not_first '; end if;
 
   p1 := ref_rule_proposal_save(null, 'LEGAL_VAR', 'SET', snmg, null, '{"value":25000}', 'SNMG 2031',
-                               'Décret test art. 1, JO 2030', date '2030-12-15', date '2031-01-01', true);
+                               'Décret test art. 1, JO 2030', date '2030-12-15', date '2031-01-01', true, cites);
   if (select status from ref_rule_proposals where id = p1) <> 'SUBMITTED' then bad := bad || 'not_submitted '; end if;
   if (select count(*) from ref_rule_contributors where subject_kind = 'PROPOSAL' and subject_id = p1 and user_id = rh and role in ('CREATE', 'SUBMIT')) <> 2 then
     bad := bad || 'contributors_not_tracked ';
@@ -123,7 +139,7 @@ begin
 
   perform pg_temp.as_user(fin);
   p2 := ref_rule_proposal_save(null, 'CNAS_RATES', 'SET', std, null, '{"employee_pct":9,"employer_pct":25,"fos_pct":0.5}',
-                               'Taux CNAS 2031', 'Décret test CNAS art. 2', date '2031-01-01', date '2031-02-01', true);
+                               'Taux CNAS 2031', 'Décret test CNAS art. 2', date '2031-01-01', date '2031-02-01', true, cites);
   m := '-'; begin perform ref_rule_proposal_approve(p2, null); exception when others then m := sqlerrm; end;
   if m not like '%Séparation des tâches%' then bad := bad || 'delegate_self_approval '; end if;
   m := '-';
@@ -155,7 +171,7 @@ begin
 
   -- D16 scope proposed and approved by the SUPER_ADMIN: allowed, flagged as self-approval
   p3 := ref_rule_proposal_save(null, 'IRG_ZONE_SCOPE', 'SET', null, 'SUD', '{"mode":"WILAYAS","wilayas":["30","11","30"]}',
-                               'Zone Sud 2031', 'LF test art. 5', date '2031-01-01', date '2031-01-01', true);
+                               'Zone Sud 2031', 'LF test art. 5', date '2031-01-01', date '2031-01-01', true, cites);
   if (select payload->'wilayas' from ref_rule_proposals where id = p3) <> '["11","30"]'::jsonb then
     bad := bad || 'scope_not_normalised ';
   end if;
@@ -221,7 +237,7 @@ begin
   -- A wilaya belongs to one zone per month; the date attaches to its month or the next, never splits one
   p4 := ref_rule_proposal_save(null, 'IRG_ZONE_SCOPE', 'SET', null, 'GRAND_SUD',
                                '{"mode":"GROUP","group_from":"SUD@2031-01-01","wilayas":["30"]}',
-                               'Grand Sud 2031', 'LF test art. 6', date '2031-02-01', date '2031-02-01', true);
+                               'Grand Sud 2031', 'LF test art. 6', date '2031-02-01', date '2031-02-01', true, cites);
   res := ref_rule_proposal_approve(p4, null);
   d4 := (res->>'decision_id')::uuid;
   select fingerprint into fp from sys_decisions where id = d4;
@@ -244,7 +260,7 @@ begin
   -- VERIFY: an existing value is approved as reference, unchanged; a value changed meanwhile is not
   perform pg_temp.as_user(rh);
   p5 := ref_rule_proposal_save(null, 'LEGAL_VAR', 'VERIFY', hours_ver, null, '{}', 'Vérification heures mensuelles',
-                               'Code du travail, art. test', null, null, true);
+                               'Code du travail, art. test', null, null, true, cites);
   m := '-'; begin perform ref_rule_proposal_save(null, 'LEGAL_VAR', 'VERIFY', hours_ver, null, '{}', 'Vérification bis', 'Code du travail', null, null, false); exception when others then m := sqlerrm; end;
   if m not like '%déjà ouverte%' then bad := bad || 'verify_duplicate '; end if;
   perform pg_temp.as_user(fin);
@@ -254,7 +270,7 @@ begin
   end if;
   perform pg_temp.as_user(rh);
   p6 := ref_rule_proposal_save(null, 'LEGAL_VAR', 'VERIFY', hs_ver, null, '{}', 'Vérification HS 50',
-                               'Code du travail, art. test', null, null, true);
+                               'Code du travail, art. test', null, null, true, cites);
   perform set_config('ref.rule_apply', 'on', true);
   update ref_global_var_versions set value_numeric = value_numeric + 0.01 where id = hs_ver;
   perform pg_temp.as_user(fin);
@@ -280,7 +296,7 @@ begin
   end if;
   perform pg_temp.as_user(rh);
   p7 := ref_rule_proposal_save(null, 'IRG_BAREME', 'SET', draft, null, '{}', 'Barème IRG 2031', 'LF 2031 art. 104',
-                               date '2031-01-01', date '2031-01-01', true);
+                               date '2031-01-01', date '2031-01-01', true, cites);
   if (select status from ref_bareme_irg_versions where id = draft) <> 'PROPOSED' then bad := bad || 'draft_not_proposed '; end if;
   m := '-'; begin insert into ref_bareme_irg (version_id, min_annual, max_annual, rate, sort_order) values (draft, 1, 2, 0, 3); exception when others then m := sqlerrm; end;
   if m = '-' then bad := bad || 'proposed_draft_edited '; end if;

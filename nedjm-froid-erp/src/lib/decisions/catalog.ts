@@ -5,6 +5,7 @@ import {
   type DeclarationExport,
   type ExternalOperation,
 } from "@/lib/hr/external-operations";
+import { parseCitations, parseWarnings, type CitationView } from "@/lib/rules/legal-documents";
 
 export const DECISION_STATUSES = ["PENDING", "DECIDED", "EXECUTED", "INVALIDATED", "SUPERSEDED"] as const;
 export type DecisionStatus = (typeof DECISION_STATUSES)[number];
@@ -215,6 +216,8 @@ export type RuleApplicationContext = {
   current: Record<string, unknown> | null;
   proposed: Record<string, unknown> | null;
   slips: RuleApplicationSlips[];
+  citations: CitationView[];
+  citation_warnings: string[];
 };
 
 const obj = (v: unknown) =>
@@ -245,6 +248,8 @@ export function parseRuleApplicationContext(raw: unknown): RuleApplicationContex
     bounded_to: isoDay(c.bounded_to),
     current: obj(c.current),
     proposed: obj(c.proposed),
+    citations: parseCitations(c.citations),
+    citation_warnings: parseWarnings(c.citation_warnings),
     slips: Array.isArray(c.slips)
       ? c.slips.flatMap((s) => {
           const x = obj(s);

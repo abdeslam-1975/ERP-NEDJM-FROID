@@ -242,9 +242,9 @@ export async function registerExternalDocument(input: unknown): Promise<ActionRe
   if (bytes.byteLength > EXTERNAL_DOC_MAX_BYTES) return { ok: false, error: "Pièce trop volumineuse (15 Mo maximum)." };
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   const { data, error } = await supabase.rpc("hr_external_op_add_document", {
-    p_operation: p.operation_id,
+    p_op: p.operation_id,
     p_path: p.path,
-    p_file_name: p.file_name,
+    p_name: p.file_name,
     p_mime: p.mime,
     p_size: bytes.byteLength,
     p_sha256: sha256,

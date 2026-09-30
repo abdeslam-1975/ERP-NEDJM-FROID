@@ -30,6 +30,7 @@ import { DeclarationExportsTable, ExternalOperationsList } from "@/components/rh
 import { declarationKindLabel, declarationReasonLabel, transferReasonLabel } from "@/lib/hr/external-operations";
 import { RULE_ACTIONS, RULE_FAMILIES, frMonth, type RuleAction, type RuleFamily } from "@/lib/rules/proposals";
 import { RuleDiff } from "@/components/rules/rule-content";
+import { CitationsList } from "@/components/rules/legal-citations";
 
 const asFamily = (v: string): RuleFamily =>
   (RULE_FAMILIES as readonly string[]).includes(v) ? (v as RuleFamily) : "LEGAL_VAR";
@@ -363,6 +364,12 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
               action={asAction(d.rule_application.action)}
               current={d.rule_application.current}
               proposed={d.rule_application.proposed}
+            />
+          </div>
+          <div className="mt-4">
+            <CitationsList
+              citations={d.rule_application.citations}
+              warnings={d.rule_application.citation_warnings}
             />
           </div>
           <h4 className="mt-4 text-sm font-semibold">Bulletins des mois concernés</h4>

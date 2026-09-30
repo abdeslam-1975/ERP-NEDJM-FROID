@@ -568,7 +568,7 @@ function ValueDialog({
         </RhField>
         <MonthField label="Demandé à partir de la paie de" value={from} period={period} onChange={setFrom} />
       </div>
-      <RuleSourceFields value={source} onChange={setSource} />
+      <RuleSourceFields value={source} onChange={setSource} month={from} />
       <p className="text-xs text-foreground/55">
         Les paies des mois précédents gardent l&apos;ancienne valeur. Une valeur approuvée pour un mois déjà prévu
         remplace celle de ce mois.
@@ -745,7 +745,7 @@ function ContributionDialog({
           onChange={(v) => set("effective_from", v)}
         />
       </div>
-      <RuleSourceFields value={source} onChange={setSource} />
+      <RuleSourceFields value={source} onChange={setSource} month={form.effective_from} />
       <details className="rounded-xl border border-border/60 px-3 py-2">
         <summary className="cursor-pointer text-sm font-medium">Options avancées</summary>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
@@ -878,7 +878,7 @@ function StopDialog({ row, period, onClose }: { row: LegalVarRow; period: LegalP
         paies à partir de ce mois, et les paies précédentes la gardent avec leurs montants.
       </RhAlert>
       <MonthField label="Retirer à partir de la paie de" value={from} period={period} onChange={setFrom} />
-      <RuleSourceFields value={source} onChange={setSource} />
+      <RuleSourceFields value={source} onChange={setSource} month={from} />
       <p className="text-xs text-foreground/55">Vous pourrez la reprendre plus tard (Modifier → Reprendre le calcul).</p>
     </QuickDialog>
   );
@@ -1232,7 +1232,7 @@ function RegimeDialog({
               period={period}
               onChange={(v) => set("effective_from", v)}
             />
-            <RuleSourceFields value={source} onChange={setSource} />
+            <RuleSourceFields value={source} onChange={setSource} month={form.effective_from} />
           </>
         ) : (
           <p className="text-xs text-foreground/55">Modifiez un taux pour choisir son mois d&apos;effet.</p>

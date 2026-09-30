@@ -1,5 +1,6 @@
 import type { createClient } from "@/lib/supabase/server";
 import type { RuleAction, RuleFamily } from "@/lib/rules/proposals";
+import type { CitationInput } from "@/lib/rules/legal-documents";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -15,6 +16,8 @@ export type SaveRuleProposalArgs = {
   text_effective_date: string | null;
   requested_month: string | null;
   submit: boolean;
+  /** Supporting documents; null keeps the citations already recorded on a draft. */
+  citations: CitationInput[] | null;
 };
 
 /** ref_rule_proposal_save: validation, contributors and submission all happen in the database. */
@@ -34,6 +37,7 @@ export async function saveRuleProposal(
     p_text_effective: a.action === "VERIFY" ? null : a.text_effective_date,
     p_requested_month: a.action === "VERIFY" ? null : a.requested_month,
     p_submit: a.submit,
+    p_citations: a.citations,
   });
   if (error) return { ok: false, error: error.message };
   return { ok: true, data: { id: String(data) } };

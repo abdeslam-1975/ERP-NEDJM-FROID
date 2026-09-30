@@ -239,6 +239,7 @@ export async function requestRuleVerification(input: unknown): Promise<ActionRes
     text_effective_date: null,
     requested_month: null,
     submit: true,
+    citations: p.citations,
   });
   if (!saved.ok) return saved;
   revalidateRules();
@@ -277,6 +278,7 @@ export async function submitIrgDraft(input: unknown): Promise<ActionResult<{ id:
     text_effective_date: p.text_effective_date,
     requested_month: p.requested_month,
     submit: true,
+    citations: p.citations,
   });
   if (!saved.ok) return saved;
   revalidateRules();
@@ -360,6 +362,7 @@ export async function proposeZoneScope(input: unknown): Promise<ActionResult<{ i
     text_effective_date: p.text_effective_date,
     requested_month: p.requested_month,
     submit: true,
+    citations: p.citations,
   });
   if (!saved.ok) return saved;
   revalidateRules();

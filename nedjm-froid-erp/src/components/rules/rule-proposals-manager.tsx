@@ -26,6 +26,7 @@ import {
 } from "@/lib/rules/proposals";
 import { RuleDiff } from "@/components/rules/rule-content";
 import { QuickDialog } from "@/components/rules/rule-ui";
+import { CitationsList } from "@/components/rules/legal-citations";
 import { earliestOpen, firstOpenFor, isMonthClosed, type PayrollChainState } from "@/lib/hr/payroll-chains";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhChip, RhField, RhPageHeader, RhPanel, RhTabs, rhInput } from "@/components/rh/rh-ui";
@@ -209,6 +210,8 @@ export function RuleProposalsManager({
 
               <RuleDiff family={p.family} action={p.action} current={p.current} proposed={p.proposed} />
 
+              <CitationsList citations={p.citations} warnings={p.citation_warnings} />
+
               {p.contributors.length ? (
                 <p className="text-xs text-foreground/60">
                   Contributeurs :{" "}
@@ -369,6 +372,7 @@ function ApproveDialog({
           L&apos;approbation ne change pas encore la paie : la date d&apos;application est décidée ensuite (D2).
         </RhAlert>
       )}
+      <CitationsList citations={p.citations} warnings={p.citation_warnings} />
       {selfApproval ? (
         <label className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50/60 p-3 text-sm dark:border-red-900 dark:bg-red-950/30">
           <input type="checkbox" checked={confirmSelf} onChange={(e) => setConfirmSelf(e.target.checked)} />

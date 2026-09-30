@@ -308,7 +308,7 @@ function ZoneScopeDialog({
               onChange={(e) => setFrom(e.target.value ? `${e.target.value}-01` : "")}
             />
           </RhField>
-          <RuleSourceFields value={source} onChange={setSource} />
+          <RuleSourceFields value={source} onChange={setSource} month={from} />
         </>
       )}
     </QuickDialog>

@@ -7,6 +7,8 @@ import { requestRuleVerification } from "@/lib/actions/rule-proposals";
 import { ACTION_LABEL, frMonth, ruleStatusLabel, ruleStatusTone, type RuleFamily } from "@/lib/rules/proposals";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhChip, RhField, rhInput } from "@/components/rh/rh-ui";
+import { CitationsField } from "@/components/rules/legal-citations";
+import type { CitationInput } from "@/lib/rules/legal-documents";
 
 export const PROPOSALS_PATH = "/rh/legal/propositions";
 
@@ -52,41 +54,49 @@ export function QuickDialog({
   );
 }
 
-export type RuleSourceForm = { source_ref: string; text_effective_date: string };
+export type RuleSourceForm = { source_ref: string; text_effective_date: string; citations: CitationInput[] };
 
-export const emptyRuleSource = (): RuleSourceForm => ({ source_ref: "", text_effective_date: "" });
+export const emptyRuleSource = (): RuleSourceForm => ({ source_ref: "", text_effective_date: "", citations: [] });
 
-/** Source asked by every screen proposing a legal rule; the effective month stays a separate choice (D2). */
+/**
+ * Source asked by every screen proposing a legal rule, with its supporting documents from the register; the
+ * effective month stays a separate choice (D2).
+ */
 export function RuleSourceFields({
   value,
   onChange,
   withDate = true,
+  month,
 }: {
   value: RuleSourceForm;
   onChange: (v: RuleSourceForm) => void;
   withDate?: boolean;
+  month?: string | null;
 }) {
   return (
-    <div className={`grid gap-4 ${withDate ? "sm:grid-cols-[1fr_11rem]" : ""}`}>
-      <RhField label="Source légale" required hint="Texte, article, n° et date du Journal officiel.">
-        <input
-          className={rhInput}
-          value={value.source_ref}
-          maxLength={500}
-          placeholder="ex. LF 2026, art. 12 — JO n° 85 du 30/12/2025"
-          onChange={(e) => onChange({ ...value, source_ref: e.target.value })}
-        />
-      </RhField>
-      {withDate ? (
-        <RhField label="Date d'effet du texte" required>
+    <div className="space-y-4">
+      <div className={`grid gap-4 ${withDate ? "sm:grid-cols-[1fr_11rem]" : ""}`}>
+        <RhField label="Source légale" required hint="Texte, article, n° et date du Journal officiel.">
           <input
             className={rhInput}
-            type="date"
-            value={value.text_effective_date}
-            onChange={(e) => onChange({ ...value, text_effective_date: e.target.value })}
+            value={value.source_ref}
+            maxLength={500}
+            placeholder="ex. LF 2026, art. 12 — JO n° 85 du 30/12/2025"
+            onChange={(e) => onChange({ ...value, source_ref: e.target.value })}
           />
         </RhField>
-      ) : null}
+        {withDate ? (
+          <RhField label="Date d'effet du texte" required>
+            <input
+              className={rhInput}
+              type="date"
+              value={value.text_effective_date}
+              onChange={(e) => onChange({ ...value, text_effective_date: e.target.value })}
+            />
+          </RhField>
+        ) : null}
+      </div>
+      <CitationsField value={value.citations} onChange={(citations) => onChange({ ...value, citations })} month={month} />
     </div>
   );
 }
@@ -154,14 +164,20 @@ export function VerifyRuleDialog({
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [source, setSource] = useState("");
+  const [source, setSource] = useState<RuleSourceForm>(emptyRuleSource);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
   function submit() {
     setError(null);
     start(async () => {
-      const r = await requestRuleVerification({ family, row_id: rowId, label, source_ref: source });
+      const r = await requestRuleVerification({
+        family,
+        row_id: rowId,
+        label,
+        source_ref: source.source_ref,
+        citations: source.citations,
+      });
       if (!r.ok) return setError(r.error);
       setDone(r.data.message);
       onDone?.();
@@ -180,7 +196,7 @@ export function VerifyRuleDialog({
             Fermer
           </Button>
           {!done ? (
-            <Button disabled={pending || source.trim().length < 3} onClick={submit}>
+            <Button disabled={pending || source.source_ref.trim().length < 3 || !source.citations.length} onClick={submit}>
               Demander la vérification
             </Button>
           ) : null}
@@ -196,11 +212,7 @@ export function VerifyRuleDialog({
             La valeur ne change pas. Un approbateur la compare au texte cité et la confirme comme référence ; si elle a
             changé entre-temps, la demande devient caduque.
           </p>
-          <RuleSourceFields
-            value={{ source_ref: source, text_effective_date: "" }}
-            onChange={(v) => setSource(v.source_ref)}
-            withDate={false}
-          />
+          <RuleSourceFields value={source} onChange={setSource} withDate={false} />
         </>
       )}
     </QuickDialog>

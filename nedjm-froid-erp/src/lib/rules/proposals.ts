@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { citationsSchema, parseCitations, parseWarnings, type CitationView } from "@/lib/rules/legal-documents";
 
 export const RULE_FAMILIES = ["LEGAL_VAR", "CNAS_RATES", "IRG_BAREME", "IRG_RULES", "IRG_ZONE_SCOPE"] as const;
 export type RuleFamily = (typeof RULE_FAMILIES)[number];
@@ -132,11 +133,13 @@ export const ruleSourceSchema = z.object({
     .min(3, "Source légale requise : texte, article, date de publication.")
     .max(500, "Source légale : 500 caractères maximum."),
   text_effective_date: z.string().refine(isIsoDay, "Date d'effet prévue par le texte requise."),
+  citations: citationsSchema,
 });
 export type RuleSource = z.infer<typeof ruleSourceSchema>;
 
 export const verifySourceSchema = z.object({
   source_ref: ruleSourceSchema.shape.source_ref,
+  citations: citationsSchema,
 });
 
 export type RuleContributor = { name: string; role: string; at: string };
@@ -170,6 +173,8 @@ export type RuleProposalView = {
   is_contributor: boolean;
   current: Record<string, unknown> | null;
   proposed: Record<string, unknown> | null;
+  citations: CitationView[];
+  citation_warnings: string[];
 };
 
 function obj(v: unknown): Record<string, unknown> | null {
@@ -224,6 +229,8 @@ export function parseProposalOverview(raw: unknown): RuleProposalView[] {
         is_contributor: r.is_contributor === true,
         current: obj(r.current),
         proposed: obj(r.proposed),
+        citations: parseCitations(r.citations),
+        citation_warnings: parseWarnings(r.citation_warnings),
       },
     ];
   });

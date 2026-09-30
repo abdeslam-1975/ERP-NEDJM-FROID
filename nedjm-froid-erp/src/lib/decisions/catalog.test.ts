@@ -86,7 +86,23 @@ describe("D2 context", () => {
     expect(parseRuleApplicationContext({ chain_mode: "SEPARATE", bounded_to: "2026-08-31" })).toMatchObject({
       chain_mode: "SEPARATE",
       bounded_to: "2026-08-31",
+      citations: [],
+      citation_warnings: [],
     });
+  });
+
+  it("carries the cited documents and their warnings to the D2 decider", () => {
+    const c = parseRuleApplicationContext({
+      citations: [
+        { id: "c1", document_id: "d1", version_no: 1, latest_version_no: 2, status: "SUPERSEDED", article: "art. 3", page: "4" },
+        { document_id: "d2" },
+      ],
+      citation_warnings: ["Document cité retiré du registre : LF 2026.", 12, ""],
+    });
+    expect(c.citations).toEqual([
+      expect.objectContaining({ id: "c1", document_id: "d1", latest_version_no: 2, status: "SUPERSEDED", page: 4 }),
+    ]);
+    expect(c.citation_warnings).toEqual(["Document cité retiré du registre : LF 2026."]);
   });
 
   it("summarises flagged drafts and frozen payslips without modifying them", () => {
