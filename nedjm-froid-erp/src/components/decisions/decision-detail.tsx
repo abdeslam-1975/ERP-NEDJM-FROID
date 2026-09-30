@@ -6,19 +6,28 @@ import { useState, useTransition, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhChip, RhPageHeader, RhPanel } from "@/components/rh/rh-ui";
 import { decideDecision, executeDecision, type DecisionDetail } from "@/lib/actions/decisions";
-import type { PayrollChainContext, PayrollReopenContext } from "@/lib/decisions/catalog";
+import type {
+  DeclarationDecisionContext,
+  PayrollChainContext,
+  PayrollReopenContext,
+  TransferDecisionContext,
+} from "@/lib/decisions/catalog";
 import {
   JUSTIFICATION_MAX,
   decisionStatusLabel,
   decisionStatusTone,
+  declarationRiskNotices,
   payrollRunStatusLabel,
   payrollSourceLabel,
   periodLabel,
   periodNatureText,
   reopenRiskNotices,
   ruleApplicationSlipNotice,
+  transferRiskNotices,
   validateJustification,
 } from "@/lib/decisions/catalog";
+import { DeclarationExportsTable, ExternalOperationsList } from "@/components/rh/external-registers";
+import { declarationKindLabel, declarationReasonLabel, transferReasonLabel } from "@/lib/hr/external-operations";
 import { RULE_ACTIONS, RULE_FAMILIES, frMonth, type RuleAction, type RuleFamily } from "@/lib/rules/proposals";
 import { RuleDiff } from "@/components/rules/rule-content";
 
@@ -58,9 +67,17 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
   const [info, setInfo] = useState<string | null>(null);
   const [invalidated, setInvalidated] = useState<string | null>(null);
   const chosen = d.options.find((o) => o.code === option) ?? null;
-  const isPayroll = ["D3", "D4", "D6", "D7"].includes(d.type_code);
+  const isPayroll = ["D3", "D4", "D6", "D7", "D9", "D10"].includes(d.type_code);
   const payrollHref =
-    d.period_year && d.period_month ? `/rh/paie?year=${d.period_year}&month=${d.period_month}` : "/rh/paie";
+    d.type_code === "D9"
+      ? `/rh/paie/virements${d.period_year && d.period_month ? `?year=${d.period_year}&month=${d.period_month}` : ""}`
+      : d.type_code === "D10"
+        ? `/rh/paie/declarations${d.period_year ? `?year=${d.period_year}` : ""}`
+        : d.period_year && d.period_month
+        ? `/rh/paie?year=${d.period_year}&month=${d.period_month}`
+        : "/rh/paie";
+  const [followUp, setFollowUp] = useState<{ href: string; label: string } | null>(null);
+  const nextStep = followUp ?? d.follow_up;
 
   function submit() {
     setError(null);
@@ -95,6 +112,9 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
       if (r.data.execute_error) {
         setError(`Décision enregistrée, mais l'exécution a échoué : ${r.data.execute_error}`);
         setInvalidated(r.data.invalidated);
+      } else if (r.data.follow_up) {
+        setFollowUp(r.data.follow_up);
+        setInfo("Décision enregistrée. Elle s'exécute une seule fois, depuis l'écran opérationnel.");
       } else if (r.data.applied) {
         setInfo("Décision enregistrée et appliquée dans la même opération.");
       } else if (r.data.executed) {
@@ -165,9 +185,13 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
             <Fact label="Bulletins brouillon">{d.slip_count ?? "—"}</Fact>
           ) : null}
           {isPayroll ? (
-            <Fact label="Paie">
+            <Fact label={d.type_code === "D9" ? "Virements" : d.type_code === "D10" ? "Déclarations" : "Paie"}>
               <Link href={payrollHref} className="font-semibold text-brand hover:underline">
-                Ouvrir l&apos;écran Paie
+                {d.type_code === "D9"
+                  ? "Ouvrir l'écran Virements"
+                  : d.type_code === "D10"
+                    ? "Ouvrir le registre des déclarations"
+                    : "Ouvrir l'écran Paie"}
               </Link>
             </Fact>
           ) : (
@@ -380,6 +404,8 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
 
       {d.payroll_reopen ? <ReopenPanel c={d.payroll_reopen} /> : null}
       {d.payroll_chains ? <ChainPanel c={d.payroll_chains} /> : null}
+      {d.transfer ? <TransferPanel c={d.transfer} /> : null}
+      {d.declaration ? <DeclarationPanel c={d.declaration} /> : null}
 
       {d.status === "PENDING" ? (
         <RhPanel>
@@ -475,6 +501,11 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
                   ? ` · ${d.execution_result.versions} copie(s) figée(s) conservée(s)`
                   : ""}
                 {typeof d.execution_result?.mode === "string" ? ` · politique ${d.execution_result.mode}` : ""}
+                {typeof d.execution_result?.batch_no === "string"
+                  ? ` · lot ${d.execution_result.batch_no} (risque de double paiement)`
+                  : ""}
+                {d.execution_result?.operation === "RECONCILIATION_STATEMENT" ? " · état de rapprochement produit" : ""}
+                {typeof d.execution_result?.file_name === "string" ? ` · fichier ${d.execution_result.file_name}` : ""}
               </Fact>
             ) : null}
             {d.closed_reason ? (
@@ -485,7 +516,11 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
           </dl>
           {d.status === "DECIDED" ? (
             <div className="mt-4 flex flex-wrap items-center gap-3">
-              {d.can_execute ? (
+              {nextStep ? (
+                <Link href={nextStep.href} className="font-semibold text-brand hover:underline">
+                  {nextStep.label} (une seule fois)
+                </Link>
+              ) : d.can_execute ? (
                 <Button disabled={pending} onClick={retry}>
                   Exécuter la décision
                 </Button>
@@ -580,6 +615,19 @@ function ReopenPanel({ c }: { c: PayrollReopenContext }) {
         </p>
       )}
 
+      {c.declarations_registry ? (
+        <>
+          <h4 className="mt-4 text-sm font-semibold">Registre des exports de déclaration (ce mois)</h4>
+          <div className="mt-1">
+            <DeclarationExportsTable exports={c.declaration_exports} emptyLabel="Aucun fichier de déclaration produit dans l'application pour ce mois." />
+          </div>
+          <h4 className="mt-4 text-sm font-semibold">Opérations externes enregistrées (ce mois)</h4>
+          <div className="mt-1">
+            <ExternalOperationsList operations={c.external_operations} emptyLabel="Aucun paiement ni aucune déclaration externe enregistré pour ce mois." />
+          </div>
+        </>
+      ) : null}
+
       {c.certificates.length ? (
         <>
           <h4 className="mt-4 text-sm font-semibold">Documents émis depuis la validation</h4>
@@ -664,6 +712,178 @@ function ChainPanel({ c }: { c: PayrollChainContext }) {
       <p className="mt-3 rounded-xl border border-amber-200/80 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
         Les mois de reprise ont été payés et déclarés hors de l&apos;application. Ce choix ne modifie aucun bulletin : il fixe
         seulement jusqu&apos;où leurs paramètres restent modifiables. Il est définitif.
+      </p>
+    </RhPanel>
+  );
+}
+
+function RiskNotices({ notices }: { notices: string[] }) {
+  return (
+    <div className="mt-4 space-y-2">
+      {notices.map((n) => (
+        <RhAlert key={n} tone={/double (paiement|déclaration)|seconde fois/.test(n) ? "danger" : "warning"}>
+          {n}
+        </RhAlert>
+      ))}
+    </div>
+  );
+}
+
+function TransferPanel({ c }: { c: TransferDecisionContext }) {
+  return (
+    <RhPanel>
+      <h3 className="font-display text-base font-semibold">
+        Virement bloqué · paie {c.period} · {c.site_name} · {c.mode === "BANK" ? "banque" : "CCP"}
+      </h3>
+      <dl className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Fact label="Bulletins">{c.slip_count}</Fact>
+        <Fact label="Net total">{money(c.net_total)}</Fact>
+        <div className="sm:col-span-2">
+          <Fact label="Motif de la demande">{c.reason || "—"}</Fact>
+        </div>
+      </dl>
+      <RiskNotices notices={transferRiskNotices(c)} />
+
+      <h4 className="mt-4 text-sm font-semibold">Bulletins demandés et motifs du blocage</h4>
+      <table className="mt-2 min-w-full text-sm">
+        <thead className="text-left text-xs uppercase text-foreground/55">
+          <tr>
+            <th className="py-1 pr-4">Salarié</th>
+            <th className="py-1 pr-4 text-right">Net</th>
+            <th className="py-1">Motifs</th>
+          </tr>
+        </thead>
+        <tbody>
+          {c.slips.map((s) => (
+            <tr key={s.slip_id} className="border-t border-border/60">
+              <td className="py-1 pr-4">
+                {s.matricule} · {s.employee}
+              </td>
+              <td className="py-1 pr-4 text-right tabular-nums">{money(s.net_payable)}</td>
+              <td className="py-1">
+                <div className="flex flex-wrap gap-1">
+                  {s.reasons.map((r) => (
+                    <RhChip key={r} tone="warning">
+                      {transferReasonLabel(r)}
+                    </RhChip>
+                  ))}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h4 className="mt-4 text-sm font-semibold">1 · Virements de l&apos;application (ces salariés, ce mois)</h4>
+      {c.internal_transfers.length ? (
+        <table className="mt-2 min-w-full text-sm">
+          <thead className="text-left text-xs uppercase text-foreground/55">
+            <tr>
+              <th className="py-1 pr-4">Lot</th>
+              <th className="py-1 pr-4">Statut</th>
+              <th className="py-1 pr-4 text-right">Lignes</th>
+              <th className="py-1 pr-4 text-right">Montant</th>
+              <th className="py-1">Exécution</th>
+            </tr>
+          </thead>
+          <tbody>
+            {c.internal_transfers.map((t) => (
+              <tr key={t.batch_no} className="border-t border-border/60">
+                <td className="py-1 pr-4">
+                  {t.batch_no}
+                  {t.double_payment_risk ? (
+                    <span className="ml-1">
+                      <RhChip tone="danger">Risque de double paiement</RhChip>
+                    </span>
+                  ) : null}
+                </td>
+                <td className="py-1 pr-4">{TRANSFER_STATUS[t.status] ?? t.status}</td>
+                <td className="py-1 pr-4 text-right tabular-nums">{t.lines}</td>
+                <td className="py-1 pr-4 text-right tabular-nums">{money(t.amount)}</td>
+                <td className="py-1">{t.executed_at ? dateTime(t.executed_at) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="mt-1 text-sm text-foreground/60">Aucun lot de virement enregistré dans l&apos;application.</p>
+      )}
+
+      <h4 className="mt-4 text-sm font-semibold">2 · Paiements externes enregistrés</h4>
+      <div className="mt-1">
+        <ExternalOperationsList operations={c.external_operations} emptyLabel="Aucun paiement externe enregistré." />
+      </div>
+
+      <h4 className="mt-4 text-sm font-semibold">3 · Nature de la période</h4>
+      <p className="mt-1 text-sm text-foreground/75">{periodNatureText(c.period_nature)}</p>
+    </RhPanel>
+  );
+}
+
+function DeclarationPanel({ c }: { c: DeclarationDecisionContext }) {
+  return (
+    <RhPanel>
+      <h3 className="font-display text-base font-semibold">
+        Déclaration bloquée · {declarationKindLabel(c.kind)} · {c.period} · {c.site_name}
+      </h3>
+      <p className="mt-2 text-sm text-foreground/75">Motif de la demande : {c.reason || "—"}</p>
+      <RiskNotices notices={declarationRiskNotices(c)} />
+
+      <h4 className="mt-4 text-sm font-semibold">Mois couverts par le fichier</h4>
+      <table className="mt-2 min-w-full text-sm">
+        <thead className="text-left text-xs uppercase text-foreground/55">
+          <tr>
+            <th className="py-1 pr-4">Mois</th>
+            <th className="py-1 pr-4 text-right">Paies (validées)</th>
+            <th className="py-1 pr-4 text-right">Bulletins</th>
+            <th className="py-1 pr-4 text-right">Brut</th>
+            <th className="py-1 pr-4 text-right">IRG</th>
+            <th className="py-1">Décision requise</th>
+          </tr>
+        </thead>
+        <tbody>
+          {c.months.map((m) => {
+            const reasons = c.month_reasons[String(m.month)] ?? [];
+            return (
+              <tr key={m.month} className="border-t border-border/60">
+                <td className="py-1 pr-4">{m.period}</td>
+                <td className="py-1 pr-4 text-right tabular-nums">
+                  {m.runs} ({m.validated})
+                </td>
+                <td className="py-1 pr-4 text-right tabular-nums">{m.slips}</td>
+                <td className="py-1 pr-4 text-right tabular-nums">{money(m.gross)}</td>
+                <td className="py-1 pr-4 text-right tabular-nums">{money(m.irg)}</td>
+                <td className="py-1">
+                  {reasons.length ? (
+                    <div className="flex flex-wrap gap-1">
+                      {reasons.map((r) => (
+                        <RhChip key={r} tone="warning">
+                          {declarationReasonLabel(r)}
+                        </RhChip>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-foreground/55">Non</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      <h4 className="mt-4 text-sm font-semibold">1 · Registre des exports de l&apos;application</h4>
+      <div className="mt-1">
+        <DeclarationExportsTable exports={c.prior_exports} emptyLabel="Aucun fichier de déclaration produit sur cette période." />
+      </div>
+      <h4 className="mt-4 text-sm font-semibold">2 · Déclarations externes enregistrées</h4>
+      <div className="mt-1">
+        <ExternalOperationsList operations={c.external_operations} emptyLabel="Aucune déclaration externe enregistrée." />
+      </div>
+      <h4 className="mt-4 text-sm font-semibold">3 · Nature des mois</h4>
+      <p className="mt-1 text-sm text-foreground/75">
+        Janvier à août 2026 : paies déclarées hors de l&apos;application. À partir de septembre 2026 : déclarations préparées
+        dans l&apos;application.
       </p>
     </RhPanel>
   );

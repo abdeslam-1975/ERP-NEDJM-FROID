@@ -10,15 +10,20 @@ import {
   DECISION_TYPE_CODES,
   assignmentZoneNotice,
   decideBlocker,
+  decisionFollowUp,
   parseDecisionOptions,
+  parseDeclarationDecisionContext,
   parsePayrollChainContext,
   parsePayrollReopenContext,
   parseRuleApplicationContext,
+  parseTransferDecisionContext,
   validateJustification,
   type DecisionOption,
+  type DeclarationDecisionContext,
   type PayrollChainContext,
   type PayrollReopenContext,
   type RuleApplicationContext,
+  type TransferDecisionContext,
 } from "@/lib/decisions/catalog";
 
 export type ActionResult<T = void> =
@@ -121,6 +126,10 @@ export type DecisionDetail = DecisionListRow & {
   rule_application: RuleApplicationContext | null;
   payroll_reopen: PayrollReopenContext | null;
   payroll_chains: PayrollChainContext | null;
+  transfer: TransferDecisionContext | null;
+  declaration: DeclarationDecisionContext | null;
+  /** D9 / D10: where the decided operation is carried out (once). */
+  follow_up: { href: string; label: string } | null;
   /** Options the data no longer allows (code → reason); the database refuses them too. */
   unavailable_options: Record<string, string>;
   /** Null when the current user may decide; otherwise the reason shown instead of the form. */
@@ -338,6 +347,9 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
   const ruleApplication = raw.type_code === "D2" ? parseRuleApplicationContext(ctx) : null;
   const payrollReopen = raw.type_code === "D7" ? parsePayrollReopenContext(ctx) : null;
   const payrollChains = raw.type_code === "D6" ? parsePayrollChainContext(ctx) : null;
+  const transfer = raw.type_code === "D9" ? parseTransferDecisionContext(ctx) : null;
+  const declaration = raw.type_code === "D10" ? parseDeclarationDecisionContext(ctx) : null;
+  const followUp = decisionFollowUp(raw.type_code, raw.id);
   const ruleContributor =
     ruleApplication && raw.status === "PENDING" && !ws.isSuperAdmin
       ? await isRuleContributor(supabase, ws.id, ruleApplication)
@@ -376,6 +388,9 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
       rule_application: ruleApplication,
       payroll_reopen: payrollReopen,
       payroll_chains: payrollChains,
+      transfer,
+      declaration,
+      follow_up: raw.status === "DECIDED" && chosen?.executes === true ? followUp : null,
       unavailable_options: unavailable,
       decide_blocker: decideBlocker({
         status: raw.status,
@@ -386,7 +401,10 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
         isRuleContributor: ruleContributor,
       }),
       can_execute:
-        raw.status === "DECIDED" && chosen?.executes === true && (ws.isSuperAdmin || raw.decided_by === ws.id),
+        !followUp &&
+        raw.status === "DECIDED" &&
+        chosen?.executes === true &&
+        (ws.isSuperAdmin || raw.decided_by === ws.id),
     },
   };
 }
@@ -406,6 +424,8 @@ export type DecideOutcome = {
   executed: { count: number; warnings: string[] } | null;
   execute_error: string | null;
   invalidated: string | null;
+  /** D9 / D10: decided, to be carried out once on the operational screen. */
+  follow_up: { href: string; label: string } | null;
 };
 
 export async function decideDecision(input: unknown): Promise<ActionResult<DecideOutcome>> {
@@ -450,7 +470,17 @@ export async function decideDecision(input: unknown): Promise<ActionResult<Decid
     }
     return {
       ok: true,
-      data: { status: "EXECUTED", applied, executed: null, execute_error: null, invalidated: null },
+      data: { status: "EXECUTED", applied, executed: null, execute_error: null, invalidated: null, follow_up: null },
+    };
+  }
+  const { data: typeRow } = await supabase.from("sys_decisions").select("type_code").eq("id", p.id).maybeSingle();
+  const followUp = decisionFollowUp(String(typeRow?.type_code ?? ""), p.id);
+  if (followUp) {
+    revalidatePath("/rh/paie");
+    revalidatePath("/rh/paie/virements");
+    return {
+      ok: true,
+      data: { status: "DECIDED", applied: false, executed: null, execute_error: null, invalidated: null, follow_up: followUp },
     };
   }
   const run = await executePayrollDecision(p.id);
@@ -464,6 +494,7 @@ export async function decideDecision(input: unknown): Promise<ActionResult<Decid
         executed: null,
         execute_error: run.error,
         invalidated: run.invalidated ?? null,
+        follow_up: null,
       },
     };
   }
@@ -475,6 +506,7 @@ export async function decideDecision(input: unknown): Promise<ActionResult<Decid
       executed: { count: run.data.count, warnings: run.data.warnings },
       execute_error: null,
       invalidated: null,
+      follow_up: null,
     },
   };
 }
@@ -484,6 +516,10 @@ export async function executeDecision(
   id: string,
 ): Promise<ActionResult<{ count: number; warnings: string[] }> & { invalidated?: string | null }> {
   if (!UUID_RE.test(id)) return { ok: false, error: "Décision invalide." };
+  const supabase = await createClient();
+  const { data: typeRow } = await supabase.from("sys_decisions").select("type_code").eq("id", id).maybeSingle();
+  const followUp = decisionFollowUp(String(typeRow?.type_code ?? ""), id);
+  if (followUp) return { ok: false, error: `Cette décision s'exécute une seule fois : ${followUp.label.toLowerCase()}.` };
   const run = await executePayrollDecision(id);
   revalidatePath("/decisions");
   revalidatePath(`/decisions/${id}`);

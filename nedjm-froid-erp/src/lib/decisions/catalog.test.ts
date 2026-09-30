@@ -18,6 +18,11 @@ import {
   ruleApplicationSlipNotice,
   periodNatureText,
   validateJustification,
+  decisionFollowUp,
+  declarationRiskNotices,
+  parseDeclarationDecisionContext,
+  parseTransferDecisionContext,
+  transferRiskNotices,
 } from "@/lib/decisions/catalog";
 
 const base = { status: "PENDING", isSuperAdmin: false, hasDecisionRight: true, requestedBy: "a", userId: "b" };
@@ -214,6 +219,80 @@ describe("D7 context", () => {
     const quiet = reopenRiskNotices(parsePayrollReopenContext({ period_nature: "EXTERNAL" }));
     expect(quiet.some((n) => /double paiement/.test(n))).toBe(false);
     expect(quiet.join(" ")).toMatch(/hors de l'application/);
+  });
+
+  it("uses the exports register and the external operations once they exist (lot 3b)", () => {
+    const withRegisters = reopenRiskNotices(
+      parsePayrollReopenContext({
+        ...raw,
+        declarations_registry: true,
+        declaration_exports: [{ id: "e1", kind: "monthly", nature: "OFFICIAL", period_year: 2026, period_month: 9, months: [9] }],
+        external_operations: [{ id: "o1", kind: "PAYMENT", subtype: "SALARY", period_from: "2026-09-01", period_to: "2026-09-01" }],
+      }),
+    ).join(" ");
+    expect(withRegisters).toMatch(/1 fichier\(s\) officiel\(s\)/);
+    expect(withRegisters).toMatch(/1 paiement\(s\) externe\(s\)/);
+    expect(withRegisters).not.toMatch(/antérieure au registre/);
+    const empty = reopenRiskNotices(parsePayrollReopenContext({ declarations_registry: true })).join(" ");
+    expect(empty).toMatch(/cela ne prouve pas qu'aucun paiement ou aucune déclaration n'a eu lieu/);
+  });
+});
+
+describe("D9 / D10 contexts", () => {
+  it("parses the transfer context and warns even when the registers are empty", () => {
+    const c = parseTransferDecisionContext({
+      period: "03/2026",
+      period_nature: "EXTERNAL",
+      mode: "CCP",
+      slip_count: 1,
+      net_total: "42000",
+      slips: [{ slip_id: "s1", matricule: "M1", employee: "A B", net_payable: "42000", reasons: ["EXTERNAL_PERIOD"] }],
+      internal_transfers: [],
+      external_operations: [],
+    });
+    expect(c.slips[0]).toMatchObject({ slip_id: "s1", net_payable: 42000, reasons: ["EXTERNAL_PERIOD"] });
+    const notices = transferRiskNotices(c).join(" ");
+    expect(notices).toMatch(/payés hors de l'application/);
+    expect(notices).toMatch(/cela ne prouve pas/);
+  });
+
+  it("flags executed batches and external payments as double-payment risks", () => {
+    const c = parseTransferDecisionContext({
+      period_nature: "OPERATIONAL",
+      internal_transfers: [{ batch_no: "VIR-1", status: "EXECUTED", double_payment_risk: true }],
+      external_operations: [{ id: "o1", kind: "PAYMENT", status: "WITHDRAWN" }],
+    });
+    expect(c.internal_transfers[0].double_payment_risk).toBe(true);
+    const notices = transferRiskNotices(c).join(" ");
+    expect(notices).toMatch(/1 lot\(s\) de virement déjà exécuté/);
+    expect(notices).toMatch(/y compris retirées/);
+    expect(notices).not.toMatch(/cela ne prouve pas/);
+  });
+
+  it("parses the declaration context with its month reasons", () => {
+    const c = parseDeclarationDecisionContext({
+      kind: "das",
+      covered_months: [1, 2, 3],
+      required_months: [1, 3],
+      month_reasons: { "1": ["EXTERNAL_PERIOD"], "3": ["EXTERNAL_PERIOD", "EXTERNAL_DECLARATION"] },
+      prior_exports: [{ id: "e", nature: "OFFICIAL", months: [2], period_year: 2026 }],
+    });
+    expect(c.required_months).toEqual([1, 3]);
+    expect(c.month_reasons["3"]).toEqual(["EXTERNAL_PERIOD", "EXTERNAL_DECLARATION"]);
+    const notices = declarationRiskNotices(c).join(" ");
+    expect(notices).toMatch(/2 mois de reprise/);
+    expect(notices).toMatch(/1 mois avec une déclaration externe/);
+    expect(notices).toMatch(/1 fichier\(s\) officiel\(s\)/);
+  });
+
+  it("sends D9 / D10 to their operational screen, never to the decision executor", () => {
+    expect(decisionFollowUp("D9", "x")?.href).toBe("/rh/paie/virements?decision=x");
+    expect(decisionFollowUp("D10", "x")?.href).toBe("/rh/paie/declarations?decision=x");
+    expect(decisionFollowUp("D4", "x")).toBeNull();
+    expect(isDecisionTypeCode("D9")).toBe(true);
+    expect(isDecisionTypeCode("D10")).toBe(true);
+    expect(payrollSourceLabel("TRANSFER_PREPARATION")).toMatch(/Virements/);
+    expect(payrollSourceLabel("DECLARATION_EXPORT")).toMatch(/déclaration/);
   });
 });
 

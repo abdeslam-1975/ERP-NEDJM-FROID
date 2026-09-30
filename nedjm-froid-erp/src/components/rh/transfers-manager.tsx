@@ -6,12 +6,17 @@ import {
   createTransferBatch,
   listTransferLines,
   previewTransferBatch,
+  produceTransferReconciliation,
+  requestTransferDecision,
   setTransferBatchStatus,
   type TransferBatchRow,
   type TransferBatchStatus,
+  type TransferDecisionRow,
   type TransferPreview,
 } from "@/lib/actions/hr-transfers";
 import { TRANSFER_FORMATS, type TransferLine, type TransferMode } from "@/lib/hr/payroll-transfers";
+import { decisionStatusLabel, decisionStatusTone } from "@/lib/decisions/catalog";
+import { NO_TRACE_NOTICE, periodNatureOf, repriseBanner, transferReasonLabel } from "@/lib/hr/external-operations";
 import { Button } from "@/components/ui/button";
 import {
   RhAlert,
@@ -42,8 +47,26 @@ function money(n: number) {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+const D9_OPTIONS: Record<string, string> = {
+  NONE: "Aucun virement",
+  RECONCILIATION: "État de rapprochement non bancaire",
+  REAL_BATCH: "Lot réel — risque de double paiement",
+};
+
+function download(fileName: string, content: string) {
+  const blob = new Blob(["\ufeff", content], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function TransfersManager({
   initialBatches,
+  initialDecisions,
+  highlightDecision,
   sites,
   year,
   month,
@@ -51,6 +74,8 @@ export function TransfersManager({
   loadError,
 }: {
   initialBatches: TransferBatchRow[];
+  initialDecisions: TransferDecisionRow[];
+  highlightDecision?: string | null;
   sites: SiteOpt[];
   year: number;
   month: number;
@@ -58,6 +83,11 @@ export function TransfersManager({
   loadError?: string;
 }) {
   const [batches, setBatches] = useState(initialBatches);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [d9Reason, setD9Reason] = useState("");
+  const [d9Created, setD9Created] = useState<string | null>(null);
+  const reprise = periodNatureOf(year, month) === "EXTERNAL";
+  const siteName = (id: string | null) => (id ? (sites.find((s) => s.id === id)?.name_fr ?? "—") : "Tous");
   const [mode, setMode] = useState<TransferMode>("CCP");
   const [siteId, setSiteId] = useState("");
   const [debit, setDebit] = useState("");
@@ -83,6 +113,71 @@ export function TransfersManager({
         return;
       }
       setPreview(r.data);
+      setSelected(new Set(r.data.blocked.map((l) => l.slip_id)));
+      setD9Created(null);
+    });
+  }
+
+  function requestD9() {
+    if (!preview || !selected.size) return;
+    setError(null);
+    start(async () => {
+      const r = await requestTransferDecision({
+        year,
+        month,
+        mode,
+        site_id: siteId || null,
+        slip_ids: [...selected],
+        reason: d9Reason,
+      });
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      setD9Created(r.data.id);
+      setInfo("Décision D9 demandée : aucun virement tant qu'elle n'est pas tranchée par un décideur habilité.");
+    });
+  }
+
+  function generateD9(d: TransferDecisionRow) {
+    if (
+      !window.confirm(
+        `Générer le lot réel de la décision D9 (${d.slip_count} bulletin(s), ${money(d.net_total)} DA) ?\n` +
+          "RISQUE DE DOUBLE PAIEMENT : ces salaires ont peut-être déjà été versés. La décision sera consommée.",
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    start(async () => {
+      const r = await createTransferBatch({
+        year,
+        month,
+        mode: d.mode === "BANK" ? "BANK" : "CCP",
+        site_id: d.site_id,
+        debit_account: debit,
+        value_date: valueDate,
+        decision_id: d.id,
+      });
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      window.location.reload();
+    });
+  }
+
+  function reconciliation(d: TransferDecisionRow) {
+    if (!window.confirm("Produire l'état de rapprochement (une seule fois) ? Ce n'est pas un ordre de paiement.")) return;
+    setError(null);
+    start(async () => {
+      const r = await produceTransferReconciliation(d.id);
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      download(r.data.fileName, r.data.content);
+      window.location.reload();
     });
   }
 
@@ -171,16 +266,34 @@ export function TransfersManager({
           "",
         )}
         actions={
-          <Link
-            className="rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted"
-            href={`/rh/paie/bulletins?year=${year}&month=${month}`}
-          >
-            {bi("Bulletins", "الكشوف")}
-          </Link>
+          <>
+            <Link
+              className="rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted"
+              href="/rh/paie/operations-externes"
+            >
+              {bi("Opérations externes", "العمليات الخارجية")}
+            </Link>
+            <Link
+              className="rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted"
+              href={`/rh/paie/bulletins?year=${year}&month=${month}`}
+            >
+              {bi("Bulletins", "الكشوف")}
+            </Link>
+          </>
         }
       />
+      {reprise ? <RhAlert tone="warning">{repriseBanner("transfer")}</RhAlert> : null}
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
-      {info && !error ? <RhAlert tone="success">{info}</RhAlert> : null}
+      {info && !error ? (
+        <RhAlert tone="success">
+          {info}
+          {d9Created ? (
+            <Link href={`/decisions/${d9Created}`} className="ml-2 font-semibold underline">
+              Ouvrir la décision
+            </Link>
+          ) : null}
+        </RhAlert>
+      ) : null}
 
       <RhToolbar>
         <RhField label={bi("Année", "السنة")}>
@@ -248,6 +361,113 @@ export function TransfersManager({
               ))}
             </ul>
           ) : null}
+          {preview.blocked.length || preview.blockedIssues.length ? (
+            <div className="space-y-2 border-t border-border/60 pt-3">
+              <p className="font-semibold">
+                {preview.blocked.length} bulletin(s) bloqué(s) · {money(preview.blockedTotal)} DA — aucun virement sans décision D9
+              </p>
+              <p className="text-xs text-foreground/65">
+                Bloqués en base : paie de reprise, salaire du mois déjà viré par un lot exécuté, ou paiement externe enregistré
+                (même retiré ou non confirmé). {NO_TRACE_NOTICE}
+              </p>
+              {preview.blocked.length ? (
+                <ul className="max-h-64 space-y-1 overflow-y-auto">
+                  {preview.blocked.map((l) => (
+                    <li key={l.slip_id} className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(l.slip_id)}
+                        onChange={(e) =>
+                          setSelected((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(l.slip_id);
+                            else next.delete(l.slip_id);
+                            return next;
+                          })
+                        }
+                      />
+                      <span>
+                        {l.matricule} {l.employee_name} · {money(l.amount)} DA
+                      </span>
+                      {l.reasons.map((r) => (
+                        <RhChip key={r} tone="warning">
+                          {transferReasonLabel(r)}
+                        </RhChip>
+                      ))}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {preview.blockedIssues.length ? (
+                <ul className="space-y-0.5 text-xs text-red-700">
+                  {preview.blockedIssues.map((i) => (
+                    <li key={i.matricule}>
+                      {i.matricule} {i.employee_name} — {i.reason} (bloqué D9)
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {canEdit && preview.blocked.length ? (
+                <div className="flex flex-wrap items-end gap-2">
+                  <RhField label="Motif de la demande D9" hint="10 à 500 caractères">
+                    <input
+                      className={`${rhInput} min-w-80`}
+                      value={d9Reason}
+                      maxLength={500}
+                      onChange={(e) => setD9Reason(e.target.value)}
+                    />
+                  </RhField>
+                  <Button
+                    variant="secondary"
+                    disabled={pending || !selected.size || d9Reason.trim().length < 10}
+                    onClick={requestD9}
+                  >
+                    Demander la décision D9 ({selected.size})
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {initialDecisions.length ? (
+        <div className="space-y-2 rounded-2xl border border-border/60 bg-surface px-4 py-3 text-sm">
+          <p className="font-semibold">Décisions D9 du mois</p>
+          <ul className="space-y-1.5">
+            {initialDecisions.map((d) => (
+              <li
+                key={d.id}
+                className={`flex flex-wrap items-center gap-2 rounded-xl px-2 py-1 ${
+                  highlightDecision === d.id ? "bg-brand-muted" : ""
+                }`}
+              >
+                <Link href={`/decisions/${d.id}`} className="font-semibold text-brand hover:underline">
+                  D9 · {new Date(d.requested_at).toLocaleDateString("fr-FR")}
+                </Link>
+                <RhChip tone={decisionStatusTone(d.status)}>{decisionStatusLabel(d.status)}</RhChip>
+                {d.chosen_option ? (
+                  <RhChip tone={d.chosen_option === "REAL_BATCH" ? "danger" : "neutral"}>
+                    {D9_OPTIONS[d.chosen_option] ?? d.chosen_option}
+                  </RhChip>
+                ) : null}
+                <span className="text-foreground/65">
+                  {d.mode} · {siteName(d.site_id)} · {d.slip_count} bulletin(s) · {money(d.net_total)} DA
+                </span>
+                {d.closed_reason ? <span className="text-xs italic text-foreground/55">{d.closed_reason}</span> : null}
+                {canEdit && d.status === "DECIDED" && d.chosen_option === "REAL_BATCH" ? (
+                  <Button disabled={pending} onClick={() => generateD9(d)}>
+                    Générer le lot (D9)
+                  </Button>
+                ) : null}
+                {canEdit && d.status === "DECIDED" && d.chosen_option === "RECONCILIATION" ? (
+                  <Button variant="secondary" disabled={pending} onClick={() => reconciliation(d)}>
+                    Produire l&apos;état de rapprochement
+                  </Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
 
@@ -288,6 +508,16 @@ export function TransfersManager({
                     <span className="block font-mono text-[10px] text-foreground/40" title={b.sha256}>
                       SHA-256 {b.sha256.slice(0, 16)}…
                     </span>
+                    {b.double_payment_risk ? (
+                      <span className="mt-1 flex flex-wrap items-center gap-1">
+                        <RhChip tone="danger">Risque de double paiement</RhChip>
+                        {b.decision_id ? (
+                          <Link href={`/decisions/${b.decision_id}`} className="text-[11px] font-semibold text-brand hover:underline">
+                            Décision D9
+                          </Link>
+                        ) : null}
+                      </span>
+                    ) : null}
                   </td>
                   <td className={rhTd()}>
                     {b.mode}

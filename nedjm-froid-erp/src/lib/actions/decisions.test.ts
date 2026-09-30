@@ -41,7 +41,7 @@ describe("decideDecision", () => {
       onRpc: () => ({ data: { ok: true, status: "EXECUTED", executes: false }, error: null }),
     });
     const r = await decideDecision({ ...input, option: "NOT_NOW" });
-    expect(r).toEqual({ ok: true, data: { status: "EXECUTED", executed: null, execute_error: null, invalidated: null, applied: false } });
+    expect(r).toEqual({ ok: true, data: { status: "EXECUTED", executed: null, execute_error: null, invalidated: null, applied: false, follow_up: null } });
     expect(h.execute).not.toHaveBeenCalled();
     expect(h.fake.rpcs[0]).toEqual({
       fn: "sys_decision_decide",
@@ -59,7 +59,7 @@ describe("decideDecision", () => {
     expect(h.execute).toHaveBeenCalledWith(DEC);
     expect(r).toEqual({
       ok: true,
-      data: { status: "EXECUTED", executed: { count: 12, warnings: [] }, execute_error: null, invalidated: null, applied: false },
+      data: { status: "EXECUTED", executed: { count: 12, warnings: [] }, execute_error: null, invalidated: null, applied: false, follow_up: null },
     });
   });
 
@@ -71,7 +71,22 @@ describe("decideDecision", () => {
     const r = await decideDecision(input);
     expect(r).toEqual({
       ok: true,
-      data: { status: "DECIDED", executed: null, execute_error: "Données modifiées", invalidated: "new-id", applied: false },
+      data: { status: "DECIDED", executed: null, execute_error: "Données modifiées", invalidated: "new-id", applied: false, follow_up: null },
+    });
+  });
+});
+
+describe("decideDecision (D9 / D10 executed on their own screen)", () => {
+  it("records the decision and points to the operational screen without executing anything", async () => {
+    h.fake = createSupabaseFake({
+      onRpc: () => ({ data: { ok: true, status: "DECIDED", executes: true }, error: null }),
+      onQuery: (q) => (q.table === "sys_decisions" ? { data: { type_code: "D9" }, error: null } : undefined),
+    });
+    const r = await decideDecision({ ...input, option: "REAL_BATCH", risk_ack: true });
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(r).toMatchObject({
+      ok: true,
+      data: { status: "DECIDED", executed: null, follow_up: { href: `/rh/paie/virements?decision=${DEC}` } },
     });
   });
 });
@@ -84,7 +99,7 @@ describe("decideDecision (D8 / D13 applied in the database)", () => {
     const r = await decideDecision({ ...input, option: "APPLY_CORRECTION", risk_ack: true });
     expect(r).toEqual({
       ok: true,
-      data: { status: "EXECUTED", applied: true, executed: null, execute_error: null, invalidated: null },
+      data: { status: "EXECUTED", applied: true, executed: null, execute_error: null, invalidated: null, follow_up: null },
     });
     expect(h.execute).not.toHaveBeenCalled();
     expect(h.fake.rpcs[0].args).toMatchObject({ p_option: "APPLY_CORRECTION", p_risk_ack: true });

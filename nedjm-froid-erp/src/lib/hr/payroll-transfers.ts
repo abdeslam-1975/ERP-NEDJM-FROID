@@ -98,6 +98,46 @@ export function asciiName(name: string, width: number) {
   return clean.slice(0, width).padEnd(width, " ");
 }
 
+export type ReconciliationRow = {
+  matricule: string;
+  employee: string;
+  net_payable: number;
+  transferred: number;
+  reasons: string[];
+};
+
+/** D9 reconciliation statement: a control document, never a payment order (no account, no bank format). */
+export function buildReconciliationCsv(input: {
+  period: string;
+  siteName: string;
+  mode: string;
+  decisionId: string;
+  generatedAt: string;
+  rows: readonly ReconciliationRow[];
+  externalCount: number;
+  reasonLabel: (code: string) => string;
+}) {
+  const esc = (v: string) => (/[;"\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const lines = [
+    "ETAT DE RAPPROCHEMENT NON BANCAIRE - CE N'EST PAS UN ORDRE DE PAIEMENT - NE PAS DEPOSER",
+    `Periode;${esc(input.period)};Chantier;${esc(input.siteName)};Mode;${input.mode}`,
+    `Decision D9;${input.decisionId};Produit le;${input.generatedAt}`,
+    `Paiements externes enregistres (toutes versions);${input.externalCount}`,
+    "Matricule;Salarie;Net a payer;Deja vire (lots executes);Ecart;Motifs du blocage",
+    ...input.rows.map((r) =>
+      [
+        esc(r.matricule),
+        esc(r.employee),
+        r.net_payable.toFixed(2),
+        r.transferred.toFixed(2),
+        (Math.round((r.net_payable - r.transferred) * 100) / 100).toFixed(2),
+        esc(r.reasons.map(input.reasonLabel).join(", ")),
+      ].join(";"),
+    ),
+  ];
+  return lines.join("\r\n") + "\r\n";
+}
+
 const centimes = (amount: number, width: number) => String(Math.round(amount * 100)).padStart(width, "0");
 
 export type TransferFileInput = {

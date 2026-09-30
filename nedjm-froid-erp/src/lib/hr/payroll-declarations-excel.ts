@@ -75,6 +75,15 @@ function addTable(
   });
 }
 
+/** D10 control statement: a bold first row on every sheet, the workbook must not be filed. */
+function stampNotice(wb: ExcelJS.Workbook, notice: string | undefined) {
+  if (!notice) return;
+  wb.eachSheet((ws) => {
+    ws.spliceRows(1, 0, [notice]);
+    ws.getRow(1).font = { bold: true, size: 13, color: { argb: "FFB91C1C" } };
+  });
+}
+
 function identityLines(employer: EmployerIdentity) {
   return [
     employer.name,
@@ -104,6 +113,7 @@ export async function buildMonthlyDeclarationsWorkbook(input: {
   employer: EmployerIdentity;
   scopeLabel: string;
   slips: readonly DeclarationSlip[];
+  notice?: string;
 }): Promise<ArrayBuffer> {
   const { employer } = input;
   const period = `${MONTHS_FR[input.month - 1]} ${input.year}`;
@@ -360,6 +370,7 @@ export async function buildMonthlyDeclarationsWorkbook(input: {
     ["TOTAL", "", "", "", d.transfers.total],
   );
 
+  stampNotice(wb, input.notice);
   return toArrayBuffer(await wb.xlsx.writeBuffer());
 }
 
@@ -368,6 +379,7 @@ export async function buildAnnualDasWorkbook(input: {
   status: DeclarationStatus;
   employer: EmployerIdentity;
   slips: readonly DeclarationSlip[];
+  notice?: string;
 }): Promise<ArrayBuffer> {
   const { employer } = input;
   const das = summarizeAnnualDas(input.slips);
@@ -440,6 +452,7 @@ export async function buildAnnualDasWorkbook(input: {
     ws.addRow(["À corriger avant dépôt"]).font = { bold: true, color: { argb: "FFB45309" } };
     for (const n of das.missing_nss) ws.addRow([`N° SS manquant : ${n}`]);
   }
+  stampNotice(wb, input.notice);
   return toArrayBuffer(await wb.xlsx.writeBuffer());
 }
 

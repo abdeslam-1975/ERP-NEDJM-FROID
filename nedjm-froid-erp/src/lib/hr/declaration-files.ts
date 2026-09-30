@@ -170,6 +170,8 @@ export function buildG50Html(input: {
   status: DeclarationStatus;
   scopeLabel: string;
   slips: readonly DeclarationSlip[];
+  /** D10 control statement: printed on top, the document must not be filed. */
+  notice?: string;
 }) {
   const decl = summarizeMonthlyDeclarations(input.slips);
   const period = `${MONTHS_FR[input.month - 1]} ${input.year}`;
@@ -211,6 +213,7 @@ th{background:#f1f1f1;width:34%}
 .sign{display:flex;justify-content:space-between;margin-top:14mm}
 .note{font-size:9pt;color:#555}
 </style></head><body>
+${input.notice ? `<div class="warn"><b>${esc(input.notice)}</b></div>` : ""}
 <h1>État IRG sur salaires — report sur G50</h1>
 <div class="sub">Période : <b>${period}</b> · ${esc(input.scopeLabel)} · ${input.status === "FINAL" ? "Paie validée" : "PROVISOIRE (paie non validée)"}</div>
 ${input.status === "FINAL" ? "" : '<div class="warn">Paie non validée : montants susceptibles de changer. Ne pas déposer.</div>'}

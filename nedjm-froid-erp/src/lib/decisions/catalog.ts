@@ -1,3 +1,11 @@
+import {
+  NO_TRACE_NOTICE,
+  parseDeclarationExports,
+  parseExternalOperations,
+  type DeclarationExport,
+  type ExternalOperation,
+} from "@/lib/hr/external-operations";
+
 export const DECISION_STATUSES = ["PENDING", "DECIDED", "EXECUTED", "INVALIDATED", "SUPERSEDED"] as const;
 export type DecisionStatus = (typeof DECISION_STATUSES)[number];
 
@@ -31,6 +39,8 @@ export const DECISION_TYPES = [
   { code: "D13", label: "D13 · Contrat ne commençant pas le 1er" },
   { code: "D6", label: "D6 · Clôture des mois de reprise" },
   { code: "D7", label: "D7 · Réouverture d'une paie" },
+  { code: "D9", label: "D9 · Virement bloqué (reprise, déjà viré ou payé hors application)" },
+  { code: "D10", label: "D10 · Déclaration bloquée (reprise ou déjà déclarée hors application)" },
 ] as const;
 export type DecisionTypeCode = (typeof DECISION_TYPES)[number]["code"];
 export const DECISION_TYPE_CODES = DECISION_TYPES.map((t) => t.code) as [DecisionTypeCode, ...DecisionTypeCode[]];
@@ -53,7 +63,14 @@ const STATUS_LABELS: Record<DecisionStatus, string> = {
 };
 
 const SOURCE_LABELS: Record<
-  PayrollInputSource | "MANUAL" | "DATA_QUALITY" | "RULE_APPROVAL" | "PAYROLL_REOPEN" | "PAYROLL_VALIDATION",
+  | PayrollInputSource
+  | "MANUAL"
+  | "DATA_QUALITY"
+  | "RULE_APPROVAL"
+  | "PAYROLL_REOPEN"
+  | "PAYROLL_VALIDATION"
+  | "TRANSFER_PREPARATION"
+  | "DECLARATION_EXPORT",
   string
 > = {
   ATTENDANCE: "Présences",
@@ -73,6 +90,8 @@ const SOURCE_LABELS: Record<
   RULE_APPROVAL: "Approbation d'une règle légale",
   PAYROLL_REOPEN: "Demande de réouverture depuis l'écran Paie",
   PAYROLL_VALIDATION: "Validation d'une paie depuis l'écran Paie",
+  TRANSFER_PREPARATION: "Préparation d'un virement depuis l'écran Virements",
+  DECLARATION_EXPORT: "Export d'une déclaration depuis l'écran Paie",
 };
 
 export function decisionStatusLabel(status: string): string {
@@ -317,6 +336,10 @@ export type PayrollReopenContext = {
   prior_decisions: { id: string; type: string; status: string; option: string | null; at: string | null }[];
   versions: number;
   chain_mode: string;
+  /** false for decisions requested before the exports register existed (lot 3b). */
+  declarations_registry: boolean;
+  declaration_exports: DeclarationExport[];
+  external_operations: ExternalOperation[];
 };
 
 export function parsePayrollReopenContext(raw: unknown): PayrollReopenContext {
@@ -367,10 +390,13 @@ export function parsePayrollReopenContext(raw: unknown): PayrollReopenContext {
     })),
     versions: numOr0(c.versions),
     chain_mode: str(c.chain_mode) ?? "UNDECIDED",
+    declarations_registry: c.declarations_registry === true,
+    declaration_exports: parseDeclarationExports(c.declaration_exports),
+    external_operations: parseExternalOperations(c.external_operations),
   };
 }
 
-/** Warnings shown before a D7 decision. The app has no declaration register: no trace is never a proof. */
+/** Warnings shown before a D7 decision. No trace in the registers is never a proof. */
 export function reopenRiskNotices(c: PayrollReopenContext): string[] {
   const out: string[] = [];
   if (c.transfer_executed) {
@@ -387,9 +413,23 @@ export function reopenRiskNotices(c: PayrollReopenContext): string[] {
   if (c.later_runs.length) {
     out.push(`${c.later_runs.length} paie(s) de mois suivants déjà validée(s) ou clôturée(s) : elles ne seront pas recalculées.`);
   }
-  out.push(
-    "Déclarations (CNAS, G50, DAS…) : l'application ne tient pas encore de registre des déclarations. L'absence de trace ici ne prouve pas qu'aucune déclaration n'a été déposée : vérifiez hors de l'application.",
-  );
+  if (!c.declarations_registry) {
+    out.push(
+      "Déclarations (CNAS, G50, DAS…) : demande antérieure au registre des exports de déclaration. L'absence de trace ici ne prouve pas qu'aucune déclaration n'a été déposée : vérifiez hors de l'application.",
+    );
+  } else {
+    const official = c.declaration_exports.filter((e) => e.nature === "OFFICIAL");
+    if (official.length) {
+      out.push(
+        `${official.length} fichier(s) officiel(s) de déclaration déjà produit(s) pour ce mois (registre des exports) : la paie rouverte pourra différer de ce qui a été déclaré ; toute régularisation se fera par une nouvelle déclaration, soumise à D10 si le mois l'exige.`,
+      );
+    }
+    const extDecl = c.external_operations.filter((o) => o.kind === "DECLARATION");
+    const extPay = c.external_operations.filter((o) => o.kind === "PAYMENT");
+    if (extDecl.length) out.push(`${extDecl.length} déclaration(s) externe(s) enregistrée(s) pour ce mois (registre des opérations externes).`);
+    if (extPay.length) out.push(`${extPay.length} paiement(s) externe(s) enregistré(s) pour ce mois : un nouveau virement restera soumis à D9.`);
+    if (!official.length && !c.external_operations.length) out.push(`Registres des exports et des opérations externes : ${NO_TRACE_NOTICE}`);
+  }
   if (c.period_nature === "EXTERNAL") {
     out.push("Mois de reprise : la paie a été versée et déclarée hors de l'application ; la réouverture ne change rien à ces opérations externes.");
   }
@@ -435,6 +475,168 @@ export function parsePayrollChainContext(raw: unknown): PayrollChainContext {
     })),
     pending_rules: numOr0(c.pending_rules),
   };
+}
+
+export type TransferDecisionSlip = {
+  slip_id: string;
+  matricule: string;
+  employee: string;
+  net_payable: number;
+  status: string;
+  reasons: string[];
+};
+
+export type TransferDecisionBatch = {
+  batch_no: string;
+  status: string;
+  mode: string;
+  lines: number;
+  amount: number;
+  executed_at: string | null;
+  double_payment_risk: boolean;
+  decision_id: string | null;
+};
+
+/** D9 context (hr_transfer_d9_context): the three information sources shown before deciding. */
+export type TransferDecisionContext = {
+  period: string;
+  period_nature: string;
+  site_name: string;
+  mode: string;
+  slip_count: number;
+  net_total: number;
+  reason: string;
+  slips: TransferDecisionSlip[];
+  internal_transfers: TransferDecisionBatch[];
+  external_operations: ExternalOperation[];
+};
+
+const strList = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
+
+export function parseTransferDecisionContext(raw: unknown): TransferDecisionContext {
+  const c = obj(raw) ?? {};
+  return {
+    period: str(c.period) ?? "",
+    period_nature: str(c.period_nature) ?? "",
+    site_name: str(c.site_name) ?? "",
+    mode: str(c.mode) ?? "",
+    slip_count: numOr0(c.slip_count),
+    net_total: numOr0(c.net_total),
+    reason: str(c.reason) ?? "",
+    slips: list(c.slips).map((s) => ({
+      slip_id: str(s.slip_id) ?? "",
+      matricule: str(s.matricule) ?? "",
+      employee: str(s.employee) ?? "",
+      net_payable: numOr0(s.net_payable),
+      status: str(s.status) ?? "",
+      reasons: strList(s.reasons),
+    })),
+    internal_transfers: list(c.internal_transfers).map((b) => ({
+      batch_no: str(b.batch_no) ?? "",
+      status: str(b.status) ?? "",
+      mode: str(b.mode) ?? "",
+      lines: numOr0(b.lines),
+      amount: numOr0(b.amount),
+      executed_at: str(b.executed_at),
+      double_payment_risk: b.double_payment_risk === true,
+      decision_id: str(b.decision_id),
+    })),
+    external_operations: parseExternalOperations(c.external_operations),
+  };
+}
+
+export type DeclarationDecisionMonth = {
+  month: number;
+  period: string;
+  nature: string;
+  runs: number;
+  validated: number;
+  slips: number;
+  gross: number;
+  irg: number;
+  cnas: number;
+};
+
+/** D10 context (hr_declaration_d10_context). */
+export type DeclarationDecisionContext = {
+  kind: string;
+  period: string;
+  site_name: string;
+  reason: string;
+  covered_months: number[];
+  required_months: number[];
+  month_reasons: Record<string, string[]>;
+  months: DeclarationDecisionMonth[];
+  external_operations: ExternalOperation[];
+  prior_exports: DeclarationExport[];
+};
+
+const intList = (v: unknown) => (Array.isArray(v) ? v.map(Number).filter((n) => Number.isInteger(n)) : []);
+
+export function parseDeclarationDecisionContext(raw: unknown): DeclarationDecisionContext {
+  const c = obj(raw) ?? {};
+  const reasons = obj(c.month_reasons) ?? {};
+  return {
+    kind: str(c.kind) ?? "",
+    period: str(c.period) ?? "",
+    site_name: str(c.site_name) ?? "",
+    reason: str(c.reason) ?? "",
+    covered_months: intList(c.covered_months),
+    required_months: intList(c.required_months),
+    month_reasons: Object.fromEntries(Object.entries(reasons).map(([k, v]) => [k, strList(v)])),
+    months: list(c.months).map((m) => ({
+      month: numOr0(m.month),
+      period: str(m.period) ?? "",
+      nature: str(m.nature) ?? "",
+      runs: numOr0(m.runs),
+      validated: numOr0(m.validated),
+      slips: numOr0(m.slips),
+      gross: numOr0(m.gross),
+      irg: numOr0(m.irg),
+      cnas: numOr0(m.cnas),
+    })),
+    external_operations: parseExternalOperations(c.external_operations),
+    prior_exports: parseDeclarationExports(c.prior_exports),
+  };
+}
+
+/** D9 / D10 are carried out on their operational screen (one use), never by the decision center. */
+export function decisionFollowUp(type: string, id: string): { href: string; label: string } | null {
+  if (type === "D9") return { href: `/rh/paie/virements?decision=${id}`, label: "Exécuter depuis l'écran Virements" };
+  if (type === "D10") {
+    return { href: `/rh/paie/declarations?decision=${id}`, label: "Produire le fichier depuis le registre des déclarations" };
+  }
+  return null;
+}
+
+/** Warnings shown before a D9 decision; the registers only inform, never lift the block. */
+export function transferRiskNotices(c: TransferDecisionContext): string[] {
+  const out: string[] = [];
+  if (c.period_nature === "EXTERNAL") {
+    out.push("Paie de reprise : ces salaires ont été payés hors de l'application. Un lot réel les paiera une seconde fois.");
+  }
+  const executed = c.internal_transfers.filter((b) => b.status === "EXECUTED");
+  if (executed.length) {
+    out.push(`${executed.length} lot(s) de virement déjà exécuté(s) pour ces salariés et ce mois : risque de double paiement.`);
+  }
+  if (c.external_operations.length) {
+    out.push(`${c.external_operations.length} paiement(s) externe(s) enregistré(s) (toutes versions, y compris retirées) : risque de double paiement.`);
+  }
+  if (!executed.length && !c.external_operations.length) out.push(NO_TRACE_NOTICE);
+  return out;
+}
+
+/** Warnings shown before a D10 decision. */
+export function declarationRiskNotices(c: DeclarationDecisionContext): string[] {
+  const out: string[] = [];
+  const reprise = c.required_months.filter((m) => (c.month_reasons[String(m)] ?? []).includes("EXTERNAL_PERIOD"));
+  const external = c.required_months.filter((m) => (c.month_reasons[String(m)] ?? []).includes("EXTERNAL_DECLARATION"));
+  if (reprise.length) out.push(`${reprise.length} mois de reprise, déclarés hors de l'application : un fichier officiel les déclarerait une seconde fois.`);
+  if (external.length) out.push(`${external.length} mois avec une déclaration externe enregistrée : risque de double déclaration.`);
+  const official = c.prior_exports.filter((e) => e.nature === "OFFICIAL");
+  if (official.length) out.push(`${official.length} fichier(s) officiel(s) déjà produit(s) dans l'application sur cette période (registre des exports).`);
+  if (!c.external_operations.length && !official.length) out.push(NO_TRACE_NOTICE);
+  return out;
 }
 
 export type PayrollSignal = { flagged_runs: number; generation_decision: string | null };

@@ -15,6 +15,8 @@ const items = [
   { href: "/rh/paie/exceptions", label: "Exceptions" },
   { href: "/rh/paie/avances", label: "Avances" },
   { href: "/rh/paie/virements", label: "Virements" },
+  { href: "/rh/paie/declarations", label: "Déclarations" },
+  { href: "/rh/paie/operations-externes", label: "Opérations externes" },
   { href: "/rh/couts", label: "Coûts" },
   { href: "/rh/interim", label: "Intérim" },
   { href: "/rh/sorties", label: "Sorties" },

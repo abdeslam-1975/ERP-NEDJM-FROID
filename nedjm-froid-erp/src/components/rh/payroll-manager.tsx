@@ -18,6 +18,8 @@ import {
 } from "@/lib/actions/hr-ops";
 import { canRequestReopen, runStatusLabel, type PayrollRunAction } from "@/lib/hr/payroll-run-status";
 import { ReopenRequestDialog, SlipVersionsDialog } from "@/components/rh/payroll-reopen-dialogs";
+import { DeclarationExportDialog, type DeclarationExportTarget } from "@/components/rh/declaration-export-dialog";
+import { periodNatureOf, type DeclarationKind } from "@/lib/hr/external-operations";
 import { searchEmployeesForPayroll, type PayrollSearchEmployee } from "@/lib/actions/global-search";
 import { Button } from "@/components/ui/button";
 import {
@@ -299,49 +301,18 @@ export function PayrollManager({
   const [traceSlip, setTraceSlip] = useState<PayrollSlipRow | null>(null);
   const [runDialog, setRunDialog] = useState<"reopen" | "versions" | null>(null);
   const declarationsProvisional = !runs.length || runs.some((r) => r.status_code === "DRAFT");
-  const [exporting, setExporting] = useState(false);
+  const [declTarget, setDeclTarget] = useState<DeclarationExportTarget | null>(null);
+  const exporting = declTarget !== null;
 
-  async function downloadDeclarations(query: string) {
+  function openDeclaration(kind: DeclarationKind, site: string | null = null) {
     setError(null);
-    setExporting(true);
-    try {
-      const res = await fetch(`/api/rh/declarations?${query}`);
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        setError(body?.error ?? `Export impossible (${res.status}).`);
-        return;
-      }
-      const filename =
-        /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "declarations.xlsx";
-      const url = URL.createObjectURL(await res.blob());
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      setError("Export impossible : connexion interrompue. · تعذّر التصدير.");
-    } finally {
-      setExporting(false);
-    }
-  }
-
-  async function printG50() {
-    setError(null);
-    setExporting(true);
-    try {
-      const res = await fetch(`/api/rh/declarations?kind=g50&year=${year}&month=${month}`);
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        setError(body?.error ?? `État G50 impossible (${res.status}).`);
-        return;
-      }
-      printHtml(await res.text());
-    } catch {
-      setError("État G50 impossible : connexion interrompue.");
-    } finally {
-      setExporting(false);
-    }
+    setDeclTarget({
+      kind,
+      year,
+      month: kind === "das" || kind === "das_file" ? null : month,
+      siteId: site,
+      siteName: site ? siteName : undefined,
+    });
   }
 
   function transitionRun(action: PayrollRunAction) {
@@ -523,6 +494,13 @@ export function PayrollManager({
           <span className="whitespace-pre-wrap">{info}</span>
         </RhAlert>
       ) : null}
+      {periodNatureOf(year, month) === "EXTERNAL" ? (
+        <RhAlert tone="warning">
+          Paie de reprise (janvier à août 2026) : ces salaires ont été payés et déclarés hors de l&apos;application. Un
+          virement ou une déclaration produit ici présente un risque de double paiement ou de double déclaration
+          (décisions D9 / D10). Mention affichée à l&apos;écran seulement, jamais imprimée sur les bulletins.
+        </RhAlert>
+      ) : null}
       {manualSlips.length ? (
         <RhAlert tone="warning">
           <details>
@@ -565,6 +543,13 @@ export function PayrollManager({
           label={`${String(month).padStart(2, "0")}/${year} · ${siteName}`}
           status={currentStatus}
           onClose={() => setRunDialog(null)}
+        />
+      ) : null}
+      {declTarget ? (
+        <DeclarationExportDialog
+          target={declTarget}
+          onClose={() => setDeclTarget(null)}
+          onDone={(message) => setInfo(message)}
         />
       ) : null}
       {currentRun && runDialog === "versions" ? (
@@ -713,41 +698,32 @@ export function PayrollManager({
             <RhChip tone="success">{bi("Paie validée", "الأجور معتمدة")}</RhChip>
           )}
           <div className="ml-auto flex flex-wrap gap-2">
-            <Button
-              disabled={exporting}
-              onClick={() => downloadDeclarations(`kind=monthly&year=${year}&month=${month}`)}
-            >
+            <Button disabled={exporting} onClick={() => openDeclaration("monthly")}>
               {bi("CNAS · G50 · CACOBATPH · Virements (Excel)", "تصدير الشهر")}
             </Button>
             {siteId ? (
-              <Button
-                variant="secondary"
-                disabled={exporting}
-                onClick={() => downloadDeclarations(`kind=monthly&year=${year}&month=${month}&site=${siteId}`)}
-              >
+              <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("monthly", siteId)}>
                 {bi("Ce chantier seulement", "هذه الورشة فقط")}
               </Button>
             ) : null}
-            <Button
-              variant="secondary"
-              disabled={exporting}
-              onClick={() => downloadDeclarations(`kind=das&year=${year}`)}
-            >
+            <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("das")}>
               {bi(`DAS annuelle ${year}`, `التصريح السنوي ${year}`)}
             </Button>
-            <Button
-              variant="secondary"
-              disabled={exporting}
-              onClick={() => downloadDeclarations(`kind=cnas_file&year=${year}&month=${month}`)}
-            >
+            <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("cnas_file")}>
               Fichier CNAS (CSV)
             </Button>
-            <Button variant="secondary" disabled={exporting} onClick={() => downloadDeclarations(`kind=das_file&year=${year}`)}>
+            <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("das_file")}>
               Fichier DAS (CSV)
             </Button>
-            <Button variant="secondary" disabled={exporting} onClick={printG50}>
+            <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("g50")}>
               État G50 (imprimer)
             </Button>
+            <Link
+              href={`/rh/paie/declarations?year=${year}`}
+              className="inline-flex items-center rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted"
+            >
+              Registre des déclarations
+            </Link>
             <Link
               href={`/rh/paie/virements?year=${year}&month=${month}`}
               className="inline-flex items-center rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted"

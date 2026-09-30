@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { asciiName, buildTransferFile, selectTransferLines, transferAccount, type TransferSlip } from "./payroll-transfers";
+import {
+  asciiName,
+  buildReconciliationCsv,
+  buildTransferFile,
+  selectTransferLines,
+  transferAccount,
+  type TransferSlip,
+} from "./payroll-transfers";
 import { buildCnasMonthlyFile, buildDasFile, buildG50Html } from "./declaration-files";
 import type { DeclarationSlip } from "./payroll-declarations";
 
@@ -147,5 +154,37 @@ describe("declaration files", () => {
     expect(html).toContain("Septembre 2026");
     expect(html).toContain("3 200,00");
     expect(html).toContain("Ne pas déposer");
+  });
+
+  it("G50 control statement carries the D10 notice on top", () => {
+    const html = buildG50Html({
+      employer,
+      year: 2026,
+      month: 3,
+      status: "FINAL",
+      scopeLabel: "Tous",
+      slips: [decl({ period_month: 3 })],
+      notice: "ÉTAT DE CONTRÔLE — NE PAS DÉPOSER",
+    });
+    expect(html.indexOf("ÉTAT DE CONTRÔLE")).toBeLessThan(html.indexOf("<h1>"));
+  });
+});
+
+describe("D9 reconciliation statement", () => {
+  it("is headed as a non-bank statement and carries no account number", () => {
+    const csv = buildReconciliationCsv({
+      period: "03/2026",
+      siteName: "Oran",
+      mode: "CCP",
+      decisionId: "d-1",
+      generatedAt: "2026-10-04T10:00:00Z",
+      externalCount: 1,
+      reasonLabel: (c) => (c === "EXTERNAL_PERIOD" ? "reprise" : c),
+      rows: [{ matricule: "001", employee: "Benali; Karim", net_payable: 42000, transferred: 40000, reasons: ["EXTERNAL_PERIOD"] }],
+    });
+    const rows = csv.trim().split("\r\n");
+    expect(rows[0]).toMatch(/^ETAT DE RAPPROCHEMENT NON BANCAIRE - CE N'EST PAS UN ORDRE DE PAIEMENT/);
+    expect(rows[5]).toBe('001;"Benali; Karim";42000.00;40000.00;2000.00;reprise');
+    expect(csv).not.toMatch(/RIB|Compte/);
   });
 });
