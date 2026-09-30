@@ -23,6 +23,10 @@ import {
   parseDeclarationDecisionContext,
   parseTransferDecisionContext,
   transferRiskNotices,
+  attendanceConflictNotices,
+  parseAttendanceConflictContext,
+  parseCodeMappingContext,
+  parseImportPolicyContext,
 } from "@/lib/decisions/catalog";
 
 const base = { status: "PENDING", isSuperAdmin: false, hasDecisionRight: true, requestedBy: "a", userId: "b" };
@@ -309,6 +313,59 @@ describe("D9 / D10 contexts", () => {
     expect(isDecisionTypeCode("D10")).toBe(true);
     expect(payrollSourceLabel("TRANSFER_PREPARATION")).toMatch(/Virements/);
     expect(payrollSourceLabel("DECLARATION_EXPORT")).toMatch(/déclaration/);
+  });
+});
+
+describe("attendance import decisions (D5, D11, D12)", () => {
+  it("sends only a D5 decided line by line to the imports screen", () => {
+    expect(decisionFollowUp("D5", "x", "LINE_BY_LINE")?.href).toBe("/rh/presence/imports?decision=x");
+    expect(decisionFollowUp("D5", "x", "KEEP_EXISTING")).toBeNull();
+    expect(decisionFollowUp("D5", "x")).toBeNull();
+    expect(decisionFollowUp("D11", "x", "POLICY")).toBeNull();
+    expect(["D5", "D11", "D12"].every(isDecisionTypeCode)).toBe(true);
+    expect(payrollSourceLabel("ATTENDANCE_IMPORT")).toMatch(/import/);
+  });
+
+  it("parses the D5 conflicts and warns about validated values and leave", () => {
+    const c = parseAttendanceConflictContext({
+      batch_id: "b1",
+      batch_no: "IMP-2026-0001",
+      period: "Mars 2026",
+      reference_year: 2026,
+      nature: "REPRISE",
+      counts: { read: 10, ok: "7" },
+      conflict_total: 3,
+      conflicts: [
+        {
+          line_id: "l1",
+          work_date: "2026-03-02",
+          imported_code: "P",
+          kinds: ["EXISTING_DIFFERENT"],
+          existing: [{ site_name: "A", legend_code: "AB", status_code: "VALIDATED", source_code: "MANUAL" }],
+        },
+        { line_id: "l2", work_date: "2026-03-03", imported_code: "P", kinds: ["LEAVE"], existing: [] },
+      ],
+    });
+    expect(c).toMatchObject({ batch_no: "IMP-2026-0001", reference_year: 2026, conflict_total: 3 });
+    expect(c.counts).toEqual({ read: 10, ok: 7 });
+    expect(c.conflicts[0].existing[0]).toEqual({ site_name: "A", legend_code: "AB", status_code: "VALIDATED", source_code: "MANUAL" });
+    const notices = attendanceConflictNotices(c).join(" ");
+    expect(notices).toMatch(/Rien n'a été remplacé/);
+    expect(notices).toMatch(/1 présence\(s\) existante\(s\) déjà validée\(s\)/);
+    expect(notices).toMatch(/congé approuvé/);
+    expect(notices).toMatch(/reprise/);
+    expect(notices).toMatch(/2 premières lignes sur 3/);
+  });
+
+  it("parses the D11 pairs and the D12 policy state", () => {
+    const m = parseCodeMappingContext({
+      batch_no: "IMP-2026-0002",
+      reason: "Ancien logiciel",
+      pairs: [{ source_code: "PR", legend_code: "P", legend_label: "Présent", lines: "12", policy: null }],
+    });
+    expect(m.pairs[0]).toEqual({ source_code: "PR", legend_code: "P", legend_label: "Présent", lines: 12, policy: null });
+    expect(parseImportPolicyContext({ current: null, batches_to_validate: 2 })).toMatchObject({ current: null, batches_to_validate: 2 });
+    expect(parseImportPolicyContext({ current: true }).current).toBe(true);
   });
 });
 

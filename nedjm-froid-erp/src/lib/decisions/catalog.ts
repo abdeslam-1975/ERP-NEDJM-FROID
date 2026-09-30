@@ -42,6 +42,9 @@ export const DECISION_TYPES = [
   { code: "D7", label: "D7 · Réouverture d'une paie" },
   { code: "D9", label: "D9 · Virement bloqué (reprise, déjà viré ou payé hors application)" },
   { code: "D10", label: "D10 · Déclaration bloquée (reprise ou déjà déclarée hors application)" },
+  { code: "D5", label: "D5 · Conflit d'un import de présences" },
+  { code: "D11", label: "D11 · Correspondance des codes d'un import" },
+  { code: "D12", label: "D12 · Validation d'un import par son auteur" },
 ] as const;
 export type DecisionTypeCode = (typeof DECISION_TYPES)[number]["code"];
 export const DECISION_TYPE_CODES = DECISION_TYPES.map((t) => t.code) as [DecisionTypeCode, ...DecisionTypeCode[]];
@@ -71,7 +74,9 @@ const SOURCE_LABELS: Record<
   | "PAYROLL_REOPEN"
   | "PAYROLL_VALIDATION"
   | "TRANSFER_PREPARATION"
-  | "DECLARATION_EXPORT",
+  | "DECLARATION_EXPORT"
+  | "ATTENDANCE_IMPORT"
+  | "IMPORT_POLICY",
   string
 > = {
   ATTENDANCE: "Présences",
@@ -93,6 +98,8 @@ const SOURCE_LABELS: Record<
   PAYROLL_VALIDATION: "Validation d'une paie depuis l'écran Paie",
   TRANSFER_PREPARATION: "Préparation d'un virement depuis l'écran Virements",
   DECLARATION_EXPORT: "Export d'une déclaration depuis l'écran Paie",
+  ATTENDANCE_IMPORT: "Analyse d'un import d'archives de présence",
+  IMPORT_POLICY: "Écran des imports de présences",
 };
 
 export function decisionStatusLabel(status: string): string {
@@ -605,13 +612,183 @@ export function parseDeclarationDecisionContext(raw: unknown): DeclarationDecisi
   };
 }
 
-/** D9 / D10 are carried out on their operational screen (one use), never by the decision center. */
-export function decisionFollowUp(type: string, id: string): { href: string; label: string } | null {
+/**
+ * D9 / D10 are carried out on their operational screen (one use), never by the decision center; so is a D5
+ * decided « ligne par ligne » (the other D5 options run with the decision).
+ */
+export function decisionFollowUp(
+  type: string,
+  id: string,
+  option?: string | null,
+): { href: string; label: string } | null {
   if (type === "D9") return { href: `/rh/paie/virements?decision=${id}`, label: "Exécuter depuis l'écran Virements" };
   if (type === "D10") {
     return { href: `/rh/paie/declarations?decision=${id}`, label: "Produire le fichier depuis le registre des déclarations" };
   }
+  if (type === "D5" && option === "LINE_BY_LINE") {
+    return { href: `/rh/presence/imports?decision=${id}`, label: "Trancher ligne par ligne depuis l'écran des imports" };
+  }
   return null;
+}
+
+export type AttendanceConflictExisting = {
+  site_name: string;
+  legend_code: string;
+  status_code: string;
+  source_code: string;
+};
+
+export type AttendanceConflictLine = {
+  line_id: string;
+  source_ref: string;
+  matricule: string;
+  employee: string;
+  work_date: string;
+  site_name: string;
+  imported_code: string;
+  kinds: string[];
+  resolution: string | null;
+  existing: AttendanceConflictExisting[];
+};
+
+/** D5 context (hr_attendance_import_d5_context). */
+export type AttendanceConflictContext = {
+  batch_id: string;
+  batch_no: string;
+  period: string;
+  reference_year: number;
+  nature: string;
+  provenance_kind: string;
+  provenance_detail: string;
+  source_produced_on: string | null;
+  file_name: string;
+  sha256: string;
+  created_by: string;
+  counts: Record<string, number>;
+  conflict_total: number;
+  conflicts: AttendanceConflictLine[];
+};
+
+export function parseAttendanceConflictContext(raw: unknown): AttendanceConflictContext {
+  const c = obj(raw) ?? {};
+  const counts = obj(c.counts) ?? {};
+  return {
+    batch_id: str(c.batch_id) ?? "",
+    batch_no: str(c.batch_no) ?? "",
+    period: str(c.period) ?? "",
+    reference_year: numOr0(c.reference_year),
+    nature: str(c.nature) ?? "",
+    provenance_kind: str(c.provenance_kind) ?? "",
+    provenance_detail: str(c.provenance_detail) ?? "",
+    source_produced_on: isoDay(c.source_produced_on),
+    file_name: str(c.file_name) ?? "",
+    sha256: str(c.sha256) ?? "",
+    created_by: str(c.created_by) ?? "",
+    counts: Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, numOr0(v)])),
+    conflict_total: numOr0(c.conflict_total),
+    conflicts: list(c.conflicts).map((l) => ({
+      line_id: str(l.line_id) ?? "",
+      source_ref: str(l.source_ref) ?? "",
+      matricule: str(l.matricule) ?? "",
+      employee: str(l.employee) ?? "",
+      work_date: isoDay(l.work_date) ?? "",
+      site_name: str(l.site_name) ?? "",
+      imported_code: str(l.imported_code) ?? "",
+      kinds: strList(l.kinds),
+      resolution: str(l.resolution),
+      existing: list(l.existing).map((e) => ({
+        site_name: str(e.site_name) ?? "",
+        legend_code: str(e.legend_code) ?? "",
+        status_code: str(e.status_code) ?? "",
+        source_code: str(e.source_code) ?? "",
+      })),
+    })),
+  };
+}
+
+export type CodeMappingPair = {
+  source_code: string;
+  legend_code: string;
+  legend_label: string;
+  lines: number;
+  /** Correspondence already kept as a policy for this code, if any. */
+  policy: { legend_code: string; status: string } | null;
+};
+
+/** D11 context (hr_attendance_import_d11_context). */
+export type CodeMappingContext = {
+  batch_id: string;
+  batch_no: string;
+  period: string;
+  provenance_detail: string;
+  file_name: string;
+  reason: string;
+  pairs: CodeMappingPair[];
+};
+
+export function parseCodeMappingContext(raw: unknown): CodeMappingContext {
+  const c = obj(raw) ?? {};
+  return {
+    batch_id: str(c.batch_id) ?? "",
+    batch_no: str(c.batch_no) ?? "",
+    period: str(c.period) ?? "",
+    provenance_detail: str(c.provenance_detail) ?? "",
+    file_name: str(c.file_name) ?? "",
+    reason: str(c.reason) ?? "",
+    pairs: list(c.pairs).map((p) => {
+      const policy = obj(p.policy);
+      return {
+        source_code: str(p.source_code) ?? "",
+        legend_code: str(p.legend_code) ?? "",
+        legend_label: str(p.legend_label) ?? "",
+        lines: numOr0(p.lines),
+        policy: policy ? { legend_code: str(policy.legend_code) ?? "", status: str(policy.status) ?? "" } : null,
+      };
+    }),
+  };
+}
+
+/** D12 context (hr_attendance_import_policy_context). */
+export type ImportPolicyContext = {
+  reason: string;
+  /** null = never decided (the author may not validate). */
+  current: boolean | null;
+  decided_at: string | null;
+  decided_by: string | null;
+  batches_to_validate: number;
+};
+
+export function parseImportPolicyContext(raw: unknown): ImportPolicyContext {
+  const c = obj(raw) ?? {};
+  return {
+    reason: str(c.reason) ?? "",
+    current: typeof c.current === "boolean" ? c.current : null,
+    decided_at: str(c.decided_at),
+    decided_by: str(c.decided_by),
+    batches_to_validate: numOr0(c.batches_to_validate),
+  };
+}
+
+/** Warnings shown before a D5 decision. */
+export function attendanceConflictNotices(c: AttendanceConflictContext): string[] {
+  const out: string[] = [
+    "Rien n'a été remplacé, écrasé ni fusionné : le lot attend votre décision. Aucune paie n'est créée ni recalculée par cette décision.",
+  ];
+  const validated = c.conflicts.filter((l) => l.existing.some((e) => e.status_code === "VALIDATED")).length;
+  if (validated) {
+    out.push(
+      `${validated} présence(s) existante(s) déjà validée(s) : retenir l'import les remplacera par des présences proposées, à valider à nouveau ; une paie brouillon du mois sera signalée à recalculer (D3).`,
+    );
+  }
+  const leave = c.conflicts.filter((l) => l.kinds.includes("LEAVE")).length;
+  if (leave) out.push(`${leave} ligne(s) tombent sur un congé approuvé : le congé lui-même n'est pas modifié.`);
+  if (c.nature !== "OPERATIONAL") {
+    out.push("Période de reprise : une présence reprise n'atteste ni un paiement ni une déclaration.");
+  }
+  if (c.conflict_total > c.conflicts.length) {
+    out.push(`Seules les ${c.conflicts.length} premières lignes sur ${c.conflict_total} sont affichées ; le rapport complet est disponible sur l'écran des imports.`);
+  }
+  return out;
 }
 
 /** Warnings shown before a D9 decision; the registers only inform, never lift the block. */

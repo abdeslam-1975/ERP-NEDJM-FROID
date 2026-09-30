@@ -7,13 +7,17 @@ import { Button } from "@/components/ui/button";
 import { RhAlert, RhChip, RhPageHeader, RhPanel } from "@/components/rh/rh-ui";
 import { decideDecision, executeDecision, type DecisionDetail } from "@/lib/actions/decisions";
 import type {
+  AttendanceConflictContext,
+  CodeMappingContext,
   DeclarationDecisionContext,
+  ImportPolicyContext,
   PayrollChainContext,
   PayrollReopenContext,
   TransferDecisionContext,
 } from "@/lib/decisions/catalog";
 import {
   JUSTIFICATION_MAX,
+  attendanceConflictNotices,
   decisionStatusLabel,
   decisionStatusTone,
   declarationRiskNotices,
@@ -31,6 +35,7 @@ import { declarationKindLabel, declarationReasonLabel, transferReasonLabel } fro
 import { RULE_ACTIONS, RULE_FAMILIES, frMonth, type RuleAction, type RuleFamily } from "@/lib/rules/proposals";
 import { RuleDiff } from "@/components/rules/rule-content";
 import { CitationsList } from "@/components/rules/legal-citations";
+import { conflictLabel, existingValueText, natureLabel, provenanceLabel } from "@/lib/hr/attendance-archive";
 
 const asFamily = (v: string): RuleFamily =>
   (RULE_FAMILIES as readonly string[]).includes(v) ? (v as RuleFamily) : "LEGAL_VAR";
@@ -203,7 +208,11 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
                     ? "/rh/qualite-donnees"
                     : d.type_code === "D2"
                       ? `/rh/legal/propositions?id=${d.rule_application?.proposal_id ?? ""}`
-                      : "/rh/contrats"
+                      : d.type_code === "D5" || d.type_code === "D11"
+                        ? `/rh/presence/imports?lot=${d.attendance_conflict?.batch_id ?? d.code_mapping?.batch_id ?? ""}`
+                        : d.type_code === "D12"
+                          ? "/rh/presence/imports?vue=politique"
+                          : "/rh/contrats"
                 }
                 className="font-semibold text-brand hover:underline"
               >
@@ -211,7 +220,11 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
                   ? "Rapport de qualité des données"
                   : d.type_code === "D2"
                     ? "Ouvrir la proposition"
-                    : "Ouvrir les contrats"}
+                    : d.type_code === "D5" || d.type_code === "D11"
+                      ? "Ouvrir le lot d'import"
+                      : d.type_code === "D12"
+                        ? "Ouvrir l'écran des imports"
+                        : "Ouvrir les contrats"}
               </Link>
             </Fact>
           )}
@@ -413,6 +426,9 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
       {d.payroll_chains ? <ChainPanel c={d.payroll_chains} /> : null}
       {d.transfer ? <TransferPanel c={d.transfer} /> : null}
       {d.declaration ? <DeclarationPanel c={d.declaration} /> : null}
+      {d.attendance_conflict ? <AttendanceConflictPanel c={d.attendance_conflict} /> : null}
+      {d.code_mapping ? <CodeMappingPanel c={d.code_mapping} /> : null}
+      {d.import_policy ? <ImportPolicyPanel c={d.import_policy} /> : null}
 
       {d.status === "PENDING" ? (
         <RhPanel>
@@ -823,6 +839,149 @@ function TransferPanel({ c }: { c: TransferDecisionContext }) {
 
       <h4 className="mt-4 text-sm font-semibold">3 · Nature de la période</h4>
       <p className="mt-1 text-sm text-foreground/75">{periodNatureText(c.period_nature)}</p>
+    </RhPanel>
+  );
+}
+
+function AttendanceConflictPanel({ c }: { c: AttendanceConflictContext }) {
+  return (
+    <RhPanel>
+      <h3 className="font-display text-base font-semibold">
+        Conflits d&apos;import · lot {c.batch_no} · {c.period}
+      </h3>
+      <dl className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Fact label="Année de référence">{c.reference_year || "—"}</Fact>
+        <Fact label="Nature">{natureLabel(c.nature)}</Fact>
+        <Fact label="Provenance">
+          {provenanceLabel(c.provenance_kind)} — {c.provenance_detail}
+        </Fact>
+        <Fact label="Fichier">
+          {c.file_name} · déposé par {c.created_by || "?"}
+        </Fact>
+        <Fact label="Lignes lues">{c.counts.read ?? 0}</Fact>
+        <Fact label="Acceptées sans conflit">{c.counts.ok ?? 0}</Fact>
+        <Fact label="Rejetées">{c.counts.error ?? 0}</Fact>
+        <Fact label="En conflit">{c.conflict_total}</Fact>
+      </dl>
+      <RiskNotices notices={attendanceConflictNotices(c)} />
+      <h4 className="mt-4 text-sm font-semibold">Données concernées : valeur importée et valeur déjà enregistrée</h4>
+      <div className="mt-2 overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead className="text-left text-xs uppercase text-foreground/55">
+            <tr>
+              <th className="py-1 pr-4">Salarié</th>
+              <th className="py-1 pr-4">Date</th>
+              <th className="py-1 pr-4">Import</th>
+              <th className="py-1 pr-4">Déjà enregistré</th>
+              <th className="py-1">Conflit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {c.conflicts.map((l) => (
+              <tr key={l.line_id} className="border-t border-border/60 align-top">
+                <td className="py-1 pr-4">
+                  {l.matricule} · {l.employee}
+                  <div className="text-xs text-foreground/55">{l.source_ref}</div>
+                </td>
+                <td className="py-1 pr-4">{frDate(l.work_date)}</td>
+                <td className="py-1 pr-4">
+                  <b>{l.imported_code}</b> <span className="text-xs text-foreground/60">({l.site_name})</span>
+                </td>
+                <td className="py-1 pr-4 text-xs">
+                  {l.existing.length
+                    ? l.existing.map((e) => existingValueText(e, e.site_name)).join(" ; ")
+                    : "Congé approuvé (aucune présence saisie)"}
+                </td>
+                <td className="py-1">
+                  <div className="flex flex-wrap gap-1">
+                    {l.kinds.map((k) => (
+                      <RhChip key={k} tone="warning">
+                        {conflictLabel(k)}
+                      </RhChip>
+                    ))}
+                    {l.resolution ? (
+                      <RhChip tone="brand">{l.resolution === "IMPORT" ? "Import retenu" : "Existant conservé"}</RhChip>
+                    ) : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </RhPanel>
+  );
+}
+
+function CodeMappingPanel({ c }: { c: CodeMappingContext }) {
+  return (
+    <RhPanel>
+      <h3 className="font-display text-base font-semibold">
+        Correspondance de codes · lot {c.batch_no} · {c.period}
+      </h3>
+      <dl className="mt-3 grid gap-4 sm:grid-cols-2">
+        <Fact label="Fichier">{c.file_name}</Fact>
+        <Fact label="Provenance">{c.provenance_detail}</Fact>
+        <div className="sm:col-span-2">
+          <Fact label="Motif de la demande">{c.reason || "—"}</Fact>
+        </div>
+      </dl>
+      <table className="mt-4 min-w-full text-sm">
+        <thead className="text-left text-xs uppercase text-foreground/55">
+          <tr>
+            <th className="py-1 pr-4">Code du fichier</th>
+            <th className="py-1 pr-4">Code du référentiel proposé</th>
+            <th className="py-1 pr-4 text-right">Lignes</th>
+            <th className="py-1">Politique existante</th>
+          </tr>
+        </thead>
+        <tbody>
+          {c.pairs.map((p) => (
+            <tr key={p.source_code} className="border-t border-border/60">
+              <td className="py-1 pr-4 font-mono">{p.source_code}</td>
+              <td className="py-1 pr-4">
+                <span className="font-mono">{p.legend_code}</span> — {p.legend_label}
+              </td>
+              <td className="py-1 pr-4 text-right tabular-nums">{p.lines}</td>
+              <td className="py-1 text-xs">
+                {p.policy
+                  ? `${p.policy.legend_code} (${p.policy.status === "ACTIVE" ? "active" : "à confirmer"})`
+                  : "—"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-3 text-xs text-foreground/60">
+        « Pour ce lot seulement » convertit les codes de ce lot puis l&apos;analyse à nouveau. « Comme politique » propose
+        en plus la correspondance pour les prochains lots : elle ne s&apos;appliquera qu&apos;après une seconde confirmation
+        sur l&apos;écran des imports. Aucune présence n&apos;est enregistrée par cette décision.
+      </p>
+    </RhPanel>
+  );
+}
+
+function ImportPolicyPanel({ c }: { c: ImportPolicyContext }) {
+  return (
+    <RhPanel>
+      <h3 className="font-display text-base font-semibold">Validation d&apos;un import par son auteur</h3>
+      <dl className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Fact label="Règle actuelle">
+          {c.current === null
+            ? "Jamais décidée : l'auteur ne peut pas valider (par défaut)"
+            : c.current
+              ? "L'auteur peut valider son lot"
+              : "L'auteur ne peut pas valider son lot"}
+        </Fact>
+        <Fact label="Dernière décision">{c.decided_at ? `${dateTime(c.decided_at)} · ${c.decided_by ?? "?"}` : "—"}</Fact>
+        <Fact label="Lots en attente de validation">{c.batches_to_validate}</Fact>
+        <div className="sm:col-span-2 lg:col-span-3">
+          <Fact label="Motif de la demande">{c.reason || "—"}</Fact>
+        </div>
+      </dl>
+      <p className="mt-3 text-xs text-foreground/60">
+        Le SUPER_ADMIN peut toujours valider. La politique reste révocable à tout moment par une nouvelle décision.
+      </p>
     </RhPanel>
   );
 }

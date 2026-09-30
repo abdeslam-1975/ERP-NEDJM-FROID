@@ -42,7 +42,7 @@ describe("attendance source", () => {
       source_code: "MANUAL",
       correspondence_id: null,
     });
-    expect(countPending(next)).toEqual({ proposed: 2, edited: 1 });
+    expect(countPending(next)).toEqual({ proposed: 2, edited: 1, imported: 0 });
   });
 
   it("keeps the OM origin when the same code is re-applied", () => {

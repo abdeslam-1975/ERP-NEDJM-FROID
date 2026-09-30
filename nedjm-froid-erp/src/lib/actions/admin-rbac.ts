@@ -49,7 +49,11 @@ export type PeriodLockRow = {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Mirrors trg_sys_permissions_non_delegable: kept out of the rights matrix. */
-const NON_DELEGABLE_SCREENS = ["decision_payroll_reopen"];
+const NON_DELEGABLE_SCREENS = [
+  "decision_payroll_reopen",
+  "decision_attendance_import_conflict",
+  "decision_attendance_import_policy",
+];
 
 async function requireSuperAdmin(): Promise<{ ok: true; userId: string } | { ok: false; error: string }> {
   const ws = await getWorkspaceProfile();

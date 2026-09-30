@@ -11,14 +11,20 @@ import {
   assignmentZoneNotice,
   decideBlocker,
   decisionFollowUp,
+  parseAttendanceConflictContext,
+  parseCodeMappingContext,
   parseDecisionOptions,
   parseDeclarationDecisionContext,
+  parseImportPolicyContext,
   parsePayrollChainContext,
   parsePayrollReopenContext,
   parseRuleApplicationContext,
   parseTransferDecisionContext,
   validateJustification,
+  type AttendanceConflictContext,
+  type CodeMappingContext,
   type DecisionOption,
+  type ImportPolicyContext,
   type DeclarationDecisionContext,
   type PayrollChainContext,
   type PayrollReopenContext,
@@ -128,7 +134,10 @@ export type DecisionDetail = DecisionListRow & {
   payroll_chains: PayrollChainContext | null;
   transfer: TransferDecisionContext | null;
   declaration: DeclarationDecisionContext | null;
-  /** D9 / D10: where the decided operation is carried out (once). */
+  attendance_conflict: AttendanceConflictContext | null;
+  code_mapping: CodeMappingContext | null;
+  import_policy: ImportPolicyContext | null;
+  /** D9 / D10 / D5 line by line: where the decided operation is carried out (once). */
   follow_up: { href: string; label: string } | null;
   /** Options the data no longer allows (code → reason); the database refuses them too. */
   unavailable_options: Record<string, string>;
@@ -349,7 +358,10 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
   const payrollChains = raw.type_code === "D6" ? parsePayrollChainContext(ctx) : null;
   const transfer = raw.type_code === "D9" ? parseTransferDecisionContext(ctx) : null;
   const declaration = raw.type_code === "D10" ? parseDeclarationDecisionContext(ctx) : null;
-  const followUp = decisionFollowUp(raw.type_code, raw.id);
+  const attendanceConflict = raw.type_code === "D5" ? parseAttendanceConflictContext(ctx) : null;
+  const codeMapping = raw.type_code === "D11" ? parseCodeMappingContext(ctx) : null;
+  const importPolicy = raw.type_code === "D12" ? parseImportPolicyContext(ctx) : null;
+  const followUp = decisionFollowUp(raw.type_code, raw.id, raw.chosen_option);
   const ruleContributor =
     ruleApplication && raw.status === "PENDING" && !ws.isSuperAdmin
       ? await isRuleContributor(supabase, ws.id, ruleApplication)
@@ -390,6 +402,9 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
       payroll_chains: payrollChains,
       transfer,
       declaration,
+      attendance_conflict: attendanceConflict,
+      code_mapping: codeMapping,
+      import_policy: importPolicy,
       follow_up: raw.status === "DECIDED" && chosen?.executes === true ? followUp : null,
       unavailable_options: unavailable,
       decide_blocker: decideBlocker({
@@ -467,17 +482,23 @@ export async function decideDecision(input: unknown): Promise<ActionResult<Decid
       revalidatePath("/rh/paie/irg");
       revalidatePath("/rh/paie/bulletins");
       revalidatePath("/rh/presence");
+      revalidatePath("/rh/presence/imports");
     }
     return {
       ok: true,
       data: { status: "EXECUTED", applied, executed: null, execute_error: null, invalidated: null, follow_up: null },
     };
   }
-  const { data: typeRow } = await supabase.from("sys_decisions").select("type_code").eq("id", p.id).maybeSingle();
-  const followUp = decisionFollowUp(String(typeRow?.type_code ?? ""), p.id);
+  const { data: typeRow } = await supabase
+    .from("sys_decisions")
+    .select("type_code, chosen_option")
+    .eq("id", p.id)
+    .maybeSingle();
+  const followUp = decisionFollowUp(String(typeRow?.type_code ?? ""), p.id, typeRow?.chosen_option ?? null);
   if (followUp) {
     revalidatePath("/rh/paie");
     revalidatePath("/rh/paie/virements");
+    revalidatePath("/rh/presence/imports");
     return {
       ok: true,
       data: { status: "DECIDED", applied: false, executed: null, execute_error: null, invalidated: null, follow_up: followUp },
@@ -517,8 +538,12 @@ export async function executeDecision(
 ): Promise<ActionResult<{ count: number; warnings: string[] }> & { invalidated?: string | null }> {
   if (!UUID_RE.test(id)) return { ok: false, error: "Décision invalide." };
   const supabase = await createClient();
-  const { data: typeRow } = await supabase.from("sys_decisions").select("type_code").eq("id", id).maybeSingle();
-  const followUp = decisionFollowUp(String(typeRow?.type_code ?? ""), id);
+  const { data: typeRow } = await supabase
+    .from("sys_decisions")
+    .select("type_code, chosen_option")
+    .eq("id", id)
+    .maybeSingle();
+  const followUp = decisionFollowUp(String(typeRow?.type_code ?? ""), id, typeRow?.chosen_option ?? null);
   if (followUp) return { ok: false, error: `Cette décision s'exécute une seule fois : ${followUp.label.toLowerCase()}.` };
   const run = await executePayrollDecision(id);
   revalidatePath("/decisions");

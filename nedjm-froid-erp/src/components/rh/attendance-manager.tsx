@@ -942,11 +942,20 @@ export function AttendanceManager({
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 print:hidden">
         <p className="text-[12px] text-amber-900">
-          {pendingCounts.proposed > 0 || pendingCounts.edited > 0 || dirty || rowsDirty ? (
+          {pendingCounts.proposed > 0 || pendingCounts.edited > 0 || pendingCounts.imported > 0 || dirty || rowsDirty ? (
             <>
               <strong>Valeurs non validées — قيم غير معتمدة :</strong>{" "}
               {pendingCounts.proposed} proposée(s) par ordre de mission
               {pendingCounts.edited > 0 ? ` · ${pendingCounts.edited} saisie(s) manuelle(s)` : ""}
+              {pendingCounts.imported > 0 ? (
+                <>
+                  {" "}
+                  · {pendingCounts.imported} importée(s), à valider depuis{" "}
+                  <Link href="/rh/presence/imports?vue=validation" className="font-semibold underline">
+                    l&apos;écran des imports
+                  </Link>
+                </>
+              ) : null}
               {dirty || rowsDirty ? " · modifications en cours" : ""}
             </>
           ) : access && !canEditDays && editableValues.size === 0 ? (

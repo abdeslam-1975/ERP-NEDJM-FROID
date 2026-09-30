@@ -4,20 +4,28 @@ export function isAutoProposed(cell: Pick<AttendanceCell, "source_code" | "statu
   return Boolean(cell) && cell!.source_code !== "MANUAL" && cell!.status_code === "PROPOSED";
 }
 
+/** Imported values are validated only from the imports screen, never by the pointage grid. */
 export function countPending(cells: AttendanceCell[]) {
   let proposed = 0;
   let edited = 0;
+  let imported = 0;
   for (const cell of cells) {
     if (cell.status_code !== "PROPOSED") continue;
     if (cell.source_code === "MANUAL") edited += 1;
+    else if (cell.source_code === "IMPORT") imported += 1;
     else proposed += 1;
   }
-  return { proposed, edited };
+  return { proposed, edited, imported };
 }
 
 export function cellOriginLabel(cell: AttendanceCell | undefined) {
   if (!cell) return "";
   const pending = cell.status_code === "PROPOSED";
+  if (cell.source_code === "IMPORT") {
+    return pending
+      ? "Importé des archives — à valider depuis l'écran des imports · مستورد — غير معتمد"
+      : "Importé des archives — validé · مستورد — معتمد";
+  }
   if (cell.source_code === "OM") {
     const ref = cell.correspondence_number ? ` N° ${cell.correspondence_number}` : "";
     return pending
