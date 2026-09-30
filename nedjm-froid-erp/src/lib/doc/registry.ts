@@ -34,6 +34,12 @@ export type DocRender = { type: DocTypeId; data: DocData };
 const money = (path: string, label: string, group: string): DocField => ({ path, label, group, format: "da" });
 const days = (path: string, label: string): DocField => ({ path, label, group: "Jours", format: "da0" });
 const pct = (path: string, label: string): DocField => ({ path, label, group: "Taux", format: "num" });
+const byCode = (code: string, label: string): DocField => ({
+  path: `jours.${code}`,
+  label: `${label} (${code})`,
+  group: "Jours par code de pointage",
+  format: "days",
+});
 
 const BULLETIN: DocTypeMeta = {
   id: "bulletin_paie",
@@ -56,6 +62,8 @@ const BULLETIN: DocTypeMeta = {
     { path: "values.category", label: "Catégorie", group: "Employé" },
     { path: "matricule", label: "Matricule", group: "Employé" },
     { path: "period_text", label: "Période (mois / année)", group: "Employé" },
+    { path: "period_from", label: "Période du (1er jour du mois)", group: "Employé", format: "date_slash" },
+    { path: "period_to", label: "Période au (dernier jour du mois)", group: "Employé", format: "date_slash" },
     { path: "employer.name", label: "Raison sociale", group: "Employeur" },
     { path: "employer.address", label: "Adresse", group: "Employeur" },
     { path: "employer.nif", label: "NIF", group: "Employeur" },
@@ -91,6 +99,18 @@ const BULLETIN: DocTypeMeta = {
     days("days_abandon", "Abandon de poste"),
     days("days_leave", "Congés"),
     days("days_absence", "Absences"),
+    byCode("P", "Présent"),
+    byCode("MS", "Mission"),
+    byCode("CRP", "Récupération"),
+    byCode("CA", "Congé annuel"),
+    byCode("CM", "Congé maladie"),
+    byCode("CSS", "Congé sans solde"),
+    byCode("AOP", "Absence autorisée payée"),
+    byCode("AJ", "Absence justifiée"),
+    byCode("AN", "Absence non justifiée"),
+    byCode("W", "Week-end"),
+    byCode("JF", "Jour férié"),
+    byCode("AP", "Abandon de poste"),
     pct("rates.ss_pct", "Taux CNAS salarial"),
     pct("rates.pat_pct", "Taux CNAS patronal"),
     pct("rates.fos_pct", "Taux FOS"),
@@ -100,6 +120,7 @@ const BULLETIN: DocTypeMeta = {
     { path: "payment_mode", label: "Mode de paiement", group: "Paiement" },
     { path: "payment_date", label: "Date de paiement", group: "Paiement" },
     { path: "account_no", label: "N° de compte", group: "Paiement" },
+    { path: "account_key", label: "Clé du compte", group: "Paiement" },
     { path: "units.da", label: "Unité monétaire (« DA »)", group: "Unités" },
     { path: "units.percent", label: "Unité pourcentage", group: "Unités" },
     { path: "units.day", label: "Unité par jour", group: "Unités" },
@@ -108,6 +129,10 @@ const BULLETIN: DocTypeMeta = {
     { path: "nombre", label: "Nombre / base", group: "Ligne de rubrique", format: "da", within: "lines" },
     { path: "taux", label: "Taux", group: "Ligne de rubrique", format: "da", within: "lines" },
     { path: "taux_suffix", label: "Unité du taux", group: "Ligne de rubrique", within: "lines" },
+    { path: "nbr", label: "Nbr (jours / quantité)", group: "Ligne de rubrique", format: "da0", within: "lines" },
+    { path: "base", label: "Base (montant de référence)", group: "Ligne de rubrique", format: "da", within: "lines" },
+    { path: "rate", label: "Taux (journalier ou %)", group: "Ligne de rubrique", format: "rate", within: "lines" },
+    { path: "rate_suffix", label: "Unité du taux (colonne Taux)", group: "Ligne de rubrique", within: "lines" },
     { path: "gain", label: "Gain", group: "Ligne de rubrique", format: "da", within: "lines" },
     { path: "retenue", label: "Retenue", group: "Ligne de rubrique", format: "da", within: "lines" },
     { path: "from", label: "De (annuel)", group: "Tranche IRG", format: "da", within: "irg.brackets" },

@@ -3,9 +3,9 @@ import path from "node:path";
 
 const MIGRATIONS = path.resolve(__dirname, "../../../../supabase/migrations");
 
-/** Latest seeded template of a document type, read from the SQL migrations (tests only). */
-export function seededTemplate(docType: string) {
-  const marker = `$${docType}$`;
+/** Latest seeded template quoted with `$tag$` in the SQL migrations (tests only). */
+export function seededTemplate(docType: string, tag = docType) {
+  const marker = `$${tag}$`;
   let found: string | null = null;
   for (const file of readdirSync(MIGRATIONS).filter((f) => f.endsWith(".sql")).sort()) {
     const sql = readFileSync(path.join(MIGRATIONS, file), "utf8");

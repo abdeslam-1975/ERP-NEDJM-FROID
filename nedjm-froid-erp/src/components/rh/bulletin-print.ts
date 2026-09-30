@@ -12,7 +12,7 @@ import {
   roundMoney,
   sortForPayslip,
 } from "@/lib/hr/payroll-calc";
-import { baseDailyTaux } from "@/lib/hr/attendance-movements";
+import { baseDailyTaux, daysInMonth } from "@/lib/hr/attendance-movements";
 import { explainMonthlyIrg, type IrgBracket, type IrgRule } from "@/lib/hr/irg-calc";
 
 export type BulletinLine = {
@@ -28,12 +28,20 @@ export type BulletinLine = {
   retenue: number | null;
   /** IRG is a barème, not a single rate. */
   hideTaux?: boolean;
+  /** Separate Nbr / Base / Taux columns (null = empty cell): count, amount the rate applies to, unit rate. */
+  nbr: number | null;
+  base: number | null;
+  rate: number | null;
+  rateSuffix: string;
 };
 
 export type BulletinModel = {
   values: Record<string, string>;
   matricule: string;
   period_text: string;
+  /** First and last day of the pay month (ISO). */
+  period_from: string;
+  period_to: string;
   lines: BulletinLine[];
   total_gain: number;
   total_retenue: number;
@@ -44,6 +52,7 @@ export type BulletinModel = {
   days_abandon: number;
   days_leave: number;
   days_absence: number;
+  days_by_code: Record<string, number>;
   employee_ss: number;
   employer_ss: number;
   /** Employer FOS (0.5 %), split out of employer_ss for its own box. */
@@ -61,6 +70,7 @@ export type BulletinModel = {
   payment_mode: string;
   payment_date: string;
   account_no: string;
+  account_key: string;
   layout: HrBulletinSettings;
   rates: BulletinLegalRates;
   /** Applied IRG / CNAS / CACOBATPH regime labels. */
@@ -97,6 +107,14 @@ export function formatDateDot(iso: string | null | undefined) {
 
 export function periodLabel(year: number, month: number, months: string[]) {
   return `${months[month - 1] ?? month} / ${year}`;
+}
+
+function periodBounds(year: number, month: number) {
+  const mm = String(month).padStart(2, "0");
+  return {
+    period_from: `${year}-${mm}-01`,
+    period_to: `${year}-${mm}-${String(daysInMonth(year, month)).padStart(2, "0")}`,
+  };
 }
 
 type SourceLine = {
@@ -139,6 +157,12 @@ export function buildBulletinLines(input: {
   settings?: HrBulletinSettings;
 }): BulletinLine[] {
   const settings = input.settings ?? DEFAULT_BULLETIN_SETTINGS;
+  const rateCols = (base: number, ratePct: number) => ({
+    nbr: null,
+    base,
+    rate: ratePct,
+    rateSuffix: settings.unit_percent,
+  });
   const keepCodes = new Set([
     settings.base_code,
     settings.ss_code,
@@ -160,22 +184,27 @@ export function buildBulletinLines(input: {
     let nombre = 0;
     let taux = 0;
     let tauxSuffix = settings.unit_da;
+    let cols: Pick<BulletinLine, "nbr" | "base" | "rate">;
     if (line.unit === "percent") {
       taux = line.unit_amount;
       nombre = taux !== 0 ? abs / (taux / 100) : 0;
       tauxSuffix = settings.unit_percent;
+      cols = { nbr: null, base: nombre, rate: taux };
     } else if (line.unit === "day" || line.unit === "presence_day") {
       nombre = line.quantity;
       taux = line.unit_amount;
       tauxSuffix = settings.unit_day;
+      cols = { nbr: nombre, base: null, rate: taux };
     } else if (isBase) {
       nombre = input.daysPaid;
       taux = baseDailyTaux(line.unit_amount, input.periodYear, input.periodMonth);
       tauxSuffix = settings.unit_day;
+      cols = { nbr: nombre, base: line.unit_amount, rate: taux };
     } else {
       nombre = line.quantity;
       taux = line.unit_amount;
       tauxSuffix = settings.unit_da;
+      cols = { nbr: nombre, base: taux, rate: null };
     }
     return {
       code: mapped,
@@ -188,6 +217,8 @@ export function buildBulletinLines(input: {
       tauxSuffix,
       gain: isRetenue ? null : abs,
       retenue: isRetenue ? (classRetenue ? Math.abs(line.amount) : abs) : null,
+      ...cols,
+      rateSuffix: cols.rate == null ? "" : tauxSuffix,
     };
     });
 
@@ -210,6 +241,7 @@ export function buildBulletinLines(input: {
       tauxSuffix: settings.unit_percent,
       gain: null,
       retenue: input.employeeSs,
+      ...rateCols(input.grossCotisable, input.ssRatePct),
     });
   }
   const intempAmount = input.intemperiesEmployee ?? 0;
@@ -227,6 +259,7 @@ export function buildBulletinLines(input: {
       tauxSuffix: settings.unit_percent,
       gain: null,
       retenue: intempAmount,
+      ...rateCols(input.grossCotisable, input.intemperiesRatePct ?? 0),
     });
   }
   const extraRow = (extra: NonNullable<typeof input.extraEmployee>[number]): BulletinLine => ({
@@ -239,11 +272,12 @@ export function buildBulletinLines(input: {
     tauxSuffix: settings.unit_percent,
     gain: null,
     retenue: extra.amount,
+    ...rateCols(extra.base, extra.ratePct),
   });
   const extras = (input.extraEmployee ?? []).filter((e) => e.amount > 0);
   for (const extra of extras.filter((e) => e.group !== "irg")) rows.push(extraRow(extra));
   const irgRow = statutory(settings.irg_code);
-  const irgLine = {
+  const irgLine: BulletinLine = {
     code: settings.irg_code,
     label: settings.irg_label,
     category: PAYSLIP_IRG_SECTION,
@@ -254,6 +288,10 @@ export function buildBulletinLines(input: {
     hideTaux: true,
     gain: null,
     retenue: input.irgAmount,
+    nbr: null,
+    base: input.irgBase,
+    rate: null,
+    rateSuffix: "",
   };
   if (irgRow || !hideZero || input.irgAmount > 0) {
     rows.push(irgLine);
@@ -283,6 +321,8 @@ export type BulletinSlipInput = {
   days_weekend?: number;
   days_abandon?: number;
   days_rappel?: number;
+  /** Days pointed with each legend code (CA, CRP, CM…). */
+  days_by_code?: Record<string, number> | null;
   gross_amount: number;
   employee_ss: number;
   employer_ss: number;
@@ -305,6 +345,7 @@ export type BulletinSlipInput = {
   net_payable: number;
   payment_mode_code?: string | null;
   account_no?: string | null;
+  account_key?: string | null;
   compliance?: {
     labels: { irg: string; cnas: string; cacobatph: string };
     irg?: {
@@ -444,6 +485,7 @@ export function slipToBulletin(
     values,
     matricule: slip.matricule,
     period_text: periodLabel(slip.period_year, slip.period_month, settings.months),
+    ...periodBounds(slip.period_year, slip.period_month),
     lines,
     total_gain: totalGain,
     total_retenue: totalRetenue,
@@ -454,6 +496,7 @@ export function slipToBulletin(
     days_abandon: slip.days_abandon ?? 0,
     days_leave: slip.days_leave ?? 0,
     days_absence: slip.days_absence ?? 0,
+    days_by_code: { ...(slip.days_by_code ?? {}) },
     employee_ss: slip.employee_ss,
     employer_ss: employerWithoutFos,
     fos_amount: fosInEmployer ? fosAmount : 0,
@@ -470,6 +513,7 @@ export function slipToBulletin(
     payment_mode: (slip.payment_mode_code || settings.default_payment).replace(/_/g, " "),
     payment_date: "",
     account_no: slip.account_no ?? "",
+    account_key: slip.account_key ?? "",
     layout: settings,
     rates,
     compliance: slip.compliance ? { ...slip.compliance.labels } : null,
@@ -486,6 +530,8 @@ export function bulletinDocData(models: BulletinModel[], origin = "") {
         letterhead: resolveBulletinLetterhead(s, origin),
         matricule: m.matricule,
         period_text: m.period_text,
+        period_from: m.period_from,
+        period_to: m.period_to,
         values: m.values,
         units: { da: s.unit_da, percent: s.unit_percent, day: s.unit_day },
         lines: m.lines.map((l) => ({
@@ -499,6 +545,10 @@ export function bulletinDocData(models: BulletinModel[], origin = "") {
           hide_taux: Boolean(l.hideTaux),
           gain: l.gain,
           retenue: l.retenue,
+          nbr: l.nbr,
+          base: l.base,
+          rate: l.rate,
+          rate_suffix: l.rateSuffix,
         })),
         total_gain: m.total_gain,
         total_retenue: m.total_retenue,
@@ -509,6 +559,7 @@ export function bulletinDocData(models: BulletinModel[], origin = "") {
         days_abandon: m.days_abandon,
         days_leave: m.days_leave,
         days_absence: m.days_absence,
+        jours: m.days_by_code,
         employee_ss: m.employee_ss,
         employer_ss: m.employer_ss,
         fos_amount: m.fos_amount,
@@ -526,6 +577,7 @@ export function bulletinDocData(models: BulletinModel[], origin = "") {
         payment_mode: m.payment_mode,
         payment_date: m.payment_date,
         account_no: m.account_no,
+        account_key: m.account_key,
         compliance: m.compliance,
         irg: m.irg,
         employer: {

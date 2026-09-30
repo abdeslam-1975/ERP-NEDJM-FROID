@@ -287,6 +287,7 @@ export function runScenario(data: SimulatorData, s: Scenario): ScenarioOutput {
     days_weekend: mov?.days_weekend ?? 0,
     days_abandon: mov?.days_abandon ?? 0,
     days_rappel: mov?.days_rappel ?? 0,
+    days_by_code: mov?.days_by_code ?? {},
     gross_amount: sum.gross_cotisable,
     employee_ss: sum.employee_ss,
     employer_ss: sum.employer_ss,
@@ -301,6 +302,7 @@ export function runScenario(data: SimulatorData, s: Scenario): ScenarioOutput {
     net_payable: sum.net_payable,
     payment_mode_code: subject?.employee.payment_mode_code ?? null,
     account_no: subject?.employee.account_no ?? null,
+    account_key: subject?.employee.account_key ?? null,
     compliance: { labels: complianceLabels(compliance, data.zones, data.regimes), irg: compliance.irg },
     lines: slip.lines,
   };

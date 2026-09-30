@@ -80,6 +80,7 @@ export type SimSubject = {
     commune: string | null;
     payment_mode_code: string | null;
     account_no: string | null;
+    account_key?: string | null;
   };
   contract: {
     id: string;
@@ -288,7 +289,7 @@ async function load(
     supabase.from("hr_employees").select("id, matricule, last_name, first_name, nss, irg_category, birth_date, hired_at").eq("id", empId).maybeSingle(),
     supabase.from("hr_employee_civil").select("marital_code").eq("employee_id", empId).maybeSingle(),
     supabase.from("hr_employee_contacts").select("address_fr, commune").eq("employee_id", empId).maybeSingle(),
-    supabase.from("hr_employee_bank").select("payment_mode_code, account_no").eq("employee_id", empId).maybeSingle(),
+    supabase.from("hr_employee_bank").select("payment_mode_code, account_no, account_key").eq("employee_id", empId).maybeSingle(),
     loadComplianceContext(supabase, { contractIds: [ctrId], siteIds: [siteId], employeeIds: [empId], asOf: start }),
     supabase
       .from("hr_attendance")
@@ -512,6 +513,7 @@ async function load(
       commune: contacts.data?.commune ?? null,
       payment_mode_code: bank.data?.payment_mode_code ?? null,
       account_no: bank.data?.account_no ?? null,
+      account_key: bank.data?.account_key ?? null,
     },
     contract: {
       id: ctrId,

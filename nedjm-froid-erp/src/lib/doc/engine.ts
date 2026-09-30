@@ -22,7 +22,10 @@ export const DOC_FORMATS = [
   { id: "", label: "Texte" },
   { id: "da", label: "Montant (1.234,56)" },
   { id: "da0", label: "Montant sans ,00" },
+  { id: "dec", label: "Montant sans séparateur (1234,56)" },
+  { id: "rate", label: "Taux (9,00 · 0,375)" },
   { id: "num", label: "Nombre brut" },
+  { id: "days", label: "Jours (vide si 0)" },
   { id: "date", label: "Date (jj.mm.aaaa)" },
   { id: "date_slash", label: "Date (jj/mm/aaaa)" },
   { id: "upper", label: "MAJUSCULES" },
@@ -56,8 +59,22 @@ export function formatValue(value: unknown, format = ""): string {
       const s = formatDa(n);
       return format === "da0" ? s.replace(",00", "") : s;
     }
+    case "dec": {
+      const n = Number(value);
+      return Number.isFinite(n) ? n.toFixed(2).replace(".", ",") : "";
+    }
+    case "rate": {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return "";
+      const fine = n.toFixed(4).replace(/0+$/, "");
+      return (fine.split(".")[1]?.length > 2 ? fine : n.toFixed(2)).replace(".", ",");
+    }
     case "num":
       return typeof value === "number" && !Number.isFinite(value) ? "" : String(value);
+    case "days": {
+      const n = Number(value);
+      return Number.isFinite(n) && n !== 0 ? formatDa(n).replace(",00", "") : "";
+    }
     case "date":
     case "date_slash": {
       const p = isoParts(value);
@@ -95,7 +112,7 @@ function tokenize(src: string): Tok[] {
       i += 2;
       continue;
     }
-    if ("!<>()".includes(c)) {
+    if ("!<>()+".includes(c)) {
       out.push({ t: "op", v: c });
       i += 1;
       continue;
@@ -108,9 +125,15 @@ function tokenize(src: string): Tok[] {
       continue;
     }
     const num = /^-?\d+(\.\d+)?/.exec(src.slice(i));
-    if (num && (c !== "-" || !out.length || out[out.length - 1].t === "op")) {
+    const prev = out[out.length - 1];
+    if (num && (c !== "-" || !prev || (prev.t === "op" && prev.v !== ")"))) {
       out.push({ t: "num", v: num[0] });
       i += num[0].length;
+      continue;
+    }
+    if (c === "-") {
+      out.push({ t: "op", v: c });
+      i += 1;
       continue;
     }
     const id = /^[A-Za-z_$][\w$]*(\.[\w$]+)*/.exec(src.slice(i));
@@ -153,12 +176,20 @@ function parseExpr(src: string): Expr {
     throw new Error(`Symbole inattendu « ${tok.v} »`);
   };
   const unary = (): Expr => (eat("!") ? { k: "not", e: unary() } : cmp());
+  const additive = (): Expr => {
+    let e = primary();
+    while (peek()?.t === "op" && (peek().v === "+" || peek().v === "-")) {
+      const op = toks[pos++].v;
+      e = { k: "bin", op, a: e, b: primary() };
+    }
+    return e;
+  };
   const cmp = (): Expr => {
-    const a = primary();
+    const a = additive();
     const tok = peek();
     if (tok?.t === "op" && ["==", "!=", ">", "<", ">=", "<="].includes(tok.v)) {
       pos += 1;
-      return { k: "bin", op: tok.v, a, b: primary() };
+      return { k: "bin", op: tok.v, a, b: additive() };
     }
     return a;
   };
@@ -215,6 +246,11 @@ function lookup(path: string[], scopes: Scopes): unknown {
   return cur;
 }
 
+/** Missing values count as 0 in `+` / `-`, so an unused pointage code does not blank a sum. */
+function amount(v: unknown) {
+  return v == null || v === "" ? 0 : Number(v);
+}
+
 export function truthy(v: unknown) {
   if (Array.isArray(v)) return v.length > 0;
   return Boolean(v);
@@ -231,6 +267,11 @@ function evaluate(e: Expr, scopes: Scopes): unknown {
     case "bin": {
       if (e.op === "&&") return truthy(evaluate(e.a, scopes)) && truthy(evaluate(e.b, scopes));
       if (e.op === "||") return truthy(evaluate(e.a, scopes)) || truthy(evaluate(e.b, scopes));
+      if (e.op === "+" || e.op === "-") {
+        const x = amount(evaluate(e.a, scopes));
+        const y = amount(evaluate(e.b, scopes));
+        return e.op === "+" ? x + y : x - y;
+      }
       const a = evaluate(e.a, scopes) as number;
       const b = evaluate(e.b, scopes) as number;
       switch (e.op) {

@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>BULLETIN DE PAIE</title>
+  <style>
+    @page { size: A4; margin: 0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 7.9pt; }
+    .page { width: 210mm; min-height: 297mm; position: relative; page-break-after: always; }
+    .page:last-child { page-break-after: auto; }
+    .letterhead-img { position: absolute; inset: 0; width: 210mm; height: 297mm; z-index: 0; object-fit: fill; }
+    .sheet { position: relative; z-index: 1; padding: 37.4mm 0 0 10mm; }
+    @media print {
+      html, body, .letterhead-img, th, td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+    .head { position: relative; width: 190.2mm; height: 23.5mm; }
+    .head h1 { position: absolute; left: 11.4mm; top: 7.5mm; margin: 0; font-size: 22.9pt; font-weight: 400; line-height: 9.2mm; white-space: nowrap; }
+    .ident { position: absolute; left: 105.4mm; top: 0; width: 84.2mm; height: 23.5mm; border: 0.78pt solid #000; border-radius: 3.9mm; padding: 2.7mm 2mm 0 4mm; line-height: 3.75mm; white-space: nowrap; overflow: hidden; }
+    table.g { width: 190.2mm; table-layout: fixed; border-collapse: collapse; }
+    table.g th, table.g td { height: 3.76mm; padding: 0 0.7mm; border: 0.6pt solid #000; vertical-align: middle; line-height: 1.1; white-space: nowrap; overflow: hidden; }
+    table.g th { height: 3.76mm; font-size: 8.7pt; font-weight: 700; text-align: center; background: #f2f2f2; }
+    table.g .gris { background: #f2f2f2; }
+    table.g .vide { border: none; background: none; }
+    table.g .b { font-size: 8.7pt; font-weight: 700; }
+    .c { text-align: center; }
+    .r { text-align: right; }
+    table.periode { margin: 5.6mm 0 3.5mm; }
+    table.periode td { border: none; font-size: 8.7pt; }
+    table.periode .lbl { font-weight: 700; text-align: center; text-decoration: underline; }
+    table.lignes { height: 60.4mm; }
+    table.lignes tbody td { border-top: none; border-bottom: none; }
+    table.lignes tbody td.intitule { background: #f2f2f2; }
+    table.lignes tbody tr.fin td { height: auto; border-bottom: 0.6pt solid #000; }
+    table.lignes tr.net td { height: 11.23mm; }
+    .net-amt { display: inline-block; width: 30.8mm; height: 6.6mm; line-height: 6.6mm; border: 0.93pt solid #000; border-radius: 3.6mm / 2.95mm; font-size: 10.3pt; font-weight: 700; text-align: center; vertical-align: middle; }
+    table.mv th { height: 3.81mm; }
+    table.cot { margin-top: 7.37mm; }
+    table.cot th { height: 3.7mm; font-size: 6.3pt; padding: 0; }
+    table.cot td { height: 3.7mm; }
+    table.pay { width: 126.8mm; margin-top: 7.45mm; }
+    table.pay td { height: 3.7mm; }
+  </style>
+</head>
+<body><div class="page">
+  <img class="letterhead-img" src="/hr-letterhead.png" alt="">
+  <div class="sheet">
+    <div class="head">
+      <h1>BULLETIN DE PAIE</h1>
+      <div class="ident">
+        <div>Employé : <b>BEN ALI</b></div>
+        <div>Matricule : <b>0042</b></div>
+        <div>Fonction : <b>SOUDEUR</b></div>
+        <div>Affectation : <b>CHANTIER D'ORAN</b></div>
+        <div>N° S.S : <b>901234567890</b></div>
+      </div>
+    </div>
+    <table class="g periode">
+      <tbody><tr>
+        <td class="lbl">Période du :</td>
+        <td class="c">01/09/2026</td>
+        <td class="lbl">au :</td>
+        <td class="c">30/09/2026</td>
+        <td colspan="5"></td>
+      </tr></tbody>
+    </table>
+    <table class="g lignes">
+      <thead><tr>
+        <th>Code</th>
+        <th colspan="3">Intitulé</th>
+        <th>Nbr</th>
+        <th>Base</th>
+        <th>Taux</th>
+        <th>Gains</th>
+        <th>Retenue</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td class="c">100</td>
+          <td colspan="3" class="intitule">SALAIRE DE BASE</td>
+          <td class="c">30</td>
+          <td class="r">40000,00</td>
+          <td class="r">1333,33 DA/j</td>
+          <td class="r">40000,00</td>
+          <td class="r"></td>
+        </tr><tr>
+          <td class="c">990</td>
+          <td colspan="3" class="intitule">RET.SECURITE SOCIALE</td>
+          <td class="c"></td>
+          <td class="r">52340,50</td>
+          <td class="r">9,00 %</td>
+          <td class="r"></td>
+          <td class="r">4710,65</td>
+        </tr><tr>
+          <td class="c">991</td>
+          <td colspan="3" class="intitule">RET. INTEMPERIES</td>
+          <td class="c"></td>
+          <td class="r">52340,50</td>
+          <td class="r">0,375 %</td>
+          <td class="r"></td>
+          <td class="r">196,28</td>
+        </tr><tr>
+          <td class="c">302</td>
+          <td colspan="3" class="intitule">PANIER</td>
+          <td class="c">22</td>
+          <td class="r"></td>
+          <td class="r">400,00 DA/j</td>
+          <td class="r">8800,00</td>
+          <td class="r"></td>
+        </tr><tr>
+          <td class="c">995</td>
+          <td colspan="3" class="intitule">RET. I.R.G.</td>
+          <td class="c"></td>
+          <td class="r">47629,85</td>
+          <td class="r"></td>
+          <td class="r"></td>
+          <td class="r">4210,00</td>
+        </tr><tr>
+          <td class="c">405</td>
+          <td colspan="3" class="intitule">AVANCE</td>
+          <td class="c">1</td>
+          <td class="r">3000,00</td>
+          <td class="r"></td>
+          <td class="r"></td>
+          <td class="r">3000,00</td>
+        </tr>
+        <tr class="fin"><td></td><td colspan="3" class="intitule"></td><td></td><td></td><td></td><td></td><td></td></tr>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="5" class="vide"></td>
+          <td colspan="2" class="gris c b">Totaux</td>
+          <td class="r">48800,00</td>
+          <td class="r">12116,93</td>
+        </tr>
+        <tr class="net">
+          <td colspan="6" class="vide"></td>
+          <td class="vide c b">Net à Payer</td>
+          <td colspan="2" class="vide c"><span class="net-amt">123450,67 DA</span></td>
+        </tr>
+      </tfoot>
+    </table>
+    <table class="g mv">
+      <thead><tr>
+        <th colspan="6">Mouvements du Mois&nbsp;&nbsp; "Nombre Jours"</th>
+        <th colspan="3">Charges</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td colspan="2" class="gris">Travaillés</td><td class="c">20</td>
+          <td colspan="2" class="gris">Congés de Récupération "CRP"</td><td class="c">2</td>
+          <td class="gris">Salariales</td><td colspan="2" class="r">4906,93</td>
+        </tr>
+        <tr>
+          <td colspan="2" class="gris">WeekEnd et Fériées du Mois</td><td class="c">4</td>
+          <td colspan="2" class="gris">Absence Autorisé</td><td class="c"></td>
+          <td class="gris">Patronales</td><td colspan="2" class="r">20195,61</td>
+        </tr>
+        <tr>
+          <td colspan="2" class="gris">Congés Récupération "P"</td><td class="c"></td>
+          <td colspan="2" class="gris">Congés Maladie</td><td class="c">1</td>
+          <td class="gris">Totales</td><td colspan="2" class="r">25102,54</td>
+        </tr>
+        <tr>
+          <td colspan="2" class="gris">Congés Annuel</td><td class="c">3</td>
+          <td colspan="2" class="gris">Congé Sans Solde</td><td class="c"></td>
+          <td class="gris">Coût Globale</td><td colspan="2" class="r">148553,21</td>
+        </tr>
+        <tr>
+          <td colspan="2" class="gris">Absence pour Décé</td><td class="c"></td>
+          <td colspan="2" class="gris">Absences non Justifiées</td><td class="c"></td>
+          <td colspan="3" class="vide"></td>
+        </tr>
+      </tbody>
+    </table>
+    <table class="g cot">
+      <thead><tr>
+        <th>Base Cotis</th>
+        <th>Cotis. 9%</th>
+        <th>Pat. CNAS&nbsp; 25.5%</th>
+        <th>Œuvres Soc 0.5%</th>
+        <th>Congés P 12.21%</th>
+        <th>Intemp. Sal 0.375%</th>
+        <th>Intemp. Pat 0.375%</th>
+        <th>Base IRG</th>
+        <th>IRG</th>
+      </tr></thead>
+      <tbody><tr>
+        <td class="r">52340,50</td>
+        <td class="r">4710,65</td>
+        <td class="r">13346,83</td>
+        <td class="r">261,70</td>
+        <td class="r">6390,80</td>
+        <td class="r">196,28</td>
+        <td class="r">196,28</td>
+        <td class="r">47629,85</td>
+        <td class="r">4210,00</td>
+      </tr></tbody>
+    </table>
+    <table class="g pay">
+      <tbody>
+        <tr>
+          <td class="gris c b">Paiement :</td><td colspan="2" class="c">VIREMENT</td>
+          <td class="gris c b">Le :</td><td colspan="2" class="c"></td>
+        </tr>
+        <tr>
+          <td class="gris c b">C.C.P&nbsp; N° :</td><td colspan="2" class="c">0012345678</td>
+          <td class="gris c b">Clé :</td><td colspan="2" class="c">67</td>
+        </tr>
+      </tbody>
+    </table>
+  </div></div></body>
+</html>

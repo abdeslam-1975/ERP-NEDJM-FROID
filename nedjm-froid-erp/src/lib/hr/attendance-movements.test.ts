@@ -33,6 +33,7 @@ describe("attendance movements for bulletin", () => {
     expect(m?.days_leave).toBe(15);
     expect(m?.days_absence).toBe(1);
     expect(m?.days_paid).toBe(29);
+    expect(m?.days_by_code).toEqual({ P: 14, CA: 15, AN: 1 });
   });
 
   it("classifies system codes even when labels vary", () => {

@@ -16,6 +16,15 @@ describe("expressions", () => {
     expect(evalExpr("nil > 0", scope)).toBe(false);
   });
 
+  it("adds and subtracts, missing values counting as 0", () => {
+    expect(evalExpr("a + 3", scope)).toBe(5);
+    expect(evalExpr("a - 3", scope)).toBe(-1);
+    expect(evalExpr("a-1", scope)).toBe(1);
+    expect(evalExpr("(a) -1", scope)).toBe(1);
+    expect(evalExpr("a + missing.path - nil", scope)).toBe(2);
+    expect(evalExpr("a + 1 > 2 && -1 < zero", scope)).toBe(true);
+  });
+
   it("rejects malformed expressions", () => {
     expect(() => checkExpr("a >")).toThrow();
     expect(() => checkExpr("(a")).toThrow();
@@ -33,6 +42,15 @@ describe("formats", () => {
     expect(formatValue(null, "num")).toBe("");
     expect(formatValue("abc", "upper")).toBe("ABC");
     expect(formatValue(undefined)).toBe("");
+    expect(formatValue(123450.674, "dec")).toBe("123450,67");
+    expect(formatValue(null, "dec")).toBe("");
+    expect(formatValue(9, "rate")).toBe("9,00");
+    expect(formatValue(0.375, "rate")).toBe("0,375");
+    expect(formatValue(1333.3333, "rate")).toBe("1333,3333");
+    expect(formatValue(22, "days")).toBe("22");
+    expect(formatValue(1.5, "days")).toBe("1,50");
+    expect(formatValue(0, "days")).toBe("");
+    expect(formatValue(undefined, "days")).toBe("");
   });
 });
 

@@ -92,7 +92,7 @@ const LEGAL_LABELS: Record<string, string> = {
   CONGE_JOURS_MOIS: "Congé acquis par mois (jours)",
 };
 
-const MOVEMENT_VARS: { key: keyof AttendanceMovements; id: string; label: string }[] = [
+const MOVEMENT_VARS: { key: Exclude<keyof AttendanceMovements, "days_by_code">; id: string; label: string }[] = [
   { key: "days_paid", id: "pointage.jours_payes", label: "Jours payés (pointage)" },
   { key: "days_presence_qty", id: "pointage.jours_presence", label: "Jours de présence" },
   { key: "days_worked", id: "pointage.jours_travailles", label: "Jours travaillés" },
@@ -359,7 +359,7 @@ export function paieDaysFromCtx(data: SimulatorData, ctx: SimContext, init: Scen
   let annualLeave: number;
   if (subject) {
     const days = dayVars(data);
-    const counts = {} as AttendanceMovements;
+    const counts = { days_by_code: movementsFromCtx(data, ctx, days).days_by_code } as AttendanceMovements;
     for (const m of MOVEMENT_VARS) {
       counts[m.key] = ctx.deriveNum(m.id, () => movementsFromCtx(data, ctx, days)[m.key]);
     }

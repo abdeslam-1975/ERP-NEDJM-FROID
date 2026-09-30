@@ -148,6 +148,7 @@ export type PayrollSlipRow = {
   days_weekend: number;
   days_abandon: number;
   days_rappel: number;
+  days_by_code: Record<string, number>;
   net_target: number;
   gross_amount: number;
   employee_ss: number;
@@ -214,6 +215,16 @@ export type PayrollRunRow = {
 
 function num(v: unknown) {
   return Number(v ?? 0);
+}
+
+function dayCounts(v: unknown): Record<string, number> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  const out: Record<string, number> = {};
+  for (const [code, n] of Object.entries(v as Record<string, unknown>)) {
+    const days = Number(n);
+    if (Number.isFinite(days)) out[code.toUpperCase()] = days;
+  }
+  return out;
 }
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
@@ -429,7 +440,7 @@ async function loadPreservedDraftSlips(
   const { data: slips, error } = await supabase
     .from("hr_payroll_slips")
     .select(
-      "id, employee_id, hr_contract_id, days_worked, days_paid, days_leave, days_absence, days_weekend, days_abandon, days_rappel, net_target, gross_amount, employee_ss, employer_ss, cacobatph, intemperies_employee, intemperies_employer, extra_employee, extra_employer, extra_contributions, irg_base, irg_amount, net_payable, legal_snapshot",
+      "id, employee_id, hr_contract_id, days_worked, days_paid, days_leave, days_absence, days_weekend, days_abandon, days_rappel, days_by_code, net_target, gross_amount, employee_ss, employer_ss, cacobatph, intemperies_employee, intemperies_employer, extra_employee, extra_employer, extra_contributions, irg_base, irg_amount, net_payable, legal_snapshot",
     )
     .eq("run_id", runId)
     .eq("status_code", "DRAFT");
@@ -485,6 +496,7 @@ async function loadPreservedDraftSlips(
         days_weekend: num(s.days_weekend),
         days_abandon: num(s.days_abandon),
         days_rappel: num(s.days_rappel),
+        days_by_code: s.days_by_code ?? {},
         net_target: num(s.net_target),
         gross_amount: num(s.gross_amount),
         employee_ss: num(s.employee_ss),
@@ -891,6 +903,7 @@ async function buildAndSavePayrollRun(
         days_weekend: mov.days_weekend,
         days_abandon: mov.days_abandon,
         days_rappel: mov.days_rappel,
+        days_by_code: mov.days_by_code,
         net_target: salary.net,
         gross_amount: sum.gross_cotisable,
         employee_ss: sum.employee_ss,
@@ -1068,6 +1081,47 @@ export async function refreshDraftPayroll(filter: {
   return { ok: true, data: { count } };
 }
 
+/**
+ * Per-code pointed days of each slip. Slips generated before the counts were stored (validated ones
+ * cannot be rewritten) get them from the validated pointage of the month, with the generation scope.
+ */
+async function pointedDaysByCode(
+  supabase: Supabase,
+  slips: { id: string; run_id: string; employee_id: string; days_by_code: unknown }[],
+  runs: Map<string, { site_id: string | null }>,
+  year: number,
+  month: number,
+) {
+  const out = new Map<string, Record<string, number>>();
+  const missing: typeof slips = [];
+  for (const slip of slips) {
+    const counts = dayCounts(slip.days_by_code);
+    if (Object.keys(counts).length) out.set(slip.id, counts);
+    else missing.push(slip);
+  }
+  if (!missing.length) return out;
+  const mm = String(month).padStart(2, "0");
+  const { data: cells, error } = await supabase
+    .from("hr_attendance")
+    .select("employee_id, site_id, legend_code")
+    .eq("status_code", "VALIDATED")
+    .gte("work_date", `${year}-${mm}-01`)
+    .lte("work_date", `${year}-${mm}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`)
+    .in("employee_id", [...new Set(missing.map((s) => s.employee_id))]);
+  if (error) return out;
+  for (const slip of missing) {
+    const siteId = runs.get(slip.run_id)?.site_id ?? null;
+    const counts: Record<string, number> = {};
+    for (const cell of cells ?? []) {
+      if (cell.employee_id !== slip.employee_id || (siteId && cell.site_id !== siteId)) continue;
+      const code = String(cell.legend_code ?? "").trim().toUpperCase();
+      if (code) counts[code] = (counts[code] ?? 0) + 1;
+    }
+    out.set(slip.id, counts);
+  }
+  return out;
+}
+
 export async function listPayrollSlips(input: {
   year: number;
   month: number;
@@ -1087,7 +1141,7 @@ export async function listPayrollSlips(input: {
   const { data, error } = await supabase
     .from("hr_payroll_slips")
     .select(
-      "id, run_id, employee_id, hr_contract_id, days_worked, days_paid, days_leave, days_absence, days_weekend, days_abandon, days_rappel, net_target, gross_amount, employee_ss, employer_ss, cacobatph, intemperies_employee, intemperies_employer, extra_employee, extra_employer, extra_contributions, irg_base, irg_amount, net_payable, status_code, legal_snapshot, employee:hr_employees ( matricule, last_name, first_name, nss, birth_date, hired_at )",
+      "id, run_id, employee_id, hr_contract_id, days_worked, days_paid, days_leave, days_absence, days_weekend, days_abandon, days_rappel, days_by_code, net_target, gross_amount, employee_ss, employer_ss, cacobatph, intemperies_employee, intemperies_employer, extra_employee, extra_employer, extra_contributions, irg_base, irg_amount, net_payable, status_code, legal_snapshot, employee:hr_employees ( matricule, last_name, first_name, nss, birth_date, hired_at )",
     )
     .in("run_id", runIds);
   if (error) return { ok: false, error: error.message };
@@ -1127,6 +1181,7 @@ export async function listPayrollSlips(input: {
   }
 
   const runMap = new Map((runs ?? []).map((r) => [r.id, r]));
+  const daysByCode = await pointedDaysByCode(supabase, data ?? [], runMap, input.year, input.month);
   const empIds = includeLines
     ? [...new Set((data ?? []).map((row) => row.employee_id))]
     : [];
@@ -1211,6 +1266,7 @@ export async function listPayrollSlips(input: {
         days_weekend: num(row.days_weekend),
         days_abandon: num(row.days_abandon),
         days_rappel: num(row.days_rappel),
+        days_by_code: daysByCode.get(row.id) ?? {},
         net_target: num(row.net_target),
         gross_amount: num(row.gross_amount),
         employee_ss: num(row.employee_ss),

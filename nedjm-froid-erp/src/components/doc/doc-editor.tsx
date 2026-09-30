@@ -114,6 +114,8 @@ export function DocEditor({
   const canEdit = tpl?.canEdit ?? false;
   const printed = tpl?.approved?.html ?? "";
   const dirty = Boolean(tpl) && html !== (savedHtml ?? printed);
+  const approvedAt = tpl?.approved?.approved_at;
+  const staleDraft = Boolean(tpl?.draft && approvedAt && Date.parse(tpl.draft.updated_at) < Date.parse(approvedAt));
 
   useEffect(() => {
     let alive = true;
@@ -450,6 +452,7 @@ export function DocEditor({
       replace(printed);
       setSavedHtml(null);
       setTpl((t) => (t ? { ...t, draft: null } : t));
+      setFlash({ tone: "info", text: `Brouillon abandonné : l’éditeur montre la version ${tpl?.approved?.version ?? ""} imprimée.` });
     });
 
   const switchMode = (next: Mode) => {
@@ -508,6 +511,11 @@ export function DocEditor({
             <Button variant="secondary" className="h-8 px-2.5 text-xs" disabled={pending || !dirty} onClick={saveDraft}>
               Enregistrer le brouillon
             </Button>
+            {tpl?.draft || dirty ? (
+              <Button variant="ghost" className="h-8 px-2.5 text-xs text-red-700 dark:text-red-300" disabled={pending} onClick={discard}>
+                Abandonner le brouillon
+              </Button>
+            ) : null}
             <input
               className="h-8 w-44 rounded-lg border border-border/80 bg-surface px-2 text-xs outline-none focus:border-brand"
               placeholder="Note de version (facultatif)"
@@ -531,6 +539,12 @@ export function DocEditor({
       </div>
 
       {flash ? <RhAlert tone={flash.tone}>{flash.text}</RhAlert> : null}
+      {staleDraft ? (
+        <RhAlert tone="warning">
+          Ce brouillon date d’avant la version {tpl?.approved?.version} actuellement imprimée : l’approuver remplacerait
+          cette version. Utilisez « Abandonner le brouillon » pour repartir de la version imprimée.
+        </RhAlert>
+      ) : null}
       {tpl && !canEdit ? (
         <RhAlert tone="info">Lecture seule : le droit « Paramètres RH — modifier » est nécessaire pour modifier les modèles.</RhAlert>
       ) : null}

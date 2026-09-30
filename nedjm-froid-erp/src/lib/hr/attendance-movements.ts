@@ -24,6 +24,8 @@ export type AttendanceMovements = {
   days_weekend: number;
   days_abandon: number;
   days_rappel: number;
+  /** Days pointed with each legend code (upper-case code → count). */
+  days_by_code: Record<string, number>;
 };
 
 /** Classifie une légende vers un compartiment Mouvements (libellés + code système). */
@@ -71,6 +73,7 @@ export function emptyMovements(): AttendanceMovements {
     days_weekend: 0,
     days_abandon: 0,
     days_rappel: 0,
+    days_by_code: {},
   };
 }
 
@@ -85,10 +88,12 @@ export function accumulateAttendanceMovements(
   const out = new Map<string, AttendanceMovements>();
   for (const cell of cells) {
     if (options?.siteId && cell.site_id && cell.site_id !== options.siteId) continue;
-    const legend = byCode.get(String(cell.legend_code ?? "").trim().toUpperCase());
+    const code = String(cell.legend_code ?? "").trim().toUpperCase();
+    const legend = byCode.get(code);
     const coef = Number(legend?.coefficient ?? 0);
     const current = out.get(cell.employee_id) ?? emptyMovements();
     current.days_paid += coef;
+    if (code) current.days_by_code[code] = (current.days_by_code[code] ?? 0) + 1;
     const bucket = legend
       ? legendMovementBucket(legend)
       : ("other" as MovementBucket);
