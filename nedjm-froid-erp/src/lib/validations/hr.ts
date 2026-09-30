@@ -5,6 +5,7 @@ import {
   todayIsoDate,
   FICHE_ACCOUNT_PREFIX,
 } from "@/lib/hr/employee-fiche-constraints";
+import { parseLegendCoefficient } from "@/lib/hr/legend-coefficient";
 
 const optText = (max = 200) =>
   z
@@ -79,7 +80,13 @@ export const legendUpsertSchema = z.object({
   code: z.string().trim().min(1).max(16).transform((v) => v.toUpperCase()),
   label_fr: z.string().trim().min(1).max(120),
   label_ar: optText(120),
-  coefficient: z.coerce.number().min(0).max(1),
+  coefficient: z.preprocess(
+    (v) => parseLegendCoefficient(v),
+    z
+      .number({ error: "Coefficient : nombre attendu (ex. 0,5)." })
+      .min(0, "Coefficient ≥ 0.")
+      .max(999.999, "Coefficient ≤ 999,999."),
+  ),
   counts_as_presence: z.boolean().default(false),
   triggers_an_passthrough: z.boolean().default(false),
   color_bg: optText(16),

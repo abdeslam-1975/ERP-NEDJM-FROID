@@ -223,6 +223,16 @@ export async function listLegends(): Promise<ActionResult<LegendRow[]>> {
   return { ok: true, data: (data ?? []) as LegendRow[] };
 }
 
+function legendWriteError(message: string): string {
+  if (message.includes("hr_attendance_legend_code_fkey")) {
+    return "Ce code est déjà utilisé dans le pointage. Il ne peut pas être renommé : enregistrez un nouveau code.";
+  }
+  if (message.includes("coefficient")) {
+    return "Coefficient refusé par la base (0 à 999,999). Exemple : 0,5.";
+  }
+  return message;
+}
+
 export async function upsertLegend(
   input: unknown,
 ): Promise<ActionResult<{ id: string }>> {
@@ -232,8 +242,7 @@ export async function upsertLegend(
   }
   const p = parsed.data;
   const supabase = await createClient();
-  const payload = {
-    code: p.code,
+  const fields = {
     label_fr: p.label_fr,
     label_ar: p.label_ar,
     coefficient: p.coefficient,
@@ -243,13 +252,50 @@ export async function upsertLegend(
     color_fg: p.color_fg,
     source_mode: p.source_mode,
     is_active: p.is_active,
-    is_system: false,
   };
-  const q = p.id
-    ? supabase.from("ref_legendes").update(payload).eq("id", p.id)
-    : supabase.from("ref_legendes").insert(payload);
-  const { data, error } = await q.select("id").maybeSingle();
-  if (error) return { ok: false, error: error.message };
+
+  const updateById = async (id: string) => {
+    const { data, error } = await supabase
+      .from("ref_legendes")
+      .update(fields)
+      .eq("id", id)
+      .select("id")
+      .maybeSingle();
+    if (error) return { ok: false as const, error: legendWriteError(error.message) };
+    if (!data) return { ok: false as const, error: "Enregistrement refusé (droits)." };
+    revalidateHr();
+    return { ok: true as const, data: { id: data.id } };
+  };
+
+  if (p.id) {
+    const { data: current, error: readErr } = await supabase
+      .from("ref_legendes")
+      .select("code")
+      .eq("id", p.id)
+      .maybeSingle();
+    if (readErr) return { ok: false, error: legendWriteError(readErr.message) };
+    if (current && current.code === p.code) return updateById(p.id);
+  }
+
+  const { data: sameCode, error: sameErr } = await supabase
+    .from("ref_legendes")
+    .select("id")
+    .eq("code", p.code)
+    .maybeSingle();
+  if (sameErr) return { ok: false, error: legendWriteError(sameErr.message) };
+  if (sameCode) {
+    return {
+      ok: false,
+      error: "Ce code existe déjà. Sélectionnez-le dans la liste pour modifier son coefficient.",
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("ref_legendes")
+    .insert({ ...fields, code: p.code, is_system: false })
+    .select("id")
+    .maybeSingle();
+  if (error) return { ok: false, error: legendWriteError(error.message) };
   if (!data) return { ok: false, error: "Enregistrement refusé (droits)." };
   revalidateHr();
   return { ok: true, data: { id: data.id } };

@@ -11,6 +11,11 @@ import {
 } from "@/lib/actions/hr-catalogs";
 import { Button } from "@/components/ui/button";
 import {
+  formatLegendCoefficient,
+  parseLegendCoefficient,
+  sanitizeLegendCoefficientInput,
+} from "@/lib/hr/legend-coefficient";
+import {
   RhAlert,
   RhField,
   RhPageHeader,
@@ -22,6 +27,18 @@ import {
   rhTd,
   rhTh,
 } from "@/components/rh/rh-ui";
+
+const emptyLegend = {
+  id: "",
+  code: "",
+  label_fr: "",
+  label_ar: "",
+  coefficient: "1",
+  color_bg: "#10b981",
+  color_fg: "#FFFFFF",
+  source_mode: "BOTH",
+  counts_as_presence: true,
+};
 
 export function CatalogsManager({
   kinds,
@@ -54,17 +71,8 @@ export function CatalogsManager({
     extra: "{}",
     sort_order: 10,
   });
-  const [legForm, setLegForm] = useState({
-    id: "",
-    code: "",
-    label_fr: "",
-    label_ar: "",
-    coefficient: 1,
-    color_bg: "#10b981",
-    color_fg: "#FFFFFF",
-    source_mode: "BOTH",
-    counts_as_presence: true,
-  });
+  const [legOriginId, setLegOriginId] = useState("");
+  const [legForm, setLegForm] = useState(emptyLegend);
 
   const filtered = useMemo(
     () => rows.filter((r) => r.kind === kind),
@@ -284,15 +292,34 @@ export function CatalogsManager({
 
       <RhPanel>
         <RhSectionTitle>{bi("Légendes de présence", "رموز الحضور")}</RhSectionTitle>
-        <p className="mb-3 text-xs text-foreground/55">
-          الرموز وأثرها الزمني يُعدَّلان هنا. المحرك يقرأ المعامل من القاعدة.
-        </p>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-foreground/55">
+            الرموز تُضاف من هنا. المعامل يُكتب من لوحة المفاتيح بالرقم والفاصلة، مثل 0,5 أو 1,5.
+            تغيير الرمز ينشئ رمزاً جديداً ولا يغيّر رمزاً مستعملاً في الحضور.
+          </p>
+          <button
+            type="button"
+            className="text-xs font-semibold text-brand"
+            onClick={() => {
+              setLegOriginId("");
+              setLegForm(emptyLegend);
+            }}
+          >
+            Nouveau code
+          </button>
+        </div>
         <div className="grid gap-3 sm:grid-cols-6">
           <input
             className={rhInput}
             placeholder="P"
             value={legForm.code}
-            onChange={(e) => setLegForm({ ...legForm, code: e.target.value })}
+            onChange={(e) => {
+              const code = e.target.value;
+              const origin = legendRows.find((l) => l.id === legOriginId);
+              const same =
+                origin != null && origin.code.toUpperCase() === code.trim().toUpperCase();
+              setLegForm({ ...legForm, code, id: same ? origin.id : "" });
+            }}
           />
           <input
             className={rhInput}
@@ -309,11 +336,17 @@ export function CatalogsManager({
           />
           <input
             className={rhInput}
-            type="number"
-            step="0.001"
+            inputMode="decimal"
+            autoComplete="off"
+            placeholder="0,5"
+            aria-label="Coefficient"
+            title="المعامل — رقم وفاصلة، مثل 0,5"
             value={legForm.coefficient}
             onChange={(e) =>
-              setLegForm({ ...legForm, coefficient: Number(e.target.value) })
+              setLegForm({
+                ...legForm,
+                coefficient: sanitizeLegendCoefficientInput(e.target.value),
+              })
             }
           />
           <input
@@ -326,6 +359,7 @@ export function CatalogsManager({
             disabled={pending}
             onClick={() => {
               setError(null);
+              const coefficient = parseLegendCoefficient(legForm.coefficient);
               start(async () => {
                 const r = await upsertLegend({
                   id: legForm.id || undefined,
@@ -344,23 +378,29 @@ export function CatalogsManager({
                   setError(r.error);
                   return;
                 }
-                setLegendRows((prev) => [
-                  ...prev.filter((x) => x.id !== r.data.id),
-                  {
-                    id: r.data.id,
-                    code: legForm.code.toUpperCase(),
-                    label_fr: legForm.label_fr,
-                    label_ar: legForm.label_ar,
-                    coefficient: legForm.coefficient,
-                    counts_as_presence: legForm.counts_as_presence,
-                    triggers_an_passthrough: false,
-                    color_bg: legForm.color_bg,
-                    color_fg: legForm.color_fg,
-                    source_mode: legForm.source_mode,
-                    is_active: true,
-                    is_system: false,
-                  },
-                ]);
+                const code = legForm.code.trim().toUpperCase();
+                setLegendRows((prev) => {
+                  const previous = prev.find((x) => x.id === r.data.id);
+                  return [
+                    ...prev.filter((x) => x.id !== r.data.id),
+                    {
+                      id: r.data.id,
+                      code,
+                      label_fr: legForm.label_fr,
+                      label_ar: legForm.label_ar,
+                      coefficient: coefficient ?? 0,
+                      counts_as_presence: legForm.counts_as_presence,
+                      triggers_an_passthrough: false,
+                      color_bg: legForm.color_bg,
+                      color_fg: legForm.color_fg,
+                      source_mode: legForm.source_mode,
+                      is_active: true,
+                      is_system: previous?.is_system ?? false,
+                    },
+                  ];
+                });
+                setLegOriginId(r.data.id);
+                setLegForm((f) => ({ ...f, id: r.data.id, code }));
                 setInfo("Légende enregistrée.");
               });
             }}
@@ -378,21 +418,22 @@ export function CatalogsManager({
                 background: l.color_bg ?? "#e2e8f0",
                 color: l.color_fg ?? "#111",
               }}
-              onClick={() =>
+              onClick={() => {
+                setLegOriginId(l.id);
                 setLegForm({
                   id: l.id,
                   code: l.code,
                   label_fr: l.label_fr,
                   label_ar: l.label_ar ?? "",
-                  coefficient: Number(l.coefficient),
+                  coefficient: formatLegendCoefficient(Number(l.coefficient)),
                   color_bg: l.color_bg ?? "#e2e8f0",
                   color_fg: l.color_fg ?? "#111111",
                   source_mode: l.source_mode,
                   counts_as_presence: l.counts_as_presence,
-                })
-              }
+                });
+              }}
             >
-              {l.code} · {l.coefficient}
+              {l.code} · {formatLegendCoefficient(Number(l.coefficient))}
             </button>
           ))}
         </div>
