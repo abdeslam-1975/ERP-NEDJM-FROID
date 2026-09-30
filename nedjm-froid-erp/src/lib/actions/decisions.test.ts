@@ -4,12 +4,13 @@ import { createSupabaseFake } from "@/test/supabase-fake";
 const h = vi.hoisted(() => ({
   fake: null as null | ReturnType<typeof import("@/test/supabase-fake").createSupabaseFake>,
   execute: vi.fn(),
+  simulate: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => h.fake!.client }));
 vi.mock("@/lib/auth/get-workspace", () => ({ getWorkspaceProfile: async () => null }));
-vi.mock("@/lib/actions/hr-ops", () => ({ executePayrollDecision: h.execute }));
+vi.mock("@/lib/actions/hr-ops", () => ({ executePayrollDecision: h.execute, executePayrollSimulation: h.simulate }));
 
 import { decideDecision, markNotificationsRead } from "./decisions";
 
@@ -18,6 +19,21 @@ const input = { id: DEC, option: "GENERATE", justification: "Présences de septe
 
 beforeEach(() => {
   h.execute.mockReset();
+  h.simulate.mockReset();
+});
+
+describe("decideDecision (D1 simulation)", () => {
+  it("runs the separate simulation, never the payroll generation", async () => {
+    h.fake = createSupabaseFake({
+      onRpc: () => ({ data: { ok: true, status: "DECIDED", executes: true }, error: null }),
+      onQuery: (q) => (q.table === "sys_decisions" ? { data: { type_code: "D1", chosen_option: "SIMULATE" }, error: null } : undefined),
+    });
+    h.simulate.mockResolvedValue({ ok: true, data: { simulation_id: "s", count: 7, warnings: ["w"] } });
+    const r = await decideDecision({ ...input, option: "SIMULATE" });
+    expect(h.simulate).toHaveBeenCalledWith(DEC);
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ ok: true, data: { status: "EXECUTED", executed: { count: 7, warnings: ["w"] } } });
+  });
 });
 
 describe("decideDecision", () => {

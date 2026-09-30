@@ -11,6 +11,7 @@ const items = [
   { href: "/rh/presence", label: "Présence", exact: true },
   { href: "/rh/presence/imports", label: "Imports de présences" },
   { href: "/rh/conges", label: "Congés" },
+  { href: "/rh/paie/preparation", label: "Préparation du mois" },
   { href: "/rh/paie", label: "Paie" },
   { href: "/simulateur", label: "Simulateur" },
   { href: "/rh/paie/exceptions", label: "Exceptions" },

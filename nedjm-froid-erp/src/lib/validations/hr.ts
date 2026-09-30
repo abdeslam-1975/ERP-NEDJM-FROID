@@ -95,6 +95,28 @@ export const legendUpsertSchema = z.object({
   is_active: z.boolean().default(true),
 });
 
+/** D14 request: new coefficient from the 1st of a month ("YYYY-MM" or "YYYY-MM-01"). */
+export const legendCoefficientRequestSchema = z.object({
+  legend_id: z.string().uuid("Code de présence invalide."),
+  coefficient: z.preprocess(
+    (v) => parseLegendCoefficient(v),
+    z
+      .number({ error: "Coefficient : nombre attendu (ex. 0,5)." })
+      .min(0, "Coefficient ≥ 0.")
+      .max(999.999, "Coefficient ≤ 999,999."),
+  ),
+  month: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])(-01)?$/, "Mois d'effet attendu (mois/année).")
+    .transform((v) => (v.length === 7 ? `${v}-01` : v)),
+  reason: z
+    .string()
+    .trim()
+    .min(10, "Motif obligatoire (10 caractères minimum).")
+    .max(500, "Motif trop long (500 caractères maximum)."),
+});
+
 export const hrEmployeeFullSchema = z.object({
   id: z.string().uuid().optional(),
   matricule: z.string().trim().min(2).max(32).transform((v) => v.toUpperCase()),

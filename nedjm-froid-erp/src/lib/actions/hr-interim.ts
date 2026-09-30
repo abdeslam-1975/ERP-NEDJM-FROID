@@ -11,6 +11,7 @@ import {
   type InterimLine,
   type InterimStatement,
 } from "@/lib/hr/interim-billing";
+import { loadLegendsAt } from "@/lib/hr/legends-at";
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -173,9 +174,10 @@ async function computeStatement(input: { agency_id: string; year: number; month:
           .gte("work_date", from)
           .lte("work_date", to)
       : Promise.resolve({ data: [], error: null }),
-    supabase.from("ref_legendes").select("code, label_fr, label_ar, coefficient, counts_as_presence"),
+    loadLegendsAt(supabase, from, "code, label_fr, label_ar, counts_as_presence"),
   ]);
   if (cells.error) return { ok: false as const, error: cells.error.message };
+  if (!legends.ok) return { ok: false as const, error: legends.error };
   const terms = {
     default_daily_rate: Number(agency.default_daily_rate),
     markup_pct: Number(agency.markup_pct),
@@ -184,7 +186,13 @@ async function computeStatement(input: { agency_id: string; year: number; month:
   const statement = buildInterimStatement({
     contracts,
     cells: cells.data ?? [],
-    legends: (legends.data ?? []).map((l) => ({ ...l, coefficient: Number(l.coefficient), counts_as_presence: Boolean(l.counts_as_presence) })),
+    legends: legends.data.map((l) => ({
+      code: String(l.code),
+      label_fr: String(l.label_fr ?? ""),
+      label_ar: l.label_ar == null ? null : String(l.label_ar),
+      coefficient: l.coefficient,
+      counts_as_presence: Boolean(l.counts_as_presence),
+    })),
     terms,
   });
   return { ok: true as const, agency, terms, statement, contracts: contracts.length };

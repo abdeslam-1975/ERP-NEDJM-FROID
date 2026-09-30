@@ -30,9 +30,11 @@ export type PayrollInputSource =
   | "COMPLIANCE"
   | "ASSIGNMENT"
   | "SITE_WILAYA"
-  | "LEGAL_RULE";
+  | "LEGAL_RULE"
+  | "LEGEND_COEFFICIENT";
 
 export const DECISION_TYPES = [
+  { code: "D1", label: "D1 · Paie d'un mois aux règles non approuvées" },
   { code: "D4", label: "D4 · Génération de paie" },
   { code: "D3", label: "D3 · Recalcul des paies brouillon" },
   { code: "D2", label: "D2 · Date d'application d'une règle légale" },
@@ -45,6 +47,7 @@ export const DECISION_TYPES = [
   { code: "D5", label: "D5 · Conflit d'un import de présences" },
   { code: "D11", label: "D11 · Correspondance des codes d'un import" },
   { code: "D12", label: "D12 · Validation d'un import par son auteur" },
+  { code: "D14", label: "D14 · Coefficient d'un code de présence" },
 ] as const;
 export type DecisionTypeCode = (typeof DECISION_TYPES)[number]["code"];
 export const DECISION_TYPE_CODES = DECISION_TYPES.map((t) => t.code) as [DecisionTypeCode, ...DecisionTypeCode[]];
@@ -91,6 +94,7 @@ const SOURCE_LABELS: Record<
   ASSIGNMENT: "Affectation du contrat",
   SITE_WILAYA: "Wilaya du chantier",
   LEGAL_RULE: "Règle légale appliquée (décision D2)",
+  LEGEND_COEFFICIENT: "Coefficient d'un code de présence (décision D14)",
   MANUAL: "Demande depuis l'écran Paie",
   DATA_QUALITY: "Rapport de qualité des données",
   RULE_APPROVAL: "Approbation d'une règle légale",
@@ -841,4 +845,188 @@ export function payrollSignalNotice(signal: PayrollSignal): string | null {
     return "Aucune paie n'a été créée : la génération est soumise à décision (Centre de décisions).";
   }
   return null;
+}
+
+/** Rule proposal that blocks a real payroll of the month (hr_month_rule_blockers). */
+export type RuleBlocker = {
+  proposal_id: string;
+  title: string;
+  family: string;
+  action: string;
+  status: string;
+  month: string | null;
+  application_decision_id: string | null;
+};
+
+export type LegacyRule = { code: string; label: string | null; from: string | null };
+
+/** Values in force never confirmed by an approved proposal (warning only, hr_month_legacy_rules). */
+export type LegacyRules = {
+  legal_vars: LegacyRule[];
+  cnas_rates: LegacyRule[];
+  irg_bareme: LegacyRule[];
+  irg_rules: LegacyRule[];
+};
+
+export function parseRuleBlockers(raw: unknown): RuleBlocker[] {
+  return list(raw).map((b) => ({
+    proposal_id: str(b.proposal_id) ?? "",
+    title: str(b.title) ?? "",
+    family: str(b.family) ?? "",
+    action: str(b.action) ?? "",
+    status: str(b.status) ?? "",
+    month: isoDay(b.month),
+    application_decision_id: str(b.application_decision_id),
+  }));
+}
+
+export function parseLegacyRules(raw: unknown): LegacyRules {
+  const c = obj(raw) ?? {};
+  const rules = (v: unknown) =>
+    list(v).map((r) => ({ code: str(r.code) ?? "", label: str(r.label) ?? str(r.category), from: isoDay(r.from) }));
+  return {
+    legal_vars: rules(c.legal_vars),
+    cnas_rates: rules(c.cnas_rates),
+    irg_bareme: rules(c.irg_bareme),
+    irg_rules: rules(c.irg_rules),
+  };
+}
+
+export function legacyRuleCount(l: LegacyRules): number {
+  return l.legal_vars.length + l.cnas_rates.length + l.irg_bareme.length + l.irg_rules.length;
+}
+
+/** D1 context (hr_payroll_d1_context). */
+export type UnapprovedRulesContext = {
+  site_name: string;
+  period_nature: string;
+  blockers: RuleBlocker[];
+  legacy: LegacyRules;
+  run_status: string | null;
+  attendance_days: number;
+  simulations: number;
+};
+
+export function parseUnapprovedRulesContext(raw: unknown): UnapprovedRulesContext {
+  const c = obj(raw) ?? {};
+  return {
+    site_name: str(c.site_name) ?? "",
+    period_nature: str(c.period_nature) ?? "",
+    blockers: parseRuleBlockers(c.blockers),
+    legacy: parseLegacyRules(c.legacy),
+    run_status: str(c.run_status),
+    attendance_days: numOr0(c.attendance_days),
+    simulations: numOr0(c.simulations),
+  };
+}
+
+const RULE_FAMILY: Record<string, string> = {
+  LEGAL_VAR: "Variable légale",
+  CNAS_RATES: "Taux CNAS",
+  IRG_BAREME: "Barème IRG",
+  IRG_RULES: "Règles IRG",
+  IRG_ZONE_SCOPE: "Zones IRG",
+};
+
+export function ruleFamilyLabel(family: string): string {
+  return RULE_FAMILY[family] ?? family;
+}
+
+const PROPOSAL_STATUS: Record<string, string> = {
+  SUBMITTED: "Soumise, à approuver",
+  APPROVED: "Approuvée, date d'application à décider (D2)",
+};
+
+export function proposalStatusLabel(status: string): string {
+  return PROPOSAL_STATUS[status] ?? status;
+}
+
+/** Warnings shown before a D1 decision. */
+export function unapprovedRulesNotices(c: UnapprovedRulesContext): string[] {
+  const out = [
+    "Une règle non approuvée n'est jamais appliquée à une paie réelle : la génération et la validation de la paie de ce mois restent bloquées tant que ces règles sont en attente.",
+    "La simulation utilise les règles déjà en vigueur, sans les propositions en attente. Elle ne crée aucun bulletin et ne peut être ni validée, ni payée, ni virée, ni déclarée.",
+  ];
+  const legacy = legacyRuleCount(c.legacy);
+  if (legacy) {
+    out.push(`${legacy} valeur(s) en vigueur héritée(s) sans proposition approuvée : avertissement seulement, elles ne bloquent pas.`);
+  }
+  if (c.run_status === "DRAFT") {
+    out.push("Une paie brouillon existe déjà pour ce mois : elle ne pourra pas être validée tant que les règles sont en attente.");
+  }
+  if (c.period_nature === "EXTERNAL") {
+    out.push("Mois de reprise : paie versée et déclarée hors de l'application.");
+  }
+  return out;
+}
+
+export type LegendCoefficientVersionView = {
+  effective_from: string;
+  coefficient: number;
+  origin: string;
+  decision_id: string | null;
+};
+
+/** D14 context (hr_legend_coefficient_context). */
+export type LegendCoefficientContext = {
+  code: string;
+  label_fr: string;
+  is_active: boolean;
+  month: string;
+  coefficient: number;
+  reason: string;
+  current_at_month: number;
+  current_today: number;
+  first_open_month: string | null;
+  versions: LegendCoefficientVersionView[];
+  later_versions: number;
+  draft_runs: { run_id: string; year: number; month: number; site_name: string }[];
+  attendance_days: number;
+};
+
+export function parseLegendCoefficientContext(raw: unknown): LegendCoefficientContext {
+  const c = obj(raw) ?? {};
+  const open = isoDay(c.first_open_month);
+  return {
+    code: str(c.code) ?? "",
+    label_fr: str(c.label_fr) ?? "",
+    is_active: c.is_active !== false,
+    month: isoDay(c.month) ?? "",
+    coefficient: numOr0(c.coefficient),
+    reason: str(c.reason) ?? "",
+    current_at_month: numOr0(c.current_at_month),
+    current_today: numOr0(c.current_today),
+    first_open_month: open && open > "1900-01-01" ? open : null,
+    versions: list(c.versions).map((v) => ({
+      effective_from: isoDay(v.effective_from) ?? "",
+      coefficient: numOr0(v.coefficient),
+      origin: str(v.origin) ?? "",
+      decision_id: str(v.decision_id),
+    })),
+    later_versions: numOr0(c.later_versions),
+    draft_runs: list(c.draft_runs).map((r) => ({
+      run_id: str(r.run_id) ?? "",
+      year: numOr0(r.year),
+      month: numOr0(r.month),
+      site_name: str(r.site_name) ?? "",
+    })),
+    attendance_days: numOr0(c.attendance_days),
+  };
+}
+
+/** Warnings shown before a D14 decision. */
+export function legendCoefficientNotices(c: LegendCoefficientContext): string[] {
+  const out = [
+    "Les mois antérieurs au mois d'effet, et tout mois déjà validé ou clôturé, gardent l'ancien coefficient.",
+  ];
+  out.push(
+    c.draft_runs.length
+      ? `${c.draft_runs.length} paie(s) brouillon à partir du mois d'effet : celles qui utilisent ce code seront signalées ; recalcul seulement sur décision D3.`
+      : "Aucune paie brouillon à partir du mois d'effet.",
+  );
+  if (c.later_versions > 0) {
+    out.push(`${c.later_versions} changement(s) déjà programmé(s) après ce mois : ils restent en vigueur à leur date.`);
+  }
+  if (!c.is_active) out.push("Code de présence désactivé : le coefficient ne sert qu'aux présences déjà saisies.");
+  return out;
 }

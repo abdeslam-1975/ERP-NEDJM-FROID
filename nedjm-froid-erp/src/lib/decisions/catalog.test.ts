@@ -27,7 +27,82 @@ import {
   parseAttendanceConflictContext,
   parseCodeMappingContext,
   parseImportPolicyContext,
+  legendCoefficientNotices,
+  parseLegendCoefficientContext,
+  parseUnapprovedRulesContext,
+  unapprovedRulesNotices,
 } from "@/lib/decisions/catalog";
+
+describe("D1 — payroll of a month whose rules are not all approved", () => {
+  const ctx = {
+    site_name: "Tous les chantiers",
+    period_nature: "OPERATIONAL",
+    blockers: [
+      { proposal_id: "p1", title: "SNMG", family: "LEGAL_VAR", action: "SET", status: "APPROVED", month: "2026-10-01", application_decision_id: "d2" },
+    ],
+    legacy: { legal_vars: [{ code: "SNMG", label: "SNMG", from: "2024-01-01" }], cnas_rates: [], irg_bareme: [], irg_rules: [] },
+    run_status: null,
+    attendance_days: 120,
+    simulations: 0,
+  };
+
+  it("is a known decision type", () => {
+    expect(isDecisionTypeCode("D1")).toBe(true);
+    expect(isDecisionTypeCode("D14")).toBe(true);
+    expect(payrollSourceLabel("LEGEND_COEFFICIENT")).toMatch(/D14/);
+  });
+
+  it("parses the context", () => {
+    const c = parseUnapprovedRulesContext(ctx);
+    expect(c.blockers[0]).toMatchObject({ proposal_id: "p1", status: "APPROVED", month: "2026-10-01", application_decision_id: "d2" });
+    expect(c.legacy.legal_vars).toHaveLength(1);
+    expect(parseUnapprovedRulesContext(null).blockers).toEqual([]);
+  });
+
+  it("states that an unapproved rule never reaches a real payroll and the simulation is never a payslip", () => {
+    const notices = unapprovedRulesNotices(parseUnapprovedRulesContext(ctx));
+    expect(notices.join(" ")).toMatch(/jamais appliquée à une paie réelle/);
+    expect(notices.join(" ")).toMatch(/ni validée, ni payée, ni virée, ni déclarée/);
+    expect(notices.join(" ")).toMatch(/ne bloquent pas/);
+  });
+
+  it("warns that an existing draft cannot be validated", () => {
+    const notices = unapprovedRulesNotices(parseUnapprovedRulesContext({ ...ctx, run_status: "DRAFT" }));
+    expect(notices.some((n) => /ne pourra pas être validée/.test(n))).toBe(true);
+  });
+});
+
+describe("D14 — dated attendance coefficient", () => {
+  const ctx = {
+    code: "P",
+    label_fr: "Présent",
+    is_active: true,
+    month: "2026-11-01",
+    coefficient: 0.5,
+    reason: "Nouvelle convention collective",
+    current_at_month: 1,
+    current_today: 1,
+    first_open_month: "1900-01-01",
+    versions: [{ effective_from: "1900-01-01", coefficient: 1, origin: "INITIAL", decision_id: null }],
+    later_versions: 0,
+    draft_runs: [{ run_id: "r", year: 2026, month: 11, site_name: "A" }],
+    attendance_days: 40,
+  };
+
+  it("parses the context, hiding the 1900 sentinel", () => {
+    const c = parseLegendCoefficientContext(ctx);
+    expect(c.first_open_month).toBeNull();
+    expect(c.versions[0]).toEqual({ effective_from: "1900-01-01", coefficient: 1, origin: "INITIAL", decision_id: null });
+    expect(c.draft_runs).toHaveLength(1);
+  });
+
+  it("explains: no retroactivity, drafts flagged for D3", () => {
+    const notices = legendCoefficientNotices(parseLegendCoefficientContext(ctx));
+    expect(notices[0]).toMatch(/gardent l'ancien coefficient/);
+    expect(notices[1]).toMatch(/décision D3/);
+    expect(legendCoefficientNotices(parseLegendCoefficientContext({ ...ctx, draft_runs: [] }))[1]).toMatch(/Aucune paie brouillon/);
+  });
+});
 
 const base = { status: "PENDING", isSuperAdmin: false, hasDecisionRight: true, requestedBy: "a", userId: "b" };
 

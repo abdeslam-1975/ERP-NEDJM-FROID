@@ -20,6 +20,7 @@ import type { IrgBracket, IrgRule } from "@/lib/hr/irg-calc";
 import { loadIrgEngine } from "@/lib/hr/irg-engine-load";
 import { normalizeSettlementLines, type SettlementLine } from "@/lib/hr/leave";
 import { legalVarsAsOf, loadContributionDefs } from "@/lib/hr/legal-vars-as-of";
+import { loadLegendsAt } from "@/lib/hr/legends-at";
 import {
   contractPayableInPeriod,
   coveredDaysInPeriod,
@@ -191,13 +192,11 @@ async function load(
     supabase.from("hr_salary_grid").select("poste_id, grade, base_monthly, net_ref_monthly, effective_from"),
     supabase.from("hr_employees").select("id, matricule, last_name, first_name").order("matricule"),
     loadComplianceContext(supabase, { contractIds: [], siteIds: [], employeeIds: [], asOf: start }),
-    supabase.from("ref_legendes").select("code, label_fr, label_ar, coefficient, counts_as_presence, color_bg, color_fg"),
+    loadLegendsAt<AttendanceLegend>(supabase, start, "code, label_fr, label_ar, counts_as_presence, color_bg, color_fg"),
   ]);
   const rubriques = must(rubriqueRows, "Rubriques") as PayrollRubrique[];
-  const legendList = (must(legendRows, "Légendes") as AttendanceLegend[]).map((l) => ({
-    ...l,
-    coefficient: num(l.coefficient),
-  }));
+  if (!legendRows.ok) return legendRows;
+  const legendList: AttendanceLegend[] = legendRows.data;
   const grid = (must(gridRows, "Grille salariale") as SalaryGridRow[]).map((g) => ({
     ...g,
     base_monthly: num(g.base_monthly),

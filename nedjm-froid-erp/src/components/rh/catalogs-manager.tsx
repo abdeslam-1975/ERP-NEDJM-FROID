@@ -10,6 +10,7 @@ import {
   type LegendRow,
 } from "@/lib/actions/hr-catalogs";
 import { Button } from "@/components/ui/button";
+import { LegendCoefficientRequest } from "@/components/rh/legend-coefficient-request";
 import {
   formatLegendCoefficient,
   parseLegendCoefficient,
@@ -295,7 +296,8 @@ export function CatalogsManager({
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-foreground/55">
             الرموز تُضاف من هنا. المعامل يُكتب من لوحة المفاتيح بالرقم والفاصلة، مثل 0,5 أو 1,5.
-            تغيير الرمز ينشئ رمزاً جديداً ولا يغيّر رمزاً مستعملاً في الحضور.
+            تغيير الرمز ينشئ رمزاً جديداً ولا يغيّر رمزاً مستعملاً في الحضور. تغيير معامل رمز موجود يتم بطلب مؤرخ
+            (قرار D14) يحدد شهر السريان.
           </p>
           <button
             type="button"
@@ -340,7 +342,12 @@ export function CatalogsManager({
             autoComplete="off"
             placeholder="0,5"
             aria-label="Coefficient"
-            title="المعامل — رقم وفاصلة، مثل 0,5"
+            title={
+              legForm.id
+                ? "Coefficient en vigueur ce mois — se modifie par une demande datée (D14) ci-dessous"
+                : "المعامل — رقم وفاصلة، مثل 0,5"
+            }
+            disabled={Boolean(legForm.id)}
             value={legForm.coefficient}
             onChange={(e) =>
               setLegForm({
@@ -388,7 +395,7 @@ export function CatalogsManager({
                       code,
                       label_fr: legForm.label_fr,
                       label_ar: legForm.label_ar,
-                      coefficient: coefficient ?? 0,
+                      coefficient: previous ? previous.coefficient : (coefficient ?? 0),
                       counts_as_presence: legForm.counts_as_presence,
                       triggers_an_passthrough: false,
                       color_bg: legForm.color_bg,
@@ -396,6 +403,7 @@ export function CatalogsManager({
                       source_mode: legForm.source_mode,
                       is_active: true,
                       is_system: previous?.is_system ?? false,
+                      coefficient_versions: previous?.coefficient_versions ?? [],
                     },
                   ];
                 });
@@ -408,6 +416,12 @@ export function CatalogsManager({
             Enregistrer le code
           </Button>
         </div>
+        {legForm.id ? (
+          <LegendCoefficientRequest
+            key={legForm.id}
+            legend={legendRows.find((l) => l.id === legForm.id) ?? null}
+          />
+        ) : null}
         <div className="mt-4 flex flex-wrap gap-2">
           {legendRows.map((l) => (
             <button

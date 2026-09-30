@@ -11,9 +11,11 @@ import type {
   CodeMappingContext,
   DeclarationDecisionContext,
   ImportPolicyContext,
+  LegendCoefficientContext,
   PayrollChainContext,
   PayrollReopenContext,
   TransferDecisionContext,
+  UnapprovedRulesContext,
 } from "@/lib/decisions/catalog";
 import {
   JUSTIFICATION_MAX,
@@ -21,6 +23,10 @@ import {
   decisionStatusLabel,
   decisionStatusTone,
   declarationRiskNotices,
+  legendCoefficientNotices,
+  proposalStatusLabel,
+  ruleFamilyLabel,
+  unapprovedRulesNotices,
   payrollRunStatusLabel,
   payrollSourceLabel,
   periodLabel,
@@ -125,9 +131,12 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
         setInfo("Décision enregistrée et appliquée dans la même opération.");
       } else if (r.data.executed) {
         setInfo(
-          [`Décision enregistrée et exécutée : ${r.data.executed.count} bulletin(s) calculé(s).`, ...r.data.executed.warnings].join(
-            "\n",
-          ),
+          [
+            d.type_code === "D1"
+              ? `Décision enregistrée : simulation « règles non approuvées » calculée pour ${r.data.executed.count} salarié(s). Aucun bulletin créé.`
+              : `Décision enregistrée et exécutée : ${r.data.executed.count} bulletin(s) calculé(s).`,
+            ...r.data.executed.warnings,
+          ].join("\n"),
         );
       } else {
         setInfo("Décision enregistrée. Aucune opération de paie n'a été lancée.");
@@ -146,7 +155,14 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
         setError(r.error);
         setInvalidated(r.invalidated ?? null);
       } else {
-        setInfo([`Opération exécutée : ${r.data.count} bulletin(s) calculé(s).`, ...r.data.warnings].join("\n"));
+        setInfo(
+          [
+            d.type_code === "D1"
+              ? `Simulation calculée pour ${r.data.count} salarié(s). Aucun bulletin créé.`
+              : `Opération exécutée : ${r.data.count} bulletin(s) calculé(s).`,
+            ...r.data.warnings,
+          ].join("\n"),
+        );
       }
       router.refresh();
     });
@@ -204,7 +220,11 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
             <Fact label="Données">
               <Link
                 href={
-                  d.type_code === "D13"
+                  d.type_code === "D1"
+                    ? `/rh/paie/preparation?mois=${d.period_year}-${String(d.period_month ?? 1).padStart(2, "0")}`
+                    : d.type_code === "D14"
+                      ? "/referentiels/legendes"
+                      : d.type_code === "D13"
                     ? "/rh/qualite-donnees"
                     : d.type_code === "D2"
                       ? `/rh/legal/propositions?id=${d.rule_application?.proposal_id ?? ""}`
@@ -216,7 +236,11 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
                 }
                 className="font-semibold text-brand hover:underline"
               >
-                {d.type_code === "D13"
+                {d.type_code === "D1"
+                  ? "Ouvrir la préparation du mois"
+                  : d.type_code === "D14"
+                    ? "Ouvrir les codes de présence"
+                    : d.type_code === "D13"
                   ? "Rapport de qualité des données"
                   : d.type_code === "D2"
                     ? "Ouvrir la proposition"
@@ -429,6 +453,8 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
       {d.attendance_conflict ? <AttendanceConflictPanel c={d.attendance_conflict} /> : null}
       {d.code_mapping ? <CodeMappingPanel c={d.code_mapping} /> : null}
       {d.import_policy ? <ImportPolicyPanel c={d.import_policy} /> : null}
+      {d.unapproved_rules ? <UnapprovedRulesPanel c={d.unapproved_rules} /> : null}
+      {d.legend_coefficient ? <LegendCoefficientPanel c={d.legend_coefficient} /> : null}
 
       {d.status === "PENDING" ? (
         <RhPanel>
@@ -982,6 +1008,97 @@ function ImportPolicyPanel({ c }: { c: ImportPolicyContext }) {
       <p className="mt-3 text-xs text-foreground/60">
         Le SUPER_ADMIN peut toujours valider. La politique reste révocable à tout moment par une nouvelle décision.
       </p>
+    </RhPanel>
+  );
+}
+
+function UnapprovedRulesPanel({ c }: { c: UnapprovedRulesContext }) {
+  const legacy = [...c.legacy.legal_vars, ...c.legacy.cnas_rates, ...c.legacy.irg_bareme, ...c.legacy.irg_rules];
+  return (
+    <RhPanel>
+      <h3 className="font-display text-base font-semibold">Règles du mois en attente · {c.site_name}</h3>
+      <dl className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Fact label="Règles en attente">{c.blockers.length}</Fact>
+        <Fact label="Valeurs héritées non vérifiées">{legacy.length}</Fact>
+        <Fact label="Présences validées du mois">{c.attendance_days}</Fact>
+        <Fact label="Paie du mois">{c.run_status ? payrollRunStatusLabel(c.run_status) : "Aucune"}</Fact>
+      </dl>
+      <table className="mt-4 min-w-full text-sm">
+        <thead className="text-left text-xs uppercase text-foreground/55">
+          <tr>
+            <th className="py-1 pr-4">Règle</th>
+            <th className="py-1 pr-4">Famille</th>
+            <th className="py-1 pr-4">Statut</th>
+            <th className="py-1">Mois concerné</th>
+          </tr>
+        </thead>
+        <tbody>
+          {c.blockers.map((b) => (
+            <tr key={b.proposal_id} className="border-t border-border/60">
+              <td className="py-1 pr-4">
+                <Link className="font-semibold text-brand hover:underline" href={`/rh/legal/propositions?id=${b.proposal_id}`}>
+                  {b.title || "Proposition"}
+                </Link>
+              </td>
+              <td className="py-1 pr-4">{ruleFamilyLabel(b.family)}</td>
+              <td className="py-1 pr-4">{proposalStatusLabel(b.status)}</td>
+              <td className="py-1">{b.month ? frDate(b.month).slice(3) : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {legacy.length ? (
+        <p className="mt-3 text-xs text-foreground/60">
+          Héritées (avertissement) : {legacy.map((r) => r.code).join(", ")}.
+        </p>
+      ) : null}
+      <RiskNotices notices={unapprovedRulesNotices(c)} />
+    </RhPanel>
+  );
+}
+
+function LegendCoefficientPanel({ c }: { c: LegendCoefficientContext }) {
+  return (
+    <RhPanel>
+      <h3 className="font-display text-base font-semibold">
+        Code {c.code} — {c.label_fr} : {c.current_at_month} → {c.coefficient} à partir de {frDate(c.month).slice(3)}
+      </h3>
+      <dl className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Fact label="Coefficient en vigueur ce mois-ci">{c.current_today}</Fact>
+        <Fact label="Présences avec ce code dès le mois d'effet">{c.attendance_days}</Fact>
+        <Fact label="Premier mois modifiable">{c.first_open_month ? frDate(c.first_open_month).slice(3) : "Tous"}</Fact>
+        <Fact label="Paies brouillon à partir du mois">{c.draft_runs.length}</Fact>
+        <div className="sm:col-span-2 lg:col-span-4">
+          <Fact label="Motif de la demande">{c.reason || "—"}</Fact>
+        </div>
+      </dl>
+      <table className="mt-4 min-w-full text-sm">
+        <thead className="text-left text-xs uppercase text-foreground/55">
+          <tr>
+            <th className="py-1 pr-4">À partir de</th>
+            <th className="py-1 pr-4">Coefficient</th>
+            <th className="py-1">Origine</th>
+          </tr>
+        </thead>
+        <tbody>
+          {c.versions.map((v) => (
+            <tr key={v.effective_from} className="border-t border-border/60">
+              <td className="py-1 pr-4">{v.effective_from <= "1900-01-01" ? "Origine" : frDate(v.effective_from).slice(3)}</td>
+              <td className="py-1 pr-4 tabular-nums">{v.coefficient}</td>
+              <td className="py-1">
+                {v.decision_id ? (
+                  <Link className="text-brand hover:underline" href={`/decisions/${v.decision_id}`}>
+                    Décision D14
+                  </Link>
+                ) : (
+                  "Valeur initiale"
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <RiskNotices notices={legendCoefficientNotices(c)} />
     </RhPanel>
   );
 }

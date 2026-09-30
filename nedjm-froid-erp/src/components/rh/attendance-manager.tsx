@@ -11,6 +11,7 @@ import {
   saveAttendanceSheetRows,
 } from "@/lib/actions/hr-attendance-sheet";
 import type { LegendRow } from "@/lib/actions/hr-catalogs";
+import { legendCoefficientAt } from "@/lib/hr/legend-coefficient";
 import {
   contractsForMonth,
   editableRowValueCodes,
@@ -519,7 +520,7 @@ export function AttendanceManager({
     for (let d = 1; d <= days; d += 1) {
       const code = grid.get(`${employeeId}|${iso(d)}`)?.legend_code;
       const legend = code ? legendMap.get(code.toUpperCase()) : undefined;
-      n += Number(legend?.coefficient ?? 0);
+      if (legend) n += legendCoefficientAt(legend.coefficient_versions, iso(d), Number(legend.coefficient));
     }
     return n;
   }

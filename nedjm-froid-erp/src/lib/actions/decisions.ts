@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
-import { executePayrollDecision } from "@/lib/actions/hr-ops";
+import { executePayrollDecision, executePayrollSimulation } from "@/lib/actions/hr-ops";
 import { loadComplianceContext } from "@/lib/hr/compliance-load";
 import {
   DECISION_TYPE_CODES,
@@ -16,15 +16,19 @@ import {
   parseDecisionOptions,
   parseDeclarationDecisionContext,
   parseImportPolicyContext,
+  parseLegendCoefficientContext,
   parsePayrollChainContext,
   parsePayrollReopenContext,
   parseRuleApplicationContext,
   parseTransferDecisionContext,
+  parseUnapprovedRulesContext,
   validateJustification,
   type AttendanceConflictContext,
   type CodeMappingContext,
   type DecisionOption,
   type ImportPolicyContext,
+  type LegendCoefficientContext,
+  type UnapprovedRulesContext,
   type DeclarationDecisionContext,
   type PayrollChainContext,
   type PayrollReopenContext,
@@ -137,6 +141,8 @@ export type DecisionDetail = DecisionListRow & {
   attendance_conflict: AttendanceConflictContext | null;
   code_mapping: CodeMappingContext | null;
   import_policy: ImportPolicyContext | null;
+  unapproved_rules: UnapprovedRulesContext | null;
+  legend_coefficient: LegendCoefficientContext | null;
   /** D9 / D10 / D5 line by line: where the decided operation is carried out (once). */
   follow_up: { href: string; label: string } | null;
   /** Options the data no longer allows (code → reason); the database refuses them too. */
@@ -361,6 +367,8 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
   const attendanceConflict = raw.type_code === "D5" ? parseAttendanceConflictContext(ctx) : null;
   const codeMapping = raw.type_code === "D11" ? parseCodeMappingContext(ctx) : null;
   const importPolicy = raw.type_code === "D12" ? parseImportPolicyContext(ctx) : null;
+  const unapprovedRules = raw.type_code === "D1" ? parseUnapprovedRulesContext(ctx) : null;
+  const legendCoefficient = raw.type_code === "D14" ? parseLegendCoefficientContext(ctx) : null;
   const followUp = decisionFollowUp(raw.type_code, raw.id, raw.chosen_option);
   const ruleContributor =
     ruleApplication && raw.status === "PENDING" && !ws.isSuperAdmin
@@ -405,6 +413,8 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
       attendance_conflict: attendanceConflict,
       code_mapping: codeMapping,
       import_policy: importPolicy,
+      unapproved_rules: unapprovedRules,
+      legend_coefficient: legendCoefficient,
       follow_up: raw.status === "DECIDED" && chosen?.executes === true ? followUp : null,
       unavailable_options: unavailable,
       decide_blocker: decideBlocker({
@@ -483,7 +493,9 @@ export async function decideDecision(input: unknown): Promise<ActionResult<Decid
       revalidatePath("/rh/paie/bulletins");
       revalidatePath("/rh/presence");
       revalidatePath("/rh/presence/imports");
+      revalidatePath("/referentiels/legendes");
     }
+    revalidatePath("/rh/paie/preparation");
     return {
       ok: true,
       data: { status: "EXECUTED", applied, executed: null, execute_error: null, invalidated: null, follow_up: null },
@@ -504,8 +516,7 @@ export async function decideDecision(input: unknown): Promise<ActionResult<Decid
       data: { status: "DECIDED", applied: false, executed: null, execute_error: null, invalidated: null, follow_up: followUp },
     };
   }
-  const run = await executePayrollDecision(p.id);
-  revalidatePath("/rh/paie");
+  const run = await runDecidedOperation(p.id, String(typeRow?.type_code ?? ""));
   if (!run.ok) {
     return {
       ok: true,
@@ -545,12 +556,25 @@ export async function executeDecision(
     .maybeSingle();
   const followUp = decisionFollowUp(String(typeRow?.type_code ?? ""), id, typeRow?.chosen_option ?? null);
   if (followUp) return { ok: false, error: `Cette décision s'exécute une seule fois : ${followUp.label.toLowerCase()}.` };
-  const run = await executePayrollDecision(id);
+  const run = await runDecidedOperation(id, String(typeRow?.type_code ?? ""));
   revalidatePath("/decisions");
   revalidatePath(`/decisions/${id}`);
+  return run;
+}
+
+/** D1 « simulation » is stored apart; D3 / D4 write the payroll. */
+async function runDecidedOperation(
+  id: string,
+  typeCode: string,
+): Promise<ActionResult<{ count: number; warnings: string[] }> & { invalidated?: string | null }> {
+  if (typeCode === "D1") {
+    const sim = await executePayrollSimulation(id);
+    revalidatePath("/rh/paie/preparation");
+    return sim.ok ? { ok: true, data: { count: sim.data.count, warnings: sim.data.warnings } } : sim;
+  }
+  const run = await executePayrollDecision(id);
   revalidatePath("/rh/paie");
-  if (!run.ok) return run;
-  return { ok: true, data: { count: run.data.count, warnings: run.data.warnings } };
+  return run.ok ? { ok: true, data: { count: run.data.count, warnings: run.data.warnings } } : run;
 }
 
 export type NotificationRow = {

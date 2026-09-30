@@ -6,8 +6,11 @@ import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import {
   catalogItemSchema,
   catalogKindSchema,
+  legendCoefficientRequestSchema,
   legendUpsertSchema,
 } from "@/lib/validations/hr";
+import { legendCoefficientAt, type LegendCoefficientVersion } from "@/lib/hr/legend-coefficient";
+import { loadLegendCoefficientVersions } from "@/lib/hr/legends-at";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -48,6 +51,8 @@ export type LegendRow = {
   source_mode: string;
   is_active: boolean;
   is_system: boolean;
+  /** Dated versions (D14); `coefficient` is the one in force this month. */
+  coefficient_versions: LegendCoefficientVersion[];
 };
 
 function revalidateHr() {
@@ -213,14 +218,55 @@ export async function deleteCatalogItem(
 
 export async function listLegends(): Promise<ActionResult<LegendRow[]>> {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("ref_legendes")
-    .select(
-      "id, code, label_fr, label_ar, coefficient, counts_as_presence, triggers_an_passthrough, color_bg, color_fg, source_mode, is_active, is_system",
-    )
-    .order("code");
+  const [{ data, error }, versions] = await Promise.all([
+    supabase
+      .from("ref_legendes")
+      .select(
+        "id, code, label_fr, label_ar, coefficient, counts_as_presence, triggers_an_passthrough, color_bg, color_fg, source_mode, is_active, is_system",
+      )
+      .order("code"),
+    loadLegendCoefficientVersions(supabase),
+  ]);
   if (error) return { ok: false, error: error.message };
-  return { ok: true, data: (data ?? []) as LegendRow[] };
+  if (!versions.ok) return versions;
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    ok: true,
+    data: ((data ?? []) as Omit<LegendRow, "coefficient_versions">[]).map((l) => {
+      const list = versions.data.get(l.id) ?? [];
+      return {
+        ...l,
+        coefficient: legendCoefficientAt(list, today, Number(l.coefficient)),
+        coefficient_versions: list,
+      };
+    }),
+  };
+}
+
+/**
+ * Asks for a new coefficient from a given month (decision D14). Nothing changes until the decision;
+ * months already validated or closed keep the old coefficient.
+ */
+export async function requestLegendCoefficientChange(
+  input: unknown,
+): Promise<ActionResult<{ decision_id: string }>> {
+  const parsed = legendCoefficientRequestSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
+  }
+  const p = parsed.data;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("hr_legend_coefficient_request", {
+    p_legend: p.legend_id,
+    p_coefficient: p.coefficient,
+    p_month: p.month,
+    p_reason: p.reason,
+  });
+  if (error) return { ok: false, error: error.message };
+  if (typeof data !== "string") return { ok: false, error: "Demande non enregistrée." };
+  revalidatePath("/decisions");
+  revalidatePath("/referentiels/legendes");
+  return { ok: true, data: { decision_id: data } };
 }
 
 function legendWriteError(message: string): string {
@@ -254,10 +300,13 @@ export async function upsertLegend(
     is_active: p.is_active,
   };
 
+  // The coefficient of an existing code changes only through a dated D14 request.
+  const { coefficient: _initialOnly, ...updatable } = fields;
+  void _initialOnly;
   const updateById = async (id: string) => {
     const { data, error } = await supabase
       .from("ref_legendes")
-      .update(fields)
+      .update(updatable)
       .eq("id", id)
       .select("id")
       .maybeSingle();
