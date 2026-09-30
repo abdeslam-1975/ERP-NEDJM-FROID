@@ -374,6 +374,23 @@ function linkedInfluence(runs: readonly SimRun[], id: string): { kind: SimInflue
 
 type PendingPanel = { label: string; labelAr: string; message: string };
 
+const CARD =
+  "flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border/70 bg-surface shadow-[var(--card-shadow)]";
+
+function PanelHeader({ title, subtitle, linked }: { title: string; subtitle: string; linked: boolean }) {
+  return (
+    <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border/60 px-4 py-2.5">
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold">{title}</p>
+        <p className="truncate text-[11px] text-foreground/50">{subtitle}</p>
+      </div>
+      {linked ? (
+        <span className="shrink-0 rounded-full bg-brand-muted px-2 py-0.5 text-[10.5px] font-semibold text-brand">Lié</span>
+      ) : null}
+    </header>
+  );
+}
+
 function Workspace({
   panels,
   pending,
@@ -488,34 +505,49 @@ function Workspace({
     );
   };
 
+  const warningList = (warnings: string[], inCard: boolean) =>
+    warnings.length ? (
+      <ul
+        className={`max-h-24 shrink-0 space-y-0.5 overflow-y-auto bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:bg-amber-950/40 dark:text-amber-100 ${
+          inCard ? "border-t border-amber-200/80 dark:border-amber-900/40" : "rounded-xl border border-amber-200/80 dark:border-amber-900/40"
+        }`}
+      >
+        {warnings.map((w) => (
+          <li key={w}>{w}</li>
+        ))}
+      </ul>
+    ) : null;
+
   const docPanel = (r: SimRun, i: number) => {
     const meta = simTargetMeta(panels[i].target);
+    const frame = r.output.html ? (
+      <DocFrame
+        html={r.output.html}
+        pageWidth={r.output.pageWidth}
+        title={meta?.label ?? "Document"}
+        editable={editable}
+        renderEditor={cellEditor}
+        bare={split}
+      />
+    ) : null;
+    if (!split) {
+      return (
+        <section key={panels[i].target} className="flex min-h-[36rem] min-w-0 flex-col gap-2 xl:min-h-0">
+          {frame}
+          {warningList(r.output.warnings, false)}
+        </section>
+      );
+    }
     return (
-      <section key={panels[i].target} className="flex min-h-[36rem] min-w-0 flex-col gap-2 xl:min-h-0">
-        {split ? (
-          <>
-            <p className="px-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/45">
-              {meta?.label} · {meta?.labelAr}
-            </p>
+      <section key={panels[i].target} className={`${CARD} min-h-[40rem] xl:min-h-0`}>
+        <PanelHeader title={meta?.label ?? "Document"} subtitle={`${meta?.labelAr ?? ""} · ${meta?.module ?? ""}`} linked={linked} />
+        {r.output.figures.length ? (
+          <div className="shrink-0 border-b border-border/60 p-2.5">
             <FiguresStrip figures={r.output.figures} reference={reference[i] ?? {}} compact />
-          </>
+          </div>
         ) : null}
-        {r.output.html ? (
-          <DocFrame
-            html={r.output.html}
-            pageWidth={r.output.pageWidth}
-            title={meta?.label ?? "Document"}
-            editable={editable}
-            renderEditor={cellEditor}
-          />
-        ) : null}
-        {r.output.warnings.length ? (
-          <ul className="max-h-24 shrink-0 space-y-0.5 overflow-y-auto rounded-xl border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
-            {r.output.warnings.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-        ) : null}
+        {frame}
+        {warningList(r.output.warnings, true)}
       </section>
     );
   };
@@ -571,14 +603,26 @@ function Workspace({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        {linked ? (
-          <p className="flex-1 text-xs text-foreground/55">
-            Les deux éléments partagent les mêmes valeurs : cliquez une case d&apos;un document ou changez une variable, l&apos;autre
-            se recalcule aussitôt.{" "}
-            {shared ? `${shared} variable${shared > 1 ? "s" : ""} en commun.` : "Aucune variable en commun entre ces deux éléments."}
-          </p>
-        ) : split ? (
-          <p className="flex-1 text-xs text-foreground/55">{pending?.label} : {pending?.message}</p>
+        {split ? (
+          <div className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl border border-brand/20 bg-brand-muted/50 px-3 py-2 text-xs">
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-brand px-2 py-0.5 text-[10.5px] font-semibold text-white">
+              {linked ? "Liés" : "En attente"}
+            </span>
+            <span className="min-w-0 text-foreground/70">
+              {linked ? (
+                <>
+                  Cliquez une case d&apos;un document ou changez une variable : l&apos;autre se recalcule aussitôt.{" "}
+                  <b className="font-semibold text-foreground">
+                    {shared ? `${shared} variable${shared > 1 ? "s" : ""} en commun.` : "Aucune variable en commun."}
+                  </b>
+                </>
+              ) : (
+                <>
+                  {pending?.label} : {pending?.message}
+                </>
+              )}
+            </span>
+          </div>
         ) : (
           <FiguresStrip figures={output.figures} reference={reference[0] ?? {}} />
         )}
@@ -652,15 +696,14 @@ function Workspace({
         </div>
       ) : split ? (
         <>
-          <div className="grid gap-3 xl:h-[calc(100dvh-17rem)] xl:min-h-[40rem] xl:grid-cols-2">
+          <div className="grid gap-4 xl:h-[calc(100dvh-15rem)] xl:min-h-[44rem] xl:grid-cols-2">
             {runs.map(docPanel)}
             {pending ? (
-              <section className="flex min-h-[20rem] flex-col gap-2">
-                <p className="px-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/45">
-                  {pending.label} · {pending.labelAr}
-                </p>
-                <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/80 bg-surface/60 p-6 text-center">
-                  <p className="text-sm font-medium">{pending.message}</p>
+              <section className={`${CARD} min-h-[24rem]`}>
+                <PanelHeader title={pending.label} subtitle={pending.labelAr} linked={false} />
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-surface-muted p-8 text-center">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-muted text-xl text-brand">⇆</span>
+                  <p className="text-sm font-semibold">{pending.message}</p>
                   <p className="max-w-sm text-xs text-foreground/55">
                     Choisissez un salarié dans le champ « Salarié » en haut : cet élément s&apos;affichera ici, lié au document de gauche.
                   </p>
@@ -715,19 +758,11 @@ function FiguresStrip({
   compact?: boolean;
 }) {
   if (!figures.length) return <div />;
+  if (compact) return <CompactFigures figures={figures} reference={reference} />;
   return (
-    <div className={`flex flex-1 flex-wrap gap-2 ${compact ? "shrink-0 [&>div]:min-w-[7rem] [&>div]:py-1.5" : ""}`}>
+    <div className="flex flex-1 flex-wrap gap-2">
       {figures.map((f) => {
-        const delta = f.value - (reference[f.key] ?? f.value);
-        const moved = Math.abs(delta) >= 0.005;
-        const tone = !moved
-          ? "text-foreground/40"
-          : f.goodWhenUp
-            ? delta > 0
-              ? "text-emerald-600"
-              : "text-red-600"
-            : "text-foreground/70";
-        const sign = !moved ? "±0" : `${delta > 0 ? "+" : "−"}${formatFigure(f, Math.abs(delta))}`;
+        const { moved, tone, sign } = figureDelta(f, reference);
         return (
           <div
             key={f.key}
@@ -740,6 +775,44 @@ function FiguresStrip({
               {formatFigure(f, f.value)}
             </p>
             <p className={`text-[11px] tabular-nums ${tone}`}>{sign} vs réf.</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function figureDelta(f: SimFigure, reference: Record<string, number>) {
+  const delta = f.value - (reference[f.key] ?? f.value);
+  const moved = Math.abs(delta) >= 0.005;
+  const tone = !moved
+    ? "text-foreground/40"
+    : f.goodWhenUp
+      ? delta > 0
+        ? "text-emerald-600"
+        : "text-red-600"
+      : "text-foreground/70";
+  const sign = !moved ? "±0" : `${delta > 0 ? "+" : "−"}${formatFigure(f, Math.abs(delta))}`;
+  return { moved, tone, sign };
+}
+
+/** One row of joined tiles for a panel header; never grows taller than its content. */
+function CompactFigures({ figures, reference }: { figures: SimFigure[]; reference: Record<string, number> }) {
+  return (
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-px overflow-hidden rounded-xl border border-border/60 bg-border/60">
+      {figures.map((f) => {
+        const { moved, tone, sign } = figureDelta(f, reference);
+        return (
+          <div key={f.key} className={`px-3 py-1.5 transition-colors ${moved ? "bg-brand-muted" : "bg-surface"}`}>
+            <p className="truncate text-[10px] font-semibold uppercase tracking-[0.06em] text-foreground/45" title={f.label}>
+              {f.label}
+            </p>
+            <div className="flex items-baseline justify-between gap-1.5">
+              <p className={`truncate font-display tabular-nums ${f.emphasis ? "text-[15px] font-semibold text-brand" : "text-sm font-medium"}`}>
+                {formatFigure(f, f.value)}
+              </p>
+              {moved ? <span className={`shrink-0 text-[10.5px] tabular-nums ${tone}`}>{sign}</span> : null}
+            </div>
           </div>
         );
       })}

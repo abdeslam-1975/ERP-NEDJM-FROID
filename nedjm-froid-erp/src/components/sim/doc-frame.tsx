@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 const EDITOR_WIDTH = 256;
+const MAX_SCALE = 1.4;
+const GUTTER = 12;
 const EDITABLE_CSS =
   "[data-sim-var]{cursor:pointer}[data-sim-var]:hover{outline:2px solid #1E4DB7;outline-offset:-2px}";
 
@@ -18,19 +20,22 @@ export function DocFrame({
   title,
   editable,
   renderEditor,
+  bare = false,
 }: {
   html: string;
   pageWidth: number;
   title: string;
   editable?: (id: string) => boolean;
   renderEditor?: (id: string, close: () => void) => ReactNode;
+  /** Drawn inside a card: no own border or rounded corners. */
+  bare?: boolean;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ width: pageWidth, height: 900 });
   const [pick, setPick] = useState<Pick | null>(null);
-  const scale = Math.min(1, Math.max(0.35, (box.width - 8) / pageWidth));
+  const scale = Math.min(MAX_SCALE, Math.max(0.35, (box.width - 2 * GUTTER) / pageWidth));
   const latest = useRef({ editable, scale });
   useEffect(() => {
     latest.current = { editable, scale };
@@ -102,15 +107,16 @@ export function DocFrame({
   return (
     <div
       ref={wrapRef}
-      className="relative min-h-[32rem] flex-1 overflow-hidden rounded-2xl border border-border/70 bg-slate-100 dark:bg-slate-900"
+      className={`relative min-h-[32rem] flex-1 overflow-hidden bg-surface-muted ${bare ? "" : "rounded-2xl border border-border/70"}`}
     >
       <iframe
         ref={frameRef}
         title={title}
-        className="absolute left-1/2 top-0 origin-top bg-white"
+        className="absolute left-1/2 origin-top rounded-md bg-white shadow-[0_1px_3px_rgba(15,23,42,0.12),0_8px_24px_-12px_rgba(15,23,42,0.25)]"
         style={{
+          top: GUTTER,
           width: pageWidth,
-          height: box.height / scale,
+          height: (box.height - GUTTER) / scale,
           transform: `translateX(-50%) scale(${scale})`,
         }}
       />

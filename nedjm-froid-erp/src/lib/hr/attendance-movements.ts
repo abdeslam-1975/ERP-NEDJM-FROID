@@ -4,6 +4,8 @@ export type AttendanceLegend = {
   label_ar?: string | null;
   coefficient: number;
   counts_as_presence: boolean;
+  color_bg?: string | null;
+  color_fg?: string | null;
 };
 
 export type MovementBucket =

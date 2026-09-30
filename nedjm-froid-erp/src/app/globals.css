@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   /* Royal blue system — dashboard style (reference UI, black → royal blue) */
   --color-brand: #3b6ef5;

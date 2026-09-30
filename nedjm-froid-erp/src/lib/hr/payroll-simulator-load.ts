@@ -189,7 +189,7 @@ async function load(
     supabase.from("hr_salary_grid").select("poste_id, grade, base_monthly, net_ref_monthly, effective_from"),
     supabase.from("hr_employees").select("id, matricule, last_name, first_name").order("matricule"),
     loadComplianceContext(supabase, { contractIds: [], siteIds: [], employeeIds: [], asOf: start }),
-    supabase.from("ref_legendes").select("code, label_fr, label_ar, coefficient, counts_as_presence"),
+    supabase.from("ref_legendes").select("code, label_fr, label_ar, coefficient, counts_as_presence, color_bg, color_fg"),
   ]);
   const rubriques = must(rubriqueRows, "Rubriques") as PayrollRubrique[];
   const legendList = (must(legendRows, "Légendes") as AttendanceLegend[]).map((l) => ({
