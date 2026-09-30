@@ -48,6 +48,9 @@ export type PeriodLockRow = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** Mirrors trg_sys_permissions_non_delegable: kept out of the rights matrix. */
+const NON_DELEGABLE_SCREENS = ["decision_payroll_reopen"];
+
 async function requireSuperAdmin(): Promise<{ ok: true; userId: string } | { ok: false; error: string }> {
   const ws = await getWorkspaceProfile();
   if (!ws) return { ok: false, error: "Session expirée." };
@@ -123,7 +126,12 @@ export async function loadPermissionMatrix(): Promise<
   const supabase = await createClient();
   const [roles, screens, perms] = await Promise.all([
     listRolesAdmin(),
-    supabase.from("sys_screens").select("id, code, path, module, label_fr, sort_order").eq("is_active", true).order("sort_order"),
+    supabase
+      .from("sys_screens")
+      .select("id, code, path, module, label_fr, sort_order")
+      .eq("is_active", true)
+      .not("code", "in", `(${NON_DELEGABLE_SCREENS.join(",")})`)
+      .order("sort_order"),
     supabase.from("sys_permissions").select(`role_id, screen_id, ${PERM_FIELDS.join(", ")}`),
   ]);
   if (!roles.ok) return roles;
@@ -152,6 +160,10 @@ export async function setPermission(input: {
   const supabase = await createClient();
   const { data: role } = await supabase.from("sys_roles").select("code").eq("id", input.role_id).maybeSingle();
   if (role?.code === "SUPER_ADMIN") return { ok: false, error: "SUPER_ADMIN a tous les droits (non modifiable)." };
+  const { data: screen } = await supabase.from("sys_screens").select("code").eq("id", input.screen_id).maybeSingle();
+  if (screen && NON_DELEGABLE_SCREENS.includes(screen.code)) {
+    return { ok: false, error: "La réouverture d'une paie (D7) est réservée au SUPER_ADMIN et ne se délègue pas." };
+  }
   const patch = permissionPatch(input.field, input.value);
   const { error } = await supabase
     .from("sys_permissions")

@@ -6,8 +6,8 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   closePayrollRun,
   loadPayrollSlipDetails,
-  reopenPayrollRun,
   requestPayrollCalculation,
+  requestPayrollChainDecision,
   validatePayrollRun,
   type PayrollGenerationRequest,
   type PayrollIrgScales,
@@ -16,7 +16,8 @@ import {
   type PayrollSlipLineRow,
   type PayrollSlipRow,
 } from "@/lib/actions/hr-ops";
-import { runStatusLabel, type PayrollRunAction } from "@/lib/hr/payroll-run-status";
+import { canRequestReopen, runStatusLabel, type PayrollRunAction } from "@/lib/hr/payroll-run-status";
+import { ReopenRequestDialog, SlipVersionsDialog } from "@/components/rh/payroll-reopen-dialogs";
 import { searchEmployeesForPayroll, type PayrollSearchEmployee } from "@/lib/actions/global-search";
 import { Button } from "@/components/ui/button";
 import {
@@ -189,6 +190,7 @@ export function PayrollManager({
   initialSlips,
   initialRuns = [],
   generationRequests = [],
+  chainDecisionId = null,
   canValidate = false,
   canClose = false,
   sites,
@@ -204,6 +206,7 @@ export function PayrollManager({
   initialSlips: PayrollSlipRow[];
   initialRuns?: PayrollRunRow[];
   generationRequests?: PayrollGenerationRequest[];
+  chainDecisionId?: string | null;
   canValidate?: boolean;
   canClose?: boolean;
   sites: readonly SiteOpt[];
@@ -294,6 +297,7 @@ export function PayrollManager({
   ].sort();
   const unverifiedSlipCount = slips.filter((s) => unverifiedRules(s.trace).length > 0).length;
   const [traceSlip, setTraceSlip] = useState<PayrollSlipRow | null>(null);
+  const [runDialog, setRunDialog] = useState<"reopen" | "versions" | null>(null);
   const declarationsProvisional = !runs.length || runs.some((r) => r.status_code === "DRAFT");
   const [exporting, setExporting] = useState(false);
 
@@ -354,8 +358,7 @@ export function PayrollManager({
     setError(null);
     setInfo(null);
     const runId = currentRun.id;
-    const run =
-      action === "validate" ? validatePayrollRun : action === "reopen" ? reopenPayrollRun : closePayrollRun;
+    const run = action === "validate" ? validatePayrollRun : closePayrollRun;
     start(async () => {
       const r = await run({ run_id: runId });
       if (!r.ok) {
@@ -370,11 +373,24 @@ export function PayrollManager({
       );
       setInfo(
         action === "validate"
-          ? "Paie validée : bulletins et pointage du mois figés (réouverture possible)."
-          : action === "reopen"
-            ? "Paie réouverte : pointage et bulletins de nouveau modifiables."
-            : "Paie clôturée définitivement.",
+          ? "Paie validée : bulletins et pointage du mois figés (réouverture seulement sur décision D7 du SUPER_ADMIN)."
+          : "Paie clôturée définitivement.",
       );
+    });
+  }
+
+  function requestChainDecision() {
+    if (!currentRun) return;
+    setError(null);
+    setInfo(null);
+    const runId = currentRun.id;
+    start(async () => {
+      const r = await requestPayrollChainDecision({ run_id: runId });
+      if (!r.ok) {
+        setError(r.error);
+        return;
+      }
+      router.push(`/decisions/${r.data.decision_id}`);
     });
   }
   const showLineColumns = slips.every((s) => s.detail_loaded !== false);
@@ -543,6 +559,21 @@ export function PayrollManager({
           </details>
         </RhAlert>
       ) : null}
+      {currentRun && runDialog === "reopen" ? (
+        <ReopenRequestDialog
+          runId={currentRun.id}
+          label={`${String(month).padStart(2, "0")}/${year} · ${siteName}`}
+          status={currentStatus}
+          onClose={() => setRunDialog(null)}
+        />
+      ) : null}
+      {currentRun && runDialog === "versions" ? (
+        <SlipVersionsDialog
+          runId={currentRun.id}
+          label={`${String(month).padStart(2, "0")}/${year} · ${siteName}`}
+          onClose={() => setRunDialog(null)}
+        />
+      ) : null}
       {traceSlip?.trace ? (
         <SlipTraceDialog
           title={`${traceSlip.matricule} ${traceSlip.employee_name} — ${String(traceSlip.period_month).padStart(2, "0")}/${traceSlip.period_year}`}
@@ -605,8 +636,41 @@ export function PayrollManager({
                 </RhChip>
               </Link>
             ) : null}
+            {currentRun.reopen_decision_id ? (
+              <Link href={`/decisions/${currentRun.reopen_decision_id}`}>
+                <RhChip tone="warning">
+                  {bi("Réouverture demandée · décision D7 en attente", "إعادة الفتح مطلوبة · قرار D7 معلق")}
+                </RhChip>
+              </Link>
+            ) : null}
+            {currentStatus === "DRAFT" && currentRun.chain_required ? (
+              <Link
+                href={chainDecisionId ? `/decisions/${chainDecisionId}` : "/decisions"}
+                title="Des mois de reprise (janvier–août 2026) sont encore ouverts : valider ce mois figerait leurs paramètres."
+              >
+                <RhChip tone="warning">
+                  {chainDecisionId
+                    ? bi("Validation bloquée · décision D6 en attente", "الاعتماد موقوف · قرار D6 معلق")
+                    : bi("Validation soumise à décision D6 (mois de reprise ouverts)", "الاعتماد يتطلب قرار D6")}
+                </RhChip>
+              </Link>
+            ) : null}
             <div className="ml-auto flex flex-wrap gap-2">
-              {currentStatus === "DRAFT" && canValidate ? (
+              {currentRun.version_count > 0 ? (
+                <Button variant="ghost" disabled={pending} onClick={() => setRunDialog("versions")}>
+                  {bi(`Historique (${currentRun.version_count})`, "السجل")}
+                </Button>
+              ) : null}
+              {currentStatus === "DRAFT" && canValidate && currentRun.chain_required && !chainDecisionId ? (
+                <Button
+                  variant="secondary"
+                  disabled={pending || currentRun.slip_count === 0 || currentRun.pending_changes > 0}
+                  onClick={requestChainDecision}
+                >
+                  Demander la décision D6
+                </Button>
+              ) : null}
+              {currentStatus === "DRAFT" && canValidate && !currentRun.chain_required ? (
                 <Button
                   variant="secondary"
                   disabled={pending || currentRun.slip_count === 0 || currentRun.pending_changes > 0}
@@ -615,9 +679,9 @@ export function PayrollManager({
                   Valider la paie
                 </Button>
               ) : null}
-              {currentStatus === "VALIDATED" && canValidate ? (
-                <Button variant="ghost" disabled={pending} onClick={() => transitionRun("reopen")}>
-                  Réouvrir
+              {canRequestReopen(currentStatus) && canValidate && !currentRun.reopen_decision_id ? (
+                <Button variant="ghost" disabled={pending} onClick={() => setRunDialog("reopen")}>
+                  Demander la réouverture (D7)
                 </Button>
               ) : null}
               {currentStatus === "VALIDATED" && canClose ? (

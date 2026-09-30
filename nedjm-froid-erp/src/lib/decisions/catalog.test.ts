@@ -7,8 +7,11 @@ import {
   payrollSourceLabel,
   decisionStatusLabel,
   parseDecisionOptions,
+  parsePayrollChainContext,
+  parsePayrollReopenContext,
   parsePayrollSignal,
   parseRuleApplicationContext,
+  reopenRiskNotices,
   payrollRunStatusLabel,
   payrollSignalNotice,
   periodLabel,
@@ -68,7 +71,17 @@ describe("D2 context", () => {
       contributors: ["Ali", "3"],
       slips: [{ period_key: "2026-11", period: "2026-11", status: "DRAFT", runs: 2, slips: 14, affected: true }],
     });
-    expect(parseRuleApplicationContext(null)).toMatchObject({ proposal_id: "", slips: [], first_open_month: null });
+    expect(parseRuleApplicationContext(null)).toMatchObject({
+      proposal_id: "",
+      slips: [],
+      first_open_month: null,
+      chain_mode: "UNDECIDED",
+      bounded_to: null,
+    });
+    expect(parseRuleApplicationContext({ chain_mode: "SEPARATE", bounded_to: "2026-08-31" })).toMatchObject({
+      chain_mode: "SEPARATE",
+      bounded_to: "2026-08-31",
+    });
   });
 
   it("summarises flagged drafts and frozen payslips without modifying them", () => {
@@ -154,6 +167,66 @@ describe("lot 1 decision types", () => {
   it("labels the new payroll input sources", () => {
     expect(payrollSourceLabel("ASSIGNMENT")).not.toBe("ASSIGNMENT");
     expect(payrollSourceLabel("SITE_WILAYA")).not.toBe("SITE_WILAYA");
+  });
+});
+
+describe("lot 3a decision types", () => {
+  it("knows D6 and D7 and labels their sources", () => {
+    expect(isDecisionTypeCode("D6")).toBe(true);
+    expect(isDecisionTypeCode("D7")).toBe(true);
+    expect(payrollSourceLabel("PAYROLL_REOPEN")).toMatch(/réouverture/);
+    expect(payrollSourceLabel("PAYROLL_VALIDATION")).toMatch(/Validation/);
+  });
+});
+
+describe("D7 context", () => {
+  const raw = {
+    run_id: "r1",
+    period: "09/2026",
+    period_nature: "OPERATIONAL",
+    status: "LOCKED",
+    reason: "Erreur de pointage constatée",
+    slip_count: "12",
+    net_total: 250000.5,
+    transfers: [{ batch_no: "VIR-1", status: "EXECUTED", lines: 12, amount: "250000.50" }, "x"],
+    transfer_executed: true,
+    certificates: [{ number: "ATT-1", type: "ATTEST", issued_at: "2026-10-03", employee: "M01 A B" }],
+    later_runs: [{ period: "10/2026", status: "VALIDATED", site_name: "Oran" }],
+    prior_decisions: [{ id: "d", type: "D3", status: "EXECUTED" }],
+    versions: 3,
+  };
+
+  it("parses the context defensively", () => {
+    const c = parsePayrollReopenContext(raw);
+    expect(c).toMatchObject({ run_id: "r1", status: "LOCKED", slip_count: 12, net_total: 250000.5, versions: 3 });
+    expect(c.transfers).toEqual([
+      { batch_no: "VIR-1", status: "EXECUTED", mode: "", lines: 12, amount: 250000.5, executed_at: null, deposit_date: null },
+    ]);
+    expect(parsePayrollReopenContext(null)).toMatchObject({ run_id: "", transfers: [], transfer_executed: false });
+  });
+
+  it("shows the double-payment risk and never treats a missing declaration trace as a proof", () => {
+    const notices = reopenRiskNotices(parsePayrollReopenContext(raw));
+    expect(notices[0]).toMatch(/double paiement/);
+    expect(notices.join(" ")).toMatch(/1 attestation/);
+    expect(notices.join(" ")).toMatch(/1 paie\(s\) de mois suivants/);
+    expect(notices.join(" ")).toMatch(/absence de trace ici ne prouve pas/);
+    const quiet = reopenRiskNotices(parsePayrollReopenContext({ period_nature: "EXTERNAL" }));
+    expect(quiet.some((n) => /double paiement/.test(n))).toBe(false);
+    expect(quiet.join(" ")).toMatch(/hors de l'application/);
+  });
+});
+
+describe("D6 context", () => {
+  it("parses the reprise months and hides the 1900 sentinel", () => {
+    const c = parsePayrollChainContext({
+      run_period: "09/2026",
+      global_open: "1900-01-01",
+      reprise_months: [{ month: "2026-01-01", period: "01/2026", open: true, runs: 1, validated: 0, slips: "8" }],
+      pending_rules: 2,
+    });
+    expect(c).toMatchObject({ run_period: "09/2026", global_open: null, pending_rules: 2 });
+    expect(c.reprise_months[0]).toEqual({ month: "2026-01-01", period: "01/2026", open: true, runs: 1, validated: 0, slips: 8 });
   });
 });
 

@@ -26,6 +26,7 @@ import {
 } from "@/lib/rules/proposals";
 import { RuleDiff } from "@/components/rules/rule-content";
 import { QuickDialog } from "@/components/rules/rule-ui";
+import { earliestOpen, firstOpenFor, isMonthClosed, type PayrollChainState } from "@/lib/hr/payroll-chains";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhChip, RhField, RhPageHeader, RhPanel, RhTabs, rhInput } from "@/components/rh/rh-ui";
 
@@ -297,7 +298,7 @@ export function RuleProposalsManager({
       {dialog?.kind === "apply" ? (
         <ApplicationDialog
           p={dialog.p}
-          firstOpen={access.firstOpenMonth}
+          chain={access.chain}
           onClose={() => setDialog(null)}
           onDone={done}
         />
@@ -441,19 +442,20 @@ function ReasonDialog({
 
 function ApplicationDialog({
   p,
-  firstOpen,
+  chain,
   onClose,
   onDone,
 }: {
   p: RuleProposalView;
-  firstOpen: string | null;
+  chain: PayrollChainState;
   onClose: () => void;
   onDone: (text: string, decisionId?: string | null) => void;
 }) {
   const [pending, start] = useTransition();
   const [mode, setMode] = useState<"month" | "date">("month");
+  const earliest = earliestOpen(chain);
   const defaultMonth =
-    p.requested_month && (!firstOpen || p.requested_month >= firstOpen) ? p.requested_month : (firstOpen ?? "");
+    p.requested_month && !isMonthClosed(chain, p.requested_month) ? p.requested_month : (earliest ?? "");
   const [month, setMonth] = useState(defaultMonth);
   const [date, setDate] = useState(p.text_effective_date ?? "");
   const [attached, setAttached] = useState<string | null>(null);
@@ -461,7 +463,9 @@ function ApplicationDialog({
 
   const options = mode === "date" && date ? applicationMonthsForDate(date) : null;
   const chosen = mode === "month" ? month : (attached ?? options?.suggested ?? "");
+  const firstOpen = chosen ? firstOpenFor(chain, chosen) : earliest;
   const problem = chosen ? applicationMonthError({ month: chosen, firstOpen, date: mode === "date" ? date : null }) : null;
+  const bounded = chain.mode === "SEPARATE" && chosen !== "" && chosen < chain.operationalStart;
 
   function send() {
     setError(null);
@@ -500,14 +504,26 @@ function ApplicationDialog({
       <p className="text-sm text-foreground/70">
         Date d&apos;effet du texte : <b>{frDay(p.text_effective_date)}</b> · mois demandé :{" "}
         <b>{frMonth(p.requested_month)}</b>
-        {firstOpen ? (
+        {chain.mode === "SEPARATE" ? (
           <>
             {" "}
-            · premier mois non validé : <b>{frMonth(firstOpen)}</b>
+            · reprise ouverte à partir de <b>{frMonth(chain.externalOpen ?? "2026-01-01")}</b>, paie opérationnelle à
+            partir de <b>{frMonth(chain.operationalOpen)}</b>
+          </>
+        ) : earliest ? (
+          <>
+            {" "}
+            · premier mois non validé : <b>{frMonth(earliest)}</b>
           </>
         ) : null}
         .
       </p>
+      {bounded ? (
+        <RhAlert tone="info">
+          Chaînes de clôture séparées (D6) : appliquée à un mois de reprise, la règle s&apos;arrête au 31/08/2026 et ne
+          change pas la paie opérationnelle.
+        </RhAlert>
+      ) : null}
       <div className="flex flex-wrap gap-4 text-sm">
         <label className="flex items-center gap-2">
           <input type="radio" checked={mode === "month"} onChange={() => setMode("month")} />À partir d&apos;un mois
@@ -522,7 +538,7 @@ function ApplicationDialog({
             type="month"
             className={rhInput}
             value={month.slice(0, 7)}
-            min={firstOpen?.slice(0, 7)}
+            min={earliest?.slice(0, 7)}
             onChange={(e) => setMonth(e.target.value ? `${e.target.value}-01` : "")}
           />
         </RhField>

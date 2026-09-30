@@ -29,6 +29,8 @@ export const DECISION_TYPES = [
   { code: "D2", label: "D2 · Date d'application d'une règle légale" },
   { code: "D8", label: "D8 · Correction d'une affectation" },
   { code: "D13", label: "D13 · Contrat ne commençant pas le 1er" },
+  { code: "D6", label: "D6 · Clôture des mois de reprise" },
+  { code: "D7", label: "D7 · Réouverture d'une paie" },
 ] as const;
 export type DecisionTypeCode = (typeof DECISION_TYPES)[number]["code"];
 export const DECISION_TYPE_CODES = DECISION_TYPES.map((t) => t.code) as [DecisionTypeCode, ...DecisionTypeCode[]];
@@ -50,7 +52,10 @@ const STATUS_LABELS: Record<DecisionStatus, string> = {
   SUPERSEDED: "Remplacée",
 };
 
-const SOURCE_LABELS: Record<PayrollInputSource | "MANUAL" | "DATA_QUALITY" | "RULE_APPROVAL", string> = {
+const SOURCE_LABELS: Record<
+  PayrollInputSource | "MANUAL" | "DATA_QUALITY" | "RULE_APPROVAL" | "PAYROLL_REOPEN" | "PAYROLL_VALIDATION",
+  string
+> = {
   ATTENDANCE: "Présences",
   CONTRACT: "Contrat de travail",
   SALARY: "Rubriques de salaire",
@@ -66,6 +71,8 @@ const SOURCE_LABELS: Record<PayrollInputSource | "MANUAL" | "DATA_QUALITY" | "RU
   MANUAL: "Demande depuis l'écran Paie",
   DATA_QUALITY: "Rapport de qualité des données",
   RULE_APPROVAL: "Approbation d'une règle légale",
+  PAYROLL_REOPEN: "Demande de réouverture depuis l'écran Paie",
+  PAYROLL_VALIDATION: "Validation d'une paie depuis l'écran Paie",
 };
 
 export function decisionStatusLabel(status: string): string {
@@ -182,6 +189,10 @@ export type RuleApplicationContext = {
   application_month: string;
   application_date: string | null;
   first_open_month: string | null;
+  /** D6 closing policy at the time of the context. */
+  chain_mode: string;
+  /** Separated chains: a rule applied to a reprise month stops on this day (31/08/2026). */
+  bounded_to: string | null;
   current: Record<string, unknown> | null;
   proposed: Record<string, unknown> | null;
   slips: RuleApplicationSlips[];
@@ -211,6 +222,8 @@ export function parseRuleApplicationContext(raw: unknown): RuleApplicationContex
     application_month: isoDay(c.application_month) ?? "",
     application_date: isoDay(c.application_date),
     first_open_month: open && open > "1900-01-01" ? open : null,
+    chain_mode: str(c.chain_mode) ?? "UNDECIDED",
+    bounded_to: isoDay(c.bounded_to),
     current: obj(c.current),
     proposed: obj(c.proposed),
     slips: Array.isArray(c.slips)
@@ -256,6 +269,172 @@ export function ruleApplicationSlipNotice(slips: RuleApplicationSlips[]): string
   ];
   if (frozen) parts.push(`${frozen} bulletin(s) validé(s) ou clôturé(s) : pour information, jamais modifiés.`);
   return parts.join(" ");
+}
+
+const numOr0 = (v: unknown) => {
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+};
+const list = (v: unknown): Record<string, unknown>[] =>
+  Array.isArray(v)
+    ? v.flatMap((x) => {
+        const o = obj(x);
+        return o ? [o] : [];
+      })
+    : [];
+
+export type ReopenTransfer = {
+  batch_no: string;
+  status: string;
+  mode: string;
+  lines: number;
+  amount: number;
+  executed_at: string | null;
+  deposit_date: string | null;
+};
+
+/** D7 context (hr_payroll_reopen_context): everything already produced from the payroll to reopen. */
+export type PayrollReopenContext = {
+  run_id: string;
+  site_name: string;
+  period: string;
+  period_nature: string;
+  status: string;
+  reason: string;
+  slip_count: number;
+  gross_total: number;
+  irg_total: number;
+  net_total: number;
+  validated_at: string | null;
+  validated_by: string | null;
+  locked_at: string | null;
+  locked_by: string | null;
+  transfers: ReopenTransfer[];
+  transfer_executed: boolean;
+  transfer_pending: boolean;
+  certificates: { number: string; type: string; issued_at: string; employee: string }[];
+  later_runs: { period: string; status: string; site_name: string }[];
+  prior_decisions: { id: string; type: string; status: string; option: string | null; at: string | null }[];
+  versions: number;
+  chain_mode: string;
+};
+
+export function parsePayrollReopenContext(raw: unknown): PayrollReopenContext {
+  const c = obj(raw) ?? {};
+  return {
+    run_id: str(c.run_id) ?? "",
+    site_name: str(c.site_name) ?? "",
+    period: str(c.period) ?? "",
+    period_nature: str(c.period_nature) ?? "",
+    status: str(c.status) ?? "",
+    reason: str(c.reason) ?? "",
+    slip_count: numOr0(c.slip_count),
+    gross_total: numOr0(c.gross_total),
+    irg_total: numOr0(c.irg_total),
+    net_total: numOr0(c.net_total),
+    validated_at: str(c.validated_at),
+    validated_by: str(c.validated_by),
+    locked_at: str(c.locked_at),
+    locked_by: str(c.locked_by),
+    transfers: list(c.transfers).map((t) => ({
+      batch_no: str(t.batch_no) ?? "",
+      status: str(t.status) ?? "",
+      mode: str(t.mode) ?? "",
+      lines: numOr0(t.lines),
+      amount: numOr0(t.amount),
+      executed_at: str(t.executed_at),
+      deposit_date: isoDay(t.deposit_date),
+    })),
+    transfer_executed: c.transfer_executed === true,
+    transfer_pending: c.transfer_pending === true,
+    certificates: list(c.certificates).map((x) => ({
+      number: str(x.number) ?? "",
+      type: str(x.type) ?? "",
+      issued_at: str(x.issued_at) ?? "",
+      employee: str(x.employee) ?? "",
+    })),
+    later_runs: list(c.later_runs).map((x) => ({
+      period: str(x.period) ?? "",
+      status: str(x.status) ?? "",
+      site_name: str(x.site_name) ?? "",
+    })),
+    prior_decisions: list(c.prior_decisions).map((x) => ({
+      id: str(x.id) ?? "",
+      type: str(x.type) ?? "",
+      status: str(x.status) ?? "",
+      option: str(x.option),
+      at: str(x.at),
+    })),
+    versions: numOr0(c.versions),
+    chain_mode: str(c.chain_mode) ?? "UNDECIDED",
+  };
+}
+
+/** Warnings shown before a D7 decision. The app has no declaration register: no trace is never a proof. */
+export function reopenRiskNotices(c: PayrollReopenContext): string[] {
+  const out: string[] = [];
+  if (c.transfer_executed) {
+    out.push(
+      "Un virement de cette paie a déjà été exécuté : risque de double paiement. Les lots exécutés restent en l'état et un nouveau virement pour ces bulletins reste bloqué ; tout écart devra être régularisé hors de cette réouverture.",
+    );
+  }
+  if (c.transfer_pending) {
+    out.push("Un lot de virement est généré ou déposé : annulez-le ou enregistrez son exécution, la réouverture sera refusée sinon.");
+  }
+  if (c.certificates.length) {
+    out.push(`${c.certificates.length} attestation(s), certificat(s) ou solde(s) de tout compte émis depuis la validation : ils ne seront pas modifiés.`);
+  }
+  if (c.later_runs.length) {
+    out.push(`${c.later_runs.length} paie(s) de mois suivants déjà validée(s) ou clôturée(s) : elles ne seront pas recalculées.`);
+  }
+  out.push(
+    "Déclarations (CNAS, G50, DAS…) : l'application ne tient pas encore de registre des déclarations. L'absence de trace ici ne prouve pas qu'aucune déclaration n'a été déposée : vérifiez hors de l'application.",
+  );
+  if (c.period_nature === "EXTERNAL") {
+    out.push("Mois de reprise : la paie a été versée et déclarée hors de l'application ; la réouverture ne change rien à ces opérations externes.");
+  }
+  return out;
+}
+
+export type ChainRepriseMonth = {
+  month: string;
+  period: string;
+  open: boolean;
+  runs: number;
+  validated: number;
+  slips: number;
+};
+
+/** D6 context (hr_payroll_chain_context). */
+export type PayrollChainContext = {
+  run_id: string;
+  run_period: string;
+  site_name: string;
+  global_open: string | null;
+  operational_start: string;
+  reprise_months: ChainRepriseMonth[];
+  pending_rules: number;
+};
+
+export function parsePayrollChainContext(raw: unknown): PayrollChainContext {
+  const c = obj(raw) ?? {};
+  const open = isoDay(c.global_open);
+  return {
+    run_id: str(c.run_id) ?? "",
+    run_period: str(c.run_period) ?? "",
+    site_name: str(c.site_name) ?? "",
+    global_open: open && open > "1900-01-01" ? open : null,
+    operational_start: isoDay(c.operational_start) ?? "2026-09-01",
+    reprise_months: list(c.reprise_months).map((m) => ({
+      month: isoDay(m.month) ?? "",
+      period: str(m.period) ?? "",
+      open: m.open === true,
+      runs: numOr0(m.runs),
+      validated: numOr0(m.validated),
+      slips: numOr0(m.slips),
+    })),
+    pending_rules: numOr0(c.pending_rules),
+  };
 }
 
 export type PayrollSignal = { flagged_runs: number; generation_decision: string | null };

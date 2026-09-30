@@ -1,7 +1,8 @@
 do $$
 declare
-  boss uuid; v_run uuid; s record; d record; b uuid; st0 text; reopen_ok text;
+  boss uuid; v_run uuid; s record; d record; b uuid; st0 text; reopen_ok text; did uuid; res jsonb; run_status text;
   m1 text := '-'; m2 text := '-'; m3 text := '-'; m4 text := '-'; m5 text := '-'; m6 text := '-'; m7 text := '-'; m8 text := '-';
+  m9 text := '-';
   live_after int; bad text := '';
 begin
   select usr.user_id into boss from sys_user_site_roles usr join sys_roles ro on ro.id = usr.role_id where ro.code = 'SUPER_ADMIN' limit 1;
@@ -16,6 +17,13 @@ begin
     if v_run is null then raise exception 'RESULT: SKIP (no payroll run with slips)'; end if;
     st0 := 'VALIDATED';
   else
+    -- D6: an operational month cannot be validated while reprise months are open and no policy is decided.
+    if exists (select 1 from hr_payroll_runs r where r.id = v_run and hr_payroll_chain_required(r.period_year, r.period_month)) then
+      did := hr_payroll_request_chain_decision(v_run);
+      res := sys_decision_decide(did, 'FREEZE', 'Test de régression : clôture chronologique',
+                                 (select fingerprint from sys_decisions where id = did), true);
+      if res->>'ok' <> 'true' then raise exception 'RESULT: FAIL d6_not_applied %', res; end if;
+    end if;
     st0 := hr_payroll_run_transition(v_run, 'validate');
   end if;
   select x.id, x.employee_id, x.run_id, x.status_code into s from hr_payroll_slips x
@@ -41,20 +49,29 @@ begin
   begin update hr_payroll_transfer_batches set status_code = 'DEPOSITED' where id = b; exception when others then m4 := sqlerrm; end;
   if m4 = '-' then bad := bad || 'deposit_without_ref_allowed '; end if;
   update hr_payroll_transfer_batches set status_code = 'DEPOSITED', deposit_ref = 'BRD-1' where id = b;
-  begin perform hr_payroll_run_transition(s.run_id, 'reopen'); exception when others then m5 := sqlerrm; end;
-  if m5 = '-' then bad := bad || 'reopen_with_live_batch_allowed '; end if;
+  -- Reopening goes through D7 only; a deposited batch blocks the request.
+  begin perform hr_payroll_request_reopen(s.run_id, 'Test de régression virements'); exception when others then m5 := sqlerrm; end;
+  if m5 = '-' then bad := bad || 'reopen_request_with_live_batch_allowed '; end if;
+  begin perform hr_payroll_run_transition(s.run_id, 'reopen'); exception when others then m9 := sqlerrm; end;
+  if m9 = '-' then bad := bad || 'direct_reopen_allowed '; end if;
   begin update hr_payroll_transfer_batches set status_code = 'CANCELLED' where id = b; exception when others then m6 := sqlerrm; end;
   if m6 = '-' then bad := bad || 'cancel_without_reason_allowed '; end if;
   update hr_payroll_transfer_batches set status_code = 'CANCELLED', cancelled_reason = 'test' where id = b;
   select count(*) into live_after from hr_payroll_transfer_lines where batch_id = b and is_live;
   if live_after <> 0 then bad := bad || 'lines_still_live_after_cancel '; end if;
-  begin reopen_ok := hr_payroll_run_transition(s.run_id, 'reopen'); exception when others then reopen_ok := 'ERR ' || sqlerrm; end;
-  if reopen_ok like 'ERR%' then bad := bad || 'reopen_after_cancel_blocked '; end if;
+  begin
+    did := hr_payroll_request_reopen(s.run_id, 'Test de régression virements');
+    res := sys_decision_decide(did, 'REOPEN', 'Test de régression : réouverture après annulation',
+                               (select fingerprint from sys_decisions where id = did), true);
+    reopen_ok := coalesce(res->>'ok', 'null');
+  exception when others then reopen_ok := 'ERR ' || sqlerrm; end;
+  select status_code into run_status from hr_payroll_runs where id = s.run_id;
+  if reopen_ok <> 'true' or run_status <> 'DRAFT' then bad := bad || 'reopen_after_cancel_blocked(' || reopen_ok || ') '; end if;
   begin update hr_payroll_transfer_batches set status_code = 'EXECUTED' where id = b; exception when others then m7 := sqlerrm; end;
   if m7 = '-' then bad := bad || 'cancelled_to_executed_allowed '; end if;
   begin delete from hr_payroll_transfer_batches where id = b; exception when others then m8 := sqlerrm; end;
   if m8 = '-' then bad := bad || 'batch_delete_allowed '; end if;
 
   if bad <> '' then raise exception 'RESULT: FAIL % (start=%)', bad, st0; end if;
-  raise exception 'RESULT: PASS transfer batches (unique live slip, immutable file, deposit/cancel rules, payroll reopen lock)';
+  raise exception 'RESULT: PASS transfer batches (unique live slip, immutable file, deposit/cancel rules, reopening only through D7)';
 end $$;

@@ -26,6 +26,7 @@ export default async function SocialPage({
       <PayrollManager
         initialSlips={slips.ok ? slips.data : []}
         initialRuns={runs.ok ? runs.data.runs : []}
+        chainDecisionId={runs.ok ? runs.data.chain_decision_id : null}
         canValidate={runs.ok && runs.data.can_validate}
         canClose={runs.ok && runs.data.can_close}
         sites={sites.ok ? sites.data.filter((s) => s.is_active) : []}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   attendanceFrozenMessage,
+  canRequestReopen,
   normalizeRunStatus,
   periodStatus,
   planRunTransition,
@@ -12,15 +13,19 @@ describe("payroll run transitions", () => {
     expect(planRunTransition("VALIDATED", "close")).toEqual({ ok: true, to: "LOCKED" });
   });
 
-  it("reopens only a validated run", () => {
-    expect(planRunTransition("VALIDATED", "reopen")).toEqual({ ok: true, to: "DRAFT" });
-    expect(planRunTransition("DRAFT", "reopen").ok).toBe(false);
+  it("has no direct reopening: validated and closed runs are reopened on decision D7 only", () => {
+    expect(canRequestReopen("VALIDATED")).toBe(true);
+    expect(canRequestReopen("LOCKED")).toBe(true);
+    expect(canRequestReopen("DRAFT")).toBe(false);
+    expect(planRunTransition("VALIDATED", "validate").ok).toBe(false);
   });
 
   it("refuses closing a draft and any change on a locked run", () => {
     expect(planRunTransition("DRAFT", "close").ok).toBe(false);
-    for (const action of ["validate", "reopen", "close"] as const) {
-      expect(planRunTransition("LOCKED", action).ok).toBe(false);
+    for (const action of ["validate", "close"] as const) {
+      const r = planRunTransition("LOCKED", action);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toMatch(/D7/);
     }
   });
 
@@ -40,7 +45,7 @@ describe("period status", () => {
 
   it("explains why the attendance grid is frozen", () => {
     expect(attendanceFrozenMessage(null)).toBeNull();
-    expect(attendanceFrozenMessage("VALIDATED")).toMatch(/réouvrez/);
+    expect(attendanceFrozenMessage("VALIDATED")).toMatch(/réouverture.*D7/);
     expect(attendanceFrozenMessage("LOCKED")).toMatch(/clôturée/);
   });
 });

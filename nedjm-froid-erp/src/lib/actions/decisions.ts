@@ -11,9 +11,13 @@ import {
   assignmentZoneNotice,
   decideBlocker,
   parseDecisionOptions,
+  parsePayrollChainContext,
+  parsePayrollReopenContext,
   parseRuleApplicationContext,
   validateJustification,
   type DecisionOption,
+  type PayrollChainContext,
+  type PayrollReopenContext,
   type RuleApplicationContext,
 } from "@/lib/decisions/catalog";
 
@@ -115,6 +119,8 @@ export type DecisionDetail = DecisionListRow & {
   assignment: AssignmentCorrectionContext | null;
   contract_start: ContractStartContext | null;
   rule_application: RuleApplicationContext | null;
+  payroll_reopen: PayrollReopenContext | null;
+  payroll_chains: PayrollChainContext | null;
   /** Options the data no longer allows (code → reason); the database refuses them too. */
   unavailable_options: Record<string, string>;
   /** Null when the current user may decide; otherwise the reason shown instead of the form. */
@@ -330,6 +336,8 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
   const assignment = raw.type_code === "D8" ? await assignmentContext(supabase, ctx) : null;
   const contractStart = raw.type_code === "D13" ? contractStartContext(ctx) : null;
   const ruleApplication = raw.type_code === "D2" ? parseRuleApplicationContext(ctx) : null;
+  const payrollReopen = raw.type_code === "D7" ? parsePayrollReopenContext(ctx) : null;
+  const payrollChains = raw.type_code === "D6" ? parsePayrollChainContext(ctx) : null;
   const ruleContributor =
     ruleApplication && raw.status === "PENDING" && !ws.isSuperAdmin
       ? await isRuleContributor(supabase, ws.id, ruleApplication)
@@ -337,6 +345,10 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
   const unavailable: Record<string, string> = {};
   if (contractStart && !contractStart.fix_allowed) {
     unavailable.FIX_START = `Mois de début déjà traité (paie validée ou clôturée, ou antérieur à septembre 2026) : correction possible seulement à partir du ${contractStart.first_changeable.split("-").reverse().join("/")}.`;
+  }
+  if (payrollReopen?.transfer_pending) {
+    unavailable.REOPEN =
+      "Lot de virement généré ou déposé pour cette paie : annulez-le, ou enregistrez son exécution, avant la réouverture.";
   }
 
   return {
@@ -362,6 +374,8 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
       assignment,
       contract_start: contractStart,
       rule_application: ruleApplication,
+      payroll_reopen: payrollReopen,
+      payroll_chains: payrollChains,
       unavailable_options: unavailable,
       decide_blocker: decideBlocker({
         status: raw.status,
@@ -431,6 +445,8 @@ export async function decideDecision(input: unknown): Promise<ActionResult<Decid
       revalidatePath("/rh/legal/propositions");
       revalidatePath("/referentiels/irg");
       revalidatePath("/rh/paie/irg");
+      revalidatePath("/rh/paie/bulletins");
+      revalidatePath("/rh/presence");
     }
     return {
       ok: true,

@@ -22,6 +22,7 @@ import {
 import type { ContributionBase, ContributionPart, ContributionScope } from "@/lib/hr/contributions";
 import { frMonth, isOpenRuleStatus, ruleSourceSchema, type RuleSource } from "@/lib/rules/proposals";
 import { PROPOSAL_SENT, saveRuleProposal } from "@/lib/rules/proposal-rpc";
+import { earliestOpen, parseChainState } from "@/lib/hr/payroll-chains";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -152,7 +153,8 @@ async function openFrom(supabase: Supabase): Promise<string | null> {
 
 export async function getLegalPeriod(): Promise<LegalPeriod> {
   const supabase = await createClient();
-  const open = await openFrom(supabase);
+  const { data } = await supabase.rpc("hr_payroll_chain_state");
+  const open = earliestOpen(parseChainState(data));
   const month = monthStartIso();
   return { open_from: open, month_start: month, default_from: open && open > month ? open : month };
 }

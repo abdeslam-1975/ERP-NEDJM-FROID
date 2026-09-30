@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { chainDecisionRequired, parseChainState } from "@/lib/hr/payroll-chains";
 import {
   attendanceSaveSchema,
   payrollGenerateSchema,
@@ -227,6 +229,12 @@ export type PayrollRunRow = {
   pending_changes: number;
   /** Open D3 decision of this run, when visible to the user. */
   open_decision_id: string | null;
+  /** Open D7 (reopening) request of this run, when visible to the user. */
+  reopen_decision_id: string | null;
+  /** Validation blocked until the SUPER_ADMIN decides the closing policy of the reprise months (D6). */
+  chain_required: boolean;
+  /** Frozen copies kept by earlier reopenings (D7). */
+  version_count: number;
 };
 
 /** Open D4 request (payroll not generated yet) visible to the user. */
@@ -1489,12 +1497,15 @@ export async function listPayrollRuns(input: {
   ActionResult<{
     runs: PayrollRunRow[];
     generation_requests: PayrollGenerationRequest[];
+    /** Open D6 request (closing policy of the reprise months), when visible to the user. */
+    chain_decision_id: string | null;
     can_validate: boolean;
     can_close: boolean;
   }>
 > {
   const supabase = await createClient();
-  const [{ data, error }, perms, openDecisions] = await Promise.all([
+  const month = `${input.year}-${String(input.month).padStart(2, "0")}-01`;
+  const [{ data, error }, perms, openDecisions, chainState, chainDecision] = await Promise.all([
     supabase
       .from("hr_payroll_runs")
       .select("id, period_year, period_month, site_id, status_code, validated_at, locked_at")
@@ -1505,25 +1516,43 @@ export async function listPayrollRuns(input: {
     supabase
       .from("sys_decisions")
       .select("id, type_code, site_id, run_id")
-      .in("type_code", ["D3", "D4"])
+      .in("type_code", ["D3", "D4", "D7"])
       .in("status", ["PENDING", "DECIDED"])
       .eq("period_year", input.year)
       .eq("period_month", input.month),
+    supabase.rpc("hr_payroll_chain_state"),
+    supabase
+      .from("sys_decisions")
+      .select("id")
+      .eq("dedupe_key", "D6")
+      .in("status", ["PENDING", "DECIDED"])
+      .maybeSingle(),
   ]);
   if (error) return { ok: false, error: error.message };
   const runIds = (data ?? []).map((r) => r.id);
-  const { data: slipRows, error: slipErr } = runIds.length
-    ? await supabase.from("hr_payroll_slips").select("run_id").in("run_id", runIds)
-    : { data: [] as { run_id: string }[], error: null };
-  if (slipErr) return { ok: false, error: slipErr.message };
+  let slipRows: { run_id: string }[] = [];
+  let versionRows: { run_id: string }[] = [];
+  if (runIds.length) {
+    const [s, v] = await Promise.all([
+      supabase.from("hr_payroll_slips").select("run_id").in("run_id", runIds),
+      supabase.from("hr_payroll_slip_versions").select("run_id").in("run_id", runIds),
+    ]);
+    if (s.error) return { ok: false, error: s.error.message };
+    slipRows = s.data ?? [];
+    versionRows = v.error ? [] : (v.data ?? []);
+  }
+  const versions = new Map<string, number>();
+  for (const v of versionRows) versions.set(v.run_id, (versions.get(v.run_id) ?? 0) + 1);
+  const chainRequired = chainState.error ? false : chainDecisionRequired(parseChainState(chainState.data), month);
   const changes = await loadPendingInputChanges(supabase, runIds);
   if (!changes.ok) return changes;
   const counts = new Map<string, number>();
   for (const s of slipRows ?? []) counts.set(s.run_id, (counts.get(s.run_id) ?? 0) + 1);
   const decisions = openDecisions.error ? [] : (openDecisions.data ?? []);
-  const recalcByRun = new Map(
-    decisions.filter((d) => d.type_code === "D3" && d.run_id).map((d) => [d.run_id as string, d.id]),
-  );
+  const byRun = (type: string) =>
+    new Map(decisions.filter((d) => d.type_code === type && d.run_id).map((d) => [d.run_id as string, d.id]));
+  const recalcByRun = byRun("D3");
+  const reopenByRun = byRun("D7");
   return {
     ok: true,
     data: {
@@ -1538,10 +1567,14 @@ export async function listPayrollRuns(input: {
         slip_count: counts.get(r.id) ?? 0,
         pending_changes: changes.data.get(r.id)?.count ?? 0,
         open_decision_id: recalcByRun.get(r.id) ?? null,
+        reopen_decision_id: reopenByRun.get(r.id) ?? null,
+        chain_required: chainRequired && normalizeRunStatus(r.status_code) === "DRAFT",
+        version_count: versions.get(r.id) ?? 0,
       })),
       generation_requests: decisions
         .filter((d) => d.type_code === "D4")
         .map((d) => ({ site_id: d.site_id ?? null, decision_id: d.id })),
+      chain_decision_id: chainDecision.data?.id ?? null,
       can_validate: perms.canValidate,
       can_close: perms.canClose,
     },
@@ -1599,14 +1632,104 @@ export async function validatePayrollRun(
   return transitionPayrollRun(input, "validate");
 }
 
-export async function reopenPayrollRun(
-  input: unknown,
-): Promise<ActionResult<{ id: string; status_code: PayrollRunStatus }>> {
-  return transitionPayrollRun(input, "reopen");
-}
-
 export async function closePayrollRun(
   input: unknown,
 ): Promise<ActionResult<{ id: string; status_code: PayrollRunStatus }>> {
   return transitionPayrollRun(input, "close");
+}
+
+const reopenRequestSchema = payrollRunActionSchema.extend({
+  reason: z
+    .string()
+    .trim()
+    .min(10, "Motif de la réouverture obligatoire (10 caractères minimum).")
+    .max(500, "Motif trop long (500 caractères maximum)."),
+});
+
+/** D7: a validated or closed run is never reopened here; the request goes to the SUPER_ADMIN (non-delegable). */
+export async function requestPayrollReopen(input: unknown): Promise<ActionResult<{ decision_id: string }>> {
+  const parsed = reopenRequestSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("hr_payroll_request_reopen", {
+    p_run: parsed.data.run_id,
+    p_reason: parsed.data.reason,
+  });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/rh/paie");
+  revalidatePath("/decisions");
+  return { ok: true, data: { decision_id: String(data) } };
+}
+
+/** D6: validating an operational month while reprise months are open waits for the SUPER_ADMIN's closing policy. */
+export async function requestPayrollChainDecision(input: unknown): Promise<ActionResult<{ decision_id: string }>> {
+  const parsed = payrollRunActionSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("hr_payroll_request_chain_decision", { p_run: parsed.data.run_id });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/rh/paie");
+  revalidatePath("/decisions");
+  return { ok: true, data: { decision_id: String(data) } };
+}
+
+export type PayrollSlipVersionRow = {
+  id: string;
+  slip_id: string;
+  employee: string;
+  version_no: number;
+  run_status: string;
+  gross_amount: number;
+  irg_amount: number;
+  net_payable: number;
+  line_count: number;
+  decision_id: string | null;
+  captured_at: string;
+  captured_by: string | null;
+};
+
+/** Frozen copies taken before each reopening (read-only; never restored automatically). */
+export async function listPayrollSlipVersions(runId: unknown): Promise<ActionResult<PayrollSlipVersionRow[]>> {
+  const parsed = z.string().uuid().safeParse(runId);
+  if (!parsed.success) return { ok: false, error: "Paie invalide." };
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("hr_payroll_slip_versions")
+    .select(
+      "id, slip_id, version_no, run_status, slip, lines, decision_id, captured_at, employee:hr_employees ( matricule, last_name, first_name ), capturer:sys_users!captured_by ( full_name )",
+    )
+    .eq("run_id", parsed.data)
+    .order("captured_at", { ascending: false })
+    .order("version_no", { ascending: false })
+    .limit(500);
+  if (error) return { ok: false, error: error.message };
+  type Row = {
+    id: string;
+    slip_id: string;
+    version_no: number;
+    run_status: string;
+    slip: Record<string, unknown> | null;
+    lines: unknown;
+    decision_id: string | null;
+    captured_at: string;
+    employee: { matricule: string | null; last_name: string | null; first_name: string | null } | null;
+    capturer: { full_name: string | null } | null;
+  };
+  return {
+    ok: true,
+    data: ((data ?? []) as unknown as Row[]).map((r) => ({
+      id: r.id,
+      slip_id: r.slip_id,
+      employee: [r.employee?.matricule, r.employee?.last_name, r.employee?.first_name].filter(Boolean).join(" "),
+      version_no: r.version_no,
+      run_status: r.run_status,
+      gross_amount: num(r.slip?.gross_amount),
+      irg_amount: num(r.slip?.irg_amount),
+      net_payable: num(r.slip?.net_payable),
+      line_count: Array.isArray(r.lines) ? r.lines.length : 0,
+      decision_id: r.decision_id,
+      captured_at: r.captured_at,
+      captured_by: r.capturer?.full_name ?? null,
+    })),
+  };
 }

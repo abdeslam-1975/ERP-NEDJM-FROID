@@ -15,6 +15,7 @@ import {
   type RuleProposalView,
 } from "@/lib/rules/proposals";
 import { PROPOSAL_SENT, saveRuleProposal } from "@/lib/rules/proposal-rpc";
+import { earliestOpen, parseChainState, type PayrollChainState } from "@/lib/hr/payroll-chains";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -27,7 +28,9 @@ export type RuleAccess = {
   canPropose: boolean;
   canApprove: boolean;
   canDecideApplication: boolean;
+  /** Earliest month a rule may still apply from (per chain when D6 separated the reprise months). */
   firstOpenMonth: string | null;
+  chain: PayrollChainState;
 };
 
 export type ZoneScopeRow = {
@@ -79,9 +82,9 @@ export async function getRuleAccess(): Promise<ActionResult<RuleAccess>> {
     perm(supabase, "rule_proposals", "update"),
     perm(supabase, "rule_approval", "update"),
     supabase.rpc("sys_decision_can_decide", { p_type: "D2" }),
-    supabase.rpc("hr_first_open_payroll_month"),
+    supabase.rpc("hr_payroll_chain_state"),
   ]);
-  const openIso = typeof open.data === "string" ? open.data.slice(0, 10) : null;
+  const chain = parseChainState(open.data);
   return {
     ok: true,
     data: {
@@ -91,7 +94,8 @@ export async function getRuleAccess(): Promise<ActionResult<RuleAccess>> {
       canPropose: ws.isSuperAdmin || propose,
       canApprove: ws.isSuperAdmin || approve,
       canDecideApplication: decide.data === true,
-      firstOpenMonth: openIso && openIso > "1900-01-01" ? openIso : null,
+      firstOpenMonth: earliestOpen(chain),
+      chain,
     },
   };
 }

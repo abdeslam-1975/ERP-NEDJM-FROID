@@ -6,6 +6,7 @@ import { useState, useTransition, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhChip, RhPageHeader, RhPanel } from "@/components/rh/rh-ui";
 import { decideDecision, executeDecision, type DecisionDetail } from "@/lib/actions/decisions";
+import type { PayrollChainContext, PayrollReopenContext } from "@/lib/decisions/catalog";
 import {
   JUSTIFICATION_MAX,
   decisionStatusLabel,
@@ -14,6 +15,7 @@ import {
   payrollSourceLabel,
   periodLabel,
   periodNatureText,
+  reopenRiskNotices,
   ruleApplicationSlipNotice,
   validateJustification,
 } from "@/lib/decisions/catalog";
@@ -56,7 +58,7 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
   const [info, setInfo] = useState<string | null>(null);
   const [invalidated, setInvalidated] = useState<string | null>(null);
   const chosen = d.options.find((o) => o.code === option) ?? null;
-  const isPayroll = d.type_code === "D3" || d.type_code === "D4";
+  const isPayroll = ["D3", "D4", "D6", "D7"].includes(d.type_code);
   const payrollHref =
     d.period_year && d.period_month ? `/rh/paie?year=${d.period_year}&month=${d.period_month}` : "/rh/paie";
 
@@ -309,7 +311,7 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
                 </span>
               ) : null}
             </Fact>
-            <Fact label="Premier mois non validé">
+            <Fact label={d.rule_application.chain_mode === "SEPARATE" ? "Premier mois non validé (sa chaîne)" : "Premier mois non validé"}>
               {d.rule_application.first_open_month ? frMonth(d.rule_application.first_open_month) : "Aucune paie validée"}
             </Fact>
             <div className="sm:col-span-2">
@@ -322,6 +324,13 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
           {d.period_nature === "EXTERNAL" ? (
             <p className="mt-3 rounded-xl border border-amber-200/80 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
               {periodNatureText(d.period_nature)}
+            </p>
+          ) : null}
+          {d.rule_application.bounded_to ? (
+            <p className="mt-3 rounded-xl border border-border/70 bg-surface-muted/50 px-3 py-2 text-sm text-foreground/80">
+              Chaînes de clôture séparées (D6) : la règle s&apos;appliquera de {frMonth(d.rule_application.application_month)}{" "}
+              jusqu&apos;au {frDate(d.rule_application.bounded_to)} seulement. La paie opérationnelle, à partir de septembre 2026,
+              garde ses paramètres.
             </p>
           ) : null}
           <div className="mt-3">
@@ -368,6 +377,9 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
           ) : null}
         </RhPanel>
       ) : null}
+
+      {d.payroll_reopen ? <ReopenPanel c={d.payroll_reopen} /> : null}
+      {d.payroll_chains ? <ChainPanel c={d.payroll_chains} /> : null}
 
       {d.status === "PENDING" ? (
         <RhPanel>
@@ -459,6 +471,10 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
                 {dateTime(d.executed_at)}
                 {d.executed_by_name ? ` · ${d.executed_by_name}` : ""}
                 {typeof d.execution_result?.slips === "number" ? ` · ${d.execution_result.slips} bulletin(s)` : ""}
+                {typeof d.execution_result?.versions === "number"
+                  ? ` · ${d.execution_result.versions} copie(s) figée(s) conservée(s)`
+                  : ""}
+                {typeof d.execution_result?.mode === "string" ? ` · politique ${d.execution_result.mode}` : ""}
               </Fact>
             ) : null}
             {d.closed_reason ? (
@@ -483,5 +499,172 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
         </RhPanel>
       )}
     </div>
+  );
+}
+
+const TRANSFER_STATUS: Record<string, string> = {
+  GENERATED: "Généré",
+  DEPOSITED: "Déposé",
+  EXECUTED: "Exécuté",
+  CANCELLED: "Annulé",
+};
+
+function ReopenPanel({ c }: { c: PayrollReopenContext }) {
+  const notices = reopenRiskNotices(c);
+  return (
+    <RhPanel>
+      <h3 className="font-display text-base font-semibold">
+        Paie à réouvrir · {c.period} · {c.site_name}
+      </h3>
+      <dl className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Fact label="Statut actuel">{payrollRunStatusLabel(c.status)}</Fact>
+        <Fact label="Bulletins">{c.slip_count}</Fact>
+        <Fact label="Brut / IRG / Net">
+          {money(c.gross_total)} / {money(c.irg_total)} / {money(c.net_total)}
+        </Fact>
+        <Fact label="Copies figées déjà conservées">{c.versions}</Fact>
+        <Fact label="Validée">
+          {dateTime(c.validated_at)}
+          {c.validated_by ? ` · ${c.validated_by}` : ""}
+        </Fact>
+        <Fact label="Clôturée">
+          {dateTime(c.locked_at)}
+          {c.locked_by ? ` · ${c.locked_by}` : ""}
+        </Fact>
+        <div className="sm:col-span-2">
+          <Fact label="Motif de la demande">{c.reason || "—"}</Fact>
+        </div>
+      </dl>
+      <div className="mt-4 space-y-2">
+        {notices.map((n) => (
+          <RhAlert key={n} tone={/double paiement|refusée/.test(n) ? "danger" : "warning"}>
+            {n}
+          </RhAlert>
+        ))}
+      </div>
+
+      <h4 className="mt-4 text-sm font-semibold">Virements préparés ou exécutés</h4>
+      {c.transfers.length ? (
+        <table className="mt-2 min-w-full text-sm">
+          <thead className="text-left text-xs uppercase text-foreground/55">
+            <tr>
+              <th className="py-1 pr-4">Lot</th>
+              <th className="py-1 pr-4">Mode</th>
+              <th className="py-1 pr-4">Statut</th>
+              <th className="py-1 pr-4 text-right">Lignes</th>
+              <th className="py-1 pr-4 text-right">Montant</th>
+              <th className="py-1">Exécution</th>
+            </tr>
+          </thead>
+          <tbody>
+            {c.transfers.map((t) => (
+              <tr key={t.batch_no} className="border-t border-border/60">
+                <td className="py-1 pr-4">{t.batch_no}</td>
+                <td className="py-1 pr-4">{t.mode}</td>
+                <td className="py-1 pr-4">
+                  <RhChip tone={t.status === "EXECUTED" ? "danger" : t.status === "CANCELLED" ? "neutral" : "warning"}>
+                    {TRANSFER_STATUS[t.status] ?? t.status}
+                  </RhChip>
+                </td>
+                <td className="py-1 pr-4 text-right tabular-nums">{t.lines}</td>
+                <td className="py-1 pr-4 text-right tabular-nums">{money(t.amount)}</td>
+                <td className="py-1">{t.executed_at ? dateTime(t.executed_at) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="mt-1 text-sm text-foreground/60">
+          Aucun lot de virement enregistré dans l&apos;application pour ces bulletins (ce qui ne prouve pas qu&apos;aucun paiement
+          n&apos;a eu lieu hors de l&apos;application).
+        </p>
+      )}
+
+      {c.certificates.length ? (
+        <>
+          <h4 className="mt-4 text-sm font-semibold">Documents émis depuis la validation</h4>
+          <ul className="mt-1 space-y-0.5 text-sm">
+            {c.certificates.map((x) => (
+              <li key={x.number}>
+                {x.number} · {x.type} · {x.employee} · {dateTime(x.issued_at)}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+
+      {c.later_runs.length ? (
+        <>
+          <h4 className="mt-4 text-sm font-semibold">Mois suivants déjà validés ou clôturés</h4>
+          <ul className="mt-1 space-y-0.5 text-sm">
+            {c.later_runs.map((x) => (
+              <li key={`${x.period}-${x.site_name}`}>
+                {x.period} · {x.site_name} · {payrollRunStatusLabel(x.status)}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+
+      {c.prior_decisions.length ? (
+        <>
+          <h4 className="mt-4 text-sm font-semibold">Décisions antérieures sur cette paie</h4>
+          <ul className="mt-1 space-y-0.5 text-sm">
+            {c.prior_decisions.map((x) => (
+              <li key={x.id}>
+                <Link href={`/decisions/${x.id}`} className="font-semibold text-brand hover:underline">
+                  {x.type}
+                </Link>{" "}
+                · {decisionStatusLabel(x.status)}
+                {x.option ? ` · ${x.option}` : ""} · {dateTime(x.at)}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </RhPanel>
+  );
+}
+
+function ChainPanel({ c }: { c: PayrollChainContext }) {
+  const open = c.reprise_months.filter((m) => m.open);
+  return (
+    <RhPanel>
+      <h3 className="font-display text-base font-semibold">
+        Validation demandée · paie {c.run_period} · {c.site_name}
+      </h3>
+      <p className="mt-2 text-sm text-foreground/75">
+        {open.length} mois de reprise (janvier–août 2026) encore ouvert(s) aux changements de paramètres.
+        {c.pending_rules ? ` ${c.pending_rules} proposition(s) de règle en cours visent un mois de reprise.` : ""}
+      </p>
+      <table className="mt-3 min-w-full text-sm">
+        <thead className="text-left text-xs uppercase text-foreground/55">
+          <tr>
+            <th className="py-1 pr-4">Mois</th>
+            <th className="py-1 pr-4">Paramètres</th>
+            <th className="py-1 pr-4 text-right">Paies</th>
+            <th className="py-1 pr-4 text-right">Validées</th>
+            <th className="py-1 text-right">Bulletins</th>
+          </tr>
+        </thead>
+        <tbody>
+          {c.reprise_months.map((m) => (
+            <tr key={m.month} className="border-t border-border/60">
+              <td className="py-1 pr-4">{m.period}</td>
+              <td className="py-1 pr-4">
+                {m.open ? <RhChip tone="warning">Ouverts</RhChip> : <RhChip>Figés</RhChip>}
+              </td>
+              <td className="py-1 pr-4 text-right tabular-nums">{m.runs}</td>
+              <td className="py-1 pr-4 text-right tabular-nums">{m.validated}</td>
+              <td className="py-1 text-right tabular-nums">{m.slips}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-3 rounded-xl border border-amber-200/80 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
+        Les mois de reprise ont été payés et déclarés hors de l&apos;application. Ce choix ne modifie aucun bulletin : il fixe
+        seulement jusqu&apos;où leurs paramètres restent modifiables. Il est définitif.
+      </p>
+    </RhPanel>
   );
 }
