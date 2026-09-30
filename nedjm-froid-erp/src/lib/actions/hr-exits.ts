@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireHrSalaryValues } from "@/lib/auth/require-roles";
 import { createClient } from "@/lib/supabase/server";
-import { refreshDraftPayroll } from "@/lib/actions/hr-ops";
+import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
 import { listLeaveBalances } from "@/lib/actions/hr-leave";
 import { normalizeSettlementLines, suggestSettlement, type SettlementLine } from "@/lib/hr/leave";
 import { SALARY_CATEGORIES, salaryAsOf, type SalaryVersion } from "@/lib/hr/payroll-calc";
@@ -206,7 +206,8 @@ export async function setExitStatus(input: {
     .maybeSingle();
   if (data) {
     const d = String(data.exit_date);
-    await refreshDraftPayroll({
+    await signalPayrollInputChange(supabase, {
+      source: "EXIT",
       employeeId: data.employee_id,
       year: Number(d.slice(0, 4)),
       month: Number(d.slice(5, 7)),

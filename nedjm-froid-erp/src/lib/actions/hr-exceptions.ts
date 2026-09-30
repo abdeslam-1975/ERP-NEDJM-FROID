@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireHrSalaryValues } from "@/lib/auth/require-roles";
 import { createClient } from "@/lib/supabase/server";
-import { refreshDraftPayroll } from "@/lib/actions/hr-ops";
+import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
 import { salaryExceptionSchema } from "@/lib/validations/hr";
 import { amountAllowedForClass, NEGATIVE_AMOUNT_ERROR, type SalaryCategory } from "@/lib/hr/payroll-calc";
 
@@ -192,7 +192,8 @@ export async function setSalaryExceptionStatus(input: {
     .eq("id", input.id)
     .maybeSingle();
   if (row) {
-    await refreshDraftPayroll({
+    await signalPayrollInputChange(supabase, {
+      source: "EXCEPTION",
       employeeId: row.employee_id,
       year: row.period_year,
       month: row.period_month,

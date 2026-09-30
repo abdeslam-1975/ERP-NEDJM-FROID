@@ -8,7 +8,9 @@ const h = vi.hoisted(() => ({
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 vi.mock("@/lib/supabase/server", () => ({ createClient: async () => h.fake!.client }));
 vi.mock("@/lib/actions/hr-salary", () => ({ replaceContractSalaryLines: async () => ({ ok: true, data: undefined }) }));
-vi.mock("@/lib/actions/hr-ops", () => ({ refreshDraftPayroll: async () => ({ ok: true, data: { count: 0 } }) }));
+vi.mock("@/lib/hr/payroll-input-signal", () => ({
+  signalPayrollInputChange: async () => ({ ok: true, data: { flagged_runs: 0, generation_decision: null } }),
+}));
 
 import { upsertHrContract } from "./hr-contracts";
 

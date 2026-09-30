@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { hrContractSchema } from "@/lib/validations/hr";
 import { replaceContractSalaryLines } from "@/lib/actions/hr-salary";
-import { refreshDraftPayroll } from "@/lib/actions/hr-ops";
+import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
+import { payrollSignalNotice } from "@/lib/decisions/catalog";
 import {
   isPrincipalExclusionError,
   planPrincipalClose,
@@ -114,7 +115,7 @@ export async function listHrContracts(): Promise<ActionResult<HrContractRow[]>> 
 export async function upsertHrContract(
   input: unknown,
 ): Promise<
-  ActionResult<{ id: string; closed_previous: number; refreshed_slips: number; warning: string | null }>
+  ActionResult<{ id: string; closed_previous: number; payroll_notice: string | null; warning: string | null }>
 > {
   const parsed = hrContractSchema.safeParse(input);
   if (!parsed.success) {
@@ -212,18 +213,23 @@ export async function upsertHrContract(
       warning = `Contrat enregistré, mais les rubriques de salaire ne l'ont pas été : ${lines.error}`;
     }
   }
-  const refreshed = await refreshDraftPayroll({
+  const signal = await signalPayrollInputChange(supabase, {
+    source: "CONTRACT",
     employeeId: p.employee_id,
-    contractId: data.id,
+    contractIds: [data.id],
     siteId: p.site_id,
   });
+  if (!signal.ok) {
+    const failed = `Paie brouillon non signalée : ${signal.error}`;
+    warning = warning ? `${warning}\n${failed}` : failed;
+  }
   revalidate();
   return {
     ok: true,
     data: {
       id: data.id,
       closed_previous: closedPrevious,
-      refreshed_slips: refreshed.ok ? refreshed.data.count : 0,
+      payroll_notice: signal.ok ? payrollSignalNotice(signal.data) : null,
       warning,
     },
   };

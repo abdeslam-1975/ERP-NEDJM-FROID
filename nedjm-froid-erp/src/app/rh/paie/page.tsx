@@ -26,6 +26,7 @@ export default async function PaiePage({
       <PayrollManager
         initialSlips={slips.ok ? slips.data : []}
         initialRuns={runs.ok ? runs.data.runs : []}
+        generationRequests={runs.ok ? runs.data.generation_requests : []}
         canValidate={runs.ok && runs.data.can_validate}
         canClose={runs.ok && runs.data.can_close}
         sites={sites.ok ? sites.data.filter((s) => s.is_active) : []}

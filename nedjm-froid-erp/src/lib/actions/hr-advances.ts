@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireHrSalaryValues } from "@/lib/auth/require-roles";
 import { createClient } from "@/lib/supabase/server";
-import { refreshDraftPayroll } from "@/lib/actions/hr-ops";
+import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -118,7 +118,7 @@ export async function createAdvance(input: unknown): Promise<ActionResult<{ id: 
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: "Enregistrement refusé (droits)." };
-  await refreshDraftPayroll({ employeeId: p.employee_id });
+  await signalPayrollInputChange(supabase, { source: "ADVANCE", employeeId: p.employee_id });
   revalidateAdvances();
   return { ok: true, data: { id: data.id } };
 }
@@ -135,7 +135,7 @@ export async function cancelAdvance(id: string): Promise<ActionResult> {
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: "Mise à jour refusée." };
-  await refreshDraftPayroll({ employeeId: data.employee_id });
+  await signalPayrollInputChange(supabase, { source: "ADVANCE", employeeId: data.employee_id });
   revalidateAdvances();
   return { ok: true, data: undefined };
 }

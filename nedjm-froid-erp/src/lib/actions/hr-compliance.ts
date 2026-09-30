@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { requireComplianceWrite } from "@/lib/auth/compliance-access";
-import { refreshDraftPayroll } from "@/lib/actions/hr-ops";
+import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
+import { payrollSignalNotice } from "@/lib/decisions/catalog";
 import { legalVarsAsOf } from "@/lib/hr/legal-vars-as-of";
 import { loadComplianceContext, mapOverrideRow } from "@/lib/hr/compliance-load";
 import {
@@ -169,7 +170,7 @@ const saveSchema = z.object({
 
 export async function saveComplianceOverride(
   input: unknown,
-): Promise<ActionResult<{ id: string; refreshed_slips: number }>> {
+): Promise<ActionResult<{ id: string; payroll_notice: string | null }>> {
   const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const parsed = saveSchema.safeParse(input);
@@ -252,9 +253,9 @@ export async function saveComplianceOverride(
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: "Enregistrement refusé (droits)." };
 
-  const refreshed = await refreshContractDrafts(supabase, p.contract_id);
+  const notice = await signalContractChange(supabase, p.contract_id);
   revalidate();
-  return { ok: true, data: { id: data.id, refreshed_slips: refreshed } };
+  return { ok: true, data: { id: data.id, payroll_notice: notice } };
 }
 
 const endSchema = z.object({
@@ -265,7 +266,7 @@ const endSchema = z.object({
 
 export async function endComplianceOverride(
   input: unknown,
-): Promise<ActionResult<{ deleted: boolean; refreshed_slips: number }>> {
+): Promise<ActionResult<{ deleted: boolean; payroll_notice: string | null }>> {
   const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const parsed = endSchema.safeParse(input);
@@ -291,18 +292,12 @@ export async function endComplianceOverride(
         .eq("id", row.id);
   if (error) return { ok: false, error: error.message };
 
-  const refreshed = await refreshContractDrafts(supabase, row.contract_id);
+  const notice = await signalContractChange(supabase, row.contract_id);
   revalidate();
-  return { ok: true, data: { deleted, refreshed_slips: refreshed } };
+  return { ok: true, data: { deleted, payroll_notice: notice } };
 }
 
-async function refreshContractDrafts(supabase: Supabase, contractId: string) {
-  const { data: ctr } = await supabase
-    .from("hr_contracts")
-    .select("employee_id")
-    .eq("id", contractId)
-    .maybeSingle();
-  if (!ctr) return 0;
-  const refreshed = await refreshDraftPayroll({ employeeId: ctr.employee_id, contractId });
-  return refreshed.ok ? refreshed.data.count : 0;
+async function signalContractChange(supabase: Supabase, contractId: string) {
+  const signal = await signalPayrollInputChange(supabase, { source: "COMPLIANCE", contractIds: [contractId] });
+  return signal.ok ? payrollSignalNotice(signal.data) : null;
 }

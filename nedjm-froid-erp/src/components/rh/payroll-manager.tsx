@@ -5,10 +5,11 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   closePayrollRun,
-  generatePayrollRun,
   loadPayrollSlipDetails,
   reopenPayrollRun,
+  requestPayrollCalculation,
   validatePayrollRun,
+  type PayrollGenerationRequest,
   type PayrollIrgScales,
   type PayrollRunRow,
   type PayrollSlipDetail,
@@ -185,6 +186,7 @@ function BulletinPreview({
 export function PayrollManager({
   initialSlips,
   initialRuns = [],
+  generationRequests = [],
   canValidate = false,
   canClose = false,
   sites,
@@ -199,6 +201,7 @@ export function PayrollManager({
 }: {
   initialSlips: PayrollSlipRow[];
   initialRuns?: PayrollRunRow[];
+  generationRequests?: PayrollGenerationRequest[];
   canValidate?: boolean;
   canClose?: boolean;
   sites: readonly SiteOpt[];
@@ -278,6 +281,7 @@ export function PayrollManager({
   const missing = missQuery && candidates.q === missQuery ? candidates.rows : [];
   const currentRun = runs.find((r) => r.site_id === siteId) ?? null;
   const currentStatus = currentRun?.status_code ?? "DRAFT";
+  const generationRequest = currentRun ? null : generationRequests.find((g) => g.site_id === siteId) ?? null;
   const siteName = sites.find((s) => s.id === siteId)?.name_fr ?? "";
   const rateSlip =
     slips.find((s) => !s.compliance || s.compliance.cnas.regime_code === DEFAULT_CNAS_REGIME) ?? slips[0];
@@ -384,9 +388,9 @@ export function PayrollManager({
   function generate(site: string, y: number, m: number) {
     setError(null);
     start(async () => {
-      let r: Awaited<ReturnType<typeof generatePayrollRun>>;
+      let r: Awaited<ReturnType<typeof requestPayrollCalculation>>;
       try {
-        r = await generatePayrollRun({ period_year: y, period_month: m, site_id: site });
+        r = await requestPayrollCalculation({ period_year: y, period_month: m, site_id: site });
       } catch {
         setError(bi("Le serveur n'a pas répondu. Rechargez la page et réessayez.", "لم يستجب الخادم. أعد تحميل الصفحة."));
         return;
@@ -395,19 +399,7 @@ export function PayrollManager({
         setError(r.error);
         return;
       }
-      setInfo(
-        [
-          bi(
-            `${r.data.count} bulletins générés (CNAS, IRG, CACOBATPH depuis les variables).`,
-            `${r.data.count} كشوف مولّدة (الضمان والضريبة وكاكوباتف من المتغيرات).`,
-          ),
-          ...(r.data.warnings ?? []),
-        ].join("\n"),
-      );
-      const qs = new URLSearchParams({ year: String(y), month: String(m) });
-      if (query.trim()) qs.set("q", query.trim());
-      router.push(`${pathname}?${qs.toString()}`);
-      router.refresh();
+      router.push(`/decisions/${r.data.decision_id}`);
     });
   }
 
@@ -463,10 +455,11 @@ export function PayrollManager({
           <>
             Taux issus des variables légales (CNAS, IRG, CACOBATPH). Coefficient issu des légendes de présence.
             Rubriques (panier, hygiène…) depuis le dictionnaire et le contrat.
-            Après modification du contrat, les bulletins brouillon se recalculent.
+            Aucune paie n&apos;est créée ni recalculée automatiquement : chaque génération ou recalcul passe par une
+            décision du Centre de décisions.
             <span className="mt-1 block" dir="rtl">
               النسب من المتغيرات القانونية (الضمان، الضريبة، كاكوباتف). المعامل من رموز الحضور. بنود الأجر (وجبة العامل، النظافة…)
-              من القاموس والعقد. بعد تعديل العقد تُحدَّث كشوف المسودة.
+              من القاموس والعقد. لا تُولَّد الأجور ولا يُعاد حسابها تلقائياً: كل عملية تمر بقرار.
             </span>
           </>
         }
@@ -566,11 +559,24 @@ export function PayrollManager({
               {runStatusLabel(currentStatus).fr}
             </RhChip>
             <span className="text-xs text-foreground/60">{currentRun.slip_count} bulletin(s)</span>
+            {currentStatus === "DRAFT" && currentRun.pending_changes > 0 ? (
+              <Link
+                href={currentRun.open_decision_id ? `/decisions/${currentRun.open_decision_id}` : "/decisions"}
+                title="Validation bloquée tant qu'une décision de recalcul n'a pas été prise."
+              >
+                <RhChip tone="warning">
+                  {bi(
+                    `Données modifiées depuis le calcul (${currentRun.pending_changes}) · décision requise`,
+                    "بيانات تغيّرت منذ الحساب · يلزم قرار",
+                  )}
+                </RhChip>
+              </Link>
+            ) : null}
             <div className="ml-auto flex flex-wrap gap-2">
               {currentStatus === "DRAFT" && canValidate ? (
                 <Button
                   variant="secondary"
-                  disabled={pending || currentRun.slip_count === 0}
+                  disabled={pending || currentRun.slip_count === 0 || currentRun.pending_changes > 0}
                   onClick={() => transitionRun("validate")}
                 >
                   Valider la paie
@@ -589,7 +595,16 @@ export function PayrollManager({
             </div>
           </>
         ) : (
-          <span className="text-xs text-foreground/60">Pas encore générée pour ce chantier.</span>
+          <>
+            <span className="text-xs text-foreground/60">Pas encore générée pour ce chantier.</span>
+            {generationRequest ? (
+              <Link href={`/decisions/${generationRequest.decision_id}`}>
+                <RhChip tone="warning">
+                  {bi("Génération demandée · en attente de décision", "توليد مطلوب · في انتظار القرار")}
+                </RhChip>
+              </Link>
+            ) : null}
+          </>
         )}
       </div>
       {canValidate ? (
@@ -700,8 +715,11 @@ export function PayrollManager({
             (periodYear === year && periodMonth === month && currentStatus !== "DRAFT")
           }
           onClick={() => generate(siteId, periodYear, periodMonth)}
+          title="Ouvre la décision de génération (D4) ou de recalcul (D3) au Centre de décisions."
         >
-          Générer
+          {periodYear === year && periodMonth === month && currentRun
+            ? bi("Demander un recalcul", "طلب إعادة الحساب")
+            : bi("Demander la génération", "طلب التوليد")}
         </Button>
         {pageSlips.length > 0 ? (
           <>
@@ -755,8 +773,8 @@ export function PayrollManager({
                     }}
                   >
                     {bi(
-                      `Générer la paie ${e.site_name ?? ""} ${String(month).padStart(2, "0")}/${year}`,
-                      "توليد كشوف الورشة",
+                      `Demander la paie ${e.site_name ?? ""} ${String(month).padStart(2, "0")}/${year}`,
+                      "طلب كشوف الورشة",
                     )}
                   </Button>
                 ) : (
@@ -870,6 +888,11 @@ export function PayrollManager({
                   <td className="sticky left-0 z-10 bg-surface px-3.5 py-3">
                     <span className="font-mono text-xs">{s.matricule}</span>{" "}
                     {s.employee_name}
+                    {s.inputs_changed ? (
+                      <span className="mt-0.5 block text-[11px] text-amber-700">
+                        {bi("Données modifiées depuis le calcul", "بيانات تغيّرت منذ الحساب")}
+                      </span>
+                    ) : null}
                     {view === "social" && !String(s.nss ?? "").trim() && s.employee_ss > 0 ? (
                       <span className="mt-0.5 block text-[11px] text-amber-700">
                         {bi("NSS manquant", "رقم الضمان ناقص")}

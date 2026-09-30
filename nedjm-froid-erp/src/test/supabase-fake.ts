@@ -17,6 +17,7 @@ export type FakeRpc = { fn: string; args: unknown };
 export function createSupabaseFake(opts: {
   onQuery?: (q: FakeQuery) => Result | undefined;
   onRpc?: (r: FakeRpc) => Result | undefined;
+  user?: { id: string } | null;
 }) {
   const queries: FakeQuery[] = [];
   const rpcs: FakeRpc[] = [];
@@ -57,6 +58,9 @@ export function createSupabaseFake(opts: {
       const r: FakeRpc = { fn, args };
       rpcs.push(r);
       return Promise.resolve(opts.onRpc?.(r) ?? { data: null, error: null });
+    },
+    auth: {
+      getUser: () => Promise.resolve({ data: { user: opts.user ?? null }, error: null }),
     },
   };
   return { client, queries, rpcs };

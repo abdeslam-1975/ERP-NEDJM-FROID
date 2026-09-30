@@ -24,6 +24,7 @@ const navGroups: NavGroup[] = [
     items: [
       { href: "/", labelFr: "Tableau de Bord", labelAr: "لوحة القيادة", icon: "home" },
       { href: "/simulateur", labelFr: "Simulateur", labelAr: "المحاكي", icon: "docs" },
+      { href: "/decisions", labelFr: "Centre de décisions", labelAr: "مركز القرارات", icon: "shield" },
     ],
   },
   {

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
+import { listMyNotifications } from "@/lib/actions/decisions";
 
 export async function AppShell({
   title,
@@ -16,12 +17,17 @@ export async function AppShell({
   if (!workspace) {
     redirect("/login");
   }
+  const notifications = await listMyNotifications().catch(() => null);
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar title={title} workspace={workspace} />
+        <Topbar
+          title={title}
+          workspace={workspace}
+          notifications={notifications?.ok ? notifications.data.rows : []}
+        />
         <main className="flex-1 px-4 pb-6 sm:px-6 lg:px-8 lg:pb-8">{children}</main>
       </div>
     </div>

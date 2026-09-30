@@ -5,6 +5,7 @@ import Link from "next/link";
 import { saveAttendanceMonth, type AttendanceCell } from "@/lib/actions/hr-ops";
 import { parseAttendanceImport } from "@/lib/actions/hr-attendance-import";
 import { attendanceFrozenMessage, type PayrollRunStatus } from "@/lib/hr/payroll-run-status";
+import { payrollSignalNotice } from "@/lib/decisions/catalog";
 import {
   loadAttendanceSheet,
   saveAttendanceSheetRows,
@@ -428,9 +429,8 @@ export function AttendanceManager({
           return;
         }
         messages.push(`${r.data.count} valeurs validées`);
-        if (r.data.refreshed_slips > 0) {
-          messages.push(`${r.data.refreshed_slips} bulletin(s) mis à jour`);
-        }
+        const payrollNotice = payrollSignalNotice(r.data.payroll);
+        if (payrollNotice) messages.push(payrollNotice);
       }
       loadMonth(year, month, siteId, `${messages.join(" · ")}. · تم اعتماد القيم.`);
     });

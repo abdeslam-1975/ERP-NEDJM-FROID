@@ -368,14 +368,11 @@ export function ContractsManager({
           )
         : bi("Contrat enregistré.", "تم حفظ العقد.");
       setInfo(
-        done.refreshed_slips
-          ? `${saved} ${bi(
-              "Les bulletins brouillon ont été recalculés avec les nouveaux items.",
-              "كشوف المسودة أُعيد حسابها بالبنود الجديدة.",
-            )}`
+        done.payroll_notice
+          ? `${saved} ${done.payroll_notice}`
           : `${saved} ${bi(
-              "Ouvrez Paie et générez le bulletin pour voir les items.",
-              "افتح الأجور وولّد الكشف لرؤية البنود.",
+              "Les bulletins seront calculés à la génération de la paie, sur décision.",
+              "تُحسب الكشوف عند توليد الأجور، بقرار.",
             )}`,
       );
     });

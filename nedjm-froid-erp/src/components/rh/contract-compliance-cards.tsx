@@ -168,11 +168,8 @@ export function ContractComplianceCards({
       setEditing(null);
       setDraft(null);
       setNotice(
-        r.data.refreshed_slips
-          ? bi(
-              `Dérogation enregistrée. ${r.data.refreshed_slips} bulletin(s) brouillon recalculé(s).`,
-              "تم حفظ الاستثناء وأُعيد حساب كشوف المسودة.",
-            )
+        r.data.payroll_notice
+          ? `${bi("Dérogation enregistrée.", "تم حفظ الاستثناء.")} ${r.data.payroll_notice}`
           : bi("Dérogation enregistrée.", "تم حفظ الاستثناء."),
       );
       await load();
@@ -430,7 +427,7 @@ export function ContractComplianceCards({
                   </RhField>
                   <p className="text-[11px] text-foreground/55">
                     {bi(
-                      "S'applique à tout mois touché par la période. Les bulletins brouillon sont recalculés.",
+                      "S'applique à tout mois touché par la période. Les paies brouillon concernées sont signalées ; leur recalcul passe par une décision.",
                       "يُطبَّق على كل شهر تشمله الفترة، وتُعاد حسابات كشوف المسودة.",
                     )}
                   </p>

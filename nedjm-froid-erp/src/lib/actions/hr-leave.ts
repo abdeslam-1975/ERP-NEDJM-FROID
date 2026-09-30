@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireHrSalaryValues } from "@/lib/auth/require-roles";
 import { createClient } from "@/lib/supabase/server";
-import { refreshDraftPayroll } from "@/lib/actions/hr-ops";
+import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
 import { legalVarsAsOf } from "@/lib/hr/legal-vars-as-of";
 import {
   calendarDays,
@@ -224,7 +224,8 @@ export async function decideLeaveRequest(input: {
     .maybeSingle();
   if (row && input.status !== "REJECTED") {
     const d = String(row.start_date);
-    await refreshDraftPayroll({
+    await signalPayrollInputChange(supabase, {
+      source: "LEAVE",
       employeeId: row.employee_id,
       year: Number(d.slice(0, 4)),
       month: Number(d.slice(5, 7)),

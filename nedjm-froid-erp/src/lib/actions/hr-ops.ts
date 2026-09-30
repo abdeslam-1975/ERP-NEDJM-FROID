@@ -62,6 +62,8 @@ import {
   emptyMovements,
   type AttendanceLegend,
 } from "@/lib/hr/attendance-movements";
+import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
+import type { PayrollSignal } from "@/lib/decisions/catalog";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -186,6 +188,8 @@ export type PayrollSlipRow = {
   lines: PayrollSlipLineRow[];
   /** False when the list skipped lines and print identity. Undefined means they are present. */
   detail_loaded?: boolean;
+  /** Draft slip whose inputs changed after calculation, pending a D3 decision. */
+  inputs_changed?: boolean;
 };
 
 export type PayrollSlipDetail = {
@@ -211,7 +215,14 @@ export type PayrollRunRow = {
   validated_at: string | null;
   locked_at: string | null;
   slip_count: number;
+  /** Changes since calculation not yet decided (recalculate or keep): validation is refused meanwhile. */
+  pending_changes: number;
+  /** Open D3 decision of this run, when visible to the user. */
+  open_decision_id: string | null;
 };
+
+/** Open D4 request (payroll not generated yet) visible to the user. */
+export type PayrollGenerationRequest = { site_id: string | null; decision_id: string };
 
 function num(v: unknown) {
   return Number(v ?? 0);
@@ -302,10 +313,11 @@ export async function listAttendanceMonth(input: {
  * "Valider les valeurs renseignées": replaces the month with the grid's final values,
  * all VALIDATED, each keeping its origin (MANUAL / OM / AUTO).
  * Proposals written after the grid was loaded (new ordre de mission) are left untouched.
+ * No payroll is created or recalculated: drafts are flagged and a D3 / D4 decision is requested.
  */
 export async function saveAttendanceMonth(
   input: unknown,
-): Promise<ActionResult<{ count: number; refreshed_slips: number }>> {
+): Promise<ActionResult<{ count: number; payroll: PayrollSignal }>> {
   const parsed = attendanceSaveSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
@@ -348,30 +360,25 @@ export async function saveAttendanceMonth(
     p_rows: rows,
   });
   if (saveErr) return { ok: false, error: saveErr.message };
-  // Site chiefs save attendance without payroll rights: the draft is refreshed by RH later.
-  const { data: canPayroll } = await supabase.rpc("erp_has_perm", {
-    p_screen: "hr_payroll",
-    p_action: "update",
+  const signal = await signalPayrollInputChange(supabase, {
+    source: "ATTENDANCE",
+    siteId: p.site_id,
+    employeeId: p.employee_id ?? null,
+    year: p.year,
+    month: p.month,
   });
-  let refreshedCount = 0;
-  if (canPayroll === true) {
-    const refreshed = await refreshDraftPayroll({
-      siteId: p.site_id,
-      employeeId: p.employee_id ?? undefined,
-      year: p.year,
-      month: p.month,
-    });
-    if (!refreshed.ok) return refreshed;
-    refreshedCount = refreshed.data.count;
+  if (!signal.ok) {
+    return {
+      ok: false,
+      error: `Présences enregistrées, mais la paie n'a pas pu être signalée : ${signal.error}`,
+    };
   }
   revalidatePath("/rh/presence");
   revalidatePath("/rh/paie");
-  revalidatePath("/rh/paie/bulletins");
-  revalidatePath("/rh/paie/social");
-  revalidatePath("/rh/paie/fiscal");
+  revalidatePath("/decisions");
   return {
     ok: true,
-    data: { count: p.cells.length, refreshed_slips: refreshedCount },
+    data: { count: p.cells.length, payroll: signal.data },
   };
 }
 
@@ -391,32 +398,124 @@ export async function loadPayrollIrgScales(input: {
   return loadIrgEngine(supabase, start);
 }
 
-export async function generatePayrollRun(
+/**
+ * "Générer" on the payroll screen: opens (or refreshes) the decision that governs the month —
+ * D4 when the payroll does not exist yet, D3 (whole run) for a draft. Nothing is calculated here.
+ */
+export async function requestPayrollCalculation(
   input: unknown,
-  options?: { onlyEmployeeIds?: string[] },
-): Promise<ActionResult<{ run_id: string; count: number; warnings: string[] }>> {
+): Promise<ActionResult<{ decision_id: string; type_code: "D3" | "D4" }>> {
   const parsed = payrollGenerateSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
   }
   const p = parsed.data;
   const supabase = await createClient();
+  let runQuery = supabase
+    .from("hr_payroll_runs")
+    .select("id, status_code")
+    .eq("period_year", p.period_year)
+    .eq("period_month", p.period_month);
+  runQuery = p.site_id ? runQuery.eq("site_id", p.site_id) : runQuery.is("site_id", null);
+  const { data: run, error: runErr } = await runQuery.maybeSingle();
+  if (runErr) return { ok: false, error: runErr.message };
+  if (run) {
+    const status = normalizeRunStatus(run.status_code);
+    if (status !== "DRAFT") {
+      return {
+        ok: false,
+        error:
+          status === "LOCKED"
+            ? "Paie clôturée : aucun recalcul possible. · الأجور مقفلة."
+            : "Paie validée : aucun recalcul possible sans réouverture. · الأجور معتمدة.",
+      };
+    }
+    const { data, error } = await supabase.rpc("hr_payroll_request_recalc", { p_run: run.id });
+    if (error) return { ok: false, error: error.message };
+    if (typeof data !== "string") return { ok: false, error: "Demande de recalcul non enregistrée." };
+    revalidatePath("/decisions");
+    return { ok: true, data: { decision_id: data, type_code: "D3" } };
+  }
+  const { data, error } = await supabase.rpc("hr_payroll_request_generation", {
+    p_site: p.site_id ?? null,
+    p_year: p.period_year,
+    p_month: p.period_month,
+    p_source: "MANUAL",
+  });
+  if (error) return { ok: false, error: error.message };
+  if (typeof data !== "string") {
+    return { ok: false, error: "Mois déjà validé ou clôturé : aucune paie à générer." };
+  }
+  revalidatePath("/decisions");
+  return { ok: true, data: { decision_id: data, type_code: "D4" } };
+}
+
+/**
+ * Runs the operation of a decided D4 (generate) or D3 (recalculate). The database refuses the
+ * writes unless the decision is decided, matches the payroll and its data fingerprint, and it is
+ * consumed once.
+ */
+export async function executePayrollDecision(
+  decisionId: string,
+): Promise<
+  ActionResult<{ run_id: string; count: number; warnings: string[] }> & { invalidated?: string | null }
+> {
+  if (!UUID_RE.test(decisionId)) return { ok: false, error: "Décision invalide." };
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Session requise. · يلزم تسجيل الدخول." };
+  const { data: checked, error: checkErr } = await supabase.rpc("sys_decision_check", { p_id: decisionId });
+  if (checkErr) return { ok: false, error: checkErr.message };
+  const c = (checked ?? {}) as {
+    ok?: boolean;
+    reason?: string;
+    new_decision_id?: string | null;
+    type_code?: string;
+    period_year?: number;
+    period_month?: number;
+    site_id?: string | null;
+    run_id?: string | null;
+    employee_ids?: unknown;
+  };
+  if (!c.ok) {
+    if (c.reason === "INVALIDATED") {
+      return {
+        ok: false,
+        error:
+          "Les données ont changé depuis la décision : elle est invalidée et une nouvelle demande est ouverte.",
+        invalidated: c.new_decision_id ?? null,
+      };
+    }
+    return { ok: false, error: "Cette décision n'a pas d'opération à exécuter." };
+  }
+  if ((c.type_code !== "D3" && c.type_code !== "D4") || !c.period_year || !c.period_month) {
+    return { ok: false, error: "Type de décision non exécutable ici." };
+  }
   const { data: canPayroll, error: permErr } = await supabase.rpc("erp_has_perm", {
     p_screen: "hr_payroll",
     p_action: "update",
   });
   if (permErr) return { ok: false, error: permErr.message };
   if (canPayroll !== true) {
-    return { ok: false, error: "Génération de la paie non autorisée. · توليد الأجور غير مسموح لدورك." };
+    return { ok: false, error: "Calcul de la paie non autorisé pour votre rôle. · حساب الأجور غير مسموح لدورك." };
   }
+  const scope =
+    c.type_code === "D3" && Array.isArray(c.employee_ids)
+      ? c.employee_ids.filter((id): id is string => typeof id === "string" && UUID_RE.test(id))
+      : undefined;
   try {
-    return await buildAndSavePayrollRun(supabase, user.id, p, options?.onlyEmployeeIds);
+    const result = await buildAndSavePayrollRun(
+      supabase,
+      { period_year: c.period_year, period_month: c.period_month, site_id: c.site_id ?? null },
+      decisionId,
+      scope,
+    );
+    if (result.ok) revalidatePath("/decisions");
+    return result;
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Génération de la paie impossible." };
+    return { ok: false, error: e instanceof Error ? e.message : "Calcul de la paie impossible." };
   }
 }
 
@@ -519,8 +618,8 @@ async function loadPreservedDraftSlips(
 
 async function buildAndSavePayrollRun(
   supabase: Supabase,
-  userId: string,
   p: { period_year: number; period_month: number; site_id?: string | null },
+  decisionId: string,
   onlyEmployeeIds?: string[],
 ): Promise<ActionResult<{ run_id: string; count: number; warnings: string[] }>> {
   const scope = (onlyEmployeeIds ?? []).filter((id) => UUID_RE.test(id));
@@ -553,19 +652,11 @@ async function buildAndSavePayrollRun(
   }
   let run: { id: string } | null = existingRun ? { id: existingRun.id } : null;
   if (!run) {
-    const { data: created, error: runErr } = await supabase
-      .from("hr_payroll_runs")
-      .insert({
-        period_year: p.period_year,
-        period_month: p.period_month,
-        site_id: p.site_id ?? null,
-        status_code: "DRAFT",
-        created_by: userId,
-      })
-      .select("id")
-      .maybeSingle();
-    if (runErr || !created) return { ok: false, error: runErr?.message ?? "Run refusé." };
-    run = { id: created.id };
+    const { data: created, error: runErr } = await supabase.rpc("hr_payroll_run_open", {
+      p_decision: decisionId,
+    });
+    if (runErr || typeof created !== "string") return { ok: false, error: runErr?.message ?? "Run refusé." };
+    run = { id: created };
   }
 
   const legalVars = await legalVarsAsOf(supabase, start);
@@ -965,6 +1056,7 @@ async function buildAndSavePayrollRun(
     p_run_id: run.id,
     p_slips: slipPayloads.map((s) => s.row),
     p_lines: lineRows,
+    p_decision: decisionId,
   });
   if (saveErr) return { ok: false, error: saveErr.message };
 
@@ -974,111 +1066,6 @@ async function buildAndSavePayrollRun(
   revalidatePath("/rh/paie/fiscal");
   revalidatePath("/rh/paie/exceptions");
   return { ok: true, data: { run_id: run.id, count: recomputed, warnings } };
-}
-
-export async function refreshDraftPayroll(filter: {
-  employeeId?: string;
-  contractId?: string;
-  siteId?: string;
-  year?: number;
-  month?: number;
-}): Promise<ActionResult<{ count: number }>> {
-  if (!filter.employeeId && !filter.contractId && !filter.siteId) {
-    return { ok: true, data: { count: 0 } };
-  }
-  const supabase = await createClient();
-  let employeeId = filter.employeeId;
-  if (!employeeId && filter.contractId) {
-    const { data: contract, error: cErr } = await supabase
-      .from("hr_contracts")
-      .select("employee_id")
-      .eq("id", filter.contractId)
-      .maybeSingle();
-    if (cErr) return { ok: false, error: cErr.message };
-    employeeId = contract?.employee_id ?? undefined;
-  }
-  const scope = employeeId && UUID_RE.test(employeeId) ? [employeeId] : undefined;
-
-  let runIds: string[] = [];
-  if (employeeId || filter.contractId) {
-    let slipQuery = supabase
-      .from("hr_payroll_slips")
-      .select("run_id")
-      .eq("status_code", "DRAFT");
-    const employeeOk = Boolean(employeeId && UUID_RE.test(employeeId));
-    const contractOk = Boolean(filter.contractId && UUID_RE.test(filter.contractId));
-    if (employeeOk && contractOk) {
-      slipQuery = slipQuery.or(
-        `employee_id.eq.${employeeId},hr_contract_id.eq.${filter.contractId}`,
-      );
-    } else if (employeeOk) {
-      slipQuery = slipQuery.eq("employee_id", employeeId);
-    } else if (contractOk) {
-      slipQuery = slipQuery.eq("hr_contract_id", filter.contractId!);
-    }
-    if (employeeOk || contractOk) {
-      const { data: slips, error } = await slipQuery;
-      if (error) return { ok: false, error: error.message };
-      runIds = [...new Set((slips ?? []).map((s) => s.run_id))];
-    }
-  }
-  if (filter.siteId) {
-    let siteRunsQuery = supabase
-      .from("hr_payroll_runs")
-      .select("id")
-      .eq("site_id", filter.siteId)
-      .eq("status_code", "DRAFT");
-    if (filter.year != null) siteRunsQuery = siteRunsQuery.eq("period_year", filter.year);
-    if (filter.month != null) siteRunsQuery = siteRunsQuery.eq("period_month", filter.month);
-    const { data: siteRuns, error: siteErr } = await siteRunsQuery;
-    if (siteErr) return { ok: false, error: siteErr.message };
-    runIds = [...new Set([...runIds, ...(siteRuns ?? []).map((r) => r.id)])];
-  }
-  const generateOptions = scope ? { onlyEmployeeIds: scope } : undefined;
-  if (!runIds.length) {
-    // No draft run yet for this site/period: create one if year+month+site known.
-    if (filter.siteId && filter.year != null && filter.month != null) {
-      const period = await loadPeriodStatus(supabase, filter.siteId, filter.year, filter.month);
-      if (!period.ok) return period;
-      if (period.status) return { ok: true, data: { count: 0 } };
-      const created = await generatePayrollRun(
-        {
-          period_year: filter.year,
-          period_month: filter.month,
-          site_id: filter.siteId,
-        },
-        generateOptions,
-      );
-      if (!created.ok) return created;
-      return { ok: true, data: { count: created.data.count } };
-    }
-    return { ok: true, data: { count: 0 } };
-  }
-  const { data: runs, error: rErr } = await supabase
-    .from("hr_payroll_runs")
-    .select("period_year, period_month, site_id")
-    .in("id", runIds);
-  if (rErr) return { ok: false, error: rErr.message };
-  const seen = new Set<string>();
-  let count = 0;
-  for (const run of runs ?? []) {
-    if (filter.year != null && run.period_year !== filter.year) continue;
-    if (filter.month != null && run.period_month !== filter.month) continue;
-    const key = `${run.period_year}-${run.period_month}-${run.site_id ?? ""}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const result = await generatePayrollRun(
-      {
-        period_year: run.period_year,
-        period_month: run.period_month,
-        site_id: run.site_id,
-      },
-      generateOptions,
-    );
-    if (!result.ok) return result;
-    count += result.data.count;
-  }
-  return { ok: true, data: { count } };
 }
 
 /**
@@ -1182,6 +1169,8 @@ export async function listPayrollSlips(input: {
 
   const runMap = new Map((runs ?? []).map((r) => [r.id, r]));
   const daysByCode = await pointedDaysByCode(supabase, data ?? [], runMap, input.year, input.month);
+  const changes = await loadPendingInputChanges(supabase, runIds);
+  if (!changes.ok) return changes;
   const empIds = includeLines
     ? [...new Set((data ?? []).map((row) => row.employee_id))]
     : [];
@@ -1301,9 +1290,41 @@ export async function listPayrollSlips(input: {
         compliance: snapshots.get(row.id)?.compliance ?? null,
         lines: linesBySlip.get(row.id) ?? [],
         detail_loaded: includeLines,
+        inputs_changed:
+          row.status_code === "DRAFT" && slipInputsChanged(changes.data, row.run_id, row.employee_id),
       };
     }),
   };
+}
+
+type PendingInputChanges = Map<string, { whole: boolean; employees: Set<string>; count: number }>;
+
+/** Unresolved "données modifiées depuis le calcul" per run. */
+async function loadPendingInputChanges(
+  supabase: Supabase,
+  runIds: string[],
+): Promise<ActionResult<PendingInputChanges>> {
+  const out: PendingInputChanges = new Map();
+  if (!runIds.length) return { ok: true, data: out };
+  const { data, error } = await supabase
+    .from("hr_payroll_input_changes")
+    .select("run_id, employee_id")
+    .in("run_id", runIds)
+    .is("resolved_at", null);
+  if (error) return { ok: false, error: error.message };
+  for (const row of data ?? []) {
+    const entry = out.get(row.run_id) ?? { whole: false, employees: new Set<string>(), count: 0 };
+    entry.count += 1;
+    if (row.employee_id) entry.employees.add(row.employee_id);
+    else entry.whole = true;
+    out.set(row.run_id, entry);
+  }
+  return { ok: true, data: out };
+}
+
+function slipInputsChanged(changes: PendingInputChanges, runId: string, employeeId: string) {
+  const entry = changes.get(runId);
+  return Boolean(entry && (entry.whole || entry.employees.has(employeeId)));
 }
 
 const SLIP_DETAIL_LIMIT = 80;
@@ -1415,15 +1436,30 @@ async function payrollRunPermissions() {
 export async function listPayrollRuns(input: {
   year: number;
   month: number;
-}): Promise<ActionResult<{ runs: PayrollRunRow[]; can_validate: boolean; can_close: boolean }>> {
+}): Promise<
+  ActionResult<{
+    runs: PayrollRunRow[];
+    generation_requests: PayrollGenerationRequest[];
+    can_validate: boolean;
+    can_close: boolean;
+  }>
+> {
   const supabase = await createClient();
-  const [{ data, error }, perms] = await Promise.all([
+  const [{ data, error }, perms, openDecisions] = await Promise.all([
     supabase
       .from("hr_payroll_runs")
       .select("id, period_year, period_month, site_id, status_code, validated_at, locked_at")
       .eq("period_year", input.year)
       .eq("period_month", input.month),
     payrollRunPermissions(),
+    // RLS: only decisions the user may see (decision holders, requesters, decision centre readers).
+    supabase
+      .from("sys_decisions")
+      .select("id, type_code, site_id, run_id")
+      .in("type_code", ["D3", "D4"])
+      .in("status", ["PENDING", "DECIDED"])
+      .eq("period_year", input.year)
+      .eq("period_month", input.month),
   ]);
   if (error) return { ok: false, error: error.message };
   const runIds = (data ?? []).map((r) => r.id);
@@ -1431,8 +1467,14 @@ export async function listPayrollRuns(input: {
     ? await supabase.from("hr_payroll_slips").select("run_id").in("run_id", runIds)
     : { data: [] as { run_id: string }[], error: null };
   if (slipErr) return { ok: false, error: slipErr.message };
+  const changes = await loadPendingInputChanges(supabase, runIds);
+  if (!changes.ok) return changes;
   const counts = new Map<string, number>();
   for (const s of slipRows ?? []) counts.set(s.run_id, (counts.get(s.run_id) ?? 0) + 1);
+  const decisions = openDecisions.error ? [] : (openDecisions.data ?? []);
+  const recalcByRun = new Map(
+    decisions.filter((d) => d.type_code === "D3" && d.run_id).map((d) => [d.run_id as string, d.id]),
+  );
   return {
     ok: true,
     data: {
@@ -1445,7 +1487,12 @@ export async function listPayrollRuns(input: {
         validated_at: r.validated_at ?? null,
         locked_at: r.locked_at ?? null,
         slip_count: counts.get(r.id) ?? 0,
+        pending_changes: changes.data.get(r.id)?.count ?? 0,
+        open_decision_id: recalcByRun.get(r.id) ?? null,
       })),
+      generation_requests: decisions
+        .filter((d) => d.type_code === "D4")
+        .map((d) => ({ site_id: d.site_id ?? null, decision_id: d.id })),
       can_validate: perms.canValidate,
       can_close: perms.canClose,
     },

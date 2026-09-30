@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireHrSalaryValues } from "@/lib/auth/require-roles";
 import { createClient } from "@/lib/supabase/server";
-import { refreshDraftPayroll } from "@/lib/actions/hr-ops";
+import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -80,7 +80,7 @@ export async function saveSalaryAvenant(input: unknown): Promise<ActionResult<{ 
     p_reason: p.reason,
   });
   if (error) return { ok: false, error: error.message };
-  await refreshDraftPayroll({ contractId: p.contract_id });
+  await signalPayrollInputChange(supabase, { source: "SALARY_HISTORY", contractIds: [p.contract_id] });
   revalidateContracts();
   return { ok: true, data: { id: String(data) } };
 }
@@ -94,7 +94,7 @@ export async function deleteSalaryVersion(input: {
   const supabase = await createClient();
   const { error } = await supabase.rpc("hr_contract_salary_delete", { p_id: input.id });
   if (error) return { ok: false, error: error.message };
-  await refreshDraftPayroll({ contractId: input.contract_id });
+  await signalPayrollInputChange(supabase, { source: "SALARY_HISTORY", contractIds: [input.contract_id] });
   revalidateContracts();
   return { ok: true, data: undefined };
 }

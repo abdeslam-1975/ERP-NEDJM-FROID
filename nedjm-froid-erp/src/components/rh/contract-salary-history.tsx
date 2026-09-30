@@ -80,7 +80,12 @@ export function ContractSalaryHistory({
         return;
       }
       setDraft({ effective_from: firstOfNextMonth(), base: "", net: "", reason: "" });
-      setNotice(bi("Avenant enregistré, paies brouillon recalculées.", "تم حفظ الملحق وإعادة حساب الأجور غير المعتمدة."));
+      setNotice(
+        bi(
+          "Avenant enregistré. Les paies brouillon concernées sont signalées : leur recalcul passe par le Centre de décisions.",
+          "تم حفظ الملحق. تُعلَّم الأجور غير المعتمدة المعنية: إعادة حسابها تمر بمركز القرارات.",
+        ),
+      );
       await reload();
     });
   }

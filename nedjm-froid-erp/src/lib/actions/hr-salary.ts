@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { requireHrSalaryValues } from "@/lib/auth/require-roles";
 import { createClient } from "@/lib/supabase/server";
-import { refreshDraftPayroll } from "@/lib/actions/hr-ops";
+import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
 import {
   amountAllowedForClass,
   NEGATIVE_AMOUNT_ERROR,
@@ -226,12 +226,16 @@ export async function upsertSalaryAssignment(
       .eq("poste_id", payload.poste_id)
       .in("status", ["DRAFT", "ACTIVE"])
       .limit(200);
-    for (const c of linked ?? []) await refreshDraftPayroll({ contractId: c.id });
+    await signalPayrollInputChange(supabase, {
+      source: "SALARY",
+      contractIds: (linked ?? []).map((c) => c.id),
+    });
   } else {
-    await refreshDraftPayroll({
-      employeeId: payload.employee_id ?? undefined,
-      contractId: payload.contract_id ?? undefined,
-      siteId: payload.site_id ?? undefined,
+    await signalPayrollInputChange(supabase, {
+      source: "SALARY",
+      employeeId: payload.employee_id,
+      contractIds: payload.contract_id ? [payload.contract_id] : [],
+      siteId: payload.site_id,
     });
   }
   revalidateSalary();
