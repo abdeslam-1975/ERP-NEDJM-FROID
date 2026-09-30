@@ -89,7 +89,7 @@ export function Simulator({
     <div className="rh-scope space-y-3">
       <Toolbar nav={nav} refs={refs} employees={employees} go={go} />
       {notice ? <RhAlert tone={data ? "info" : "warning"}>{notice}</RhAlert> : null}
-      {withMeta && second?.notice ? (
+      {withMeta && second?.notice && (second.data || !data) ? (
         <RhAlert tone={second.data ? "info" : "warning"}>
           {withMeta.label} : {second.notice}
         </RhAlert>
@@ -100,6 +100,11 @@ export function Simulator({
         <Workspace
           key={`${meta.id}-${panels[1]?.target ?? ""}-${nav.employeeId}-${nav.year}-${nav.month}-${nav.ref}`}
           panels={panels}
+          pending={
+            withMeta && second && !second.data
+              ? { label: withMeta.label, labelAr: withMeta.labelAr, message: second.notice ?? "Élément indisponible." }
+              : null
+          }
           startEditing={startEditing}
         />
       ) : null}
@@ -367,7 +372,18 @@ function linkedInfluence(runs: readonly SimRun[], id: string): { kind: SimInflue
   return via.size ? { kind: "via", via: [...via] } : { kind: "none", via: [] };
 }
 
-function Workspace({ panels, startEditing }: { panels: SimTargetData[]; startEditing: boolean }) {
+type PendingPanel = { label: string; labelAr: string; message: string };
+
+function Workspace({
+  panels,
+  pending,
+  startEditing,
+}: {
+  panels: SimTargetData[];
+  /** Element chosen beside the main one but not loadable yet (e.g. no employee chosen). */
+  pending: PendingPanel | null;
+  startEditing: boolean;
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState(startEditing);
   const env = useMemo(() => ({ origin: typeof window === "undefined" ? "" : window.location.origin }), []);
@@ -386,7 +402,8 @@ function Workspace({ panels, startEditing }: { panels: SimTargetData[]; startEdi
   const [reference, setReference] = useState<Record<string, number>[]>(initialFigures);
   const [layout, setLayout] = useStoredLayout(`nf.sim.layout.${panels.map((p) => p.target).join("+")}`);
   const [picker, setPicker] = useState<SimZone | null>(null);
-  const split = runs.length > 1;
+  const linked = runs.length > 1;
+  const split = linked || pending !== null;
 
   const placed = useMemo(
     () => new Set([...layout.left, ...layout.right, ...layout.bottom].filter((id) => defMap.has(id))),
@@ -443,7 +460,7 @@ function Workspace({ panels, startEditing }: { panels: SimTargetData[]; startEdi
   const hidden = changedIds.filter((id) => !placed.has(id));
   const unofficial = changedIds.some((id) => defMap.get(id)?.official);
   const output = runs[0].output;
-  const shared = split ? [...runs[0].ctx.reads.keys()].filter((id) => runs[1].ctx.reads.has(id)).length : 0;
+  const shared = linked ? [...runs[0].ctx.reads.keys()].filter((id) => runs[1].ctx.reads.has(id)).length : 0;
 
   const editable = (id: string) => defMap.has(id);
   const cellEditor = (id: string, close: () => void) => {
@@ -554,12 +571,14 @@ function Workspace({ panels, startEditing }: { panels: SimTargetData[]; startEdi
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        {split ? (
+        {linked ? (
           <p className="flex-1 text-xs text-foreground/55">
             Les deux éléments partagent les mêmes valeurs : cliquez une case d&apos;un document ou changez une variable, l&apos;autre
             se recalcule aussitôt.{" "}
             {shared ? `${shared} variable${shared > 1 ? "s" : ""} en commun.` : "Aucune variable en commun entre ces deux éléments."}
           </p>
+        ) : split ? (
+          <p className="flex-1 text-xs text-foreground/55">{pending?.label} : {pending?.message}</p>
         ) : (
           <FiguresStrip figures={output.figures} reference={reference[0] ?? {}} />
         )}
@@ -633,7 +652,22 @@ function Workspace({ panels, startEditing }: { panels: SimTargetData[]; startEdi
         </div>
       ) : split ? (
         <>
-          <div className="grid gap-3 xl:h-[calc(100dvh-17rem)] xl:min-h-[40rem] xl:grid-cols-2">{runs.map(docPanel)}</div>
+          <div className="grid gap-3 xl:h-[calc(100dvh-17rem)] xl:min-h-[40rem] xl:grid-cols-2">
+            {runs.map(docPanel)}
+            {pending ? (
+              <section className="flex min-h-[20rem] flex-col gap-2">
+                <p className="px-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/45">
+                  {pending.label} · {pending.labelAr}
+                </p>
+                <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/80 bg-surface/60 p-6 text-center">
+                  <p className="text-sm font-medium">{pending.message}</p>
+                  <p className="max-w-sm text-xs text-foreground/55">
+                    Choisissez un salarié dans le champ « Salarié » en haut : cet élément s&apos;affichera ici, lié au document de gauche.
+                  </p>
+                </div>
+              </section>
+            ) : null}
+          </div>
           <div className="grid gap-3 lg:grid-cols-2">
             {zone("left", "Gauche")}
             {zone("right", "Droite")}
