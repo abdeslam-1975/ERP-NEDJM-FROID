@@ -43,6 +43,9 @@ export const siteCreateSchema = z.object({
     emptyToNull,
     z.string().trim().max(80).nullable(),
   ),
+  wilaya_code: z
+    .preprocess(emptyToNull, z.string().regex(/^\d{2}$/, "Wilaya invalide").nullable())
+    .optional(),
   commune: z.preprocess(
     emptyToNull,
     z.string().trim().max(80).nullable(),

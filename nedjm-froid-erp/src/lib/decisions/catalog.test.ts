@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  assignmentZoneNotice,
+  DECISION_TYPE_CODES,
   decideBlocker,
+  isDecisionTypeCode,
+  payrollSourceLabel,
   decisionStatusLabel,
   parseDecisionOptions,
   parsePayrollSignal,
@@ -94,5 +98,36 @@ describe("labels", () => {
   it("warns that external months are paid and declared outside the app", () => {
     expect(periodNatureText("EXTERNAL")).toMatch(/hors de l'application/);
     expect(periodNatureText("OPERATIONAL")).toMatch(/opérationnelle/);
+  });
+});
+
+describe("lot 1 decision types", () => {
+  it("knows D8 and D13 and rejects unknown codes", () => {
+    expect(DECISION_TYPE_CODES).toEqual(expect.arrayContaining(["D3", "D4", "D8", "D13"]));
+    expect(isDecisionTypeCode("D13")).toBe(true);
+    expect(isDecisionTypeCode("D99")).toBe(false);
+  });
+
+  it("labels the new payroll input sources", () => {
+    expect(payrollSourceLabel("ASSIGNMENT")).not.toBe("ASSIGNMENT");
+    expect(payrollSourceLabel("SITE_WILAYA")).not.toBe("SITE_WILAYA");
+  });
+});
+
+describe("assignmentZoneNotice", () => {
+  it("says when the IRG zone does not change", () => {
+    expect(assignmentZoneNotice({ oldZone: "Z1", newZone: "Z1", draftSlips: 2 })).toMatch(/Même zone IRG/);
+  });
+
+  it("announces the zone change and the draft slips to recalculate through D3", () => {
+    const text = assignmentZoneNotice({ oldZone: "Z1", newZone: "Z2", draftSlips: 2 });
+    expect(text).toMatch(/Z1 → Z2/);
+    expect(text).toMatch(/2 bulletin\(s\)/);
+    expect(text).toMatch(/D3/);
+    expect(assignmentZoneNotice({ oldZone: "Z1", newZone: "Z2", draftSlips: 0 })).toMatch(/Aucun bulletin/);
+  });
+
+  it("does not pretend to know an undetermined zone", () => {
+    expect(assignmentZoneNotice({ oldZone: null, newZone: "Z2", draftSlips: 0 })).toMatch(/non déterminée/);
   });
 });

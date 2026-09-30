@@ -6,6 +6,7 @@ import { hrContractSchema } from "@/lib/validations/hr";
 import { replaceContractSalaryLines } from "@/lib/actions/hr-salary";
 import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
 import { payrollSignalNotice } from "@/lib/decisions/catalog";
+import { isFirstOfMonth } from "@/lib/hr/assignments";
 import {
   isPrincipalExclusionError,
   planPrincipalClose,
@@ -56,6 +57,8 @@ function revalidate() {
 
 export async function listHrContracts(): Promise<ActionResult<HrContractRow[]>> {
   const supabase = await createClient();
+  // Dated assignment changes whose month has come: the displayed site follows (failures only delay the display).
+  await supabase.rpc("hr_contract_assignments_refresh_due");
   const { data, error } = await supabase
     .from("hr_contracts")
     .select(
@@ -125,6 +128,13 @@ export async function upsertHrContract(
   if (p.contract_type_code === "INTERIM" && !p.agency_id) {
     return { ok: false, error: "Contrat d'intérim : choisissez l'agence." };
   }
+  if (!p.id && !isFirstOfMonth(p.start_date)) {
+    return {
+      ok: false,
+      error:
+        "Un contrat commence le 1er du mois : aucun contrat ne débute en milieu de mois. · يبدأ العقد في اليوم الأول من الشهر.",
+    };
+  }
   const supabase = await createClient();
   let closedPrevious = 0;
   if (p.affectation_principale) {
@@ -185,8 +195,11 @@ export async function upsertHrContract(
     status: p.status,
     currency: "DZD",
   };
+  // After creation the site mirrors the dated assignment in force; it changes only through assignments.
+  const updatePayload: Partial<typeof payload> = { ...payload };
+  delete updatePayload.site_id;
   const q = p.id
-    ? supabase.from("hr_contracts").update(payload).eq("id", p.id)
+    ? supabase.from("hr_contracts").update(updatePayload).eq("id", p.id)
     : supabase.from("hr_contracts").insert(payload);
   const { data, error } = await q.select("id").maybeSingle();
   if (error) {

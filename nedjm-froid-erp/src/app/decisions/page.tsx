@@ -3,8 +3,10 @@ import { AppShell } from "@/components/layout/app-shell";
 import { RhAlert, RhChip, RhEmpty, RhPageHeader, RhTableWrap, rhTd, rhTh } from "@/components/rh/rh-ui";
 import { listDecisions } from "@/lib/actions/decisions";
 import {
+  DECISION_TYPES,
   decisionStatusLabel,
   decisionStatusTone,
+  isDecisionTypeCode,
   payrollSourceLabel,
   periodLabel,
 } from "@/lib/decisions/catalog";
@@ -18,9 +20,8 @@ const TABS = [
 
 const TYPES = [
   { id: "", label: "Tous les types" },
-  { id: "D4", label: "D4 · Génération de paie" },
-  { id: "D3", label: "D3 · Recalcul des paies brouillon" },
-] as const;
+  ...DECISION_TYPES.map((t) => ({ id: t.code, label: t.label })),
+];
 
 function dateTime(iso: string | null) {
   if (!iso) return "—";
@@ -40,7 +41,7 @@ export default async function DecisionsPage({
 }) {
   const sp = await searchParams;
   const tab = sp.tab === "closed" ? "closed" : "open";
-  const type = sp.type === "D3" || sp.type === "D4" ? sp.type : "";
+  const type = isDecisionTypeCode(sp.type) ? sp.type : "";
   const res = await listDecisions({ tab, type: type || undefined });
   const rows = res.ok ? res.data : [];
 
@@ -49,7 +50,7 @@ export default async function DecisionsPage({
       <div className="space-y-5">
         <RhPageHeader
           title="Centre de décisions"
-          description="Les opérations de paie ne s'exécutent jamais d'elles-mêmes : chaque génération ou recalcul attend ici une décision motivée, enregistrée et tracée."
+          description="Rien ne s'exécute de soi-même : chaque génération ou recalcul de paie, correction d'affectation ou traitement d'un contrat hors du 1er du mois attend ici une décision motivée, enregistrée et tracée."
         />
         {!res.ok ? <RhAlert tone="danger">{res.error}</RhAlert> : null}
         <div className="flex flex-wrap items-center gap-2">

@@ -64,6 +64,8 @@ import {
 } from "@/lib/hr/attendance-movements";
 import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
 import type { PayrollSignal } from "@/lib/decisions/catalog";
+import { monthAssignmentsByEmployee } from "@/lib/hr/assignments";
+import { loadContractAssignments } from "@/lib/hr/assignments-load";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -675,11 +677,10 @@ async function buildAndSavePayrollRun(
     .eq("affectation_principale", true)
     .in("status", [...PAYROLL_CONTRACT_STATUSES, "ENDED"])
     .or("contract_type_code.is.null,contract_type_code.neq.INTERIM");
-  if (p.site_id) contractsQuery = contractsQuery.eq("site_id", p.site_id);
   if (scope.length) contractsQuery = contractsQuery.in("employee_id", scope);
   const { data: contractRows, error: cErr } = await contractsQuery;
   if (cErr) return { ok: false, error: cErr.message };
-  const contracts = (contractRows ?? []).filter((c) =>
+  const payable = (contractRows ?? []).filter((c) =>
     contractPayableInPeriod(
       {
         status: String(c.status),
@@ -690,6 +691,15 @@ async function buildAndSavePayrollRun(
       end,
     ),
   );
+  const assignmentLoaded = await loadContractAssignments(
+    supabase,
+    payable.map((c) => c.id),
+  );
+  if (!assignmentLoaded.ok) return assignmentLoaded;
+  const monthByEmp = monthAssignmentsByEmployee(payable, assignmentLoaded.data, start);
+  const contracts = p.site_id
+    ? payable.filter((c) => monthByEmp.get(c.employee_id)?.siteId === p.site_id)
+    : payable;
 
   const legends = must(
     await supabase
@@ -744,7 +754,7 @@ async function buildAndSavePayrollRun(
 
   const compliance = await loadComplianceContext(supabase, {
     contractIds: contracts.map((c) => c.id),
-    siteIds: [...new Set(contracts.map((c) => c.site_id))],
+    siteIds: [...new Set(contracts.map((c) => monthByEmp.get(c.employee_id)?.siteId ?? c.site_id))],
     employeeIds: empIds,
     asOf: start,
   });
@@ -918,6 +928,8 @@ async function buildAndSavePayrollRun(
     end,
   )) {
     const ctr = group.contract;
+    const monthAsg = monthByEmp.get(ctr.employee_id);
+    const monthSiteId = monthAsg?.siteId ?? ctr.site_id;
     const mov = movementsByEmp.get(ctr.employee_id) ?? emptyMovements();
     const taxpayer = irgCat.get(ctr.employee_id) ?? "STANDARD";
     const resolved = resolveCompliance({
@@ -926,7 +938,7 @@ async function buildAndSavePayrollRun(
       periodEnd: end,
       employeeIrgCategory: taxpayer,
       socialProfileCode: ctr.cnas_regime_code || cx.socialProfile.get(ctr.employee_id) || null,
-      siteZoneCode: cx.siteZone.get(ctr.site_id)?.code ?? DEFAULT_IRG_ZONE,
+      siteZoneCode: cx.siteZone.get(monthSiteId)?.code ?? DEFAULT_IRG_ZONE,
       activity: {
         cacobatph: cacoSites.has(ctr.activity_code_id),
         intemperies: intempSites.has(ctr.activity_code_id),
@@ -948,7 +960,7 @@ async function buildAndSavePayrollRun(
         contract: {
           id: ctr.id,
           employee_id: ctr.employee_id,
-          site_id: ctr.site_id,
+          site_id: monthSiteId,
           poste_id: ctr.poste_id,
           grade: ctr.grade,
         },
@@ -1019,6 +1031,12 @@ async function buildAndSavePayrollRun(
           },
           irg_category: resolved.irg.category,
           compliance: { ...resolved, labels } satisfies SnapshotCompliance,
+          assignment: {
+            id: monthAsg?.assignmentId ?? null,
+            contract_id: monthAsg?.contractId ?? ctr.id,
+            site_id: monthSiteId,
+            zone_code: cx.siteZone.get(monthSiteId)?.code ?? DEFAULT_IRG_ZONE,
+          },
         } satisfies PayrollLegalSnapshot,
       },
     });

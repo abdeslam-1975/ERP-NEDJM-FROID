@@ -27,6 +27,8 @@ export type SiteRow = {
   name_ar: string | null;
   activity_code_id: string | null;
   wilaya: string | null;
+  /** Coded wilaya in force today; null until confirmed from the data-quality report. */
+  wilaya_code: string | null;
   commune: string | null;
   irg_zone_code: string | null;
   latitude: number | null;
@@ -119,6 +121,7 @@ export async function listSites(): Promise<ActionResult<SiteRow[]>> {
       name_ar,
       activity_code_id,
       wilaya,
+      wilaya_code,
       commune,
       irg_zone_code,
       latitude,
@@ -151,6 +154,7 @@ export async function listSites(): Promise<ActionResult<SiteRow[]>> {
       name_ar: row.name_ar,
       activity_code_id: row.activity_code_id,
       wilaya: row.wilaya,
+      wilaya_code: row.wilaya_code ?? null,
       commune: row.commune,
       irg_zone_code: row.irg_zone_code ?? null,
       latitude: row.latitude == null ? null : Number(row.latitude),
@@ -184,6 +188,7 @@ export async function createSite(
       name_ar: payload.name_ar,
       activity_code_id: payload.activity_code_id,
       wilaya: payload.wilaya,
+      wilaya_code: payload.wilaya_code ?? null,
       commune: payload.commune,
       irg_zone_code: payload.irg_zone_code ?? null,
       latitude: payload.latitude,
@@ -221,7 +226,11 @@ export async function updateSite(
   const parsed = siteUpdateSchema.safeParse(input);
   if (!parsed.success) return mapZodError(parsed.error);
 
-  const { id, ...rest } = parsed.data;
+  // The wilaya changes only through a confirmation or a dated change (site-wilaya actions).
+  const { id, ...fields } = parsed.data;
+  const rest: Partial<typeof fields> = { ...fields };
+  delete rest.wilaya;
+  delete rest.wilaya_code;
   if (Object.keys(rest).length === 0) {
     return { ok: false, error: "Aucune modification fournie." };
   }

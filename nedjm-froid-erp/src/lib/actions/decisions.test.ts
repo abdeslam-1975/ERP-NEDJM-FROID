@@ -41,7 +41,7 @@ describe("decideDecision", () => {
       onRpc: () => ({ data: { ok: true, status: "EXECUTED", executes: false }, error: null }),
     });
     const r = await decideDecision({ ...input, option: "NOT_NOW" });
-    expect(r).toEqual({ ok: true, data: { status: "EXECUTED", executed: null, execute_error: null, invalidated: null } });
+    expect(r).toEqual({ ok: true, data: { status: "EXECUTED", executed: null, execute_error: null, invalidated: null, applied: false } });
     expect(h.execute).not.toHaveBeenCalled();
     expect(h.fake.rpcs[0]).toEqual({
       fn: "sys_decision_decide",
@@ -59,7 +59,7 @@ describe("decideDecision", () => {
     expect(h.execute).toHaveBeenCalledWith(DEC);
     expect(r).toEqual({
       ok: true,
-      data: { status: "EXECUTED", executed: { count: 12, warnings: [] }, execute_error: null, invalidated: null },
+      data: { status: "EXECUTED", executed: { count: 12, warnings: [] }, execute_error: null, invalidated: null, applied: false },
     });
   });
 
@@ -71,8 +71,30 @@ describe("decideDecision", () => {
     const r = await decideDecision(input);
     expect(r).toEqual({
       ok: true,
-      data: { status: "DECIDED", executed: null, execute_error: "Données modifiées", invalidated: "new-id" },
+      data: { status: "DECIDED", executed: null, execute_error: "Données modifiées", invalidated: "new-id", applied: false },
     });
+  });
+});
+
+describe("decideDecision (D8 / D13 applied in the database)", () => {
+  it("reports the change as applied without calling the payroll execution", async () => {
+    h.fake = createSupabaseFake({
+      onRpc: () => ({ data: { ok: true, status: "EXECUTED", executes: false, applied: true }, error: null }),
+    });
+    const r = await decideDecision({ ...input, option: "APPLY_CORRECTION", risk_ack: true });
+    expect(r).toEqual({
+      ok: true,
+      data: { status: "EXECUTED", applied: true, executed: null, execute_error: null, invalidated: null },
+    });
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(h.fake.rpcs[0].args).toMatchObject({ p_option: "APPLY_CORRECTION", p_risk_ack: true });
+  });
+
+  it("explains that a request closed by a data change did nothing", async () => {
+    h.fake = createSupabaseFake({ onRpc: () => ({ data: { ok: false, reason: "CLOSED" }, error: null }) });
+    const r = await decideDecision({ ...input, option: "FIX_START" });
+    expect(!r.ok && r.error).toMatch(/Aucune opération n'a été faite/);
+    expect(h.execute).not.toHaveBeenCalled();
   });
 });
 

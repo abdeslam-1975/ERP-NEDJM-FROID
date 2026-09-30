@@ -5,7 +5,10 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { executePayrollDecision } from "@/lib/actions/hr-ops";
+import { loadComplianceContext } from "@/lib/hr/compliance-load";
 import {
+  DECISION_TYPE_CODES,
+  assignmentZoneNotice,
   decideBlocker,
   parseDecisionOptions,
   validateJustification,
@@ -54,6 +57,41 @@ export type DecisionChange = {
   changed_at: string;
 };
 
+export type DecisionDraftSlip = {
+  slip_id: string;
+  period: string;
+  run_site: string;
+  irg_amount: number;
+  net_payable: number;
+};
+
+/** D8: correction of an assignment entered by mistake. */
+export type AssignmentCorrectionContext = {
+  employee: string;
+  kind: string;
+  effective_from: string;
+  range_end: string | null;
+  old_site_name: string;
+  new_site_name: string;
+  old_wilaya: string | null;
+  new_wilaya: string | null;
+  old_zone: string | null;
+  new_zone: string | null;
+  zone_notice: string;
+  reason: string;
+  draft_slips: DecisionDraftSlip[];
+};
+
+/** D13: existing contract not starting on the 1st of a month. */
+export type ContractStartContext = {
+  employee: string;
+  contract_start: string;
+  contract_end: string | null;
+  fix_start: string;
+  fix_allowed: boolean;
+  first_changeable: string;
+};
+
 export type DecisionDetail = DecisionListRow & {
   type_description: string;
   risk_class: "ORDINARY" | "RISKY";
@@ -72,6 +110,10 @@ export type DecisionDetail = DecisionListRow & {
   executed_by_name: string | null;
   execution_result: Record<string, unknown> | null;
   closed_at: string | null;
+  assignment: AssignmentCorrectionContext | null;
+  contract_start: ContractStartContext | null;
+  /** Options the data no longer allows (code → reason); the database refuses them too. */
+  unavailable_options: Record<string, string>;
   /** Null when the current user may decide; otherwise the reason shown instead of the form. */
   decide_blocker: string | null;
   can_execute: boolean;
@@ -128,8 +170,73 @@ function toListRow(r: RawDecision): DecisionListRow {
 
 const listSchema = z.object({
   tab: z.enum(["open", "closed"]).default("open"),
-  type: z.enum(["D3", "D4"]).optional(),
+  type: z.enum(DECISION_TYPE_CODES).optional(),
 });
+
+const text = (v: unknown) => (typeof v === "string" ? v : null);
+const day = (v: unknown) => (typeof v === "string" ? v.slice(0, 10) : null);
+
+function draftSlips(v: unknown): DecisionDraftSlip[] {
+  if (!Array.isArray(v)) return [];
+  return v.map((s) => {
+    const x = record(s);
+    return {
+      slip_id: String(x.slip_id ?? ""),
+      period: String(x.period ?? ""),
+      run_site: String(x.run_site ?? ""),
+      irg_amount: Number(x.irg_amount ?? 0),
+      net_payable: Number(x.net_payable ?? 0),
+    };
+  });
+}
+
+async function assignmentContext(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ctx: Record<string, unknown>,
+): Promise<AssignmentCorrectionContext> {
+  const effective = day(ctx.effective_from) ?? "";
+  const oldSite = text(ctx.old_site_id);
+  const newSite = text(ctx.new_site_id);
+  const slips = draftSlips(ctx.draft_slips);
+  let oldZone: string | null = null;
+  let newZone: string | null = null;
+  const siteIds = [oldSite, newSite].filter((s): s is string => Boolean(s && UUID_RE.test(s)));
+  if (siteIds.length && effective) {
+    const cx = await loadComplianceContext(supabase, { contractIds: [], siteIds, employeeIds: [], asOf: effective });
+    if (cx.ok) {
+      const label = (code: string | undefined) =>
+        code ? (cx.data.zones.find((z) => z.code === code)?.label_fr ?? code) : null;
+      oldZone = oldSite ? label(cx.data.siteZone.get(oldSite)?.code) : null;
+      newZone = newSite ? label(cx.data.siteZone.get(newSite)?.code) : null;
+    }
+  }
+  return {
+    employee: text(ctx.employee) ?? "",
+    kind: text(ctx.assignment_kind) ?? "",
+    effective_from: effective,
+    range_end: day(ctx.range_end),
+    old_site_name: text(ctx.old_site_name) ?? "",
+    new_site_name: text(ctx.new_site_name) ?? "",
+    old_wilaya: text(ctx.old_wilaya),
+    new_wilaya: text(ctx.new_wilaya),
+    old_zone: oldZone,
+    new_zone: newZone,
+    zone_notice: assignmentZoneNotice({ oldZone, newZone, draftSlips: slips.length }),
+    reason: text(ctx.reason) ?? "",
+    draft_slips: slips,
+  };
+}
+
+function contractStartContext(ctx: Record<string, unknown>): ContractStartContext {
+  return {
+    employee: text(ctx.employee) ?? "",
+    contract_start: day(ctx.contract_start) ?? "",
+    contract_end: day(ctx.contract_end),
+    fix_start: day(ctx.fix_start) ?? "",
+    fix_allowed: ctx.fix_allowed === true,
+    first_changeable: day(ctx.first_changeable) ?? "",
+  };
+}
 
 export async function listDecisions(input: unknown): Promise<ActionResult<DecisionListRow[]>> {
   const parsed = listSchema.safeParse(input ?? {});
@@ -196,6 +303,12 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
       })
     : [];
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const assignment = raw.type_code === "D8" ? await assignmentContext(supabase, ctx) : null;
+  const contractStart = raw.type_code === "D13" ? contractStartContext(ctx) : null;
+  const unavailable: Record<string, string> = {};
+  if (contractStart && !contractStart.fix_allowed) {
+    unavailable.FIX_START = `Mois de début déjà traité (paie validée ou clôturée, ou antérieur à septembre 2026) : correction possible seulement à partir du ${contractStart.first_changeable.split("-").reverse().join("/")}.`;
+  }
 
   return {
     ok: true,
@@ -217,6 +330,9 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
       executed_by_name: nameOf(raw.executor),
       execution_result: raw.execution_result ? record(raw.execution_result) : null,
       closed_at: raw.closed_at,
+      assignment,
+      contract_start: contractStart,
+      unavailable_options: unavailable,
       decide_blocker: decideBlocker({
         status: raw.status,
         isSuperAdmin: ws.isSuperAdmin,
@@ -240,6 +356,8 @@ const decideSchema = z.object({
 
 export type DecideOutcome = {
   status: "DECIDED" | "EXECUTED";
+  /** D8 / D13: the chosen change was applied in the same transaction as the decision. */
+  applied: boolean;
   executed: { count: number; warnings: string[] } | null;
   execute_error: string | null;
   invalidated: string | null;
@@ -268,26 +386,41 @@ export async function decideDecision(input: unknown): Promise<ActionResult<Decid
       ok: false,
       error:
         r.reason === "CLOSED"
-          ? "La situation a changé : cette demande est close (paie déjà créée ou plus en brouillon). Aucune opération n'a été faite."
+          ? "La situation a changé : cette demande est close (voir le motif de clôture). Aucune opération n'a été faite."
           : "Les données ont changé depuis l'affichage : la demande a été mise à jour. Relisez-la avant de décider.",
     };
   }
   if (r.executes !== true) {
+    const applied = r.applied === true;
     revalidatePath("/rh/paie");
-    return { ok: true, data: { status: "EXECUTED", executed: null, execute_error: null, invalidated: null } };
+    if (applied) {
+      revalidatePath("/rh/contrats");
+      revalidatePath("/rh/qualite-donnees");
+    }
+    return {
+      ok: true,
+      data: { status: "EXECUTED", applied, executed: null, execute_error: null, invalidated: null },
+    };
   }
   const run = await executePayrollDecision(p.id);
   revalidatePath("/rh/paie");
   if (!run.ok) {
     return {
       ok: true,
-      data: { status: "DECIDED", executed: null, execute_error: run.error, invalidated: run.invalidated ?? null },
+      data: {
+        status: "DECIDED",
+        applied: false,
+        executed: null,
+        execute_error: run.error,
+        invalidated: run.invalidated ?? null,
+      },
     };
   }
   return {
     ok: true,
     data: {
       status: "EXECUTED",
+      applied: false,
       executed: { count: run.data.count, warnings: run.data.warnings },
       execute_error: null,
       invalidated: null,

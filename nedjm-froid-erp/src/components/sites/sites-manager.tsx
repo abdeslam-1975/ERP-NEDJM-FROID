@@ -11,6 +11,9 @@ import {
 } from "@/lib/actions/sites";
 import { Button } from "@/components/ui/button";
 import { AlertBadge } from "@/components/castle/alert-badge";
+import { SiteWilayaHistory } from "@/components/sites/site-wilaya-history";
+import { WILAYAS } from "@/lib/referentiels/wilayas";
+import { suggestWilayaCode, wilayaName } from "@/lib/referentiels/wilaya-match";
 
 type FormState = {
   code: string;
@@ -18,6 +21,7 @@ type FormState = {
   name_ar: string;
   activity_code_id: string;
   wilaya: string;
+  wilaya_code: string;
   commune: string;
   irg_zone_code: string;
   latitude: string;
@@ -31,6 +35,7 @@ const emptyForm = (defaultActivityId = ""): FormState => ({
   name_ar: "",
   activity_code_id: defaultActivityId,
   wilaya: "",
+  wilaya_code: "",
   commune: "",
   irg_zone_code: "",
   latitude: "",
@@ -44,7 +49,8 @@ function toPayload(form: FormState) {
     name_fr: form.name_fr,
     name_ar: form.name_ar || null,
     activity_code_id: form.activity_code_id,
-    wilaya: form.wilaya || null,
+    wilaya: (form.wilaya_code ? wilayaName(form.wilaya_code) : form.wilaya) || null,
+    wilaya_code: form.wilaya_code || null,
     commune: form.commune || null,
     irg_zone_code: form.irg_zone_code || null,
     latitude: form.latitude === "" ? null : Number(form.latitude),
@@ -106,6 +112,7 @@ export function SitesManager({
       name_ar: site.name_ar ?? "",
       activity_code_id: site.activity_code_id ?? activityCodes[0]?.id ?? "",
       wilaya: site.wilaya ?? "",
+      wilaya_code: site.wilaya_code ?? "",
       commune: site.commune ?? "",
       irg_zone_code: site.irg_zone_code ?? "",
       latitude: site.latitude == null ? "" : String(site.latitude),
@@ -161,6 +168,7 @@ export function SitesManager({
               name_ar: payload.name_ar,
               activity_code_id: payload.activity_code_id,
               wilaya: payload.wilaya,
+              wilaya_code: payload.wilaya_code,
               commune: payload.commune,
               irg_zone_code: payload.irg_zone_code,
               latitude: payload.latitude,
@@ -278,7 +286,12 @@ export function SitesManager({
                     </div>
                   </td>
                   <td className="px-4 py-3 text-foreground/80">
-                    {site.wilaya ?? "—"}
+                    {site.wilaya_code
+                      ? `${site.wilaya_code} · ${site.wilaya ?? ""}`
+                      : site.wilaya ?? "—"}
+                    {site.wilaya_code ? null : (
+                      <span className="block text-xs text-amber-700">non confirmée</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     {site.is_active ? (
@@ -405,17 +418,41 @@ export function SitesManager({
                 </select>
               </Field>
 
+              {editing ? (
+                <SiteWilayaHistory
+                  siteId={editing.id}
+                  legacyText={editing.wilaya_code ? null : editing.wilaya}
+                  suggestedCode={editing.wilaya_code ? null : suggestWilayaCode(editing.wilaya)}
+                  onChanged={(current) => {
+                    setForm((f) => ({ ...f, wilaya_code: current.code, wilaya: current.name }));
+                    setSites((prev) =>
+                      prev.map((s) =>
+                        s.id === editing.id ? { ...s, wilaya_code: current.code, wilaya: current.name } : s,
+                      ),
+                    );
+                  }}
+                />
+              ) : null}
+
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Wilaya" error={fieldErrors.wilaya?.[0]}>
-                  <input
-                    className={inputClass}
-                    value={form.wilaya}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, wilaya: e.target.value }))
-                    }
-                    maxLength={80}
-                  />
-                </Field>
+                {editing ? null : (
+                  <Field label="Wilaya" error={fieldErrors.wilaya_code?.[0]}>
+                    <select
+                      className={inputClass}
+                      value={form.wilaya_code}
+                      onChange={(e) =>
+                        setForm((f) => ({ ...f, wilaya_code: e.target.value }))
+                      }
+                    >
+                      <option value="">—</option>
+                      {WILAYAS.map((w) => (
+                        <option key={w.code} value={w.code}>
+                          {w.code} · {w.name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                )}
                 <Field label="Commune" error={fieldErrors.commune?.[0]}>
                   <input
                     className={inputClass}

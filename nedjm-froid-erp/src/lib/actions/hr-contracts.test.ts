@@ -56,3 +56,19 @@ describe("upsertHrContract — interim", () => {
     expect(h.fake!.queries[0].payload).toMatchObject({ interim_daily_rate: null });
   });
 });
+
+describe("upsertHrContract — dated assignments", () => {
+  it("refuses a new contract starting mid-month", async () => {
+    const r = await upsertHrContract({ ...base, contract_type_code: "CDD", start_date: "2026-09-15" });
+    expect(r.ok).toBe(false);
+    expect(h.fake!.queries).toHaveLength(0);
+  });
+
+  it("never sends the site on update: it changes only through dated assignments", async () => {
+    const r = await upsertHrContract({ ...base, id: ID, contract_type_code: "CDD" });
+    expect(r.ok).toBe(true);
+    const upd = h.fake!.queries.find((q) => q.table === "hr_contracts" && q.op === "update");
+    expect(upd).toBeDefined();
+    expect(upd!.payload).not.toHaveProperty("site_id");
+  });
+});

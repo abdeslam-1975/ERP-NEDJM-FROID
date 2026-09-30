@@ -18,7 +18,22 @@ export type PayrollInputSource =
   | "EXIT"
   | "LEAVE"
   | "ADVANCE"
-  | "COMPLIANCE";
+  | "COMPLIANCE"
+  | "ASSIGNMENT"
+  | "SITE_WILAYA";
+
+export const DECISION_TYPES = [
+  { code: "D4", label: "D4 · Génération de paie" },
+  { code: "D3", label: "D3 · Recalcul des paies brouillon" },
+  { code: "D8", label: "D8 · Correction d'une affectation" },
+  { code: "D13", label: "D13 · Contrat ne commençant pas le 1er" },
+] as const;
+export type DecisionTypeCode = (typeof DECISION_TYPES)[number]["code"];
+export const DECISION_TYPE_CODES = DECISION_TYPES.map((t) => t.code) as [DecisionTypeCode, ...DecisionTypeCode[]];
+
+export function isDecisionTypeCode(v: unknown): v is DecisionTypeCode {
+  return typeof v === "string" && (DECISION_TYPE_CODES as readonly string[]).includes(v);
+}
 
 export type PeriodNature = "EXTERNAL" | "OPERATIONAL";
 
@@ -33,7 +48,7 @@ const STATUS_LABELS: Record<DecisionStatus, string> = {
   SUPERSEDED: "Remplacée",
 };
 
-const SOURCE_LABELS: Record<PayrollInputSource | "MANUAL", string> = {
+const SOURCE_LABELS: Record<PayrollInputSource | "MANUAL" | "DATA_QUALITY", string> = {
   ATTENDANCE: "Présences",
   CONTRACT: "Contrat de travail",
   SALARY: "Rubriques de salaire",
@@ -43,7 +58,10 @@ const SOURCE_LABELS: Record<PayrollInputSource | "MANUAL", string> = {
   LEAVE: "Congé",
   ADVANCE: "Avance ou prêt",
   COMPLIANCE: "Dérogation IRG / CNAS / CACOBATPH",
+  ASSIGNMENT: "Affectation du contrat",
+  SITE_WILAYA: "Wilaya du chantier",
   MANUAL: "Demande depuis l'écran Paie",
+  DATA_QUALITY: "Rapport de qualité des données",
 };
 
 export function decisionStatusLabel(status: string): string {
@@ -59,7 +77,24 @@ export function decisionStatusTone(status: string): "warning" | "brand" | "succe
 }
 
 export function payrollSourceLabel(source: string): string {
-  return SOURCE_LABELS[source as PayrollInputSource] ?? source;
+  return SOURCE_LABELS[source as keyof typeof SOURCE_LABELS] ?? source;
+}
+
+/** D8 preview: what the correction changes for the IRG of the months covered (no slip is recalculated). */
+export function assignmentZoneNotice(input: {
+  oldZone: string | null;
+  newZone: string | null;
+  draftSlips: number;
+}): string {
+  if (!input.oldZone || !input.newZone) return "Zone IRG non déterminée pour l'un des chantiers.";
+  if (input.oldZone === input.newZone) {
+    return `Même zone IRG (${input.oldZone}) : aucun écart d'IRG dû à la zone.`;
+  }
+  const slips =
+    input.draftSlips > 0
+      ? ` ${input.draftSlips} bulletin(s) brouillon listé(s) ci-dessous seront signalés ; leur IRG changera au recalcul (décision D3).`
+      : " Aucun bulletin brouillon n'est concerné pour l'instant.";
+  return `Zone IRG modifiée : ${input.oldZone} → ${input.newZone}.${slips}`;
 }
 
 export function periodNatureText(nature: string | null | undefined): string {

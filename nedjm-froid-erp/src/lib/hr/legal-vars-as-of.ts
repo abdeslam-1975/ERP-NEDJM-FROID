@@ -13,6 +13,13 @@ export type PayrollLegalSnapshot = {
   irg_category: string;
   /** Absent on slips generated before the compliance engine. */
   compliance?: SnapshotCompliance | null;
+  /** Assignment in force on the 1st that set the site and IRG zone of the month (absent before lot 1). */
+  assignment?: {
+    id: string | null;
+    contract_id: string;
+    site_id: string;
+    zone_code: string;
+  } | null;
 };
 
 /** Numeric legal variables in force on a given date (latest version per key). */

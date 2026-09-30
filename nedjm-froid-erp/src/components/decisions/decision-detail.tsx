@@ -21,6 +21,14 @@ function dateTime(iso: string | null) {
   return new Date(iso).toLocaleString("fr-DZ", { dateStyle: "short", timeStyle: "short" });
 }
 
+function frDate(iso: string) {
+  return iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—";
+}
+
+function money(n: number) {
+  return n.toLocaleString("fr-DZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
@@ -40,6 +48,7 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
   const [info, setInfo] = useState<string | null>(null);
   const [invalidated, setInvalidated] = useState<string | null>(null);
   const chosen = d.options.find((o) => o.code === option) ?? null;
+  const isPayroll = d.type_code === "D3" || d.type_code === "D4";
   const payrollHref =
     d.period_year && d.period_month ? `/rh/paie?year=${d.period_year}&month=${d.period_month}` : "/rh/paie";
 
@@ -76,6 +85,8 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
       if (r.data.execute_error) {
         setError(`Décision enregistrée, mais l'exécution a échoué : ${r.data.execute_error}`);
         setInvalidated(r.data.invalidated);
+      } else if (r.data.applied) {
+        setInfo("Décision enregistrée et appliquée dans la même opération.");
       } else if (r.data.executed) {
         setInfo(
           [`Décision enregistrée et exécutée : ${r.data.executed.count} bulletin(s) calculé(s).`, ...r.data.executed.warnings].join(
@@ -140,16 +151,27 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
           </Fact>
           {d.type_code === "D4" ? (
             <Fact label="Pointages validés du mois">{d.attendance_days ?? "—"}</Fact>
-          ) : (
+          ) : d.type_code === "D3" ? (
             <Fact label="Bulletins brouillon">{d.slip_count ?? "—"}</Fact>
+          ) : null}
+          {isPayroll ? (
+            <Fact label="Paie">
+              <Link href={payrollHref} className="font-semibold text-brand hover:underline">
+                Ouvrir l&apos;écran Paie
+              </Link>
+            </Fact>
+          ) : (
+            <Fact label="Données">
+              <Link
+                href={d.type_code === "D13" ? "/rh/qualite-donnees" : "/rh/contrats"}
+                className="font-semibold text-brand hover:underline"
+              >
+                {d.type_code === "D13" ? "Rapport de qualité des données" : "Ouvrir les contrats"}
+              </Link>
+            </Fact>
           )}
-          <Fact label="Paie">
-            <Link href={payrollHref} className="font-semibold text-brand hover:underline">
-              Ouvrir l&apos;écran Paie
-            </Link>
-          </Fact>
         </dl>
-        {d.period_nature ? (
+        {isPayroll && d.period_nature ? (
           <p
             className={`mt-4 rounded-xl border px-3 py-2 text-sm ${
               d.period_nature === "EXTERNAL"
@@ -186,6 +208,66 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
         </RhPanel>
       ) : null}
 
+      {d.assignment ? (
+        <RhPanel>
+          <h3 className="font-display text-base font-semibold">Correction demandée · aperçu</h3>
+          <dl className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Fact label="Salarié">{d.assignment.employee}</Fact>
+            <Fact label="Période de l'affectation">
+              du {frDate(d.assignment.effective_from)}
+              {d.assignment.range_end ? ` au ${frDate(d.assignment.range_end)}` : " (en cours)"}
+              {d.assignment.kind === "INITIAL" ? " · affectation initiale" : " · changement daté"}
+            </Fact>
+            <Fact label="Chantier actuel → corrigé">
+              {d.assignment.old_site_name} → {d.assignment.new_site_name}
+            </Fact>
+            <Fact label="Wilaya">
+              {d.assignment.old_wilaya ?? "non confirmée"} → {d.assignment.new_wilaya ?? "non confirmée"}
+            </Fact>
+            <div className="sm:col-span-2 lg:col-span-4">
+              <Fact label="Motif de la demande">{d.assignment.reason}</Fact>
+            </div>
+          </dl>
+          <p className="mt-4 rounded-xl border border-border/70 bg-surface-muted/50 px-3 py-2 text-sm text-foreground/80">
+            {d.assignment.zone_notice}
+          </p>
+          {d.assignment.draft_slips.length ? (
+            <table className="mt-3 min-w-full text-sm">
+              <thead className="text-left text-xs uppercase text-foreground/55">
+                <tr>
+                  <th className="py-1 pr-4">Mois</th>
+                  <th className="py-1 pr-4">Paie brouillon</th>
+                  <th className="py-1 pr-4 text-right">IRG actuel</th>
+                  <th className="py-1 text-right">Net actuel</th>
+                </tr>
+              </thead>
+              <tbody>
+                {d.assignment.draft_slips.map((s) => (
+                  <tr key={s.slip_id} className="border-t border-border/60">
+                    <td className="py-1 pr-4">{s.period}</td>
+                    <td className="py-1 pr-4">{s.run_site}</td>
+                    <td className="py-1 pr-4 text-right tabular-nums">{money(s.irg_amount)}</td>
+                    <td className="py-1 text-right tabular-nums">{money(s.net_payable)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+        </RhPanel>
+      ) : null}
+
+      {d.contract_start ? (
+        <RhPanel>
+          <h3 className="font-display text-base font-semibold">Contrat concerné</h3>
+          <dl className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Fact label="Salarié">{d.contract_start.employee}</Fact>
+            <Fact label="Début actuel">{frDate(d.contract_start.contract_start)}</Fact>
+            <Fact label="Fin">{d.contract_start.contract_end ? frDate(d.contract_start.contract_end) : "—"}</Fact>
+            <Fact label="Début corrigé proposé">{frDate(d.contract_start.fix_start)}</Fact>
+          </dl>
+        </RhPanel>
+      ) : null}
+
       {d.status === "PENDING" ? (
         <RhPanel>
           <h3 className="font-display text-base font-semibold">Votre décision</h3>
@@ -197,26 +279,37 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
             <div className="mt-3 space-y-4">
               <fieldset className="grid gap-2 sm:grid-cols-2">
                 <legend className="sr-only">Options</legend>
-                {d.options.map((o) => (
-                  <label
-                    key={o.code}
-                    className={`cursor-pointer rounded-xl border px-4 py-3 transition ${
-                      option === o.code ? "border-brand bg-brand-muted" : "border-border/70 hover:bg-surface-muted/60"
-                    }`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="decision-option"
-                        value={o.code}
-                        checked={option === o.code}
-                        onChange={() => setOption(o.code)}
-                      />
-                      <span className="font-semibold">{o.label_fr}</span>
-                    </span>
-                    <span className="mt-1 block text-sm text-foreground/70">{o.consequence_fr}</span>
-                  </label>
-                ))}
+                {d.options.map((o) => {
+                  const blocked = d.unavailable_options[o.code];
+                  return (
+                    <label
+                      key={o.code}
+                      className={`rounded-xl border px-4 py-3 transition ${
+                        blocked
+                          ? "cursor-not-allowed border-border/50 opacity-60"
+                          : option === o.code
+                            ? "cursor-pointer border-brand bg-brand-muted"
+                            : "cursor-pointer border-border/70 hover:bg-surface-muted/60"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="decision-option"
+                          value={o.code}
+                          checked={option === o.code}
+                          disabled={Boolean(blocked)}
+                          onChange={() => setOption(o.code)}
+                        />
+                        <span className="font-semibold">{o.label_fr}</span>
+                      </span>
+                      <span className="mt-1 block text-sm text-foreground/70">{o.consequence_fr}</span>
+                      {blocked ? (
+                        <span className="mt-1 block text-xs font-semibold text-alert-critical">{blocked}</span>
+                      ) : null}
+                    </label>
+                  );
+                })}
               </fieldset>
               <label className="block">
                 <span className="text-sm font-semibold">Justification (obligatoire, tracée)</span>

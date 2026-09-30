@@ -36,6 +36,8 @@ import {
   type SalaryUnit,
   type SalaryVersion,
 } from "@/lib/hr/payroll-calc";
+import { monthAssignmentsByEmployee } from "@/lib/hr/assignments";
+import { loadContractAssignments } from "@/lib/hr/assignments-load";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -261,7 +263,23 @@ async function load(
   )[0];
   const ctr = (grouped?.contract ?? principal[0] ?? contractRows[0]) as Record<string, unknown>;
   const ctrId = String(ctr.id);
-  const siteId = String(ctr.site_id);
+  const assignmentLoaded = await loadContractAssignments(
+    supabase,
+    payable.map((c) => String(c.id)),
+  );
+  if (!assignmentLoaded.ok) return assignmentLoaded;
+  const monthAsg = monthAssignmentsByEmployee(
+    payable.map((c) => ({
+      id: String(c.id),
+      employee_id: empId,
+      site_id: String(c.site_id),
+      start_date: String(c.start_date),
+      end_date: day(c.end_date),
+    })),
+    assignmentLoaded.data,
+    start,
+  ).get(empId);
+  const siteId = monthAsg?.siteId ?? String(ctr.site_id);
   const notice = grouped
     ? null
     : "Aucun contrat principal payable sur la période : simulation sur le contrat le plus récent.";

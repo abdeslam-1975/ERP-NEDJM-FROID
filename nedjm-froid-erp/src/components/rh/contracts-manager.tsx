@@ -32,6 +32,7 @@ import { ContractSalaryFields, type SelectedSalaryLine } from "@/components/rh/c
 import { LegalSettings } from "@/components/rh/legal-settings";
 import { ContractComplianceCards } from "@/components/rh/contract-compliance-cards";
 import { ContractSalaryHistory } from "@/components/rh/contract-salary-history";
+import { ContractAssignments } from "@/components/rh/contract-assignments";
 import { ContractPrintDialog } from "@/components/rh/contract-print-dialog";
 import {
   SalaryRubricsManager,
@@ -141,7 +142,9 @@ export function ContractsManager({
   const [rows, setRows] = useState(initialContracts);
   const [asgRows, setAsgRows] = useState(assignments);
   const [open, setOpen] = useState(false);
-  const [modalTab, setModalTab] = useState<"contrat" | "avenants" | "rubriques" | "legal">("contrat");
+  const [modalTab, setModalTab] = useState<"contrat" | "affectations" | "avenants" | "rubriques" | "legal">(
+    "contrat",
+  );
   const [form, setForm] = useState<FormState>(emptyForm());
   const [selectedLines, setSelectedLines] = useState<Record<string, SelectedSalaryLine>>({});
   const [error, setError] = useState<string | null>(loadError ?? null);
@@ -455,6 +458,7 @@ export function ContractsManager({
             <RhTabs
               items={[
                 { id: "contrat", label: bi("Contrat de travail", "عقد العمل") },
+                { id: "affectations", label: bi("Affectations", "التعيينات") },
                 { id: "avenants", label: bi("Avenants salaire", "ملاحق الأجر") },
                 { id: "rubriques", label: bi("Rubriques de salaire", "بنود الأجر") },
                 { id: "legal", label: bi("Cotisations & impôts", "الاشتراكات والضرائب") },
@@ -525,6 +529,12 @@ export function ContractsManager({
                 <select
                   className={rhInput}
                   value={form.site_id}
+                  disabled={Boolean(form.id)}
+                  title={
+                    form.id
+                      ? bi("Chantier en vigueur : il se modifie dans l'onglet Affectations.", "يُعدَّل من تبويب التعيينات.")
+                      : undefined
+                  }
                   onChange={(e) => {
                     const nextSite = sites.find((s) => s.id === e.target.value);
                     setForm({
@@ -542,6 +552,15 @@ export function ContractsManager({
                     </option>
                   ))}
                 </select>
+                {form.id ? (
+                  <button
+                    type="button"
+                    className="mt-1 text-[11px] font-semibold text-brand underline"
+                    onClick={() => setModalTab("affectations")}
+                  >
+                    {bi("Changer ou corriger l'affectation", "تغيير أو تصحيح التعيين")}
+                  </button>
+                ) : null}
               </RhField>
               <RhField label={bi("Activité *", "النشاط *")}>
                 <select
@@ -753,7 +772,7 @@ export function ContractsManager({
                   }
                 />
               </RhField>
-              <RhField label={bi("Début", "البداية")}>
+              <RhField label={bi("Début (1er du mois)", "البداية (أول الشهر)")}>
                 <input
                   type="date"
                   className={rhInput}
@@ -797,6 +816,24 @@ export function ContractsManager({
                 {bi("Affectation principale", "التعيين الرئيسي")}
               </label>
             </div>
+          ) : null}
+
+          {modalTab === "affectations" ? (
+            form.id ? (
+              <ContractAssignments
+                contractId={form.id}
+                sites={sites}
+                canEdit
+                onCurrentSite={(siteId) => setForm((prev) => ({ ...prev, site_id: siteId }))}
+              />
+            ) : (
+              <RhAlert tone="info">
+                {bi(
+                  "Le chantier choisi sur le contrat est l'affectation initiale. Les changements datés se saisissent ici une fois le contrat enregistré.",
+                  "الورشة المختارة هي التعيين الأولي. تُدخل التغييرات المؤرخة هنا بعد حفظ العقد.",
+                )}
+              </RhAlert>
+            )
           ) : null}
 
           {modalTab === "avenants" ? (
