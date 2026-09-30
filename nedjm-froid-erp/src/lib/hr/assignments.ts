@@ -3,6 +3,8 @@ export type AssignmentRow = {
   contract_id: string;
   site_id: string;
   effective_from: string;
+  /** D8 decision that corrected the start of this assignment. */
+  corrected_by_decision?: string | null;
 };
 
 export type SiteWilayaRow = {

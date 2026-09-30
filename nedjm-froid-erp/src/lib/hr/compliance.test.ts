@@ -92,6 +92,39 @@ describe("site zone", () => {
     ]);
     expect(resolveSiteZone({ wilaya: "béchar" }, m).code).toBe("SUD");
   });
+
+  describe("dated D16 scopes", () => {
+    const scopes = [{ id: "sc1", zone_code: "GRAND_SUD", wilaya_codes: ["30", "11"] }];
+
+    it("places the site by its wilaya code, with the scope id", () => {
+      expect(resolveSiteZone({ wilaya: "Ouargla", wilaya_code: "30" }, map, scopes)).toEqual({
+        code: "GRAND_SUD",
+        source: "scope",
+        scope_id: "sc1",
+      });
+    });
+
+    it("keeps the explicit site zone first", () => {
+      expect(resolveSiteZone({ irg_zone_code: "SUD", wilaya_code: "30" }, map, scopes)).toEqual({
+        code: "SUD",
+        source: "site",
+      });
+    });
+
+    it("ignores the catalog mapping of a zone that has a dated scope", () => {
+      const sudScope = [{ id: "sc2", zone_code: "SUD", wilaya_codes: ["01"] }];
+      expect(resolveSiteZone({ wilaya: "Ouargla", wilaya_code: "30" }, map, sudScope)).toEqual({
+        code: "NORMAL",
+        source: "default",
+      });
+    });
+
+    it("falls back to the catalog for zones without dated scope", () => {
+      expect(resolveSiteZone({ wilaya: "Ouargla", wilaya_code: "30" }, map, [
+        { id: "sc3", zone_code: "GRAND_SUD", wilaya_codes: ["11"] },
+      ])).toEqual({ code: "SUD", source: "wilaya" });
+    });
+  });
 });
 
 describe("override selection", () => {

@@ -304,11 +304,22 @@ export function groupContractsByEmployee<T extends ContractForPeriod>(
 }
 
 export type SalaryVersion = {
+  id?: string;
   contract_id: string;
   effective_from: string;
   salaire_base_monthly: number;
   salaire_net_ref_monthly: number;
 };
+
+/** Version in force on `asOf` (latest effective_from ≤ asOf); null = contract fields apply. */
+export function salaryVersionAt(versions: SalaryVersion[], contractId: string, asOf: string): SalaryVersion | null {
+  let best: SalaryVersion | null = null;
+  for (const v of versions) {
+    if (v.contract_id !== contractId || v.effective_from.slice(0, 10) > asOf) continue;
+    if (!best || v.effective_from > best.effective_from) best = v;
+  }
+  return best;
+}
 
 /** Salary of the version in force on `asOf` (latest effective_from ≤ asOf), else the contract fields. */
 export function salaryAsOf(
@@ -317,11 +328,7 @@ export function salaryAsOf(
   asOf: string,
   fallback: { base: number; net: number },
 ): { base: number; net: number } {
-  let best: SalaryVersion | null = null;
-  for (const v of versions) {
-    if (v.contract_id !== contractId || v.effective_from.slice(0, 10) > asOf) continue;
-    if (!best || v.effective_from > best.effective_from) best = v;
-  }
+  const best = salaryVersionAt(versions, contractId, asOf);
   return best ? { base: best.salaire_base_monthly, net: best.salaire_net_ref_monthly } : fallback;
 }
 

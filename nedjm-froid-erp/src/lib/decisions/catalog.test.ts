@@ -8,8 +8,11 @@ import {
   decisionStatusLabel,
   parseDecisionOptions,
   parsePayrollSignal,
+  parseRuleApplicationContext,
+  payrollRunStatusLabel,
   payrollSignalNotice,
   periodLabel,
+  ruleApplicationSlipNotice,
   periodNatureText,
   validateJustification,
 } from "@/lib/decisions/catalog";
@@ -37,6 +40,46 @@ describe("decideBlocker", () => {
     for (const status of ["DECIDED", "EXECUTED", "INVALIDATED", "SUPERSEDED"]) {
       expect(decideBlocker({ ...base, status, isSuperAdmin: true })).toMatch(/plus en attente/);
     }
+  });
+
+  it("D2: refuses a rule contributor, except the SUPER_ADMIN", () => {
+    expect(decideBlocker({ ...base, isRuleContributor: true })).toMatch(/contribué à cette règle/);
+    expect(decideBlocker({ ...base, isRuleContributor: true, isSuperAdmin: true })).toBeNull();
+  });
+});
+
+describe("D2 context", () => {
+  it("parses the application context and hides the 1900 sentinel", () => {
+    const c = parseRuleApplicationContext({
+      proposal_id: "p1",
+      family: "LEGAL_VAR",
+      requested_month: "2026-11-01",
+      application_month: "2026-11-01T00:00:00",
+      first_open_month: "1900-01-01",
+      self_approved: true,
+      contributors: ["Ali", 3],
+      slips: [{ period_key: "2026-11", status: "DRAFT", runs: "2", slips: "14", affected: true }, null],
+    });
+    expect(c).toMatchObject({
+      proposal_id: "p1",
+      application_month: "2026-11-01",
+      first_open_month: null,
+      self_approved: true,
+      contributors: ["Ali", "3"],
+      slips: [{ period_key: "2026-11", period: "2026-11", status: "DRAFT", runs: 2, slips: 14, affected: true }],
+    });
+    expect(parseRuleApplicationContext(null)).toMatchObject({ proposal_id: "", slips: [], first_open_month: null });
+  });
+
+  it("summarises flagged drafts and frozen payslips without modifying them", () => {
+    const notice = ruleApplicationSlipNotice([
+      { period_key: "2026-10", period: "10/2026", status: "VALIDATED", runs: 1, slips: 5, affected: false },
+      { period_key: "2026-11", period: "11/2026", status: "DRAFT", runs: 1, slips: 7, affected: true },
+    ]);
+    expect(notice).toMatch(/^7 bulletin\(s\) brouillon/);
+    expect(notice).toMatch(/5 bulletin\(s\) validé\(s\).*jamais modifiés/);
+    expect(ruleApplicationSlipNotice([])).toBe("Aucun bulletin brouillon concerné.");
+    expect(payrollRunStatusLabel("LOCKED")).toBe("Verrouillée");
   });
 });
 

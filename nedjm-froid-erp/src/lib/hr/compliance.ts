@@ -128,16 +128,34 @@ export function contractTypeAllowsFixedIrg(
   return flag === true || flag === "true";
 }
 
-export type SiteZone = { code: string; source: "site" | "wilaya" | "default" };
+export type SiteZone = {
+  code: string;
+  source: "site" | "scope" | "wilaya" | "default";
+  /** D16 scope that placed the site in the zone (source "scope"). */
+  scope_id?: string;
+};
 
+/** Approved geographic scope (D16) of a zone, in force for the period. */
+export type ZoneScopeAt = { id: string; zone_code: string; wilaya_codes: readonly string[] };
+
+/**
+ * Site zone, in precedence order: explicit site zone, dated D16 scope containing the site's wilaya,
+ * catalog mapping (ignored for zones that have a dated scope), default zone.
+ */
 export function resolveSiteZone(
-  site: { irg_zone_code?: string | null; wilaya?: string | null } | null | undefined,
+  site: { irg_zone_code?: string | null; wilaya?: string | null; wilaya_code?: string | null } | null | undefined,
   wilayaMap: ReadonlyMap<string, string>,
+  scopes: readonly ZoneScopeAt[] = [],
 ): SiteZone {
   const explicit = site?.irg_zone_code?.trim();
   if (explicit) return { code: explicit, source: "site" };
+  const wilayaCode = site?.wilaya_code?.trim();
+  if (wilayaCode) {
+    const scope = scopes.find((s) => s.wilaya_codes.includes(wilayaCode));
+    if (scope) return { code: scope.zone_code, source: "scope", scope_id: scope.id };
+  }
   const mapped = wilayaMap.get(normalizeWilaya(site?.wilaya));
-  if (mapped) return { code: mapped, source: "wilaya" };
+  if (mapped && !scopes.some((s) => s.zone_code === mapped)) return { code: mapped, source: "wilaya" };
   return { code: DEFAULT_IRG_ZONE, source: "default" };
 }
 

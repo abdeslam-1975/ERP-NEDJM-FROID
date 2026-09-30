@@ -20,10 +20,21 @@ import {
   type ComplianceGroup,
 } from "@/lib/hr/compliance-keys";
 import type { ContributionBase, ContributionPart, ContributionScope } from "@/lib/hr/contributions";
+import { frMonth, isOpenRuleStatus, ruleSourceSchema, type RuleSource } from "@/lib/rules/proposals";
+import { PROPOSAL_SENT, saveRuleProposal } from "@/lib/rules/proposal-rpc";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
   | { ok: false; error: string };
+
+/** Open proposal (draft, submitted or approved without effect) shown next to the rule it targets. */
+export type PendingRuleProposal = {
+  id: string;
+  action: "SET" | "STOP" | "VERIFY";
+  status: string;
+  title: string;
+  requested_month: string | null;
+};
 
 export type ContributionSettings = {
   part: ContributionPart;
@@ -38,6 +49,8 @@ export type LegalVarVersion = {
   effective_from: string;
   effective_to: string | null;
   contribution: ContributionSettings | null;
+  /** Approved through a proposal (lot 2); false = existing value, not verified yet. */
+  verified: boolean;
 };
 
 export type LegalVarStatus = "active" | "planned" | "stopped" | "none";
@@ -67,6 +80,9 @@ export type LegalVarRow = {
   stops_from: string | null;
   /** Never applied to a closed month nor to a payslip: can be erased instead of stopped. */
   deletable: boolean;
+  /** Version in force on the 1st of the current month. */
+  current_version: LegalVarVersion | null;
+  proposals: PendingRuleProposal[];
 };
 
 export type LegalRateVersion = {
@@ -76,6 +92,7 @@ export type LegalRateVersion = {
   fos_pct: number | null;
   effective_from: string;
   effective_to: string | null;
+  verified: boolean;
 };
 
 export type CnasRegimeRow = {
@@ -90,6 +107,8 @@ export type CnasRegimeRow = {
   planned: LegalRateVersion[];
   history: LegalRateVersion[];
   is_active: boolean;
+  current_version: LegalRateVersion | null;
+  proposals: PendingRuleProposal[];
 };
 
 export type LegalPeriod = {
@@ -154,6 +173,34 @@ function settingsOf(
   };
 }
 
+/** Open proposals of a family, keyed by their target (var / regime id, or version id for a verification). */
+async function openProposals(supabase: Supabase, family: "LEGAL_VAR" | "CNAS_RATES") {
+  const { data } = await supabase
+    .from("ref_rule_proposals")
+    .select("id, action, status, title, target_id, requested_month")
+    .eq("family", family)
+    .in("status", ["DRAFT", "SUBMITTED", "APPROVED"])
+    .order("created_at", { ascending: false });
+  const byTarget = new Map<string, PendingRuleProposal[]>();
+  for (const p of data ?? []) {
+    if (!p.target_id || !isOpenRuleStatus(p.status)) continue;
+    const list = byTarget.get(p.target_id) ?? [];
+    list.push({
+      id: p.id,
+      action: p.action === "STOP" || p.action === "VERIFY" ? p.action : "SET",
+      status: p.status,
+      title: p.title,
+      requested_month: p.requested_month ? String(p.requested_month).slice(0, 10) : null,
+    });
+    byTarget.set(p.target_id, list);
+  }
+  return byTarget;
+}
+
+function proposalsFor(byTarget: Map<string, PendingRuleProposal[]>, ids: string[]) {
+  return ids.flatMap((id) => byTarget.get(id) ?? []);
+}
+
 async function usedContributionKeys(supabase: Supabase) {
   const { data } = await supabase.rpc("hr_used_contribution_keys");
   const keys = new Set<string>();
@@ -180,11 +227,11 @@ export async function listLegalVars(): Promise<ActionResult<LegalVarRow[]>> {
   const vars = (allVars ?? []).filter((v) => isComplianceKey(v.key));
   if (!vars.length) return { ok: true, data: [] };
 
-  const [{ data: versions, error: vErr }, open, used] = await Promise.all([
+  const [{ data: versions, error: vErr }, open, used, proposals] = await Promise.all([
     supabase
       .from("ref_global_var_versions")
       .select(
-        "id, var_id, value_numeric, value_text, effective_from, effective_to, contrib_part, contrib_base, contrib_reduces_irg, contrib_scope",
+        "id, var_id, value_numeric, value_text, effective_from, effective_to, contrib_part, contrib_base, contrib_reduces_irg, contrib_scope, proposal_id",
       )
       .in(
         "var_id",
@@ -193,6 +240,7 @@ export async function listLegalVars(): Promise<ActionResult<LegalVarRow[]>> {
       .order("effective_from", { ascending: false }),
     openFrom(supabase),
     usedContributionKeys(supabase),
+    openProposals(supabase, "LEGAL_VAR"),
   ]);
   if (vErr) return { ok: false, error: vErr.message };
 
@@ -217,6 +265,7 @@ export async function listLegalVars(): Promise<ActionResult<LegalVarRow[]>> {
         effective_from: x.effective_from,
         effective_to: x.effective_to,
         contribution: settingsOf(x),
+        verified: x.proposal_id != null,
       });
       const planned = list
         .filter((x) => x.effective_from > month)
@@ -256,7 +305,10 @@ export async function listLegalVars(): Promise<ActionResult<LegalVarRow[]>> {
           !isSystem &&
           isContribution &&
           !used.has(v.key) &&
-          list.every((x) => !open || x.effective_from >= open),
+          list.every((x) => !open || x.effective_from >= open) &&
+          list.every((x) => x.proposal_id == null),
+        current_version: current ? toVersion(current) : null,
+        proposals: proposalsFor(proposals, [v.id, ...list.map((x) => x.id)]),
       } satisfies LegalVarRow;
     }),
   };
@@ -281,7 +333,14 @@ const addVersionSchema = z.object({
   value_pct: z.coerce.number().min(0, "Taux ≥ 0.").max(100, "Taux ≤ 100 %.").optional(),
   value_numeric: z.coerce.number().min(0).max(99_999_999).optional(),
   as_percent: z.boolean().default(false),
+  source: ruleSourceSchema,
 });
+
+function valueText(value: number, asPercent: boolean) {
+  return asPercent
+    ? `${String(Math.round(value * 1_000_000) / 10_000).replace(".", ",")} %`
+    : String(value).replace(".", ",");
+}
 
 function toFraction(pct: number) {
   return Math.round((pct / 100) * 1_000_000) / 1_000_000;
@@ -299,17 +358,43 @@ function rpcParams(group: ComplianceGroup, s: z.infer<typeof settingsSchema>) {
 async function loadComplianceVar(supabase: Supabase, id: string) {
   const { data } = await supabase
     .from("ref_global_vars")
-    .select("id, key, is_system, contrib_part")
+    .select("id, key, label_fr, is_system, contrib_part")
     .eq("id", id)
     .maybeSingle();
   if (!data || !isComplianceKey(data.key)) return null;
   return data;
 }
 
-/** New value from the 1st of an open month; same month replaces the value planned for it. */
+function proposeLegalVar(
+  supabase: Supabase,
+  input: {
+    var_id: string;
+    label: string;
+    value: number;
+    asPercent: boolean;
+    params?: Record<string, unknown> | null;
+    month: string;
+    source: RuleSource;
+    deviations?: string[];
+  },
+) {
+  return saveRuleProposal(supabase, {
+    family: "LEGAL_VAR",
+    action: "SET",
+    target_id: input.var_id,
+    payload: { value: input.value, params: input.params ?? null, deviations: input.deviations ?? [] },
+    title: `${input.label} : ${valueText(input.value, input.asPercent)} à partir de ${frMonth(input.month)}`.slice(0, 200),
+    source_ref: input.source.source_ref,
+    text_effective_date: input.source.text_effective_date,
+    requested_month: input.month,
+    submit: true,
+  });
+}
+
+/** New value proposed from the 1st of an open month; nothing changes before approval and decision D2. */
 export async function addLegalVarVersion(
   input: unknown,
-): Promise<ActionResult<{ id: string }>> {
+): Promise<ActionResult<{ id: string; message: string }>> {
   const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const { body, authorize } = takeAuthorize(input);
@@ -333,37 +418,26 @@ export async function addLegalVarVersion(
   }
   const deviation = statutoryFractionDeviation(variable.key, value);
   if (deviation && !authorize) return { ok: false, error: legalOverrideError([deviation]) };
-  const { data, error } = await supabase.rpc("hr_set_legal_var_version", {
-    p_var_id: p.var_id,
-    p_from: p.effective_from,
-    p_value: value,
+  const saved = await proposeLegalVar(supabase, {
+    var_id: p.var_id,
+    label: variable.label_fr,
+    value,
+    asPercent: p.as_percent,
+    month: p.effective_from,
+    source: p.source,
+    deviations: deviation ? [deviation] : [],
   });
-  if (error) return { ok: false, error: error.message };
+  if (!saved.ok) return saved;
   if (deviation && authorize) {
     const logged = await logLegalOverride(
       variable.key,
       { fraction: STATUTORY_RATES[variable.key]?.fraction ?? null },
-      { fraction: value, effective_from: p.effective_from },
+      { fraction: value, effective_from: p.effective_from, proposal_id: saved.data.id },
     );
-    if (logged) return { ok: false, error: `Valeur enregistrée. Journal d'audit indisponible : ${logged}` };
+    if (logged) return { ok: false, error: `Proposition enregistrée. Journal d'audit indisponible : ${logged}` };
   }
   revalidateLegal();
-  return { ok: true, data: { id: String(data) } };
-}
-
-/** Withdraw a value planned for an open month; the previous value covers its period again. */
-export async function cancelLegalVarVersion(input: unknown): Promise<ActionResult> {
-  const gate = await requireComplianceWrite();
-  if (!gate.ok) return gate;
-  const parsed = z.object({ version_id: z.string().uuid() }).safeParse(input);
-  if (!parsed.success) return { ok: false, error: "Version invalide." };
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("hr_cancel_legal_var_version", {
-    p_version_id: parsed.data.version_id,
-  });
-  if (error) return { ok: false, error: error.message };
-  revalidateLegal();
-  return { ok: true, data: undefined };
+  return { ok: true, data: { id: saved.data.id, message: PROPOSAL_SENT } };
 }
 
 const displaySchema = z.object({
@@ -388,10 +462,16 @@ const createContributionSchema = z.object({
   settings: settingsSchema,
   value_pct: z.coerce.number().gt(0, "Taux > 0.").max(100, "Taux ≤ 100 %."),
   effective_from: monthSchema,
+  source: ruleSourceSchema,
 });
 
-/** New contribution computed by the payroll from the chosen month (CNAS, CACOBATPH or taxes tab). */
-export async function createContribution(input: unknown): Promise<ActionResult<{ id: string; key: string }>> {
+/**
+ * New contribution: the catalog row (labels, no value, so no effect) is created at once; its rate is a proposal
+ * computed by the payroll only once approved and dated (D2).
+ */
+export async function createContribution(
+  input: unknown,
+): Promise<ActionResult<{ id: string; key: string; message: string }>> {
   const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const parsed = createContributionSchema.safeParse(input);
@@ -427,18 +507,21 @@ export async function createContribution(input: unknown): Promise<ActionResult<{
   if (error) return { ok: false, error: error.message };
   if (!created) return { ok: false, error: "Création refusée (droits)." };
 
-  const { error: vErr } = await supabase.rpc("hr_set_legal_var_version", {
-    p_var_id: created.id,
-    p_from: p.effective_from,
-    p_value: toFraction(p.value_pct),
-    p_params: params,
+  const saved = await proposeLegalVar(supabase, {
+    var_id: created.id,
+    label: p.display.label_fr,
+    value: toFraction(p.value_pct),
+    asPercent: true,
+    params,
+    month: p.effective_from,
+    source: p.source,
   });
-  if (vErr) {
+  if (!saved.ok) {
     await supabase.from("ref_global_vars").delete().eq("id", created.id);
-    return { ok: false, error: vErr.message };
+    return saved;
   }
   revalidateLegal();
-  return { ok: true, data: { id: created.id, key } };
+  return { ok: true, data: { id: created.id, key, message: PROPOSAL_SENT } };
 }
 
 const saveContributionSchema = z.object({
@@ -449,13 +532,14 @@ const saveContributionSchema = z.object({
       settings: settingsSchema,
       value_pct: z.coerce.number().gt(0, "Taux > 0.").max(100, "Taux ≤ 100 %."),
       effective_from: monthSchema,
+      source: ruleSourceSchema,
     })
     .optional()
     .nullable(),
 });
 
-/** Labels apply at once (payslips keep their own copy); rate and settings only from the chosen month. */
-export async function saveContribution(input: unknown): Promise<ActionResult> {
+/** Labels apply at once (payslips keep their own copy); rate and settings are a proposal (approval, then D2). */
+export async function saveContribution(input: unknown): Promise<ActionResult<{ message: string }>> {
   const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const parsed = saveContributionSchema.safeParse(input);
@@ -472,13 +556,16 @@ export async function saveContribution(input: unknown): Promise<ActionResult> {
   if (group === "other") return { ok: false, error: "Variable hors unité 05." };
 
   if (p.change) {
-    const { error: vErr } = await supabase.rpc("hr_set_legal_var_version", {
-      p_var_id: row.id,
-      p_from: p.change.effective_from,
-      p_value: toFraction(p.change.value_pct),
-      p_params: rpcParams(group, p.change.settings),
+    const saved = await proposeLegalVar(supabase, {
+      var_id: row.id,
+      label: p.display.label_fr,
+      value: toFraction(p.change.value_pct),
+      asPercent: true,
+      params: rpcParams(group, p.change.settings),
+      month: p.change.effective_from,
+      source: p.change.source,
     });
-    if (vErr) return { ok: false, error: vErr.message };
+    if (!saved.ok) return saved;
   }
   const { data, error } = await supabase
     .from("ref_global_vars")
@@ -488,25 +575,37 @@ export async function saveContribution(input: unknown): Promise<ActionResult> {
   if (error) return { ok: false, error: error.message };
   if (!data?.length) return { ok: false, error: "Mise à jour refusée (droits)." };
   revalidateLegal();
-  return { ok: true, data: undefined };
+  return { ok: true, data: { message: p.change ? `Libellés mis à jour. ${PROPOSAL_SENT}` : "Libellés mis à jour." } };
 }
 
-/** No longer computed from the chosen month; earlier months keep it. */
-export async function stopContribution(input: unknown): Promise<ActionResult> {
+/** Stop proposed from the chosen month; earlier months keep the contribution. */
+export async function stopContribution(input: unknown): Promise<ActionResult<{ message: string }>> {
   const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
-  const parsed = z.object({ var_id: z.string().uuid(), effective_from: monthSchema }).safeParse(input);
+  const parsed = z
+    .object({ var_id: z.string().uuid(), effective_from: monthSchema, source: ruleSourceSchema })
+    .safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides." };
   }
+  const p = parsed.data;
   const supabase = await createClient();
-  const { error } = await supabase.rpc("hr_stop_legal_var", {
-    p_var_id: parsed.data.var_id,
-    p_from: parsed.data.effective_from,
+  const row = await loadComplianceVar(supabase, p.var_id);
+  if (!row) return { ok: false, error: "Cotisation introuvable." };
+  const saved = await saveRuleProposal(supabase, {
+    family: "LEGAL_VAR",
+    action: "STOP",
+    target_id: row.id,
+    payload: {},
+    title: `Arrêt de ${row.label_fr} à partir de ${frMonth(p.effective_from)}`.slice(0, 200),
+    source_ref: p.source.source_ref,
+    text_effective_date: p.source.text_effective_date,
+    requested_month: p.effective_from,
+    submit: true,
   });
-  if (error) return { ok: false, error: error.message };
+  if (!saved.ok) return saved;
   revalidateLegal();
-  return { ok: true, data: undefined };
+  return { ok: true, data: { message: PROPOSAL_SENT } };
 }
 
 /** Erases a contribution never applied to a closed month nor to a payslip (enforced in the database). */
@@ -518,6 +617,16 @@ export async function deleteContribution(input: unknown): Promise<ActionResult> 
   const supabase = await createClient();
   const row = await loadComplianceVar(supabase, parsed.data.var_id);
   if (!row || row.is_system) return { ok: false, error: "Les taux légaux ne peuvent pas être supprimés." };
+  const { count: openCount, error: pErr } = await supabase
+    .from("ref_rule_proposals")
+    .select("id", { count: "exact", head: true })
+    .eq("family", "LEGAL_VAR")
+    .eq("target_id", row.id)
+    .in("status", ["DRAFT", "SUBMITTED", "APPROVED"]);
+  if (pErr) return { ok: false, error: pErr.message };
+  if ((openCount ?? 0) > 0) {
+    return { ok: false, error: "Une proposition est en cours sur cette cotisation : retirez-la d'abord (écran Propositions)." };
+  }
   const { data, error } = await supabase.from("ref_global_vars").delete().eq("id", row.id).select("id");
   if (error) return { ok: false, error: error.message };
   if (!data?.length) return { ok: false, error: "Suppression refusée (droits)." };
@@ -535,28 +644,33 @@ export async function listCnasRegimes(): Promise<ActionResult<CnasRegimeRow[]>> 
     .order("code");
   if (error) return { ok: false, error: error.message };
   const ids = (data ?? []).map((r) => r.id);
-  const { data: rates, error: rErr } = ids.length
-    ? await supabase
-        .from("hr_social_profile_rates")
-        .select("id, profile_id, employee_pct, employer_pct, fos_pct, effective_from, effective_to")
-        .in("profile_id", ids)
-        .order("effective_from", { ascending: false })
-    : { data: [], error: null };
+  const [{ data: rates, error: rErr }, proposals] = await Promise.all([
+    ids.length
+      ? supabase
+          .from("hr_social_profile_rates")
+          .select("id, profile_id, employee_pct, employer_pct, fos_pct, effective_from, effective_to, proposal_id")
+          .in("profile_id", ids)
+          .order("effective_from", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+    openProposals(supabase, "CNAS_RATES"),
+  ]);
   if (rErr) return { ok: false, error: rErr.message };
 
   const month = monthStartIso();
   const byProfile = new Map<string, LegalRateVersion[]>();
-  for (const r of rates ?? []) {
-    const list = byProfile.get(r.profile_id) ?? [];
+  for (const r of (rates ?? []) as Record<string, unknown>[]) {
+    const profile = String(r.profile_id);
+    const list = byProfile.get(profile) ?? [];
     list.push({
-      id: r.id,
+      id: String(r.id),
       employee_pct: n(r.employee_pct),
       employer_pct: n(r.employer_pct),
       fos_pct: n(r.fos_pct),
-      effective_from: r.effective_from,
-      effective_to: r.effective_to,
+      effective_from: String(r.effective_from),
+      effective_to: r.effective_to ? String(r.effective_to) : null,
+      verified: r.proposal_id != null,
     });
-    byProfile.set(r.profile_id, list);
+    byProfile.set(profile, list);
   }
   return {
     ok: true,
@@ -576,6 +690,8 @@ export async function listCnasRegimes(): Promise<ActionResult<CnasRegimeRow[]>> 
         planned: history.filter((x) => x.effective_from > month).reverse(),
         history,
         is_active: r.is_active !== false,
+        current_version: current ?? null,
+        proposals: proposalsFor(proposals, [r.id, ...history.map((x) => x.id)]),
       };
     }),
   };
@@ -613,13 +729,17 @@ const regimeSchema = z.object({
       employer_pct: pctOrNull,
       fos_pct: pctOrNull,
       effective_from: monthSchema,
+      source: ruleSourceSchema,
     })
     .optional()
     .nullable(),
 });
 
-/** CNAS regime (catalog social_profile). Rates are dated: blank = legal rate of the month. */
-export async function saveCnasRegime(input: unknown): Promise<ActionResult<{ id: string }>> {
+/**
+ * CNAS regime (catalog social_profile). Labels apply at once; dated rates (blank = legal rate of the month)
+ * are a proposal: approval, then decision D2.
+ */
+export async function saveCnasRegime(input: unknown): Promise<ActionResult<{ id: string; message: string }>> {
   const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
   const { body, authorize } = takeAuthorize(input);
@@ -656,28 +776,40 @@ export async function saveCnasRegime(input: unknown): Promise<ActionResult<{ id:
   if (!data) return { ok: false, error: "Enregistrement refusé (droits)." };
 
   if (p.rates) {
-    const { error: rErr } = await supabase.rpc("hr_set_social_profile_rates", {
-      p_profile_id: data.id,
-      p_from: p.rates.effective_from,
-      p_employee: p.rates.employee_pct,
-      p_employer: p.rates.employer_pct,
-      p_fos: p.rates.fos_pct,
+    const pctText = (v: number | null) => (v == null ? "légal" : `${String(v).replace(".", ",")} %`);
+    const saved = await saveRuleProposal(supabase, {
+      family: "CNAS_RATES",
+      action: "SET",
+      target_id: data.id,
+      payload: {
+        employee_pct: p.rates.employee_pct,
+        employer_pct: p.rates.employer_pct,
+        fos_pct: p.rates.fos_pct,
+        deviations,
+      },
+      title: `Régime CNAS ${p.code} : ${pctText(p.rates.employee_pct)} / ${pctText(p.rates.employer_pct)} / FOS ${pctText(
+        p.rates.fos_pct,
+      )} à partir de ${frMonth(p.rates.effective_from)}`.slice(0, 200),
+      source_ref: p.rates.source.source_ref,
+      text_effective_date: p.rates.source.text_effective_date,
+      requested_month: p.rates.effective_from,
+      submit: true,
     });
-    if (rErr) {
+    if (!saved.ok) {
       if (!p.id) await supabase.from("hr_catalogs").delete().eq("id", data.id);
-      return { ok: false, error: rErr.message };
+      return saved;
     }
     if (deviations.length && authorize) {
       const logged = await logLegalOverride(
         `cnas:${p.code}`,
         STATUTORY_CNAS,
-        { ...p.rates, decision: "AUTORISER_DEPASSEMENT" },
+        { ...p.rates, decision: "AUTORISER_DEPASSEMENT", proposal_id: saved.data.id },
       );
-      if (logged) return { ok: false, error: `Taux enregistrés. Journal d'audit indisponible : ${logged}` };
+      if (logged) return { ok: false, error: `Proposition enregistrée. Journal d'audit indisponible : ${logged}` };
     }
   }
   revalidateLegal();
-  return { ok: true, data: { id: data.id } };
+  return { ok: true, data: { id: data.id, message: p.rates ? PROPOSAL_SENT : `Régime ${p.code} enregistré.` } };
 }
 
 /** Erases a regime nobody uses and never applied to a closed month; payslips keep their frozen snapshot. */
@@ -743,18 +875,6 @@ export async function deleteCnasRegime(input: unknown): Promise<ActionResult> {
     .select("id");
   if (error) return { ok: false, error: error.message };
   if (!data?.length) return { ok: false, error: "Suppression refusée (droits)." };
-  revalidateLegal();
-  return { ok: true, data: undefined };
-}
-
-export async function cancelCnasRegimeRates(input: unknown): Promise<ActionResult> {
-  const gate = await requireComplianceWrite();
-  if (!gate.ok) return gate;
-  const parsed = z.object({ version_id: z.string().uuid() }).safeParse(input);
-  if (!parsed.success) return { ok: false, error: "Version invalide." };
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("hr_cancel_social_profile_rates", { p_id: parsed.data.version_id });
-  if (error) return { ok: false, error: error.message };
   revalidateLegal();
   return { ok: true, data: undefined };
 }

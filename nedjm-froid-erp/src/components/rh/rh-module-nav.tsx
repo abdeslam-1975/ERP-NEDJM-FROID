@@ -20,7 +20,8 @@ const items = [
   { href: "/rh/sorties", label: "Sorties" },
   { href: "/rh/documents", label: "Documents" },
   { href: "/rh/attestations", label: "Attestations" },
-  { href: "/rh/legal", label: "Cotisations & impôts" },
+  { href: "/rh/legal", label: "Cotisations & impôts", exact: true },
+  { href: "/rh/legal/propositions", label: "Propositions légales" },
   { href: "/rh/qualite-donnees", label: "Qualité des données" },
   { href: "/rh/parametres", label: "Paramètres" },
 ];

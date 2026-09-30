@@ -3,6 +3,7 @@ import { RhShell } from "@/components/rh/rh-shell";
 import { LegalSettings } from "@/components/rh/legal-settings";
 import { getLegalPeriod, listCnasRegimes, listLegalVars } from "@/lib/actions/hr-legal-vars";
 import { listIrgCatalog } from "@/lib/actions/hr-irg";
+import { listZoneScopes } from "@/lib/actions/rule-proposals";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { getComplianceAccess } from "@/lib/auth/compliance-access";
 
@@ -25,11 +26,12 @@ export default async function RhLegalPage({
   const access = await getComplianceAccess();
   if (!access.canRead) redirect("/?error=forbidden");
 
-  const [vars, irg, regimes, period] = await Promise.all([
+  const [vars, irg, regimes, period, zones] = await Promise.all([
     listLegalVars(),
     listIrgCatalog(),
     listCnasRegimes(),
     getLegalPeriod(),
+    listZoneScopes(),
   ]);
 
   return (
@@ -43,9 +45,14 @@ export default async function RhLegalPage({
             ? irg.data
             : { versions: [], brackets: [], ruleSets: [], rules: [] }
         }
+        zoneScopes={zones.ok ? zones.data : null}
         canEdit={access.canWrite}
         loadError={
-          (!vars.ok && vars.error) || (!irg.ok && irg.error) || (!regimes.ok && regimes.error) || undefined
+          (!vars.ok && vars.error) ||
+          (!irg.ok && irg.error) ||
+          (!regimes.ok && regimes.error) ||
+          (!zones.ok && zones.error) ||
+          undefined
         }
         initialSection={initialSection}
       />

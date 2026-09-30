@@ -37,6 +37,8 @@ import {
 import { classTitle } from "@/components/rh/contract-salary-fields";
 import { isSalaryCategory, sortBySalaryClass, type SalaryCategory } from "@/lib/hr/payroll-calc";
 import { DEFAULT_CNAS_REGIME } from "@/lib/hr/compliance";
+import { unverifiedRules } from "@/lib/hr/legal-vars-as-of";
+import { SlipTraceDialog } from "@/components/rh/slip-trace-dialog";
 import {
   bulletinRatesFromVars,
   DEFAULT_BULLETIN_SETTINGS,
@@ -287,6 +289,11 @@ export function PayrollManager({
     slips.find((s) => !s.compliance || s.compliance.cnas.regime_code === DEFAULT_CNAS_REGIME) ?? slips[0];
   const periodRates = rateSlip ? bulletinRatesFromVars(rateSlip.legal_vars, bulletin) : legalRates;
   const manualSlips = slips.filter((s) => (s.compliance?.override_ids.length ?? 0) > 0);
+  const unverifiedKeys = [
+    ...new Set(slips.flatMap((s) => unverifiedRules(s.trace).map((r) => r.key))),
+  ].sort();
+  const unverifiedSlipCount = slips.filter((s) => unverifiedRules(s.trace).length > 0).length;
+  const [traceSlip, setTraceSlip] = useState<PayrollSlipRow | null>(null);
   const declarationsProvisional = !runs.length || runs.some((r) => r.status_code === "DRAFT");
   const [exporting, setExporting] = useState(false);
 
@@ -516,6 +523,32 @@ export function PayrollManager({
             </ul>
           </details>
         </RhAlert>
+      ) : null}
+      {unverifiedSlipCount ? (
+        <RhAlert tone="warning">
+          <details>
+            <summary className="cursor-pointer">
+              {unverifiedSlipCount}{" "}
+              {bi(
+                "bulletin(s) calculé(s) avec des valeurs légales reprises jamais vérifiées",
+                "كشف محسوب بقيم قانونية منقولة غير متحقق منها",
+              )}
+            </summary>
+            <p className="mt-1 text-xs">
+              {unverifiedKeys.join(", ")} —{" "}
+              <Link href="/rh/legal" className="underline">
+                {bi("faire approuver ces valeurs", "اعتماد هذه القيم")}
+              </Link>
+            </p>
+          </details>
+        </RhAlert>
+      ) : null}
+      {traceSlip?.trace ? (
+        <SlipTraceDialog
+          title={`${traceSlip.matricule} ${traceSlip.employee_name} — ${String(traceSlip.period_month).padStart(2, "0")}/${traceSlip.period_year}`}
+          trace={traceSlip.trace}
+          onClose={() => setTraceSlip(null)}
+        />
       ) : null}
       <div className="flex flex-wrap gap-2 rounded-2xl border border-border/60 bg-surface/80 px-4 py-3 text-xs text-foreground/75 backdrop-blur-sm">
         <RhChip tone="brand">
@@ -977,6 +1010,12 @@ export function PayrollManager({
                       >
                         {bi("Imprimer", "طباعة")}
                       </Button>
+                      {s.trace ? (
+                        <Button variant="ghost" onClick={() => setTraceSlip(s)}>
+                          {bi("Traçabilité", "التتبع")}
+                          {unverifiedRules(s.trace).length ? " ⚠" : ""}
+                        </Button>
+                      ) : null}
                     </div>
                   </td>
                 </tr>

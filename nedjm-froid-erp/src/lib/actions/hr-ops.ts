@@ -27,6 +27,7 @@ import {
   groupContractsByEmployee,
   PAYROLL_CONTRACT_STATUSES,
   salaryAsOf,
+  salaryVersionAt,
   type SalaryGridRow,
   type PayrollAdvance,
   type PayrollAssignment,
@@ -47,11 +48,14 @@ import {
   type SnapshotCompliance,
 } from "@/lib/hr/compliance";
 import { loadComplianceContext } from "@/lib/hr/compliance-load";
+import { buildSlipTrace } from "@/lib/hr/slip-trace";
 import {
   legalVarsAsOf,
+  legalVarVersionsAsOf,
   loadContributionDefs,
   parseLegalSnapshot,
   type PayrollLegalSnapshot,
+  type PayrollSlipTrace,
 } from "@/lib/hr/legal-vars-as-of";
 import {
   parseAppliedContributions,
@@ -187,6 +191,8 @@ export type PayrollSlipRow = {
   legal_vars: Record<string, number>;
   /** IRG / CNAS / CACOBATPH regime applied (null on slips generated before Module 05). */
   compliance: SnapshotCompliance | null;
+  /** Rule versions and decisions behind the slip (null before lot 2). */
+  trace: PayrollSlipTrace | null;
   lines: PayrollSlipLineRow[];
   /** False when the list skipped lines and print identity. Undefined means they are present. */
   detail_loaded?: boolean;
@@ -661,7 +667,7 @@ async function buildAndSavePayrollRun(
     run = { id: created };
   }
 
-  const legalVars = await legalVarsAsOf(supabase, start);
+  const { vars: legalVars, rows: legalVarRows } = await legalVarVersionsAsOf(supabase, start);
   const irgLoaded = await loadIrgEngine(supabase, start);
   if (!irgLoaded.ok) return irgLoaded;
   const irgEngine = irgLoaded.data;
@@ -672,7 +678,7 @@ async function buildAndSavePayrollRun(
   let contractsQuery = supabase
     .from("hr_contracts")
     .select(
-      "id, employee_id, site_id, salaire_net_ref_monthly, salaire_base_monthly, activity_code_id, start_date, end_date, status, poste_id, grade, cnas_regime_code",
+      "id, employee_id, site_id, salaire_net_ref_monthly, salaire_base_monthly, activity_code_id, start_date, end_date, status, poste_id, grade, cnas_regime_code, start_exception_decision",
     )
     .eq("affectation_principale", true)
     .in("status", [...PAYROLL_CONTRACT_STATUSES, "ENDED"])
@@ -815,12 +821,13 @@ async function buildAndSavePayrollRun(
         must(
           await supabase
             .from("hr_contract_salary_history")
-            .select("contract_id, effective_from, salaire_base_monthly, salaire_net_ref_monthly")
+            .select("id, contract_id, effective_from, salaire_base_monthly, salaire_net_ref_monthly")
             .in("contract_id", contractIds),
           "Historique des salaires",
         ) as SalaryVersion[]
       ).map((v) => ({
         ...v,
+        id: String(v.id),
         effective_from: String(v.effective_from).slice(0, 10),
         salaire_base_monthly: num(v.salaire_base_monthly),
         salaire_net_ref_monthly: num(v.salaire_net_ref_monthly),
@@ -951,6 +958,28 @@ async function buildAndSavePayrollRun(
       base: num(ctr.salaire_base_monthly),
       net: num(ctr.salaire_net_ref_monthly),
     });
+    const siteZone = cx.siteZone.get(monthSiteId);
+    const assignmentRow = monthAsg?.assignmentId
+      ? assignmentLoaded.data.find((a) => a.id === monthAsg.assignmentId)
+      : undefined;
+    const trace = buildSlipTrace({
+      legalVarRows,
+      irg: irgEngine.trace,
+      resolved,
+      siteZone,
+      zoneScope: siteZone?.scope_id ? cx.zoneScopes.get(siteZone.scope_id) : undefined,
+      regimeRates: cx.regimeRateRows.get(resolved.cnas.regime_code),
+      contract: {
+        id: monthAsg?.contractId ?? ctr.id,
+        start_exception_decision: ctr.start_exception_decision ? String(ctr.start_exception_decision) : null,
+      },
+      assignment: {
+        id: monthAsg?.assignmentId ?? null,
+        corrected_by_decision: assignmentRow?.corrected_by_decision ?? null,
+      },
+      salaryVersionId: salaryVersionAt(salaryVersions, ctr.id, end)?.id ?? null,
+      payrollDecisionId: decisionId,
+    });
     const emp = empById.get(ctr.employee_id);
     const slip = computeSlip({
       year: p.period_year,
@@ -1035,8 +1064,9 @@ async function buildAndSavePayrollRun(
             id: monthAsg?.assignmentId ?? null,
             contract_id: monthAsg?.contractId ?? ctr.id,
             site_id: monthSiteId,
-            zone_code: cx.siteZone.get(monthSiteId)?.code ?? DEFAULT_IRG_ZONE,
+            zone_code: siteZone?.code ?? DEFAULT_IRG_ZONE,
           },
+          trace,
         } satisfies PayrollLegalSnapshot,
       },
     });
@@ -1306,6 +1336,7 @@ export async function listPayrollSlips(input: {
         account_key: bk?.account_key ?? null,
         legal_vars: snapshots.get(row.id)?.vars ?? periodVars,
         compliance: snapshots.get(row.id)?.compliance ?? null,
+        trace: snapshots.get(row.id)?.trace ?? null,
         lines: linesBySlip.get(row.id) ?? [],
         detail_loaded: includeLines,
         inputs_changed:

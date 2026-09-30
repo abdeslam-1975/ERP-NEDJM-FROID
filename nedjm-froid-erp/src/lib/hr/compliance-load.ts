@@ -10,8 +10,11 @@ import {
   type ComplianceOverride,
   type IrgZone,
   type SiteZone,
+  type ZoneScopeAt,
 } from "@/lib/hr/compliance";
 import { siteWilayaAt } from "@/lib/hr/assignments";
+import type { RuleRowTrace } from "@/lib/hr/irg-engine-load";
+import { suggestWilayaCode } from "@/lib/referentiels/wilaya-match";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
@@ -21,6 +24,10 @@ export type ComplianceContext = {
   siteZone: Map<string, SiteZone>;
   socialProfile: Map<string, string | null>;
   overridesByContract: Map<string, ComplianceOverride[]>;
+  /** Dated CNAS rate row in force, by regime code (payslip trace). */
+  regimeRateRows: Map<string, RuleRowTrace>;
+  /** D16 scopes in force, by id (payslip trace). */
+  zoneScopes: Map<string, ZoneScopeAt & RuleRowTrace>;
 };
 
 export function mapOverrideRow(row: Record<string, unknown>): ComplianceOverride {
@@ -43,7 +50,7 @@ export async function loadComplianceContext(
   input: { contractIds: string[]; siteIds: string[]; employeeIds: string[]; asOf?: string },
 ): Promise<{ ok: true; data: ComplianceContext } | { ok: false; error: string }> {
   const asOf = input.asOf ?? new Date().toISOString().slice(0, 10);
-  const [catalogs, sites, social, overrides, regimeRates, siteWilayas] = await Promise.all([
+  const [catalogs, sites, social, overrides, regimeRates, siteWilayas, scopes] = await Promise.all([
     supabase
       .from("hr_catalogs")
       .select("id, kind, code, label_fr, label_ar, extra, is_active")
@@ -65,7 +72,7 @@ export async function loadComplianceContext(
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from("hr_social_profile_rates")
-      .select("profile_id, employee_pct, employer_pct, fos_pct")
+      .select("id, profile_id, employee_pct, employer_pct, fos_pct, proposal_id, decision_id")
       .lte("effective_from", asOf)
       .or(`effective_to.is.null,effective_to.gte.${asOf}`),
     input.siteIds.length
@@ -75,8 +82,13 @@ export async function loadComplianceContext(
           .in("site_id", input.siteIds)
           .lte("effective_from", asOf)
       : Promise.resolve({ data: [], error: null }),
+    supabase
+      .from("ref_irg_zone_scopes")
+      .select("id, zone_code, wilaya_codes, proposal_id, decision_id")
+      .lte("effective_from", asOf)
+      .or(`effective_to.is.null,effective_to.gte.${asOf}`),
   ]);
-  const failed = [catalogs, sites, social, overrides, regimeRates, siteWilayas].find((r) => r.error);
+  const failed = [catalogs, sites, social, overrides, regimeRates, siteWilayas, scopes].find((r) => r.error);
   if (failed?.error) return { ok: false, error: failed.error.message };
 
   const items = (catalogs.data ?? []).map((i) => ({
@@ -85,6 +97,7 @@ export async function loadComplianceContext(
   }));
   const codeById = new Map(items.map((i) => [i.id, i.code]));
   const ratesByCode = new Map<string, CnasRegimeRates>();
+  const regimeRateRows = new Map<string, RuleRowTrace>();
   for (const r of (regimeRates.data ?? []) as Record<string, unknown>[]) {
     const code = codeById.get(String(r.profile_id));
     if (!code) continue;
@@ -93,7 +106,25 @@ export async function loadComplianceContext(
       employer_pct: numOrNull(r.employer_pct),
       fos_pct: numOrNull(r.fos_pct),
     });
+    regimeRateRows.set(code, {
+      id: String(r.id),
+      status: r.proposal_id ? "APPLIED" : "LEGACY",
+      proposal_id: r.proposal_id ? String(r.proposal_id) : null,
+      decision_id: r.decision_id ? String(r.decision_id) : null,
+    });
   }
+  const zoneScopes = new Map<string, ZoneScopeAt & RuleRowTrace>();
+  for (const s of (scopes.data ?? []) as Record<string, unknown>[]) {
+    zoneScopes.set(String(s.id), {
+      id: String(s.id),
+      zone_code: String(s.zone_code),
+      wilaya_codes: Array.isArray(s.wilaya_codes) ? s.wilaya_codes.map(String) : [],
+      status: "APPLIED",
+      proposal_id: s.proposal_id ? String(s.proposal_id) : null,
+      decision_id: s.decision_id ? String(s.decision_id) : null,
+    });
+  }
+  const scopeList = [...zoneScopes.values()];
   const wilayas = wilayaZoneMap(items);
   const datedRows = (siteWilayas.data ?? []) as unknown as {
     site_id: string;
@@ -115,7 +146,14 @@ export async function loadComplianceContext(
   for (const s of (sites.data ?? []) as { id: string; wilaya: string | null; irg_zone_code: string | null }[]) {
     const code = siteWilayaAt(history, s.id, asOf);
     const dated = code ? nameByCode.get(code) : undefined;
-    siteZone.set(s.id, resolveSiteZone({ irg_zone_code: s.irg_zone_code, wilaya: dated ?? s.wilaya }, wilayas));
+    siteZone.set(
+      s.id,
+      resolveSiteZone(
+        { irg_zone_code: s.irg_zone_code, wilaya: dated ?? s.wilaya, wilaya_code: code ?? suggestWilayaCode(s.wilaya) },
+        wilayas,
+        scopeList,
+      ),
+    );
   }
   const socialProfile = new Map<string, string | null>();
   for (const s of (social.data ?? []) as { employee_id: string; social_profile_code: string | null }[]) {
@@ -136,6 +174,8 @@ export async function loadComplianceContext(
       siteZone,
       socialProfile,
       overridesByContract,
+      regimeRateRows,
+      zoneScopes,
     },
   };
 }

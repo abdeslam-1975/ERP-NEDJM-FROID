@@ -2,10 +2,9 @@
 
 import { Fragment, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   addLegalVarVersion,
-  cancelCnasRegimeRates,
-  cancelLegalVarVersion,
   createContribution,
   deleteCnasRegime,
   deleteContribution,
@@ -24,6 +23,20 @@ import { IrgBaremeManager } from "@/components/rh/irg-bareme-manager";
 import { LegalOverrideDialog } from "@/components/rh/legal-override-dialog";
 import { isLegalOverrideError, legalOverrideLines, STATUTORY_CNAS, statutoryPercent } from "@/lib/hr/statutory";
 import type { IrgCatalog } from "@/lib/actions/hr-irg";
+import type { ZoneScopeCatalog } from "@/lib/actions/rule-proposals";
+import { PROPOSAL_SENT } from "@/lib/rules/proposal-rpc";
+import { IrgZoneScopes } from "@/components/rules/irg-zone-scopes";
+import {
+  PROPOSALS_PATH,
+  PendingProposalChips,
+  ProposalNotice,
+  QuickDialog,
+  RuleSourceFields,
+  VerifiedChip,
+  VerifyRuleDialog,
+  emptyRuleSource,
+  type RuleSourceForm,
+} from "@/components/rules/rule-ui";
 import { Button } from "@/components/ui/button";
 import {
   RhAlert,
@@ -110,8 +123,6 @@ function fallbackPeriod(): LegalPeriod {
   return { open_from: null, month_start: month, default_from: month };
 }
 
-const canChangeFrom = (period: LegalPeriod, from: string) => !period.open_from || from >= period.open_from;
-
 function useLegalAction() {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -149,48 +160,6 @@ function Feedback({ error, info }: { error: string | null; info: string | null }
   );
 }
 
-function QuickDialog({
-  title,
-  subtitle,
-  children,
-  footer,
-  onClose,
-}: {
-  title: string;
-  subtitle?: ReactNode;
-  children: ReactNode;
-  footer: ReactNode;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-sm">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border/60 bg-surface shadow-2xl"
-      >
-        <div className="flex items-start justify-between gap-3 border-b border-border/50 px-5 py-3">
-          <div>
-            <h3 className="text-base font-semibold">{title}</h3>
-            {subtitle ? <div className="mt-0.5 text-xs text-foreground/55">{subtitle}</div> : null}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Fermer"
-            className="rounded-lg px-2 py-1 text-foreground/55 hover:bg-surface-muted"
-          >
-            ✕
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">{children}</div>
-        <div className="flex flex-wrap justify-end gap-2 border-t border-border/50 px-5 py-3">{footer}</div>
-      </div>
-    </div>
-  );
-}
-
 function MonthField({
   label,
   value,
@@ -208,8 +177,8 @@ function MonthField({
       required
       hint={
         period.open_from
-          ? `Au plus tôt ${monthText(period.open_from)} : les paies validées ou clôturées ne changent jamais.`
-          : "S'applique à la paie de ce mois et des mois suivants."
+          ? `Mois demandé, au plus tôt ${monthText(period.open_from)} : la date d'application est décidée après approbation (D2).`
+          : "Mois demandé : la date d'application est décidée après approbation (D2)."
       }
     >
       <input
@@ -234,10 +203,15 @@ function PeriodBanner({ period }: { period: LegalPeriod }) {
         </>
       ) : (
         <>
-          Chaque modification s&apos;applique à partir du mois choisi, sans toucher aux mois précédents. Dès qu&apos;une
+          Chaque modification s&apos;applique à partir d&apos;un mois, sans toucher aux mois précédents. Dès qu&apos;une
           paie est validée, ses montants et les taux de ce mois sont figés.
         </>
-      )}
+      )}{" "}
+      Toute modification d&apos;un taux ou d&apos;une règle devient une{" "}
+      <Link href={PROPOSALS_PATH} className="font-medium text-brand hover:underline">
+        proposition
+      </Link>{" "}
+      : approbation, puis décision de sa date d&apos;application (D2).
     </RhAlert>
   );
 }
@@ -302,17 +276,15 @@ function RubriquesPanel({
 }) {
   const { pending, error, info, run } = useLegalAction();
   const [dialog, setDialog] = useState<
-    { kind: "create" } | { kind: "edit"; row: LegalVarRow } | { kind: "stop"; row: LegalVarRow } | null
+    | { kind: "create" }
+    | { kind: "edit"; row: LegalVarRow }
+    | { kind: "stop"; row: LegalVarRow }
+    | { kind: "verify"; row: LegalVarRow; version: LegalVarVersion }
+    | null
   >(null);
   const [openHistory, setOpenHistory] = useState<string | null>(null);
   const show = (v: number | null, row: LegalVarRow) => (asPercent ? pctText(v) : numText(v, row.unit));
   const colCount = canEdit ? 5 : 4;
-
-  function cancelPlanned(row: LegalVarRow, v: LegalVarVersion) {
-    const month = monthText(payrollMonthOf(v.effective_from));
-    if (!window.confirm(`Annuler la valeur prévue dès ${month} (« ${row.label_fr} ») ?`)) return;
-    run(() => cancelLegalVarVersion({ version_id: v.id }), `Valeur prévue dès ${month} annulée.`);
-  }
 
   function remove(row: LegalVarRow) {
     if (!window.confirm(`Supprimer définitivement « ${row.label_fr} » ? Elle n'a encore été appliquée à aucune paie.`)) {
@@ -360,6 +332,8 @@ function RubriquesPanel({
                 const custom = row.contribution != null;
                 const part = row.contribution?.part ?? LEGAL_PART[row.key];
                 const stopFuture = row.stops_from && row.stops_from > period.month_start ? row.stops_from : null;
+                const version = row.current_version;
+                const verifyPending = row.proposals.some((p) => p.action === "VERIFY");
                 return (
                   <Fragment key={row.id}>
                     <tr className="border-b border-border/60 align-top">
@@ -396,6 +370,20 @@ function RubriquesPanel({
                         <span className="mt-0.5 block text-xs text-foreground/55">
                           {row.effective_from ? `depuis le ${dateText(row.effective_from)}` : "non calculée"}
                         </span>
+                        {version ? (
+                          <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <VerifiedChip verified={version.verified} />
+                            {!version.verified && canEdit && !verifyPending ? (
+                              <button
+                                type="button"
+                                className="text-xs text-brand hover:underline"
+                                onClick={() => setDialog({ kind: "verify", row, version })}
+                              >
+                                Faire vérifier
+                              </button>
+                            ) : null}
+                          </span>
+                        ) : null}
                         {row.history.length ? (
                           <button
                             type="button"
@@ -419,16 +407,6 @@ function RubriquesPanel({
                                     {settingsText(p.contribution, group)}
                                   </span>
                                 ) : null}
-                                {canEdit && canChangeFrom(period, p.effective_from) ? (
-                                  <button
-                                    type="button"
-                                    disabled={pending}
-                                    className="text-xs text-red-700 hover:underline disabled:opacity-50"
-                                    onClick={() => cancelPlanned(row, p)}
-                                  >
-                                    Annuler
-                                  </button>
-                                ) : null}
                               </li>
                             ))}
                             {stopFuture && row.status !== "stopped" ? (
@@ -437,9 +415,10 @@ function RubriquesPanel({
                               </li>
                             ) : null}
                           </ul>
-                        ) : (
+                        ) : row.proposals.length ? null : (
                           <span className="text-foreground/40">—</span>
                         )}
+                        <PendingProposalChips proposals={row.proposals} />
                       </td>
                       {canEdit ? (
                         <td className={`${rhTd()} whitespace-nowrap`}>
@@ -475,6 +454,7 @@ function RubriquesPanel({
                                 <b>{show(h.value, row)}</b> · du {dateText(h.effective_from)}
                                 {h.effective_to ? ` au ${dateText(h.effective_to)}` : " (sans fin)"}
                                 {h.contribution ? ` · ${settingsText(h.contribution, group)}` : ""}
+                                {h.verified ? " · approuvée" : " · reprise non vérifiée"}
                                 {period.open_from && h.effective_from < period.open_from ? (
                                   <span className="ml-1 text-foreground/45">· période validée, figée</span>
                                 ) : null}
@@ -510,6 +490,15 @@ function RubriquesPanel({
         <ValueDialog row={dialog.row} asPercent={asPercent} period={period} onClose={() => setDialog(null)} />
       ) : null}
       {dialog?.kind === "stop" ? <StopDialog row={dialog.row} period={period} onClose={() => setDialog(null)} /> : null}
+      {dialog?.kind === "verify" ? (
+        <VerifyRuleDialog
+          family="LEGAL_VAR"
+          rowId={dialog.version.id}
+          label={`${dialog.row.label_fr} (depuis le ${dateText(dialog.version.effective_from)})`}
+          valueText={show(dialog.version.value, dialog.row)}
+          onClose={() => setDialog(null)}
+        />
+      ) : null}
     </RhPanel>
   );
 }
@@ -531,6 +520,7 @@ function ValueDialog({
     current == null ? "" : String(asPercent ? toPct(current) : current).replace(".", ","),
   );
   const [from, setFrom] = useState(period.default_from);
+  const [source, setSource] = useState<RuleSourceForm>(emptyRuleSource);
 
   function submit(choice: "check" | "legal" | "authorize" = "check") {
     const statutory = statutoryPercent(row.key);
@@ -547,15 +537,16 @@ function ValueDialog({
           effective_from: from,
           ...(asPct ? { value_pct: v, as_percent: true } : { value_numeric: v, as_percent: false }),
           authorize_override: choice === "authorize",
+          source,
         }),
-      `${row.label_fr} : ${String(v).replace(".", ",")}${asPct ? " %" : ""} à partir de ${monthText(from)}.`,
+      `${row.label_fr} : ${String(v).replace(".", ",")}${asPct ? " %" : ""} demandé dès ${monthText(from)}. ${PROPOSAL_SENT}`,
       onClose,
     );
   }
 
   return (
     <QuickDialog
-      title={`Modifier — ${row.label_fr}`}
+      title={`Proposer une valeur — ${row.label_fr}`}
       subtitle={`Valeur actuelle : ${asPercent ? pctText(row.current_numeric) : numText(row.current_numeric, row.unit)}`}
       onClose={onClose}
       footer={
@@ -564,21 +555,23 @@ function ValueDialog({
             Fermer
           </Button>
           <Button disabled={pending} onClick={() => submit()}>
-            {bi("Enregistrer", "حفظ")}
+            {bi("Proposer", "اقتراح")}
           </Button>
         </>
       }
     >
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
+      <ProposalNotice />
       <div className="grid gap-4 sm:grid-cols-2">
         <RhField label={asPercent ? "Nouveau taux (%)" : "Nouvelle valeur"} required>
           <input className={rhInput} inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} />
         </RhField>
-        <MonthField label="À partir de la paie de" value={from} period={period} onChange={setFrom} />
+        <MonthField label="Demandé à partir de la paie de" value={from} period={period} onChange={setFrom} />
       </div>
+      <RuleSourceFields value={source} onChange={setSource} />
       <p className="text-xs text-foreground/55">
-        Les paies des mois précédents gardent l&apos;ancienne valeur. Enregistrer deux fois le même mois remplace la
-        valeur prévue pour ce mois.
+        Les paies des mois précédents gardent l&apos;ancienne valeur. Une valeur approuvée pour un mois déjà prévu
+        remplace celle de ce mois.
       </p>
       {override ? (
         <LegalOverrideDialog
@@ -648,6 +641,7 @@ function ContributionDialog({
         resume: false,
       };
   const [form, setForm] = useState<ContributionForm>(initial);
+  const [source, setSource] = useState<RuleSourceForm>(emptyRuleSource);
   const set = <K extends keyof ContributionForm>(k: K, v: ContributionForm[K]) => setForm((f) => ({ ...f, [k]: v }));
   const stopped = row?.status === "stopped";
 
@@ -684,8 +678,9 @@ function ContributionDialog({
             settings,
             value_pct: pct,
             effective_from: form.effective_from,
+            source,
           }),
-        `« ${form.label_fr} » ajoutée : calculée à partir de la paie de ${monthText(form.effective_from)}.`,
+        `« ${form.label_fr} » ajoutée au catalogue, sans calcul pour l'instant. ${PROPOSAL_SENT}`,
         onClose,
       );
       return;
@@ -695,10 +690,10 @@ function ContributionDialog({
         saveContribution({
           var_id: row.id,
           display,
-          change: calcChanged ? { settings, value_pct: pct, effective_from: form.effective_from } : null,
+          change: calcChanged ? { settings, value_pct: pct, effective_from: form.effective_from, source } : null,
         }),
       calcChanged
-        ? `« ${form.label_fr} » : nouveau calcul à partir de la paie de ${monthText(form.effective_from)}.`
+        ? `« ${form.label_fr} » : libellés mis à jour. ${PROPOSAL_SENT}`
         : `« ${form.label_fr} » : libellés mis à jour.`,
       onClose,
     );
@@ -708,7 +703,7 @@ function ContributionDialog({
     pct != null && pct > 0
       ? `${form.part === "EMPLOYEE" ? "Retenue sur salaire" : "Charge employeur"} de ${String(pct).replace(".", ",")} % du ${
           BASE_SHORT[form.base]
-        }${settings.reduces_irg ? ", déduite de l'assiette IRG" : ""}, à partir de la paie de ${monthText(
+        }${settings.reduces_irg ? ", déduite de l'assiette IRG" : ""}, demandée à partir de la paie de ${monthText(
           form.effective_from,
         )}.`
       : null;
@@ -744,12 +739,13 @@ function ContributionDialog({
           </RhField>
         ) : null}
         <MonthField
-          label="À partir de la paie de"
+          label="Demandé à partir de la paie de"
           value={form.effective_from}
           period={period}
           onChange={(v) => set("effective_from", v)}
         />
       </div>
+      <RuleSourceFields value={source} onChange={setSource} />
       <details className="rounded-xl border border-border/60 px-3 py-2">
         <summary className="cursor-pointer text-sm font-medium">Options avancées</summary>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
@@ -783,7 +779,7 @@ function ContributionDialog({
             Fermer
           </Button>
           <Button disabled={pending || form.label_fr.trim().length < 2} onClick={submit}>
-            {row ? bi("Enregistrer", "حفظ") : bi("Ajouter", "إضافة")}
+            {!row ? bi("Ajouter et proposer", "إضافة واقتراح") : calcChanged ? bi("Proposer", "اقتراح") : bi("Enregistrer", "حفظ")}
           </Button>
         </>
       }
@@ -835,6 +831,7 @@ function ContributionDialog({
       {!stopped || form.resume ? (
         <div className="space-y-3 rounded-xl border border-brand/20 bg-brand-muted/10 p-3">
           <p className="text-sm font-medium">Calcul sur le bulletin</p>
+          {calcChanged ? <ProposalNotice /> : null}
           {calcFields}
           {summary && calcChanged ? <p className="text-xs text-foreground/70">{summary}</p> : null}
           {row && !calcChanged ? (
@@ -849,19 +846,20 @@ function ContributionDialog({
 function StopDialog({ row, period, onClose }: { row: LegalVarRow; period: LegalPeriod; onClose: () => void }) {
   const { pending, error, setError, run } = useLegalAction();
   const [from, setFrom] = useState(period.default_from);
+  const [source, setSource] = useState<RuleSourceForm>(emptyRuleSource);
 
   function submit() {
     if (!from) return setError("Choisissez le mois d'arrêt.");
     run(
-      () => stopContribution({ var_id: row.id, effective_from: from }),
-      `« ${row.label_fr} » retirée à partir de la paie de ${monthText(from)}.`,
+      () => stopContribution({ var_id: row.id, effective_from: from, source }),
+      `Arrêt de « ${row.label_fr} » demandé dès ${monthText(from)}. ${PROPOSAL_SENT}`,
       onClose,
     );
   }
 
   return (
     <QuickDialog
-      title={`Supprimer — ${row.label_fr}`}
+      title={`Proposer l'arrêt — ${row.label_fr}`}
       onClose={onClose}
       footer={
         <>
@@ -869,17 +867,18 @@ function StopDialog({ row, period, onClose }: { row: LegalVarRow; period: LegalP
             Fermer
           </Button>
           <Button variant="danger" disabled={pending} onClick={submit}>
-            Supprimer
+            Proposer l&apos;arrêt
           </Button>
         </>
       }
     >
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
       <RhAlert tone="warning">
-        Cette cotisation a déjà été appliquée : elle est retirée des paies à partir du mois choisi, et les paies
-        précédentes la gardent avec leurs montants.
+        Cette cotisation a déjà été appliquée : une fois l&apos;arrêt approuvé et daté (D2), elle est retirée des
+        paies à partir de ce mois, et les paies précédentes la gardent avec leurs montants.
       </RhAlert>
       <MonthField label="Retirer à partir de la paie de" value={from} period={period} onChange={setFrom} />
+      <RuleSourceFields value={source} onChange={setSource} />
       <p className="text-xs text-foreground/55">Vous pourrez la reprendre plus tard (Modifier → Reprendre le calcul).</p>
     </QuickDialog>
   );
@@ -903,6 +902,7 @@ function RegimesPanel({
 }) {
   const { pending, error, info, run } = useLegalAction();
   const [dialog, setDialog] = useState<{ regime: CnasRegimeRow | null } | null>(null);
+  const [verify, setVerify] = useState<{ regime: CnasRegimeRow; version: LegalRateVersion } | null>(null);
   const [openHistory, setOpenHistory] = useState<string | null>(null);
   const colCount = canEdit ? 8 : 7;
 
@@ -912,12 +912,6 @@ function RegimesPanel({
     ) : (
       <span className="text-foreground/50">légal ({pctText(legalValue)})</span>
     );
-
-  function cancel(r: CnasRegimeRow, v: LegalRateVersion) {
-    const month = monthText(payrollMonthOf(v.effective_from));
-    if (!window.confirm(`Annuler les taux prévus dès ${month} (régime ${r.code}) ?`)) return;
-    run(() => cancelCnasRegimeRates({ version_id: v.id }), `Taux prévus dès ${month} annulés.`);
-  }
 
   function removeRegime(r: CnasRegimeRow) {
     if (!window.confirm(`Supprimer le régime ${r.code} (${r.label_fr}) ? Les bulletins déjà générés ne changent pas.`)) {
@@ -933,8 +927,9 @@ function RegimesPanel({
           <h3 className="font-semibold">Régimes CNAS</h3>
           <p className="mt-1 text-xs text-foreground/55">
             Le régime se choisit dans le contrat (« Régime CNAS ») ou, à défaut, dans la fiche employé (« Profil
-            social ») ; sinon STANDARD. Case vide = taux légal du mois. Chaque changement de taux s&apos;applique à
-            partir du mois choisi, sur le bulletin (CSS salariale, CSS patronale, et la case FOS à part).
+            social ») ; sinon STANDARD. Case vide = taux légal du mois. Chaque changement de taux est une proposition
+            appliquée, après approbation et décision D2, sur le bulletin (CSS salariale, CSS patronale, et la case FOS
+            à part).
           </p>
           <p className="mt-0.5 text-xs text-foreground/55" dir="rtl">
             يُختار النظام في العقد («نظام CNAS») أو في ملف العامل («ملف الاشتراك»)، وإلا يُطبَّق العادي STANDARD.
@@ -972,6 +967,8 @@ function RegimesPanel({
               ) : null}
               {regimes.map((r) => {
                 const historyOpen = openHistory === r.id;
+                const version = r.current_version;
+                const verifyPending = r.proposals.some((p) => p.action === "VERIFY");
                 return (
                   <Fragment key={r.id}>
                     <tr className="border-b border-border/60 align-top">
@@ -994,6 +991,20 @@ function RegimesPanel({
                             {r.label_ar}
                           </span>
                         ) : null}
+                        {version ? (
+                          <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <VerifiedChip verified={version.verified} />
+                            {!version.verified && canEdit && !verifyPending ? (
+                              <button
+                                type="button"
+                                className="text-xs text-brand hover:underline"
+                                onClick={() => setVerify({ regime: r, version })}
+                              >
+                                Faire vérifier
+                              </button>
+                            ) : null}
+                          </span>
+                        ) : null}
                       </td>
                       <td className={rhTd()}>{cell(r.employee_pct, legal.employee)}</td>
                       <td className={rhTd()}>{cell(r.employer_pct, legal.employer)}</td>
@@ -1006,22 +1017,13 @@ function RegimesPanel({
                                 <RhChip tone="warning">
                                   {regimeRatesText(p)} dès {monthText(payrollMonthOf(p.effective_from))}
                                 </RhChip>
-                                {canEdit && canChangeFrom(period, p.effective_from) ? (
-                                  <button
-                                    type="button"
-                                    disabled={pending}
-                                    className="text-xs text-red-700 hover:underline disabled:opacity-50"
-                                    onClick={() => cancel(r, p)}
-                                  >
-                                    Annuler
-                                  </button>
-                                ) : null}
                               </li>
                             ))}
                           </ul>
-                        ) : (
+                        ) : r.proposals.length ? null : (
                           <span className="text-foreground/40">—</span>
                         )}
+                        <PendingProposalChips proposals={r.proposals} />
                       </td>
                       <td className={rhTd()}>{r.is_active ? "Oui" : "Non"}</td>
                       {canEdit ? (
@@ -1051,6 +1053,7 @@ function RegimesPanel({
                               <li key={h.id}>
                                 <b>{regimeRatesText(h)}</b> · du {dateText(h.effective_from)}
                                 {h.effective_to ? ` au ${dateText(h.effective_to)}` : " (sans fin)"}
+                                {h.verified ? " · approuvés" : " · reprise non vérifiée"}
                               </li>
                             ))}
                           </ul>
@@ -1066,6 +1069,15 @@ function RegimesPanel({
       </div>
       {dialog ? (
         <RegimeDialog regime={dialog.regime} legal={legal} period={period} onClose={() => setDialog(null)} />
+      ) : null}
+      {verify ? (
+        <VerifyRuleDialog
+          family="CNAS_RATES"
+          rowId={verify.version.id}
+          label={`Régime CNAS ${verify.regime.code} (depuis le ${dateText(verify.version.effective_from)})`}
+          valueText={regimeRatesText(verify.version)}
+          onClose={() => setVerify(null)}
+        />
       ) : null}
     </RhPanel>
   );
@@ -1097,6 +1109,7 @@ function RegimeDialog({
     ...initialRates,
     effective_from: period.default_from,
   });
+  const [source, setSource] = useState<RuleSourceForm>(emptyRuleSource);
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
   const ratesChanged = (["employee_pct", "employer_pct", "fos_pct"] as const).some(
     (k) => parseNumber(form[k]) !== parseNumber(initialRates[k]),
@@ -1143,12 +1156,12 @@ function RegimeDialog({
           label_ar: form.label_ar || null,
           is_active: form.is_active,
           authorize_override: choice === "authorize",
-          rates: sendRates ? { ...applied, effective_from: form.effective_from } : null,
+          rates: sendRates ? { ...applied, effective_from: form.effective_from, source } : null,
         }),
       choice === "legal"
-        ? `Régime ${code} : taux légaux (9 % / 25 % / FOS 0,5 %) à partir de ${monthText(form.effective_from)}.`
-        : ratesChanged
-          ? `Régime ${code} : nouveaux taux à partir de la paie de ${monthText(form.effective_from)}.`
+        ? `Régime ${code} : taux légaux (9 % / 25 % / FOS 0,5 %) demandés dès ${monthText(form.effective_from)}. ${PROPOSAL_SENT}`
+        : sendRates
+          ? `Régime ${code} : nouveaux taux demandés dès ${monthText(form.effective_from)}. ${PROPOSAL_SENT}`
           : `Régime ${code} enregistré.`,
       onClose,
     );
@@ -1176,7 +1189,7 @@ function RegimeDialog({
             Fermer
           </Button>
           <Button disabled={pending || form.label_fr.trim().length < 2 || form.code.trim().length < 2} onClick={() => submit()}>
-            {regime ? bi("Enregistrer", "حفظ") : bi("Ajouter", "إضافة")}
+            {ratesChanged ? bi("Proposer", "اقتراح") : regime ? bi("Enregistrer", "حفظ") : bi("Ajouter", "إضافة")}
           </Button>
         </>
       }
@@ -1211,12 +1224,16 @@ function RegimeDialog({
           {rateInput("fos_pct", "% FOS", legal.fos)}
         </div>
         {ratesChanged ? (
-          <MonthField
-            label="Nouveaux taux à partir de la paie de"
-            value={form.effective_from}
-            period={period}
-            onChange={(v) => set("effective_from", v)}
-          />
+          <>
+            <ProposalNotice />
+            <MonthField
+              label="Nouveaux taux demandés à partir de la paie de"
+              value={form.effective_from}
+              period={period}
+              onChange={(v) => set("effective_from", v)}
+            />
+            <RuleSourceFields value={source} onChange={setSource} />
+          </>
         ) : (
           <p className="text-xs text-foreground/55">Modifiez un taux pour choisir son mois d&apos;effet.</p>
         )}
@@ -1239,6 +1256,7 @@ export function LegalSettings({
   regimes,
   period = fallbackPeriod(),
   irgCatalog,
+  zoneScopes,
   canEdit,
   loadError,
   initialSection = "cnas",
@@ -1247,6 +1265,7 @@ export function LegalSettings({
   regimes?: CnasRegimeRow[];
   period?: LegalPeriod;
   irgCatalog: IrgCatalog;
+  zoneScopes?: ZoneScopeCatalog | null;
   canEdit: boolean;
   loadError?: string;
   initialSection?: Section;
@@ -1266,8 +1285,8 @@ export function LegalSettings({
       <RhPageHeader
         title={bi("Cotisations & impôts", "الاشتراكات والضرائب")}
         description={bi(
-          "Ajoutez, modifiez ou arrêtez une rubrique en quelques clics : le changement s'applique à partir du mois choisi, jamais aux paies passées.",
-          "أضف أو عدّل أو أوقف بنداً بنقرات: التغيير يسري من الشهر المختار ولا يمس الأجور السابقة.",
+          "Proposez l'ajout, la modification ou l'arrêt d'une rubrique : après approbation, le SUPER_ADMIN décide du mois d'application, jamais sur les paies passées.",
+          "اقترح إضافة بند أو تعديله أو إيقافه: بعد الموافقة يحدد المدير العام شهر السريان، ولا يمس الأجور السابقة.",
         )}
       />
 
@@ -1331,6 +1350,11 @@ export function LegalSettings({
           <RhPanel>
             <IrgBaremeManager catalog={irgCatalog} canEdit={canEdit} />
           </RhPanel>
+          {zoneScopes ? (
+            <RhPanel>
+              <IrgZoneScopes catalog={zoneScopes} canEdit={canEdit} period={period} />
+            </RhPanel>
+          ) : null}
         </>
       ) : null}
 

@@ -10,11 +10,19 @@ import {
   JUSTIFICATION_MAX,
   decisionStatusLabel,
   decisionStatusTone,
+  payrollRunStatusLabel,
   payrollSourceLabel,
   periodLabel,
   periodNatureText,
+  ruleApplicationSlipNotice,
   validateJustification,
 } from "@/lib/decisions/catalog";
+import { RULE_ACTIONS, RULE_FAMILIES, frMonth, type RuleAction, type RuleFamily } from "@/lib/rules/proposals";
+import { RuleDiff } from "@/components/rules/rule-content";
+
+const asFamily = (v: string): RuleFamily =>
+  (RULE_FAMILIES as readonly string[]).includes(v) ? (v as RuleFamily) : "LEGAL_VAR";
+const asAction = (v: string): RuleAction => ((RULE_ACTIONS as readonly string[]).includes(v) ? (v as RuleAction) : "SET");
 
 function dateTime(iso: string | null) {
   if (!iso) return "—";
@@ -163,10 +171,20 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
           ) : (
             <Fact label="Données">
               <Link
-                href={d.type_code === "D13" ? "/rh/qualite-donnees" : "/rh/contrats"}
+                href={
+                  d.type_code === "D13"
+                    ? "/rh/qualite-donnees"
+                    : d.type_code === "D2"
+                      ? `/rh/legal/propositions?id=${d.rule_application?.proposal_id ?? ""}`
+                      : "/rh/contrats"
+                }
                 className="font-semibold text-brand hover:underline"
               >
-                {d.type_code === "D13" ? "Rapport de qualité des données" : "Ouvrir les contrats"}
+                {d.type_code === "D13"
+                  ? "Rapport de qualité des données"
+                  : d.type_code === "D2"
+                    ? "Ouvrir la proposition"
+                    : "Ouvrir les contrats"}
               </Link>
             </Fact>
           )}
@@ -265,6 +283,89 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
             <Fact label="Fin">{d.contract_start.contract_end ? frDate(d.contract_start.contract_end) : "—"}</Fact>
             <Fact label="Début corrigé proposé">{frDate(d.contract_start.fix_start)}</Fact>
           </dl>
+        </RhPanel>
+      ) : null}
+
+      {d.rule_application ? (
+        <RhPanel>
+          <h3 className="font-display text-base font-semibold">Règle approuvée · {d.rule_application.title}</h3>
+          <p className="text-sm text-foreground/60">{d.rule_application.target_label}</p>
+          <dl className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Fact label="Application demandée">
+              paie de {frMonth(d.rule_application.application_month)}
+              {d.rule_application.application_date
+                ? ` (date du ${frDate(d.rule_application.application_date)}, mois non découpé)`
+                : ""}
+            </Fact>
+            <Fact label="Date d'effet du texte">
+              {d.rule_application.text_effective_date ? frDate(d.rule_application.text_effective_date) : "—"}
+            </Fact>
+            <Fact label="Approbation">
+              {dateTime(d.rule_application.approved_at)}
+              {d.rule_application.approved_by ? ` · ${d.rule_application.approved_by}` : ""}
+              {d.rule_application.self_approved ? (
+                <span className="ml-1">
+                  <RhChip tone="danger">Auto-approbation SUPER_ADMIN</RhChip>
+                </span>
+              ) : null}
+            </Fact>
+            <Fact label="Premier mois non validé">
+              {d.rule_application.first_open_month ? frMonth(d.rule_application.first_open_month) : "Aucune paie validée"}
+            </Fact>
+            <div className="sm:col-span-2">
+              <Fact label="Source légale">{d.rule_application.source_ref || "—"}</Fact>
+            </div>
+            <div className="sm:col-span-2">
+              <Fact label="Contributeurs">{d.rule_application.contributors.join(", ") || "—"}</Fact>
+            </div>
+          </dl>
+          {d.period_nature === "EXTERNAL" ? (
+            <p className="mt-3 rounded-xl border border-amber-200/80 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
+              {periodNatureText(d.period_nature)}
+            </p>
+          ) : null}
+          <div className="mt-3">
+            <RuleDiff
+              family={asFamily(d.rule_application.family)}
+              action={asAction(d.rule_application.action)}
+              current={d.rule_application.current}
+              proposed={d.rule_application.proposed}
+            />
+          </div>
+          <h4 className="mt-4 text-sm font-semibold">Bulletins des mois concernés</h4>
+          <p className="mt-1 text-sm text-foreground/75">{ruleApplicationSlipNotice(d.rule_application.slips)}</p>
+          {d.rule_application.slips.length ? (
+            <table className="mt-2 min-w-full text-sm">
+              <thead className="text-left text-xs uppercase text-foreground/55">
+                <tr>
+                  <th className="py-1 pr-4">Mois</th>
+                  <th className="py-1 pr-4">Statut</th>
+                  <th className="py-1 pr-4 text-right">Paies</th>
+                  <th className="py-1 pr-4 text-right">Bulletins</th>
+                  <th className="py-1">Effet</th>
+                </tr>
+              </thead>
+              <tbody>
+                {d.rule_application.slips.map((s) => (
+                  <tr key={`${s.period_key}-${s.status}`} className="border-t border-border/60">
+                    <td className="py-1 pr-4">{s.period}</td>
+                    <td className="py-1 pr-4">{payrollRunStatusLabel(s.status)}</td>
+                    <td className="py-1 pr-4 text-right tabular-nums">{s.runs}</td>
+                    <td className="py-1 pr-4 text-right tabular-nums">{s.slips}</td>
+                    <td className="py-1">
+                      {s.affected ? (
+                        <RhChip tone="warning">Signalée, recalcul sur décision D3</RhChip>
+                      ) : s.status === "DRAFT" ? (
+                        <RhChip>Mois antérieur, inchangée</RhChip>
+                      ) : (
+                        <RhChip>Pour information, jamais modifiée</RhChip>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
         </RhPanel>
       ) : null}
 

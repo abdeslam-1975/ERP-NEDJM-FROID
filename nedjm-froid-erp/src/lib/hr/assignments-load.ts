@@ -15,7 +15,7 @@ export async function loadContractAssignments(
   for (let i = 0; i < ids.length; i += CHUNK) {
     const { data, error } = await supabase
       .from("hr_contract_assignments")
-      .select("id, contract_id, site_id, effective_from")
+      .select("id, contract_id, site_id, effective_from, corrected_by_decision")
       .in("contract_id", ids.slice(i, i + CHUNK));
     if (error) return { ok: false, error: `Affectations des contrats : ${error.message}` };
     for (const r of data ?? []) {
@@ -24,6 +24,7 @@ export async function loadContractAssignments(
         contract_id: String(r.contract_id),
         site_id: String(r.site_id),
         effective_from: String(r.effective_from).slice(0, 10),
+        corrected_by_decision: r.corrected_by_decision ? String(r.corrected_by_decision) : null,
       });
     }
   }

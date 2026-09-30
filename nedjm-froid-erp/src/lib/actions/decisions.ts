@@ -11,8 +11,10 @@ import {
   assignmentZoneNotice,
   decideBlocker,
   parseDecisionOptions,
+  parseRuleApplicationContext,
   validateJustification,
   type DecisionOption,
+  type RuleApplicationContext,
 } from "@/lib/decisions/catalog";
 
 export type ActionResult<T = void> =
@@ -112,6 +114,7 @@ export type DecisionDetail = DecisionListRow & {
   closed_at: string | null;
   assignment: AssignmentCorrectionContext | null;
   contract_start: ContractStartContext | null;
+  rule_application: RuleApplicationContext | null;
   /** Options the data no longer allows (code → reason); the database refuses them too. */
   unavailable_options: Record<string, string>;
   /** Null when the current user may decide; otherwise the reason shown instead of the form. */
@@ -227,6 +230,27 @@ async function assignmentContext(
   };
 }
 
+/** D2: contributors of the rule (proposal, or the IRG draft it submits) never fix its date, SUPER_ADMIN excepted. */
+async function isRuleContributor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  rule: RuleApplicationContext,
+): Promise<boolean> {
+  const draftId = rule.family === "IRG_BAREME" || rule.family === "IRG_RULES" ? text(rule.proposed?.row_id) : null;
+  const subjects = [rule.proposal_id, draftId].filter((s): s is string => Boolean(s && UUID_RE.test(s)));
+  if (!subjects.length) return false;
+  const { data } = await supabase
+    .from("ref_rule_contributors")
+    .select("subject_kind, subject_id")
+    .eq("user_id", userId)
+    .in("subject_id", subjects);
+  return (data ?? []).some(
+    (c) =>
+      (c.subject_kind === "PROPOSAL" && c.subject_id === rule.proposal_id) ||
+      (c.subject_kind === rule.family && c.subject_id === draftId),
+  );
+}
+
 function contractStartContext(ctx: Record<string, unknown>): ContractStartContext {
   return {
     employee: text(ctx.employee) ?? "",
@@ -305,6 +329,11 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
   const assignment = raw.type_code === "D8" ? await assignmentContext(supabase, ctx) : null;
   const contractStart = raw.type_code === "D13" ? contractStartContext(ctx) : null;
+  const ruleApplication = raw.type_code === "D2" ? parseRuleApplicationContext(ctx) : null;
+  const ruleContributor =
+    ruleApplication && raw.status === "PENDING" && !ws.isSuperAdmin
+      ? await isRuleContributor(supabase, ws.id, ruleApplication)
+      : false;
   const unavailable: Record<string, string> = {};
   if (contractStart && !contractStart.fix_allowed) {
     unavailable.FIX_START = `Mois de début déjà traité (paie validée ou clôturée, ou antérieur à septembre 2026) : correction possible seulement à partir du ${contractStart.first_changeable.split("-").reverse().join("/")}.`;
@@ -332,6 +361,7 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
       closed_at: raw.closed_at,
       assignment,
       contract_start: contractStart,
+      rule_application: ruleApplication,
       unavailable_options: unavailable,
       decide_blocker: decideBlocker({
         status: raw.status,
@@ -339,6 +369,7 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
         hasDecisionRight: canDecide === true,
         requestedBy: raw.requested_by,
         userId: ws.id,
+        isRuleContributor: ruleContributor,
       }),
       can_execute:
         raw.status === "DECIDED" && chosen?.executes === true && (ws.isSuperAdmin || raw.decided_by === ws.id),
@@ -396,6 +427,10 @@ export async function decideDecision(input: unknown): Promise<ActionResult<Decid
     if (applied) {
       revalidatePath("/rh/contrats");
       revalidatePath("/rh/qualite-donnees");
+      revalidatePath("/rh/legal");
+      revalidatePath("/rh/legal/propositions");
+      revalidatePath("/referentiels/irg");
+      revalidatePath("/rh/paie/irg");
     }
     return {
       ok: true,

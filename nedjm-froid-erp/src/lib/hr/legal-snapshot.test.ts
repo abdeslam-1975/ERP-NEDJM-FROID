@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bulletinRatesFromVars, DEFAULT_BULLETIN_SETTINGS } from "@/lib/hr/bulletin-settings";
-import { parseLegalSnapshot } from "@/lib/hr/legal-vars-as-of";
+import { parseLegalSnapshot, unverifiedRules } from "@/lib/hr/legal-vars-as-of";
 
 describe("bulletinRatesFromVars", () => {
   it("converts decimal legal vars to bulletin percentages and keeps FOS in its own rate", () => {
@@ -56,6 +56,37 @@ describe("parseLegalSnapshot", () => {
       vars: { A: 1 },
       irg_category: "STANDARD",
       compliance: null,
+      assignment: null,
+      trace: null,
     });
+  });
+
+  it("keeps the assignment and the lot 2 trace, dropping unknown rule families", () => {
+    const parsed = parseLegalSnapshot({
+      as_of: "2026-10-01",
+      vars: { SNMG: 24000 },
+      assignment: { id: "a1", contract_id: "c1", site_id: "s1", zone_code: "SUD" },
+      trace: {
+        rules: [
+          { family: "LEGAL_VAR", key: "SNMG", id: "v1", status: "LEGACY", proposal_id: null, decision_id: null },
+          { family: "IRG_BAREME", key: "BAREME", id: "b1", status: "APPLIED", proposal_id: "p1", decision_id: "d1" },
+          { family: "UNKNOWN", key: "X", id: "x1" },
+        ],
+        contract: { id: "c1", start_exception_decision: "d13" },
+        assignment: { id: "a1", corrected_by_decision: null },
+        salary_version_id: "sv1",
+        payroll_decision_id: "d4",
+      },
+    });
+    expect(parsed?.assignment).toEqual({ id: "a1", contract_id: "c1", site_id: "s1", zone_code: "SUD" });
+    expect(parsed?.trace?.rules.map((r) => r.id)).toEqual(["v1", "b1"]);
+    expect(parsed?.trace?.contract.start_exception_decision).toBe("d13");
+    expect(parsed?.trace?.payroll_decision_id).toBe("d4");
+    expect(unverifiedRules(parsed?.trace).map((r) => r.key)).toEqual(["SNMG"]);
+  });
+
+  it("ignores a trace without contract", () => {
+    expect(parseLegalSnapshot({ as_of: "2026-10-01", vars: {}, trace: { rules: [] } })?.trace).toBeNull();
+    expect(unverifiedRules(null)).toEqual([]);
   });
 });

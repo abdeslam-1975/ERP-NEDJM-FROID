@@ -119,7 +119,9 @@ export function ContractComplianceCards({
   const zoneSource =
     info.site_zone.source === "site"
       ? bi("fixée sur la fiche chantier", "محددة في بطاقة الورشة")
-      : info.site_zone.source === "wilaya"
+      : info.site_zone.source === "scope"
+        ? `${bi("périmètre approuvé de la zone (D16), wilaya", "النطاق المعتمد للمنطقة (D16)، الولاية")} ${info.site_wilaya ?? ""}`
+        : info.site_zone.source === "wilaya"
         ? `${bi("déduite de la wilaya", "مستنتجة من الولاية")} ${info.site_wilaya ?? ""}`
         : bi("par défaut (wilaya non rattachée)", "افتراضية (الولاية غير مربوطة)");
 

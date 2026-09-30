@@ -12,18 +12,30 @@ import {
   takeAuthorize,
 } from "@/lib/hr/statutory";
 import { createClient } from "@/lib/supabase/server";
+import { isOpenRuleStatus, parseIrgRowStatus, type IrgRowStatus } from "@/lib/rules/proposals";
 import {
   irgBracketsReplaceSchema,
   irgRuleSchema,
   irgRuleSetSchema,
   irgVersionSchema,
 } from "@/lib/validations/hr";
+import { z } from "zod";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
   | { ok: false; error: string };
 
-export type IrgVersion = {
+export type IrgPendingProposal = { id: string; action: "SET" | "VERIFY"; status: string };
+
+type IrgRowTrace = {
+  /** LEGACY = existing, not verified; DRAFT = editable; PROPOSED = frozen; APPLIED; REPLACED. */
+  status: IrgRowStatus;
+  proposal_id: string | null;
+  decision_id: string | null;
+  proposals: IrgPendingProposal[];
+};
+
+export type IrgVersion = IrgRowTrace & {
   id: string;
   code: string;
   label_fr: string;
@@ -41,7 +53,7 @@ export type IrgBracketRow = {
   sort_order: number;
 };
 
-export type IrgRuleSet = {
+export type IrgRuleSet = IrgRowTrace & {
   id: string;
   code: string;
   taxpayer_category: "STANDARD" | "DISABLED_OR_RETIREE";
@@ -66,6 +78,36 @@ export type IrgCatalog = {
   ruleSets: IrgRuleSet[];
   rules: IrgRuleRow[];
 };
+
+type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+const DRAFT_ONLY =
+  "Seul un brouillon est modifiable : une version approuvée ou reprise ne change que par une nouvelle proposition (« Nouveau brouillon »).";
+
+function monthStart(iso: string) {
+  return `${iso.slice(0, 7)}-01`;
+}
+
+async function requireDraft(
+  supabase: Supabase,
+  table: "ref_bareme_irg_versions" | "ref_irg_rule_sets",
+  id: string,
+): Promise<ActionResult> {
+  const { data, error } = await supabase.from(table).select("status").eq("id", id).maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: "Brouillon introuvable." };
+  if (data.status !== "DRAFT") return { ok: false, error: DRAFT_ONLY };
+  return { ok: true, data: undefined };
+}
+
+async function parentDraft(
+  supabase: Supabase,
+  table: "ref_bareme_irg_versions" | "ref_irg_rule_sets",
+  id: string | null | undefined,
+): Promise<ActionResult> {
+  if (!id) return { ok: false, error: "Brouillon introuvable." };
+  return requireDraft(supabase, table, id);
+}
 
 function revalidateIrg() {
   revalidatePath("/rh");
@@ -125,12 +167,24 @@ function buildRuleParams(input: {
   return {};
 }
 
+const TRACE_COLUMNS = "status, proposal_id, decision_id";
+
+function traceOf(row: Record<string, unknown>, pending: Map<string, IrgPendingProposal[]>): IrgRowTrace {
+  const id = String(row.id);
+  return {
+    status: parseIrgRowStatus(row.status),
+    proposal_id: typeof row.proposal_id === "string" ? row.proposal_id : null,
+    decision_id: typeof row.decision_id === "string" ? row.decision_id : null,
+    proposals: pending.get(id) ?? [],
+  };
+}
+
 export async function listIrgCatalog(): Promise<ActionResult<IrgCatalog>> {
   const supabase = await createClient();
-  const [versions, brackets, sets, rules] = await Promise.all([
+  const [versions, brackets, sets, rules, proposals] = await Promise.all([
     supabase
       .from("ref_bareme_irg_versions")
-      .select("id, code, label_fr, source_ref, effective_from, effective_to")
+      .select(`id, code, label_fr, source_ref, effective_from, effective_to, ${TRACE_COLUMNS}`)
       .order("effective_from", { ascending: false }),
     supabase
       .from("ref_bareme_irg")
@@ -138,27 +192,40 @@ export async function listIrgCatalog(): Promise<ActionResult<IrgCatalog>> {
       .order("sort_order"),
     supabase
       .from("ref_irg_rule_sets")
-      .select("id, code, taxpayer_category, label_fr, effective_from, effective_to")
+      .select(`id, code, taxpayer_category, label_fr, effective_from, effective_to, ${TRACE_COLUMNS}`)
       .order("effective_from", { ascending: false }),
     supabase
       .from("ref_irg_rules")
       .select("id, rule_set_id, kind, applies_to, sequence, params, formula")
       .order("sequence"),
+    supabase
+      .from("ref_rule_proposals")
+      .select("id, action, status, target_id")
+      .in("family", ["IRG_BAREME", "IRG_RULES"])
+      .in("status", ["DRAFT", "SUBMITTED", "APPROVED"]),
   ]);
   if (versions.error) return { ok: false, error: versions.error.message };
   if (brackets.error) return { ok: false, error: brackets.error.message };
   if (sets.error) return { ok: false, error: sets.error.message };
   if (rules.error) return { ok: false, error: rules.error.message };
+  const pending = new Map<string, IrgPendingProposal[]>();
+  for (const p of proposals.data ?? []) {
+    if (!p.target_id || !isOpenRuleStatus(p.status)) continue;
+    const list = pending.get(p.target_id) ?? [];
+    list.push({ id: p.id, action: p.action === "VERIFY" ? "VERIFY" : "SET", status: p.status });
+    pending.set(p.target_id, list);
+  }
   return {
     ok: true,
     data: {
-      versions: (versions.data ?? []).map((v) => ({
-        id: v.id,
-        code: v.code,
-        label_fr: v.label_fr,
-        source_ref: v.source_ref,
+      versions: ((versions.data ?? []) as Record<string, unknown>[]).map((v) => ({
+        id: String(v.id),
+        code: String(v.code),
+        label_fr: String(v.label_fr),
+        source_ref: typeof v.source_ref === "string" ? v.source_ref : null,
         effective_from: asDate(v.effective_from),
         effective_to: v.effective_to ? asDate(v.effective_to) : null,
+        ...traceOf(v, pending),
       })),
       brackets: (brackets.data ?? []).map((b) => ({
         id: b.id,
@@ -168,13 +235,14 @@ export async function listIrgCatalog(): Promise<ActionResult<IrgCatalog>> {
         rate: num(b.rate),
         sort_order: Number(b.sort_order),
       })),
-      ruleSets: (sets.data ?? []).map((s) => ({
-        id: s.id,
-        code: s.code,
-        taxpayer_category: s.taxpayer_category as IrgRuleSet["taxpayer_category"],
-        label_fr: s.label_fr,
+      ruleSets: ((sets.data ?? []) as Record<string, unknown>[]).map((s) => ({
+        id: String(s.id),
+        code: String(s.code),
+        taxpayer_category: s.taxpayer_category === "DISABLED_OR_RETIREE" ? "DISABLED_OR_RETIREE" : "STANDARD",
+        label_fr: String(s.label_fr),
         effective_from: asDate(s.effective_from),
         effective_to: s.effective_to ? asDate(s.effective_to) : null,
+        ...traceOf(s, pending),
       })),
       rules: (rules.data ?? []).map((r) => ({
         id: r.id,
@@ -205,10 +273,12 @@ export async function upsertIrgVersion(
     code: p.code,
     label_fr: p.label_fr,
     source_ref: p.source_ref,
-    effective_from: p.effective_from,
-    effective_to: p.effective_to,
+    effective_from: monthStart(p.effective_from),
+    effective_to: null,
   };
   if (p.id) {
+    const draft = await requireDraft(supabase, "ref_bareme_irg_versions", p.id);
+    if (!draft.ok) return draft;
     const { error } = await supabase.from("ref_bareme_irg_versions").update(row).eq("id", p.id);
     if (error) return { ok: false, error: error.message };
     revalidateIrg();
@@ -216,7 +286,7 @@ export async function upsertIrgVersion(
   }
   const { data, error } = await supabase
     .from("ref_bareme_irg_versions")
-    .insert({ ...row, created_by: workspace?.id ?? null })
+    .insert({ ...row, status: "DRAFT", created_by: workspace?.id ?? null })
     .select("id")
     .single();
   if (error || !data) return { ok: false, error: error?.message ?? "Création refusée." };
@@ -255,6 +325,8 @@ export async function replaceIrgBrackets(
   }
   const supabase = await createClient();
   const { version_id, brackets } = parsed.data;
+  const draft = await parentDraft(supabase, "ref_bareme_irg_versions", version_id);
+  if (!draft.ok) return draft;
   const deviations = irgBracketDeviations(
     brackets.map((b) => ({
       min_annual: b.min_annual,
@@ -328,12 +400,20 @@ export async function replaceIrgBrackets(
   };
 }
 
+const ruleSetDraftSchema = irgRuleSetSchema.extend({
+  copy_from_rule_set_id: z.preprocess(
+    (v) => (v === "" || v == null ? null : v),
+    z.string().uuid().optional().nullable(),
+  ),
+});
+
+/** Rule set draft (new, or copied from a version with its rules); approved sets never change. */
 export async function upsertIrgRuleSet(
   input: unknown,
 ): Promise<ActionResult<{ id: string }>> {
   const gate = await requireComplianceWrite();
   if (!gate.ok) return gate;
-  const parsed = irgRuleSetSchema.safeParse(input);
+  const parsed = ruleSetDraftSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides." };
   }
@@ -343,10 +423,12 @@ export async function upsertIrgRuleSet(
     code: p.code,
     taxpayer_category: p.taxpayer_category,
     label_fr: p.label_fr,
-    effective_from: p.effective_from,
-    effective_to: p.effective_to,
+    effective_from: monthStart(p.effective_from),
+    effective_to: null,
   };
   if (p.id) {
+    const draft = await requireDraft(supabase, "ref_irg_rule_sets", p.id);
+    if (!draft.ok) return draft;
     const { error } = await supabase.from("ref_irg_rule_sets").update(row).eq("id", p.id);
     if (error) return { ok: false, error: error.message };
     revalidateIrg();
@@ -354,12 +436,51 @@ export async function upsertIrgRuleSet(
   }
   const { data, error } = await supabase
     .from("ref_irg_rule_sets")
-    .insert(row)
+    .insert({ ...row, status: "DRAFT" })
     .select("id")
     .single();
   if (error || !data) return { ok: false, error: error?.message ?? "Création refusée." };
+  if (p.copy_from_rule_set_id) {
+    const { data: source, error: srcErr } = await supabase
+      .from("ref_irg_rules")
+      .select("kind, applies_to, sequence, params, formula")
+      .eq("rule_set_id", p.copy_from_rule_set_id);
+    if (srcErr) return { ok: false, error: srcErr.message };
+    if (source?.length) {
+      const { error: copyErr } = await supabase
+        .from("ref_irg_rules")
+        .insert(source.map((r) => ({ ...r, rule_set_id: data.id })));
+      if (copyErr) return { ok: false, error: copyErr.message };
+    }
+  }
   revalidateIrg();
   return { ok: true, data: { id: data.id } };
+}
+
+/** A draft never submitted (or released after a withdrawal or a rejection) can be erased. */
+export async function deleteIrgDraft(input: unknown): Promise<ActionResult> {
+  const gate = await requireComplianceWrite();
+  if (!gate.ok) return gate;
+  const parsed = z
+    .object({ family: z.enum(["IRG_BAREME", "IRG_RULES"]), id: z.string().uuid() })
+    .safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Brouillon invalide." };
+  const table = parsed.data.family === "IRG_BAREME" ? "ref_bareme_irg_versions" : "ref_irg_rule_sets";
+  const supabase = await createClient();
+  const draft = await requireDraft(supabase, table, parsed.data.id);
+  if (!draft.ok) return draft;
+  const { count } = await supabase
+    .from("ref_rule_proposals")
+    .select("id", { count: "exact", head: true })
+    .eq("target_id", parsed.data.id);
+  if ((count ?? 0) > 0) {
+    return { ok: false, error: "Ce brouillon est cité par une proposition : il reste conservé pour la traçabilité." };
+  }
+  const { data, error } = await supabase.from(table).delete().eq("id", parsed.data.id).select("id");
+  if (error) return { ok: false, error: error.message };
+  if (!data?.length) return { ok: false, error: "Suppression refusée (droits)." };
+  revalidateIrg();
+  return { ok: true, data: undefined };
 }
 
 export async function upsertIrgRule(
@@ -375,6 +496,8 @@ export async function upsertIrgRule(
   const p = parsed.data;
   const params = buildRuleParams(p);
   const supabase = await createClient();
+  const draft = await parentDraft(supabase, "ref_irg_rule_sets", p.rule_set_id);
+  if (!draft.ok) return draft;
   const { data: ruleSet } = await supabase
     .from("ref_irg_rule_sets")
     .select("taxpayer_category")
@@ -429,7 +552,10 @@ export async function deleteIrgRule(id: string, authorizeOverride = false): Prom
     .select("id, kind, params, formula, rule_set_id")
     .eq("id", id)
     .maybeSingle();
-  if (existing && statutoryIrgRule("STANDARD", existing.kind)) {
+  if (!existing) return { ok: false, error: "Règle introuvable." };
+  const draft = await parentDraft(supabase, "ref_irg_rule_sets", existing.rule_set_id);
+  if (!draft.ok) return draft;
+  if (statutoryIrgRule("STANDARD", existing.kind)) {
     const { data: ruleSet } = await supabase
       .from("ref_irg_rule_sets")
       .select("taxpayer_category")
