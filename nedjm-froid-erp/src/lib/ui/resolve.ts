@@ -8,7 +8,6 @@ import {
   type UiItemDef,
 } from "@/lib/ui/registry";
 import {
-  DEFAULT_DESIGN,
   EMPTY_USER_PREFS,
   scopeSelectors,
   type DesignSettings,
@@ -35,7 +34,8 @@ export type UiLayoutData = {
   hidden: string[];
   overrides: Record<string, UiOverride>;
   theme: UiTheme;
-  design: DesignSettings;
+  /** null: no look chosen yet, the original appearance stays. */
+  design: DesignSettings | null;
   prefs: UserDisplayPrefs;
 };
 
@@ -46,7 +46,7 @@ export const DEFAULT_LAYOUT: UiLayoutData = {
   hidden: [],
   overrides: {},
   theme: EMPTY_THEME,
-  design: DEFAULT_DESIGN,
+  design: null,
   prefs: EMPTY_USER_PREFS,
 };
 

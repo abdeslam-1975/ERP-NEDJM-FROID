@@ -16,7 +16,6 @@ import {
   type Supplier,
 } from "@/lib/actions/purchases";
 import { Button } from "@/components/ui/button";
-import { RhTabs } from "@/components/rh/rh-ui";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 
 type Tab = "dashboard" | "proformas" | "orders" | "receipts" | "invoices" | "suppliers";
@@ -152,7 +151,19 @@ export function PurchaseHub({
       </header>
       {error && <Notice tone="error">{error}</Notice>}
       {message && <Notice tone="success">{message}</Notice>}
-      <RhTabs items={tabs} value={tab} onChange={(id) => setTab(id as typeof tab)} />
+      <div className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1">
+        {tabs.map(({ id: value, label }) => (
+          <button
+            key={value}
+            onClick={() => setTab(value)}
+            className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
+              tab === value ? "bg-brand text-white shadow-sm" : "hover:bg-surface-muted"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       {tab === "dashboard" && <Dashboard data={initialData} />}
       {tab === "proformas" && <Proformas data={initialData} pending={pending} run={run} />}
       {tab === "orders" && <Orders data={initialData} pending={pending} run={run} />}

@@ -3,7 +3,6 @@
 import { useId, type ReactNode } from "react";
 import { Dialog as DialogPrimitive, Tabs as TabsPrimitive } from "radix-ui";
 import { motion } from "motion/react";
-import { X } from "lucide-react";
 import { useUiTabs } from "@/components/layout/ui-layout-context";
 import { cn } from "@/lib/utils";
 
@@ -47,12 +46,12 @@ export function RhModal({
             onEscapeKeyDown={(e) => e.preventDefault()}
             aria-describedby={undefined}
             className={cn(
-              "flex h-[100dvh] w-full flex-col overflow-hidden border border-white/40 bg-surface shadow-[0_24px_80px_-20px_rgba(15,23,42,0.45)] ring-1 ring-black/5 outline-none animate-in fade-in-0 zoom-in-[0.98] duration-200 sm:h-[calc(100dvh-1rem)] sm:rounded-[calc(var(--radius-2xl)+0.15rem)] lg:h-[calc(100dvh-1.5rem)] dark:border-white/10",
+              "flex h-[100dvh] w-full flex-col overflow-hidden border border-white/40 bg-surface shadow-[0_24px_80px_-20px_rgba(15,23,42,0.45)] ring-1 ring-black/5 outline-none animate-in fade-in-0 zoom-in-[0.98] duration-200 sm:h-[calc(100dvh-1rem)] sm:rounded-[calc(var(--radius-2xl)+0.15rem)] lg:h-[calc(100dvh-1.5rem)]",
               maxW,
             )}
           >
-            <div className="h-1 w-full shrink-0 bg-gradient-to-r from-brand via-brand/70 to-brand/30" />
-            <div className="shrink-0 border-b border-border/50 bg-[linear-gradient(180deg,color-mix(in_oklab,var(--surface)_92%,white)_0%,var(--surface-muted)_100%)] px-4 pt-3 pb-2.5 sm:px-5 dark:bg-[linear-gradient(180deg,var(--surface)_0%,var(--surface-muted)_100%)]">
+            <div className="h-1 w-full shrink-0 bg-gradient-to-r from-brand via-[#5b8aff] to-brand/40" />
+            <div className="shrink-0 border-b border-border/50 bg-[linear-gradient(180deg,color-mix(in_oklab,var(--surface)_92%,white)_0%,var(--surface-muted)_100%)] px-4 pt-3 pb-2.5 sm:px-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <DialogPrimitive.Title className="font-display text-base font-semibold tracking-tight text-foreground sm:text-lg">
@@ -61,10 +60,12 @@ export function RhModal({
                   {subtitle ? <div className="mt-1 text-sm text-foreground/55">{subtitle}</div> : null}
                 </div>
                 <DialogPrimitive.Close
-                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-surface/80 text-foreground/60 shadow-sm transition hover:bg-surface-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:outline-none"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-surface/80 text-foreground/60 shadow-sm transition hover:bg-surface-muted hover:text-foreground"
                   aria-label="Fermer"
                 >
-                  <X className="size-4" aria-hidden />
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+                    <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
                 </DialogPrimitive.Close>
               </div>
               {tabs ? <div className="mt-3.5">{tabs}</div> : null}

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { createClient } from "@/lib/supabase/server";
 import { NAV_GROUPS_TABSET, UI_NAV_GROUPS, findItem, findTabset, isGroupKey, itemKey } from "@/lib/ui/registry";
-import { DESIGN_OPTIONS, DEFAULT_DESIGN, isDesignValue, parseDesign, type DesignSettings } from "@/lib/ui/design";
+import { DESIGN_OPTIONS, isDesignValue, parseDesign, type DesignSettings } from "@/lib/ui/design";
 import { EMPTY_THEME, isHexColor, type UiOverride, type UiTheme } from "@/lib/ui/resolve";
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
@@ -16,7 +16,7 @@ export type UiControlData = {
   hidden: { role_id: string; item_key: string }[];
   overrides: Record<string, UiOverride>;
   theme: UiTheme;
-  design: DesignSettings;
+  design: DesignSettings | null;
   /** False while migration 20261013090000_ui_design is not applied (only the colours can be saved). */
   designReady: boolean;
 };
@@ -169,14 +169,14 @@ export async function resetTabsetLayout(input: { tabset: string }): Promise<Acti
 const DESIGN_KEYS = Object.keys(DESIGN_OPTIONS) as (keyof typeof DESIGN_OPTIONS)[];
 
 /**
- * Colours, names and look. `design: null` brings the look back to the default (every column null);
+ * Colours, names and look. `design: null` brings back the original appearance (every column null);
  * with `designReady: false` (migration not applied) only the colours and names are written.
  */
 export async function saveUiDesign(input: {
   theme: UiTheme;
   design: DesignSettings | null;
   designReady: boolean;
-}): Promise<ActionResult<{ theme: UiTheme; design: DesignSettings }>> {
+}): Promise<ActionResult<{ theme: UiTheme; design: DesignSettings | null }>> {
   const gate = await requireSuperAdmin();
   if (!gate.ok) return gate;
   for (const color of [input.theme.brand_color, input.theme.sidebar_color]) {
@@ -204,5 +204,5 @@ export async function saveUiDesign(input: {
   const { error } = await supabase.from("sys_ui_theme").upsert(row, { onConflict: "id" });
   if (error) return { ok: false, error: error.message };
   done();
-  return { ok: true, data: { theme, design: input.design ?? DEFAULT_DESIGN } };
+  return { ok: true, data: { theme, design: input.design } };
 }

@@ -10,6 +10,7 @@ import { toast } from "@/components/ui/sonner";
 import { RhPanel, RhSectionTitle, RhTabs, rhInput } from "@/components/rh/rh-ui";
 import { saveUiDesign } from "@/lib/actions/ui-control";
 import {
+  DEFAULT_DESIGN,
   DESIGN_PRESETS,
   EMPTY_USER_PREFS,
   designCss,
@@ -87,7 +88,8 @@ export function AppearancePanel({
   designReady,
 }: {
   initialTheme: UiTheme;
-  initialDesign: DesignSettings;
+  /** null: original appearance (nothing chosen yet). */
+  initialDesign: DesignSettings | null;
   designReady: boolean;
 }) {
   const router = useRouter();
@@ -95,13 +97,15 @@ export function AppearancePanel({
   const [sidebar, setSidebar] = useState<string | null>(initialTheme.sidebar_color);
   const [appName, setAppName] = useState(initialTheme.app_name ?? "");
   const [appSubtitle, setAppSubtitle] = useState(initialTheme.app_subtitle ?? "");
-  const [design, setDesign] = useState<DesignSettings>(initialDesign);
+  const [design, setDesign] = useState<DesignSettings | null>(initialDesign);
   const [previewDark, setPreviewDark] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const theme: UiTheme = { brand_color: brand, sidebar_color: sidebar, app_name: appName, app_subtitle: appSubtitle };
-  const preset = DESIGN_PRESETS.find((p) => p.id === design.preset);
-  const custom = !preset || !sameSettings(preset.settings, design);
+  const original = design === null;
+  const shown = design ?? DEFAULT_DESIGN;
+  const preset = DESIGN_PRESETS.find((p) => p.id === shown.preset);
+  const custom = !original && (!preset || !sameSettings(preset.settings, shown));
   const previewCss = useMemo(
     () =>
       designCss(design, EMPTY_USER_PREFS, PREVIEW_SCOPE) +
@@ -110,7 +114,13 @@ export function AppearancePanel({
   );
 
   function set<K extends keyof DesignSettings>(key: K, value: DesignSettings[K]) {
-    setDesign((d) => ({ ...d, [key]: value }));
+    setDesign((d) => ({ ...(d ?? DEFAULT_DESIGN), [key]: value }));
+  }
+
+  function applyOriginal() {
+    setDesign(null);
+    setBrand(null);
+    setSidebar(null);
   }
 
   function applyPreset(id: string) {
@@ -151,8 +161,35 @@ export function AppearancePanel({
         <RhPanel className="space-y-4">
           <RhSectionTitle>Thèmes prêts · سمات جاهزة</RhSectionTitle>
           <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={applyOriginal}
+              className={cn(
+                "group flex items-start gap-3 rounded-2xl border p-3 text-left transition hover:border-brand/60 hover:bg-brand-muted/40 sm:col-span-2",
+                original ? "border-brand bg-brand-muted/50 ring-2 ring-brand/20" : "border-border/70",
+              )}
+            >
+              <span className="flex h-12 w-16 shrink-0 overflow-hidden rounded-xl border border-black/5">
+                <span className="w-5" style={{ backgroundColor: DEFAULT_SIDEBAR }} />
+                <span className="flex flex-1 items-center justify-center bg-white">
+                  <span className="h-3 w-7 rounded-[5px]" style={{ backgroundColor: DEFAULT_BRAND }} />
+                </span>
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2 font-semibold text-foreground">
+                  Apparence d&apos;origine
+                  <span className="text-sm font-normal text-foreground/55" dir="rtl">
+                    المظهر الأصلي
+                  </span>
+                  {original ? <Check className="ms-auto size-4 text-brand" aria-hidden /> : null}
+                </span>
+                <span className="mt-0.5 block text-xs text-foreground/60">
+                  L&apos;application telle qu&apos;elle est aujourd&apos;hui : rien ne change tant qu&apos;un autre style n&apos;est pas choisi et enregistré.
+                </span>
+              </span>
+            </button>
             {DESIGN_PRESETS.map((p) => {
-              const active = design.preset === p.id && !custom;
+              const active = !original && shown.preset === p.id && !custom;
               return (
                 <button
                   key={p.id}
@@ -196,6 +233,11 @@ export function AppearancePanel({
               );
             })}
           </div>
+          {original ? (
+            <p className="text-xs text-foreground/60">
+              Les réglages ci-dessous partent du thème Classique : en changer un crée un style personnalisé, appliqué seulement après « Enregistrer ».
+            </p>
+          ) : null}
           {custom ? (
             <p className="flex items-center gap-1.5 text-xs text-foreground/60">
               <Sparkles className="size-3.5 text-brand" aria-hidden /> Style personnalisé (basé sur « {preset?.labelFr ?? "Classique"} »).
@@ -205,19 +247,19 @@ export function AppearancePanel({
 
         <RhPanel className="space-y-5">
           <RhSectionTitle>Formes et composants · الأشكال والعناصر</RhSectionTitle>
-          <Segmented label="Coins des cartes et champs · الزوايا" value={design.radius} choices={RADIUS} onChange={(v) => set("radius", v)} />
-          <Segmented label="Forme des boutons · شكل الأزرار" value={design.button_shape} choices={BUTTON_SHAPE} onChange={(v) => set("button_shape", v)} />
-          <Segmented label="Style des boutons principaux · نمط الأزرار" value={design.button_style} choices={BUTTON_STYLE} onChange={(v) => set("button_style", v)} />
-          <Segmented label="Tableaux · الجداول" value={design.table_style} choices={TABLE_STYLE} onChange={(v) => set("table_style", v)} />
-          <Segmented label="Cartes et fenêtres · البطاقات والنوافذ" value={design.card_style} choices={CARD_STYLE} onChange={(v) => set("card_style", v)} />
-          <Segmented label="Densité (par défaut) · الكثافة" value={design.density} choices={DENSITY} onChange={(v) => set("density", v)} />
+          <Segmented label="Coins des cartes et champs · الزوايا" value={shown.radius} choices={RADIUS} onChange={(v) => set("radius", v)} />
+          <Segmented label="Forme des boutons · شكل الأزرار" value={shown.button_shape} choices={BUTTON_SHAPE} onChange={(v) => set("button_shape", v)} />
+          <Segmented label="Style des boutons principaux · نمط الأزرار" value={shown.button_style} choices={BUTTON_STYLE} onChange={(v) => set("button_style", v)} />
+          <Segmented label="Tableaux · الجداول" value={shown.table_style} choices={TABLE_STYLE} onChange={(v) => set("table_style", v)} />
+          <Segmented label="Cartes et fenêtres · البطاقات والنوافذ" value={shown.card_style} choices={CARD_STYLE} onChange={(v) => set("card_style", v)} />
+          <Segmented label="Densité (par défaut) · الكثافة" value={shown.density} choices={DENSITY} onChange={(v) => set("density", v)} />
         </RhPanel>
 
         <RhPanel className="space-y-5">
           <RhSectionTitle>Polices, mode et animations · الخطوط والوضع والحركة</RhSectionTitle>
-          <Segmented label="Police latine · الخط اللاتيني" value={design.font_latin} choices={FONT_LATIN} onChange={(v) => set("font_latin", v)} />
-          <Segmented label="Police arabe · الخط العربي" value={design.font_arabic} choices={FONT_ARABIC} onChange={(v) => set("font_arabic", v)} />
-          <Segmented label="Mode par défaut · الوضع الافتراضي" value={design.default_mode} choices={MODES} onChange={(v) => set("default_mode", v)} />
+          <Segmented label="Police latine · الخط اللاتيني" value={shown.font_latin} choices={FONT_LATIN} onChange={(v) => set("font_latin", v)} />
+          <Segmented label="Police arabe · الخط العربي" value={shown.font_arabic} choices={FONT_ARABIC} onChange={(v) => set("font_arabic", v)} />
+          <Segmented label="Mode par défaut · الوضع الافتراضي" value={shown.default_mode} choices={MODES} onChange={(v) => set("default_mode", v)} />
           <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-border/70 px-3.5 py-3">
             <span>
               <span className="block text-sm font-medium text-foreground">Animations et transitions · الحركات</span>
@@ -225,7 +267,7 @@ export function AppearancePanel({
                 Désactivées automatiquement pour les personnes qui ont demandé « réduire les animations » sur leur appareil.
               </span>
             </span>
-            <Switch checked={design.animations} onChange={(v) => set("animations", v)} label="Animations" />
+            <Switch checked={shown.animations} onChange={(v) => set("animations", v)} label="Animations" />
           </label>
           <p className="text-xs text-foreground/55">
             Chaque utilisateur peut choisir son propre mode (clair / sombre) et sa densité depuis le bouton d&apos;affichage en haut de l&apos;écran.
@@ -249,18 +291,19 @@ export function AppearancePanel({
         </RhPanel>
 
         <div className="sticky bottom-3 z-10 flex flex-wrap gap-2 rounded-2xl border border-border/70 bg-surface/90 p-3 shadow-[var(--card-shadow)] backdrop-blur-md">
-          <Button disabled={pending} onClick={() => submit({ theme, design }, "Apparence enregistrée. · تم حفظ المظهر.")}>
+          <Button className="gap-2" disabled={pending} onClick={() => submit({ theme, design }, "Apparence enregistrée. · تم حفظ المظهر.")}>
             <Save aria-hidden /> Enregistrer · حفظ
           </Button>
           <Button
             variant="secondary"
+            className="gap-2"
             disabled={pending}
             onClick={() => submit({ theme: EMPTY_THEME, design: null }, "Apparence par défaut rétablie. · تم استرجاع المظهر الأصلي.")}
           >
             <RotateCcw aria-hidden /> Rétablir par défaut · استرجاع الأصل
           </Button>
-          <Button variant="ghost" disabled={pending} onClick={() => applyPreset("classique")}>
-            <Palette aria-hidden /> Revenir au thème Classique (sans enregistrer)
+          <Button variant="ghost" className="gap-2" disabled={pending} onClick={applyOriginal}>
+            <Palette aria-hidden /> Revenir à l&apos;apparence d&apos;origine (sans enregistrer)
           </Button>
         </div>
       </div>
@@ -314,7 +357,7 @@ function Preview({ dark, appName, appSubtitle }: { dark: boolean; appName: strin
           </Button>
         </div>
         <input className={cn(rhInput, "mt-0 h-9")} placeholder="Rechercher un employé…" readOnly />
-        <div className="overflow-hidden rounded-2xl border border-[var(--card-border)] bg-[var(--card-bg)] shadow-[var(--card-shadow)]">
+        <div className="ui-table-wrap data-table overflow-hidden rounded-2xl border">
           <table className="w-full text-xs">
             <thead>
               <tr>

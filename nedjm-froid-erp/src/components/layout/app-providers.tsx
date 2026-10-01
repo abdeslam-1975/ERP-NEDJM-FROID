@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { MotionConfig, motion } from "motion/react";
@@ -8,8 +8,10 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { DisplayMode } from "@/lib/ui/design";
 
+const AnimationsContext = createContext(false);
+
 /** Applies the user's saved display mode, or the application default on a device that never chose one. */
-function ThemeSync({ userMode, defaultMode }: { userMode: DisplayMode | null; defaultMode: DisplayMode }) {
+function ThemeSync({ userMode, defaultMode }: { userMode: DisplayMode | null; defaultMode: DisplayMode | null }) {
   const { setTheme } = useTheme();
   const applied = useRef(false);
   useEffect(() => {
@@ -19,6 +21,7 @@ function ThemeSync({ userMode, defaultMode }: { userMode: DisplayMode | null; de
       setTheme(userMode);
       return;
     }
+    if (!defaultMode) return;
     let stored: string | null = null;
     try {
       stored = window.localStorage.getItem("theme");
@@ -30,6 +33,7 @@ function ThemeSync({ userMode, defaultMode }: { userMode: DisplayMode | null; de
   return null;
 }
 
+/** `animations`: only when the chosen look turns them on; the original appearance has none. */
 export function AppProviders({
   animations,
   userMode,
@@ -38,23 +42,27 @@ export function AppProviders({
 }: {
   animations: boolean;
   userMode: DisplayMode | null;
-  defaultMode: DisplayMode;
+  defaultMode: DisplayMode | null;
   children: ReactNode;
 }) {
   return (
-    <MotionConfig reducedMotion={animations ? "user" : "always"}>
-      <TooltipProvider delayDuration={300}>
-        <ThemeSync userMode={userMode} defaultMode={defaultMode} />
-        {children}
-        <Toaster />
-      </TooltipProvider>
-    </MotionConfig>
+    <AnimationsContext.Provider value={animations}>
+      <MotionConfig reducedMotion={animations ? "user" : "always"}>
+        <TooltipProvider delayDuration={300}>
+          <ThemeSync userMode={userMode} defaultMode={defaultMode} />
+          {children}
+          <Toaster />
+        </TooltipProvider>
+      </MotionConfig>
+    </AnimationsContext.Provider>
   );
 }
 
 /* Opacity only: a transform here would become the containing block of every fixed overlay of the page. */
 export function PageTransition({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const animations = useContext(AnimationsContext);
+  if (!animations) return <>{children}</>;
   return (
     <motion.div key={pathname} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.22, ease: "easeOut" }}>
       {children}

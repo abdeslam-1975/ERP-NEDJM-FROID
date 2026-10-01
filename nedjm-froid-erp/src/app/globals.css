@@ -20,23 +20,6 @@
   --sidebar-fg: #eef2ff;
   --sidebar-muted: #8fa0d9;
   --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 28px -18px rgba(15, 23, 42, 0.18);
-
-  /* Design tokens: overwritten by the look chosen in Paramètres › Interface (src/lib/ui/design.ts). */
-  --radius: 0.75rem;
-  --app-font-sans: var(--font-source-sans), var(--font-cairo), system-ui, sans-serif;
-  --btn-radius: var(--radius-xl);
-  --btn-bg: var(--color-brand);
-  --btn-fg: #fff;
-  --btn-border: transparent;
-  --btn-hover-bg: var(--color-brand-hover);
-  --btn-shadow: 0 1px 2px color-mix(in srgb, var(--color-brand) 25%, transparent);
-  --tbl-head-bg: color-mix(in oklab, var(--surface-muted) 88%, transparent);
-  --tbl-row-border: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
-  --tbl-cell-border: 0 solid transparent;
-  --tbl-stripe: transparent;
-  --card-bg: var(--surface);
-  --card-border: color-mix(in oklab, var(--border) 80%, transparent);
-  --card-blur: 0px;
 }
 
 .dark {
@@ -71,8 +54,8 @@
   --color-border: var(--border);
   --color-sidebar: var(--sidebar);
   --color-sidebar-fg: var(--sidebar-fg);
-  --font-sans: var(--app-font-sans);
-  --font-display: var(--font-libre-franklin), var(--app-font-sans);
+  --font-sans: var(--app-font-sans, var(--font-source-sans));
+  --font-display: var(--font-libre-franklin);
 
   /* shadcn/ui token names, mapped onto the application palette. */
   --color-card: var(--surface);
@@ -95,64 +78,116 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--app-font-sans);
+  font-family: var(--app-font-sans, var(--font-source-sans), system-ui, sans-serif);
 }
 
-@layer base {
-  /* Every table follows the table style chosen in Paramètres › Interface; explicit utility classes still win. */
-  table {
+.rh-scope table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+}
+
+.rh-scope thead tr {
+  background: var(--tbl-head-bg, color-mix(in oklab, var(--surface-muted) 88%, transparent));
+}
+
+.rh-scope tbody tr {
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  transition: background 120ms ease;
+}
+
+.rh-scope tbody tr:hover {
+  background: color-mix(in oklab, var(--color-brand-muted) 55%, transparent);
+}
+
+.rh-scope tbody tr:last-child {
+  border-bottom: none;
+}
+
+.app-card {
+  background: var(--card-bg, var(--surface));
+  border: 1px solid var(--card-border, var(--border));
+  border-radius: var(--radius-2xl, 1rem);
+  box-shadow: var(--card-shadow);
+}
+
+/*
+ * The --btn-*, --tbl-*, --card-* variables only exist once a look is chosen in Paramètres › Interface
+ * (src/lib/ui/design.ts); each fallback below is the original appearance.
+ */
+@layer components {
+  .ui-btn {
+    border-radius: var(--btn-radius, var(--radius-xl));
+  }
+
+  .ui-btn-primary {
+    background: var(--btn-bg, var(--color-brand));
+    color: var(--btn-fg, #fff);
+    border: var(--btn-border-width, 0px) solid var(--btn-border, transparent);
+    box-shadow: var(
+      --btn-shadow,
+      0 1px 3px 0 color-mix(in oklab, var(--color-brand) 20%, transparent),
+      0 1px 2px -1px color-mix(in oklab, var(--color-brand) 20%, transparent)
+    );
+  }
+
+  .ui-btn-primary:hover {
+    background: var(--btn-hover-bg, var(--color-brand-hover));
+  }
+
+  .ui-panel {
+    background: var(--card-bg, var(--surface));
+    border-color: var(--card-border, color-mix(in oklab, var(--border) 80%, transparent));
+    box-shadow: var(--card-shadow);
+  }
+
+  .ui-table-wrap {
+    background: var(--card-bg, var(--surface));
+    border-color: var(--card-border, color-mix(in oklab, var(--border) 70%, transparent));
+  }
+
+  .ui-stat {
+    background: var(--card-bg, var(--surface));
+    border-color: var(--card-border, color-mix(in oklab, var(--border) 60%, transparent));
+  }
+
+  .data-table table {
     border-collapse: separate;
     border-spacing: 0;
   }
 
-  thead tr {
-    background: var(--tbl-head-bg);
+  .data-table thead tr {
+    background: var(--tbl-head-bg, color-mix(in oklab, var(--surface-muted) 88%, transparent));
   }
 
-  tbody > tr > td {
-    border-bottom: var(--tbl-row-border);
+  .data-table tbody > tr > td {
+    border-bottom: var(--tbl-row-border, 1px solid color-mix(in oklab, var(--border) 70%, transparent));
   }
 
-  tbody > tr:last-child > td {
+  .data-table tbody > tr:last-child > td {
     border-bottom-width: 0;
   }
 
-  tbody > tr:nth-child(even) > td {
-    background-color: var(--tbl-stripe);
+  .data-table tbody > tr:nth-child(even) > td {
+    background-color: var(--tbl-stripe, transparent);
   }
 
-  th:not(:last-child),
-  td:not(:last-child) {
-    border-inline-end: var(--tbl-cell-border);
+  .data-table th:not(:last-child),
+  .data-table td:not(:last-child) {
+    border-inline-end: var(--tbl-cell-border, 0 solid transparent);
   }
 
-  thead th {
-    border-bottom: var(--tbl-cell-border);
-  }
-
-  tbody > tr {
+  .data-table tbody > tr {
     transition: background-color 120ms ease;
   }
 
-  tbody > tr:hover > td {
+  .data-table tbody > tr:hover > td {
     background-color: color-mix(in oklab, var(--color-brand-muted) 55%, transparent);
   }
 }
 
-.rh-scope table {
-  width: 100%;
-}
-
-.app-card {
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-2xl);
-  box-shadow: var(--card-shadow);
-  backdrop-filter: blur(var(--card-blur));
-}
-
 @media print {
-  tbody > tr:hover > td {
+  .data-table tbody > tr:hover > td {
     background-color: transparent;
   }
 }

@@ -35,7 +35,11 @@ export async function AppShell({
   return (
     <UiLayoutProvider value={layout}>
       <style>{css}</style>
-      <AppProviders animations={layout.design.animations} userMode={layout.prefs.mode} defaultMode={layout.design.default_mode}>
+      <AppProviders
+        animations={layout.design?.animations ?? false}
+        userMode={layout.prefs.mode}
+        defaultMode={layout.design?.default_mode ?? null}
+      >
         <div className="flex min-h-screen bg-background text-foreground">
           <Sidebar />
           <div className="flex min-w-0 flex-1 flex-col">

@@ -17,9 +17,7 @@ import {
   type FinancePaymentMethod,
   type FinanceTaxRate,
 } from "@/lib/actions/finance";
-import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { RhTabs } from "@/components/rh/rh-ui";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 
 const accountCol = dataColumns<FinanceAccount>();
@@ -82,9 +80,19 @@ export function FinanceSettings({
           <a href="/finance">Retour au hub</a>
         </Button>
       </div>
-      {error && <Alert tone="danger">{error}</Alert>}
-      {message && <Alert tone="success">{message}</Alert>}
-      <RhTabs items={tabs} value={tab} onChange={(id) => setTab(id as typeof tab)} />
+      {error && <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
+      {message && <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">{message}</div>}
+      <div className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-surface p-1">
+        {tabs.map(({ id: value, label }) => (
+          <button
+            key={value}
+            onClick={() => setTab(value)}
+            className={`whitespace-nowrap rounded-md px-4 py-2 text-sm font-semibold ${tab === value ? "bg-brand text-white" : "hover:bg-surface-muted"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       {tab === "accounts" && <AccountsEditor data={initialData} pending={pending} run={run} />}
       {tab === "tax" && <TaxEditor rows={initialData.taxRates} pending={pending} run={run} />}
       {tab === "methods" && <MethodsEditor rows={initialData.methods} pending={pending} run={run} />}

@@ -1,10 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Fragment } from "react";
-import { FileText } from "lucide-react";
-import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-
 export { RhModal, RhTabs } from "@/components/rh/rh-ui-client";
 
 /* —— tokens (Tailwind) —— */
@@ -176,11 +171,7 @@ export function RhPanel({
 }) {
   return (
     <div
-      className={cn(
-        "overflow-hidden rounded-2xl border border-[var(--card-border)] bg-[var(--card-bg)] shadow-[var(--card-shadow)] backdrop-blur-[var(--card-blur)]",
-        padded && "p-4 sm:p-5",
-        className,
-      )}
+      className={`ui-panel overflow-hidden rounded-2xl border ${padded ? "p-4 sm:p-5" : ""} ${className}`}
     >
       {children}
     </div>
@@ -202,14 +193,31 @@ export function RhAlert({
   tone?: "danger" | "success" | "warning" | "info";
   children: ReactNode;
 }) {
-  return <Alert tone={tone}>{children}</Alert>;
+  const styles = {
+    danger: "border-red-200/80 bg-red-50 text-red-900 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-100",
+    success:
+      "border-emerald-200/80 bg-emerald-50 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-100",
+    warning:
+      "border-amber-200/80 bg-amber-50 text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100",
+    info: "border-sky-200/80 bg-sky-50 text-sky-950 dark:border-sky-900/40 dark:bg-sky-950/40 dark:text-sky-100",
+  }[tone];
+  return (
+    <div className={`rounded-xl border px-4 py-3 text-sm leading-relaxed ${styles}`}>{children}</div>
+  );
 }
 
 export function RhEmpty({ title, body }: { title: string; body?: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 px-6 py-14 text-center">
       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-muted text-brand">
-        <FileText className="size-5" aria-hidden />
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+          <path
+            d="M7 8h10M7 12h7M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+        </svg>
       </div>
       <p className="font-display text-base font-semibold text-foreground">{title}</p>
       {body ? <p className="max-w-sm text-sm text-foreground/55">{body}</p> : null}
@@ -219,7 +227,7 @@ export function RhEmpty({ title, body }: { title: string; body?: string }) {
 
 export function RhTableWrap({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-[var(--card-border)] bg-[var(--card-bg)] shadow-[var(--card-shadow)]">
+    <div className="ui-table-wrap overflow-x-auto rounded-2xl border">
       {children}
     </div>
   );
@@ -240,7 +248,18 @@ export function RhChip({
   children: ReactNode;
   tone?: "neutral" | "brand" | "success" | "warning" | "danger";
 }) {
-  return <Badge tone={tone}>{children}</Badge>;
+  const map = {
+    neutral: "bg-surface-muted text-foreground/70",
+    brand: "bg-brand-muted text-brand",
+    success: "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200",
+    warning: "bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-100",
+    danger: "bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-100",
+  }[tone];
+  return (
+    <span className={`inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-semibold ${map}`}>
+      {children}
+    </span>
+  );
 }
 
 export function RhIconButton(props: ButtonHTMLAttributes<HTMLButtonElement>) {
@@ -248,10 +267,7 @@ export function RhIconButton(props: ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       type="button"
-      className={cn(
-        "inline-flex h-10 w-10 items-center justify-center rounded-[var(--btn-radius)] border border-border/70 bg-surface text-foreground/70 transition hover:bg-surface-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:outline-none active:scale-95 disabled:opacity-50 [&_svg]:size-4",
-        className,
-      )}
+      className={`ui-btn inline-flex h-10 w-10 items-center justify-center border border-border/70 bg-surface text-foreground/70 transition hover:bg-surface-muted hover:text-foreground disabled:opacity-50 ${className}`}
       {...rest}
     >
       {children}
@@ -276,7 +292,7 @@ export function RhStat({
   value: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-[var(--card-border)] bg-[var(--card-bg)] px-4 py-3 shadow-[var(--card-shadow)]">
+    <div className="ui-stat rounded-2xl border px-4 py-3">
       <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/45">
         {label}
       </p>

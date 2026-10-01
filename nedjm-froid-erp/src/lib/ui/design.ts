@@ -55,7 +55,7 @@ export const DESIGN_PRESETS: DesignPreset[] = [
     id: "classique",
     labelFr: "Classique",
     labelAr: "كلاسيكي",
-    descriptionFr: "Le style actuel : bleu royal, coins arrondis, ombres légères.",
+    descriptionFr: "Proche de l'origine (bleu royal, coins arrondis), avec animations, police arabe Cairo et tableaux à lignes.",
     brand_color: "#3b6ef5",
     sidebar_color: "#1a2f8a",
     settings: {
@@ -148,10 +148,15 @@ function pick<K extends keyof Options>(key: K, value: unknown): Options[K][numbe
   return typeof value === "string" && list.includes(value) ? (value as Options[K][number]) : null;
 }
 
-/** Valid values from a sys_ui_theme row; anything missing or unknown falls back to the preset, then the default. */
-export function parseDesign(row: Record<string, unknown> | null | undefined): DesignSettings {
-  const base = findPreset(pick("preset", row?.preset))?.settings ?? DEFAULT_DESIGN;
-  if (!row) return base;
+const DESIGN_KEYS = [...(Object.keys(DESIGN_OPTIONS) as (keyof Options)[]), "animations"] as const;
+
+/**
+ * Valid values from a sys_ui_theme row; anything missing or unknown falls back to the preset, then the default.
+ * null while no look was ever chosen: the application then keeps its original appearance, untouched.
+ */
+export function parseDesign(row: Record<string, unknown> | null | undefined): DesignSettings | null {
+  if (!row || DESIGN_KEYS.every((key) => row[key] === null || row[key] === undefined)) return null;
+  const base = findPreset(pick("preset", row.preset))?.settings ?? DEFAULT_DESIGN;
   return {
     preset: pick("preset", row.preset) ?? base.preset,
     radius: pick("radius", row.radius) ?? base.radius,
@@ -203,17 +208,17 @@ const BUTTON_RADIUS: Record<DesignSettings["button_shape"], string> = {
 
 const BUTTON_VARS: Record<DesignSettings["button_style"], string> = {
   solid:
-    "--btn-bg:var(--color-brand);--btn-fg:#fff;--btn-border:transparent;--btn-hover-bg:var(--color-brand-hover);" +
+    "--btn-bg:var(--color-brand);--btn-fg:#fff;--btn-border:transparent;--btn-border-width:0px;--btn-hover-bg:var(--color-brand-hover);" +
     "--btn-shadow:0 1px 2px color-mix(in srgb,var(--color-brand) 25%,transparent);",
   soft:
-    "--btn-bg:var(--color-brand-muted);--btn-fg:var(--color-brand);--btn-border:transparent;" +
+    "--btn-bg:var(--color-brand-muted);--btn-fg:var(--color-brand);--btn-border:transparent;--btn-border-width:0px;" +
     "--btn-hover-bg:color-mix(in srgb,var(--color-brand) 20%,var(--surface));--btn-shadow:none;",
   outline:
-    "--btn-bg:transparent;--btn-fg:var(--color-brand);--btn-border:var(--color-brand);" +
+    "--btn-bg:transparent;--btn-fg:var(--color-brand);--btn-border:var(--color-brand);--btn-border-width:1px;" +
     "--btn-hover-bg:var(--color-brand-muted);--btn-shadow:none;",
   gradient:
     "--btn-bg:linear-gradient(135deg,var(--color-brand),color-mix(in srgb,var(--color-brand) 55%,#c026d3));--btn-fg:#fff;" +
-    "--btn-border:transparent;--btn-hover-bg:linear-gradient(135deg,var(--color-brand-hover),color-mix(in srgb,var(--color-brand-hover) 55%,#a21caf));" +
+    "--btn-border:transparent;--btn-border-width:0px;--btn-hover-bg:linear-gradient(135deg,var(--color-brand-hover),color-mix(in srgb,var(--color-brand-hover) 55%,#a21caf));" +
     "--btn-shadow:0 6px 18px -8px color-mix(in srgb,var(--color-brand) 70%,transparent);",
 };
 
@@ -227,22 +232,43 @@ const TABLE_VARS: Record<DesignSettings["table_style"], string> = {
 };
 
 const CARD_VARS: Record<DesignSettings["card_style"], { light: string; dark: string }> = {
-  shadow: { light: "--card-bg:var(--surface);--card-border:color-mix(in oklab,var(--border) 80%,transparent);--card-blur:0px;", dark: "" },
+  shadow: { light: "--card-bg:var(--surface);--card-border:color-mix(in oklab,var(--border) 80%,transparent);", dark: "" },
   border: {
-    light: "--card-bg:var(--surface);--card-border:var(--border);--card-blur:0px;--card-shadow:none;",
+    light: "--card-bg:var(--surface);--card-border:var(--border);--card-shadow:none;",
     dark: "--card-shadow:none;",
   },
   flat: {
-    light: "--card-bg:var(--surface);--card-border:transparent;--card-blur:0px;--card-shadow:none;",
+    light: "--card-bg:var(--surface);--card-border:transparent;--card-shadow:none;",
     dark: "--card-shadow:none;",
   },
   glass: {
     light:
-      "--card-bg:color-mix(in oklab,var(--surface) 72%,transparent);--card-border:color-mix(in oklab,white 55%,var(--border));--card-blur:14px;" +
+      "--card-bg:color-mix(in oklab,var(--surface) 72%,transparent);--card-border:color-mix(in oklab,white 55%,var(--border));" +
       "--card-shadow:0 1px 2px rgba(15,23,42,.04),0 18px 40px -24px rgba(15,23,42,.35);",
     dark: "--card-border:color-mix(in oklab,white 10%,var(--border));--card-shadow:0 18px 40px -24px rgba(0,0,0,.7);",
   },
 };
+
+/* Variables a chosen look sets; unset, every component falls back to its original appearance. */
+const LOOK_VARS = [
+  "--app-font-sans",
+  "--btn-radius",
+  "--btn-bg",
+  "--btn-fg",
+  "--btn-border",
+  "--btn-border-width",
+  "--btn-hover-bg",
+  "--btn-shadow",
+  "--tbl-head-bg",
+  "--tbl-row-border",
+  "--tbl-cell-border",
+  "--tbl-stripe",
+  "--card-bg",
+  "--card-border",
+];
+
+const TAILWIND_RADIUS =
+  "--radius-sm:0.25rem;--radius-md:0.375rem;--radius-lg:0.5rem;--radius-xl:0.75rem;--radius-2xl:1rem;--radius-3xl:1.5rem;";
 
 function num(n: number): string {
   return `${Math.round(n * 1000) / 1000}rem`;
@@ -255,9 +281,44 @@ export function scopeSelectors(scope: string): { light: string; dark: string; al
     : { light: scope, dark: `.dark ${scope},${scope}.dark`, all: `${scope},${scope} *,${scope} *::before,${scope} *::after` };
 }
 
-/** Look (and the user's own density) as CSS. Only tokens from the closed lists above end up in the text. */
-export function designCss(design: DesignSettings, prefs: UserDisplayPrefs = EMPTY_USER_PREFS, scope = ":root"): string {
+function tableRules(scope: string): string {
+  const t = scope === ":root" ? "" : `${scope} `;
+  return (
+    "@layer base{" +
+    `${t}table{border-collapse:separate;border-spacing:0}` +
+    `${t}thead tr{background:var(--tbl-head-bg)}` +
+    `${t}tbody>tr>td{border-bottom:var(--tbl-row-border)}` +
+    `${t}tbody>tr:last-child>td{border-bottom-width:0}` +
+    `${t}tbody>tr:nth-child(even)>td{background-color:var(--tbl-stripe)}` +
+    `${t}th:not(:last-child),${t}td:not(:last-child){border-inline-end:var(--tbl-cell-border)}` +
+    `${t}thead th{border-bottom:var(--tbl-cell-border)}` +
+    `${t}tbody>tr{transition:background-color 120ms ease}` +
+    `${t}tbody>tr:hover>td{background-color:color-mix(in oklab,var(--color-brand-muted) 55%,transparent)}` +
+    `@media print{${t}tbody>tr:hover>td{background-color:transparent}}` +
+    "}"
+  );
+}
+
+/**
+ * Look (and the user's own density) as CSS. Only tokens from the closed lists above end up in the text.
+ * Without a chosen look (null) nothing of the original appearance changes; only the user's density applies.
+ */
+export function designCss(
+  design: DesignSettings | null,
+  prefs: UserDisplayPrefs = EMPTY_USER_PREFS,
+  scope = ":root",
+): string {
   const sel = scopeSelectors(scope);
+  const animate = scope === ":root" ? "" : `${scope} `;
+  const noEnterExit = `${animate}.animate-in,${animate}.animate-out{animation:none!important}`;
+
+  if (!design) {
+    const reset = scope === ":root" ? "" : `${LOOK_VARS.map((v) => `${v}:initial;`).join("")}${TAILWIND_RADIUS}--spacing:0.25rem;`;
+    const spacing = prefs.density ? `--spacing:${SPACING[prefs.density]};` : "";
+    const root = reset + spacing;
+    return (root ? `${sel.light}{${root}}` : "") + noEnterExit;
+  }
+
   const f = RADIUS_BASE[design.radius] / 0.75;
   const density = prefs.density ?? design.density;
   const root = [
@@ -271,11 +332,12 @@ export function designCss(design: DesignSettings, prefs: UserDisplayPrefs = EMPT
     TABLE_VARS[design.table_style],
     CARD_VARS[design.card_style].light,
   ].join("");
-  const rules = [`${sel.light}{${root}}`];
+  const rules = [`${sel.light}{${root}}`, tableRules(scope)];
   if (CARD_VARS[design.card_style].dark) rules.push(`${sel.dark}{${CARD_VARS[design.card_style].dark}}`);
   if (!design.animations) {
     rules.push(
       `${sel.all}{animation-duration:0s!important;animation-delay:0s!important;transition-duration:0s!important;scroll-behavior:auto!important}`,
+      noEnterExit,
     );
   }
   return rules.join("");

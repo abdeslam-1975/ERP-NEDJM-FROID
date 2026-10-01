@@ -2,9 +2,6 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { Plus } from "lucide-react";
-import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 import type { ClientRow } from "@/lib/actions/clients";
 
@@ -47,16 +44,23 @@ export function ClientsManager({
           </p>
         </div>
         {canWrite ? (
-          <Button asChild>
-            <Link href="/referentiels/clients/nouveau">
-              <Plus aria-hidden />
-              Nouveau client
-            </Link>
-          </Button>
+          <Link
+            href="/referentiels/clients/nouveau"
+            className="inline-flex h-10 items-center justify-center rounded-xl bg-brand px-4 text-sm font-semibold text-white shadow-sm shadow-brand/20 hover:bg-brand-hover"
+          >
+            Nouveau client
+          </Link>
         ) : null}
       </div>
 
-      {loadError ? <Alert tone="danger">{loadError}</Alert> : null}
+      {loadError ? (
+        <div
+          role="alert"
+          className="rounded-md border border-alert-critical/40 bg-alert-critical/10 px-4 py-3 text-sm text-alert-critical"
+        >
+          {loadError}
+        </div>
+      ) : null}
 
       <DataTable
         data={clients}
