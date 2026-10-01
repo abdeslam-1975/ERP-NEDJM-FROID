@@ -335,7 +335,7 @@ function DocumentCard({
   );
 }
 
-function MetaFields({ value, onChange }: { value: LegalDocMeta; onChange: (v: LegalDocMeta) => void }) {
+export function MetaFields({ value, onChange }: { value: LegalDocMeta; onChange: (v: LegalDocMeta) => void }) {
   const set = <K extends keyof LegalDocMeta>(k: K, v: LegalDocMeta[K]) => onChange({ ...value, [k]: v });
   const path = value.applies_from ? entryPathOf(value.applies_from, value.applies_to || null) : null;
   return (

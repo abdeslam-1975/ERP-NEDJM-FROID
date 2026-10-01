@@ -59,8 +59,10 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
     pathname.includes(".");
+  // Scheduled routes have no user session; each one checks CRON_SECRET itself.
+  const isCron = pathname.startsWith("/api/cron/");
 
-  if (isPublicAsset) {
+  if (isPublicAsset || isCron) {
     return supabaseResponse;
   }
 

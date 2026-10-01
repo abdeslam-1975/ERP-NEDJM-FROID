@@ -315,6 +315,24 @@ export const legalDocMetaSchema = z
   });
 export type LegalDocMeta = z.infer<typeof legalDocMetaSchema>;
 
+/** Metadata as ref_legal_doc_create / ref_legal_doc_correct expect it (empty optional fields become null). */
+export function legalDocRpcMeta(m: LegalDocMeta) {
+  return {
+    doc_type: m.doc_type,
+    title: m.title,
+    reference: m.reference,
+    jo_number: m.jo_number || null,
+    jo_date: m.jo_date || null,
+    publication_date: m.publication_date || null,
+    applies_from: m.applies_from,
+    applies_to: m.applies_to || null,
+    language: m.language,
+    origin: m.origin,
+    source_url: m.source_url || null,
+    notes: m.notes || null,
+  };
+}
+
 export const emptyLegalDocMeta = (): LegalDocMeta => ({
   doc_type: "LOI_FINANCES",
   title: "",

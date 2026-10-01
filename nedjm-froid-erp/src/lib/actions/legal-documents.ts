@@ -10,8 +10,8 @@ import {
   LEGAL_DOC_MAX_BYTES,
   LEGAL_DOC_MIME,
   legalDocMetaSchema,
+  legalDocRpcMeta as rpcMeta,
   parseLegalDocuments,
-  type LegalDocMeta,
   type LegalDocument,
 } from "@/lib/rules/legal-documents";
 
@@ -40,23 +40,6 @@ function revalidateDocuments() {
   revalidatePath("/rh/legal/propositions");
   revalidatePath("/rh/legal");
   revalidatePath("/decisions");
-}
-
-function rpcMeta(m: LegalDocMeta) {
-  return {
-    doc_type: m.doc_type,
-    title: m.title,
-    reference: m.reference,
-    jo_number: m.jo_number || null,
-    jo_date: m.jo_date || null,
-    publication_date: m.publication_date || null,
-    applies_from: m.applies_from,
-    applies_to: m.applies_to || null,
-    language: m.language,
-    origin: m.origin,
-    source_url: m.source_url || null,
-    notes: m.notes || null,
-  };
 }
 
 export async function getLegalDocAccess(): Promise<ActionResult<LegalDocAccess>> {

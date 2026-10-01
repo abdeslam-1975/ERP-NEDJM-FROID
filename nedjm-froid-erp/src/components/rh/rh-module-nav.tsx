@@ -28,6 +28,7 @@ const items = [
   { href: "/rh/legal/propositions", label: "Propositions légales" },
   { href: "/rh/legal/documents", label: "Documents juridiques" },
   { href: "/rh/legal/extraction-ia", label: "Extraction IA" },
+  { href: "/rh/legal/veille", label: "Veille juridique" },
   { href: "/rh/qualite-donnees", label: "Qualité des données" },
   { href: "/rh/parametres", label: "Paramètres" },
 ];
