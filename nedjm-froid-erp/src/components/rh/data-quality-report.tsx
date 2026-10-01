@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import {
   RhAlert,
   RhChip,
-  RhEmpty,
   RhPageHeader,
   RhPanel,
   RhTableWrap,
@@ -21,11 +21,14 @@ import {
   requestAllContractStartDecisions,
   requestContractStartDecision,
   type DataQualityReport,
+  type OffMonthContract,
   type UnconfirmedSite,
 } from "@/lib/actions/data-quality";
 import { confirmSiteWilaya } from "@/lib/actions/site-wilaya";
 import { decisionStatusLabel, decisionStatusTone } from "@/lib/decisions/catalog";
 import { WILAYAS } from "@/lib/referentiels/wilayas";
+
+const contractCol = dataColumns<OffMonthContract>();
 
 function frDate(iso: string | null) {
   return iso ? iso.slice(0, 10).split("-").reverse().join("/") : "—";
@@ -98,6 +101,49 @@ export function DataQualityReportView({ report }: { report: DataQualityReport })
       else done("Demande D13 envoyée au Centre de décisions : rien n'est modifié avant la décision.", null);
     });
   }
+
+  const contractColumns = [
+    contractCol.accessor("employee", { header: bi("Salarié", "العامل") }),
+    contractCol.accessor((c) => c.site_name ?? "", {
+      id: "site",
+      header: bi("Chantier", "الورشة"),
+      cell: (info) => info.getValue() || "—",
+    }),
+    contractCol.accessor("start_date", { header: bi("Début", "البداية"), cell: (info) => frDate(info.getValue()) }),
+    contractCol.accessor((c) => c.end_date ?? "", {
+      id: "end_date",
+      header: bi("Fin", "النهاية"),
+      cell: ({ row }) => frDate(row.original.end_date),
+    }),
+    contractCol.accessor((c) => (c.fix_allowed ? 1 : 0), {
+      id: "fix_allowed",
+      header: bi("Correction possible", "التصحيح ممكن"),
+      cell: ({ row }) =>
+        row.original.fix_allowed ? (
+          <RhChip tone="success">{bi("Oui", "نعم")}</RhChip>
+        ) : (
+          <RhChip tone="neutral">{bi("Mois traité : exception seulement", "شهر معالج")}</RhChip>
+        ),
+    }),
+    contractCol.accessor((c) => (c.decision_id ? decisionStatusLabel(c.decision_status ?? "") : ""), {
+      id: "decision",
+      header: bi("Décision", "القرار"),
+      cell: ({ row }) => {
+        const c = row.original;
+        return c.decision_id ? (
+          <Link href={`/decisions/${c.decision_id}`} className="font-semibold text-brand hover:underline">
+            <RhChip tone={decisionStatusTone(c.decision_status ?? "")}>
+              {decisionStatusLabel(c.decision_status ?? "")}
+            </RhChip>
+          </Link>
+        ) : (
+          <Button variant="secondary" disabled={pending} onClick={() => requestOne(c.contract_id)}>
+            {bi("Demander D13", "طلب D13")}
+          </Button>
+        );
+      },
+    }),
+  ];
 
   function requestAll() {
     start(async () => {
@@ -194,57 +240,16 @@ export function DataQualityReportView({ report }: { report: DataQualityReport })
             </Button>
           ) : null}
         </div>
-        {report.contracts.length ? (
-          <RhTableWrap>
-            <table className="min-w-full">
-              <thead className="border-b border-border/70 bg-surface-muted/60">
-                <tr>
-                  <th className={rhTh()}>{bi("Salarié", "العامل")}</th>
-                  <th className={rhTh()}>{bi("Chantier", "الورشة")}</th>
-                  <th className={rhTh()}>{bi("Début", "البداية")}</th>
-                  <th className={rhTh()}>{bi("Fin", "النهاية")}</th>
-                  <th className={rhTh()}>{bi("Correction possible", "التصحيح ممكن")}</th>
-                  <th className={rhTh()}>{bi("Décision", "القرار")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.contracts.map((c) => (
-                  <tr key={c.contract_id} className="border-b border-border/60">
-                    <td className={rhTd()}>{c.employee}</td>
-                    <td className={rhTd()}>{c.site_name ?? "—"}</td>
-                    <td className={rhTd()}>{frDate(c.start_date)}</td>
-                    <td className={rhTd()}>{frDate(c.end_date)}</td>
-                    <td className={rhTd()}>
-                      {c.fix_allowed ? (
-                        <RhChip tone="success">{bi("Oui", "نعم")}</RhChip>
-                      ) : (
-                        <RhChip tone="neutral">{bi("Mois traité : exception seulement", "شهر معالج")}</RhChip>
-                      )}
-                    </td>
-                    <td className={rhTd()}>
-                      {c.decision_id ? (
-                        <Link href={`/decisions/${c.decision_id}`} className="font-semibold text-brand hover:underline">
-                          <RhChip tone={decisionStatusTone(c.decision_status ?? "")}>
-                            {decisionStatusLabel(c.decision_status ?? "")}
-                          </RhChip>
-                        </Link>
-                      ) : (
-                        <Button variant="secondary" disabled={pending} onClick={() => requestOne(c.contract_id)}>
-                          {bi("Demander D13", "طلب D13")}
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </RhTableWrap>
-        ) : (
-          <RhEmpty
-            title={bi("Aucun contrat hors du 1er du mois", "لا توجد عقود خارج أول الشهر")}
-            body={bi("Parmi les contrats visibles avec vos droits.", "ضمن العقود المرئية حسب صلاحياتك.")}
-          />
-        )}
+        <DataTable
+          className="mt-3"
+          data={report.contracts}
+          columns={contractColumns}
+          getRowId={(c) => c.contract_id}
+          searchPlaceholder="Rechercher un salarié ou un chantier…"
+          searchText={(c) => [c.employee, c.site_name].filter(Boolean).join(" ")}
+          emptyTitle={bi("Aucun contrat hors du 1er du mois", "لا توجد عقود خارج أول الشهر")}
+          emptyBody={bi("Parmi les contrats visibles avec vos droits.", "ضمن العقود المرئية حسب صلاحياتك.")}
+        />
       </RhPanel>
 
       <RhPanel>

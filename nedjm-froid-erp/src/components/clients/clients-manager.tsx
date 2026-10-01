@@ -1,8 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { Plus } from "lucide-react";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import type { ClientRow } from "@/lib/actions/clients";
+
+const col = dataColumns<ClientRow>();
 
 export function ClientsManager({
   clients,
@@ -13,16 +19,22 @@ export function ClientsManager({
   loadError?: string;
   canWrite: boolean;
 }) {
-  const [q, setQ] = useState("");
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return clients;
-    return clients.filter((client) =>
-      [client.nom_fr, client.nom_ar, client.code_client, client.nif, client.wilaya]
-        .filter(Boolean)
-        .some((value) => value!.toLowerCase().includes(needle)),
-    );
-  }, [clients, q]);
+  const columns = useMemo(
+    () => [
+      col.accessor((c) => c.code_client ?? "", { id: "code", header: "Code", cell: (info) => info.getValue() || "—" }),
+      col.accessor("nom_fr", {
+        header: "Nom",
+        cell: (info) => (
+          <Link href={`/referentiels/clients/${info.row.original.id}`} className="font-semibold text-brand hover:underline">
+            {info.getValue()}
+          </Link>
+        ),
+      }),
+      col.accessor((c) => c.wilaya ?? "", { id: "wilaya", header: "Wilaya", cell: (info) => info.getValue() || "—" }),
+      col.accessor((c) => c.nif ?? "", { id: "nif", header: "NIF", cell: (info) => info.getValue() || "—" }),
+    ],
+    [],
+  );
 
   return (
     <div className="space-y-6">
@@ -35,64 +47,26 @@ export function ClientsManager({
           </p>
         </div>
         {canWrite ? (
-          <Link
-            href="/referentiels/clients/nouveau"
-            className="inline-flex h-10 items-center justify-center rounded-xl bg-brand px-4 text-sm font-semibold text-white shadow-sm shadow-brand/20 hover:bg-brand-hover"
-          >
-            Nouveau client
-          </Link>
+          <Button asChild>
+            <Link href="/referentiels/clients/nouveau">
+              <Plus aria-hidden />
+              Nouveau client
+            </Link>
+          </Button>
         ) : null}
       </div>
 
-      {loadError ? (
-        <div
-          role="alert"
-          className="rounded-md border border-alert-critical/40 bg-alert-critical/10 px-4 py-3 text-sm text-alert-critical"
-        >
-          {loadError}
-        </div>
-      ) : null}
+      {loadError ? <Alert tone="danger">{loadError}</Alert> : null}
 
-      <input
-        className="w-full max-w-md rounded-md border border-border bg-surface px-3 py-2 text-sm"
-        placeholder="Nom, code, NIF, wilaya"
-        value={q}
-        onChange={(event) => setQ(event.target.value)}
+      <DataTable
+        data={clients}
+        columns={columns}
+        getRowId={(c) => c.id}
+        searchPlaceholder="Nom, code, NIF, wilaya"
+        searchText={(c) => [c.nom_fr, c.nom_ar, c.code_client, c.nif, c.wilaya].filter(Boolean).join(" ")}
+        initialSorting={[{ id: "nom_fr", desc: false }]}
+        emptyTitle="Aucun client"
       />
-
-      {filtered.length === 0 ? (
-        <p className="text-sm text-foreground/70">Aucun client.</p>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-surface text-left text-foreground/60">
-              <tr>
-                <th className="px-4 py-3">Code</th>
-                <th className="px-4 py-3">Nom</th>
-                <th className="px-4 py-3">Wilaya</th>
-                <th className="px-4 py-3">NIF</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((client) => (
-                <tr key={client.id} className="border-t border-border">
-                  <td className="px-4 py-3">{client.code_client ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/referentiels/clients/${client.id}`}
-                      className="font-semibold text-brand hover:underline"
-                    >
-                      {client.nom_fr}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3">{client.wilaya ?? "—"}</td>
-                  <td className="px-4 py-3">{client.nif ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }

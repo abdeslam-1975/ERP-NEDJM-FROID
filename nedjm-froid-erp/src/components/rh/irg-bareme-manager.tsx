@@ -36,6 +36,7 @@ import {
   statutoryIrgRule,
 } from "@/lib/hr/statutory";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import {
   RhAlert,
   RhChip,
@@ -137,6 +138,34 @@ const RULE_KINDS = [
 function money(n: number) {
   return new Intl.NumberFormat("fr-DZ", { maximumFractionDigits: 2 }).format(n);
 }
+
+const ruleCol = dataColumns<IrgRuleRow>();
+
+const baseRuleColumns = [
+  ruleCol.accessor("sequence", { header: "#" }),
+  ruleCol.accessor((rule) => RULE_KINDS.find((k) => k.id === rule.kind)?.fr ?? rule.kind, {
+    id: "kind",
+    header: bi("Règle", "القاعدة"),
+    cell: ({ row: { original: rule } }) => (
+      <>
+        {RULE_KINDS.find((k) => k.id === rule.kind)?.fr ?? rule.kind}
+        <span className="mt-0.5 block text-xs text-foreground/60">{RULE_KINDS.find((k) => k.id === rule.kind)?.ar}</span>
+      </>
+    ),
+  }),
+  ruleCol.display({
+    id: "params",
+    header: bi("Paramètres", "المعاملات"),
+    enableSorting: false,
+    meta: { className: "font-mono text-xs" },
+    cell: ({ row: { original: rule } }) => (
+      <>
+        {JSON.stringify(rule.params)}
+        {rule.formula ? ` · ${rule.formula}` : ""}
+      </>
+    ),
+  }),
+];
 
 function numParam(params: Record<string, unknown>, key: string) {
   const v = params[key];
@@ -253,6 +282,29 @@ export function IrgBaremeManager({
   const editBrackets = canEdit && selectedVersion?.status === "DRAFT";
   const editRules = canEdit && selectedSet?.status === "DRAFT";
   const versionFormOpen = canEdit && (!vf.id || selectedVersion?.status === "DRAFT");
+  const ruleColumns = [
+    ...baseRuleColumns,
+    ...(editRules
+      ? [
+          ruleCol.display({
+            id: "actions",
+            header: "",
+            enableSorting: false,
+            enableHiding: false,
+            cell: ({ row: { original: rule } }) => (
+              <>
+                <Button variant="ghost" onClick={() => setRf(ruleForm(rule, setId))}>
+                  {bi("Modifier", "تعديل")}
+                </Button>
+                <Button variant="ghost" onClick={() => removeRule(rule.id)}>
+                  {bi("Supprimer", "حذف")}
+                </Button>
+              </>
+            ),
+          }),
+        ]
+      : []),
+  ];
   const setFormOpen = canEdit && (!sf.id || selectedSet?.status === "DRAFT");
 
   function applyCatalog(next: IrgCatalog, keepVersion?: string, keepSet?: string) {
@@ -801,45 +853,15 @@ export function IrgBaremeManager({
           </div>
         ) : null}
 
-        <RhTableWrap>
-          <table className="min-w-full text-sm">
-            <thead className="border-b border-border/70 bg-surface-muted/80">
-              <tr>
-                <th className={rhTh()}>#</th>
-                <th className={rhTh()}>{bi("Règle", "القاعدة")}</th>
-                <th className={rhTh()}>{bi("Paramètres", "المعاملات")}</th>
-                {editRules ? <th className={rhTh()} /> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {activeRules.map((rule) => (
-                <tr key={rule.id} className="border-t border-border/60">
-                  <td className={rhTd()}>{rule.sequence}</td>
-                  <td className={rhTd()}>
-                    {RULE_KINDS.find((k) => k.id === rule.kind)?.fr ?? rule.kind}
-                    <span className="mt-0.5 block text-xs text-foreground/60">
-                      {RULE_KINDS.find((k) => k.id === rule.kind)?.ar}
-                    </span>
-                  </td>
-                  <td className={`${rhTd()} font-mono text-xs`}>
-                    {JSON.stringify(rule.params)}
-                    {rule.formula ? ` · ${rule.formula}` : ""}
-                  </td>
-                  {editRules ? (
-                    <td className={rhTd()}>
-                      <Button variant="ghost" onClick={() => setRf(ruleForm(rule, setId))}>
-                        {bi("Modifier", "تعديل")}
-                      </Button>
-                      <Button variant="ghost" onClick={() => removeRule(rule.id)}>
-                        {bi("Supprimer", "حذف")}
-                      </Button>
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </RhTableWrap>
+        <DataTable
+          data={activeRules}
+          columns={ruleColumns}
+          getRowId={(rule) => rule.id}
+          searchable={false}
+          pageSize={0}
+          columnToggle={false}
+          emptyTitle={bi("Aucune règle", "لا توجد قواعد")}
+        />
 
         {editRules ? (
           <div className="grid gap-3 rounded-xl border border-dashed border-border/70 p-3 sm:grid-cols-2 lg:grid-cols-3">

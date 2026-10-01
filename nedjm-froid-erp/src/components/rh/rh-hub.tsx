@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { HrDashboardStats } from "@/lib/actions/hr-lookups";
 import { useUiLayout } from "@/components/layout/ui-layout-context";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhPage, bi } from "@/components/rh/rh-ui";
 import { isPathBlocked } from "@/lib/ui/resolve";
 
@@ -176,6 +177,48 @@ const statusDot: Record<string, string> = {
   warning: "bg-alert-warning",
 };
 
+const recentCol = dataColumns<HrDashboardStats["recentEmployees"][number]>();
+
+const recentEmployeeColumns = [
+  recentCol.display({
+    id: "no",
+    header: "No.",
+    enableSorting: false,
+    enableHiding: false,
+    meta: { className: "text-foreground/45" },
+    cell: ({ row }) => row.index + 1,
+  }),
+  recentCol.accessor("matricule", { header: bi("Matricule", "الرقم"), meta: { className: "font-mono text-xs" } }),
+  recentCol.accessor("name", {
+    header: bi("Employé", "العامل"),
+    cell: ({ row }) => {
+      const e = row.original;
+      return (
+        <div className="flex items-center gap-2">
+          {e.photo_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={e.photo_url} alt="" className="h-8 w-8 rounded-full object-cover" />
+          ) : (
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-muted text-[11px] font-bold text-brand">
+              {e.name.slice(0, 1) || "E"}
+            </span>
+          )}
+          <span className="font-medium text-foreground">{e.name}</span>
+        </div>
+      );
+    },
+  }),
+  recentCol.accessor("status", {
+    header: bi("Statut", "الحالة"),
+    cell: (info) => (
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground/70">
+        <span className={`h-2 w-2 rounded-full ${statusDot[statusTone(info.getValue())]}`} />
+        {info.getValue()}
+      </span>
+    ),
+  }),
+];
+
 export function RhHub({ stats }: { stats: HrDashboardStats }) {
   const [siteId, setSiteId] = useState("");
   const [period, setPeriod] = useState(() => {
@@ -344,60 +387,15 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
                 {bi("Voir tout", "عرض الكل")}
               </Link>
             </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-[11px] uppercase tracking-[0.08em] text-foreground/40">
-                    <th className="pb-2 pr-3">No.</th>
-                    <th className="pb-2 pr-3">{bi("Matricule", "الرقم")}</th>
-                    <th className="pb-2 pr-3">{bi("Employé", "العامل")}</th>
-                    <th className="pb-2">{bi("Statut", "الحالة")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stats.recentEmployees.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="py-8 text-center text-foreground/45">
-                        {bi("Aucun employé", "لا يوجد عمال")}
-                      </td>
-                    </tr>
-                  ) : (
-                    stats.recentEmployees.map((e, i) => {
-                      const tone = statusTone(e.status);
-                      return (
-                        <tr key={e.id} className="border-t border-border/60">
-                          <td className="py-3 pr-3 text-foreground/45">{i + 1}</td>
-                          <td className="py-3 pr-3 font-mono text-xs">{e.matricule}</td>
-                          <td className="py-3 pr-3">
-                            <div className="flex items-center gap-2">
-                              {e.photo_url ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={e.photo_url}
-                                  alt=""
-                                  className="h-8 w-8 rounded-full object-cover"
-                                />
-                              ) : (
-                                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-muted text-[11px] font-bold text-brand">
-                                  {e.name.slice(0, 1) || "E"}
-                                </span>
-                              )}
-                              <span className="font-medium text-foreground">{e.name}</span>
-                            </div>
-                          </td>
-                          <td className="py-3">
-                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground/70">
-                              <span className={`h-2 w-2 rounded-full ${statusDot[tone]}`} />
-                              {e.status}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              data={stats.recentEmployees}
+              columns={recentEmployeeColumns}
+              getRowId={(e) => e.id}
+              searchable={false}
+              pageSize={0}
+              columnToggle={false}
+              emptyTitle={bi("Aucun employé", "لا يوجد عمال")}
+            />
           </div>
 
           <div className="rounded-2xl border border-border/80 bg-surface p-5 shadow-[var(--card-shadow)]">

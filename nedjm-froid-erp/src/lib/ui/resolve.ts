@@ -7,6 +7,13 @@ import {
   type UiIcon,
   type UiItemDef,
 } from "@/lib/ui/registry";
+import {
+  DEFAULT_DESIGN,
+  EMPTY_USER_PREFS,
+  scopeSelectors,
+  type DesignSettings,
+  type UserDisplayPrefs,
+} from "@/lib/ui/design";
 
 export type UiOverride = {
   sort_order: number | null;
@@ -28,11 +35,20 @@ export type UiLayoutData = {
   hidden: string[];
   overrides: Record<string, UiOverride>;
   theme: UiTheme;
+  design: DesignSettings;
+  prefs: UserDisplayPrefs;
 };
 
 export const EMPTY_THEME: UiTheme = { brand_color: null, sidebar_color: null, app_name: null, app_subtitle: null };
 
-export const DEFAULT_LAYOUT: UiLayoutData = { unrestricted: true, hidden: [], overrides: {}, theme: EMPTY_THEME };
+export const DEFAULT_LAYOUT: UiLayoutData = {
+  unrestricted: true,
+  hidden: [],
+  overrides: {},
+  theme: EMPTY_THEME,
+  design: DEFAULT_DESIGN,
+  prefs: EMPTY_USER_PREFS,
+};
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
@@ -201,18 +217,20 @@ export function resolveNav(data: UiLayoutData): ResolvedNavGroup[] {
 }
 
 /** CSS variables for the chosen colours (values are validated hex codes, so the text is safe to inline). */
-export function themeCss(theme: UiTheme): string {
+export function themeCss(theme: UiTheme, scope = ":root"): string {
+  const sel = scopeSelectors(scope);
+  const both = `${sel.light},${sel.dark}`;
   const rules: string[] = [];
   if (isHexColor(theme.brand_color)) {
     const c = theme.brand_color;
     rules.push(
-      `:root,.dark{--color-brand:${c};--color-brand-hover:color-mix(in srgb,${c} 85%,black);}`,
-      `:root{--color-brand-muted:color-mix(in srgb,${c} 12%,white);}`,
-      `.dark{--color-brand-muted:color-mix(in srgb,${c} 22%,#0b1224);}`,
+      `${both}{--color-brand:${c};--color-brand-hover:color-mix(in srgb,${c} 85%,black);}`,
+      `${sel.light}{--color-brand-muted:color-mix(in srgb,${c} 12%,white);}`,
+      `${sel.dark}{--color-brand-muted:color-mix(in srgb,${c} 22%,#0b1224);}`,
     );
   }
   if (isHexColor(theme.sidebar_color)) {
-    rules.push(`:root,.dark{--sidebar:${theme.sidebar_color};}`);
+    rules.push(`${both}{--sidebar:${theme.sidebar_color};}`);
   }
   return rules.join("");
 }

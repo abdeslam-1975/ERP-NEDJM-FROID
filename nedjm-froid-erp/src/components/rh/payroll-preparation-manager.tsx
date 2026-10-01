@@ -13,18 +13,8 @@ import {
 } from "@/lib/hr/payroll-preparation";
 import { legacyRuleCount, proposalStatusLabel, ruleFamilyLabel } from "@/lib/decisions/catalog";
 import { Button } from "@/components/ui/button";
-import {
-  RhAlert,
-  RhChip,
-  RhPageHeader,
-  RhPanel,
-  RhSectionTitle,
-  RhStat,
-  RhTableWrap,
-  rhInput,
-  rhTd,
-  rhTh,
-} from "@/components/rh/rh-ui";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
+import { RhAlert, RhChip, RhPageHeader, RhPanel, RhSectionTitle, RhStat, rhInput } from "@/components/rh/rh-ui";
 
 const LEVEL: Record<PreparationLevel, { label: string; tone: "success" | "neutral" | "warning" | "danger" }> = {
   ok: { label: "Conforme", tone: "success" },
@@ -35,6 +25,76 @@ const LEVEL: Record<PreparationLevel, { label: string; tone: "success" | "neutra
 
 const money = (n: number) => n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const monthLabel = (iso: string | null) => (iso ? `${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "—");
+
+const blockerCol = dataColumns<MonthPreparation["blockers"][number]>();
+
+const blockerColumns = [
+  blockerCol.accessor("title", { header: "Règle" }),
+  blockerCol.accessor((b) => ruleFamilyLabel(b.family), { id: "family", header: "Famille" }),
+  blockerCol.accessor((b) => proposalStatusLabel(b.status), { id: "status", header: "Statut" }),
+  blockerCol.accessor((b) => b.month ?? "", {
+    id: "month",
+    header: "Mois concerné",
+    cell: ({ row }) => monthLabel(row.original.month),
+  }),
+  blockerCol.display({
+    id: "actions",
+    header: "",
+    enableSorting: false,
+    enableHiding: false,
+    cell: ({ row }) => {
+      const b = row.original;
+      return (
+        <Link
+          className="text-xs font-semibold text-brand"
+          href={b.application_decision_id ? `/decisions/${b.application_decision_id}` : "/rh/legal/propositions"}
+        >
+          {b.application_decision_id ? "Décision D2" : "Proposition"}
+        </Link>
+      );
+    },
+  }),
+];
+
+const simulationCol = dataColumns<MonthPreparation["simulations"][number]>();
+
+const simulationColumns = [
+  simulationCol.accessor("created_at", {
+    header: "Calculée le",
+    cell: (info) => new Date(info.getValue()).toLocaleString("fr-FR"),
+  }),
+  simulationCol.accessor("slip_count", { header: "Salariés", meta: { className: "tabular-nums" } }),
+  simulationCol.accessor((s) => s.totals.gross, {
+    id: "gross",
+    header: "Brut",
+    meta: { align: "right", className: "tabular-nums" },
+    cell: (info) => money(info.getValue()),
+  }),
+  simulationCol.accessor((s) => s.totals.irg, {
+    id: "irg",
+    header: "IRG",
+    meta: { align: "right", className: "tabular-nums" },
+    cell: (info) => money(info.getValue()),
+  }),
+  simulationCol.accessor((s) => s.totals.net, {
+    id: "net",
+    header: "Net simulé",
+    meta: { align: "right", className: "tabular-nums" },
+    cell: (info) => money(info.getValue()),
+  }),
+  simulationCol.accessor("blockers", { header: "Règles en attente", meta: { className: "tabular-nums" } }),
+  simulationCol.display({
+    id: "actions",
+    header: "",
+    enableSorting: false,
+    enableHiding: false,
+    cell: ({ row }) => (
+      <a className="text-xs font-semibold text-brand" href={`/api/rh/paie/simulations?simulation=${row.original.id}`}>
+        Exporter (Excel)
+      </a>
+    ),
+  }),
+];
 
 export function PayrollPreparationManager({
   preparation: p,
@@ -154,37 +214,16 @@ export function PayrollPreparationManager({
       {p.blockers.length ? (
         <RhPanel>
           <RhSectionTitle>Règles en attente (bloquent la paie réelle)</RhSectionTitle>
-          <RhTableWrap>
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr>
-                  <th className={rhTh()}>Règle</th>
-                  <th className={rhTh()}>Famille</th>
-                  <th className={rhTh()}>Statut</th>
-                  <th className={rhTh()}>Mois concerné</th>
-                  <th className={rhTh()} />
-                </tr>
-              </thead>
-              <tbody>
-                {p.blockers.map((b) => (
-                  <tr key={b.proposal_id} className="border-t border-border/60">
-                    <td className={rhTd()}>{b.title}</td>
-                    <td className={rhTd()}>{ruleFamilyLabel(b.family)}</td>
-                    <td className={rhTd()}>{proposalStatusLabel(b.status)}</td>
-                    <td className={rhTd()}>{monthLabel(b.month)}</td>
-                    <td className={rhTd()}>
-                      <Link
-                        className="text-xs font-semibold text-brand"
-                        href={b.application_decision_id ? `/decisions/${b.application_decision_id}` : "/rh/legal/propositions"}
-                      >
-                        {b.application_decision_id ? "Décision D2" : "Proposition"}
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </RhTableWrap>
+          <DataTable
+            data={p.blockers}
+            columns={blockerColumns}
+            getRowId={(b) => b.proposal_id}
+            searchPlaceholder="Rechercher une règle…"
+            searchText={(b) => [b.title, ruleFamilyLabel(b.family)].join(" ")}
+            pageSize={0}
+            columnToggle={false}
+            emptyTitle="Aucune règle en attente"
+          />
         </RhPanel>
       ) : null}
 
@@ -259,38 +298,15 @@ export function PayrollPreparationManager({
         {!p.can.read_salary ? (
           <p className="text-sm text-foreground/60">Montants réservés aux profils autorisés à lire les salaires.</p>
         ) : p.simulations.length ? (
-          <RhTableWrap>
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr>
-                  <th className={rhTh()}>Calculée le</th>
-                  <th className={rhTh()}>Salariés</th>
-                  <th className={rhTh()}>Brut</th>
-                  <th className={rhTh()}>IRG</th>
-                  <th className={rhTh()}>Net simulé</th>
-                  <th className={rhTh()}>Règles en attente</th>
-                  <th className={rhTh()} />
-                </tr>
-              </thead>
-              <tbody>
-                {p.simulations.map((s) => (
-                  <tr key={s.id} className="border-t border-border/60">
-                    <td className={rhTd()}>{new Date(s.created_at).toLocaleString("fr-FR")}</td>
-                    <td className={rhTd()}>{s.slip_count}</td>
-                    <td className={rhTd()}>{money(s.totals.gross)}</td>
-                    <td className={rhTd()}>{money(s.totals.irg)}</td>
-                    <td className={rhTd()}>{money(s.totals.net)}</td>
-                    <td className={rhTd()}>{s.blockers}</td>
-                    <td className={rhTd()}>
-                      <a className="text-xs font-semibold text-brand" href={`/api/rh/paie/simulations?simulation=${s.id}`}>
-                        Exporter (Excel)
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </RhTableWrap>
+          <DataTable
+            data={p.simulations}
+            columns={simulationColumns}
+            getRowId={(s) => s.id}
+            searchable={false}
+            pageSize={0}
+            columnToggle={false}
+            emptyTitle="Aucune simulation pour ce mois."
+          />
         ) : (
           <p className="text-sm text-foreground/60">Aucune simulation pour ce mois.</p>
         )}

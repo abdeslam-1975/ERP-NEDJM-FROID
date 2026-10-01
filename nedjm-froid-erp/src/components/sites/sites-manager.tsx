@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { useCallback, useMemo, useState, useTransition, type ReactNode } from "react";
 import {
   createSite,
   toggleSiteActive,
@@ -10,6 +10,13 @@ import {
   type SiteRow,
 } from "@/lib/actions/sites";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { AlertBadge } from "@/components/castle/alert-badge";
 import { SiteWilayaHistory } from "@/components/sites/site-wilaya-history";
 import { WILAYAS } from "@/lib/referentiels/wilayas";
@@ -59,6 +66,8 @@ function toPayload(form: FormState) {
   };
 }
 
+const col = dataColumns<SiteRow>();
+
 function RegimeBadge({ regime }: { regime: string | undefined }) {
   if (regime === "BTPH") {
     return <AlertBadge label="BTPH" tone="info" />;
@@ -86,7 +95,6 @@ export function SitesManager({
   const [form, setForm] = useState<FormState>(emptyForm(activityCodes[0]?.id ?? ""));
   const [formError, setFormError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
-  const [menuId, setMenuId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const title = editing ? "Modifier le chantier" : "Nouveau chantier";
@@ -104,26 +112,28 @@ export function SitesManager({
     setOpen(true);
   }
 
-  function openEdit(site: SiteRow) {
-    setEditing(site);
-    setForm({
-      code: site.code,
-      name_fr: site.name_fr,
-      name_ar: site.name_ar ?? "",
-      activity_code_id: site.activity_code_id ?? activityCodes[0]?.id ?? "",
-      wilaya: site.wilaya ?? "",
-      wilaya_code: site.wilaya_code ?? "",
-      commune: site.commune ?? "",
-      irg_zone_code: site.irg_zone_code ?? "",
-      latitude: site.latitude == null ? "" : String(site.latitude),
-      longitude: site.longitude == null ? "" : String(site.longitude),
-      is_active: site.is_active,
-    });
-    setFormError(null);
-    setFieldErrors({});
-    setOpen(true);
-    setMenuId(null);
-  }
+  const openEdit = useCallback(
+    (site: SiteRow) => {
+      setEditing(site);
+      setForm({
+        code: site.code,
+        name_fr: site.name_fr,
+        name_ar: site.name_ar ?? "",
+        activity_code_id: site.activity_code_id ?? activityCodes[0]?.id ?? "",
+        wilaya: site.wilaya ?? "",
+        wilaya_code: site.wilaya_code ?? "",
+        commune: site.commune ?? "",
+        irg_zone_code: site.irg_zone_code ?? "",
+        latitude: site.latitude == null ? "" : String(site.latitude),
+        longitude: site.longitude == null ? "" : String(site.longitude),
+        is_active: site.is_active,
+      });
+      setFormError(null);
+      setFieldErrors({});
+      setOpen(true);
+    },
+    [activityCodes],
+  );
 
   function submit() {
     setFormError(null);
@@ -185,8 +195,7 @@ export function SitesManager({
     });
   }
 
-  function onToggleActive(site: SiteRow) {
-    setMenuId(null);
+  const onToggleActive = useCallback((site: SiteRow) => {
     startTransition(async () => {
       const next = !site.is_active;
       const result = await toggleSiteActive({ id: site.id, is_active: next });
@@ -200,7 +209,84 @@ export function SitesManager({
         ),
       );
     });
-  }
+  }, []);
+
+  const columns = useMemo(
+    () => [
+      col.accessor("code", {
+        header: "Code",
+        meta: { className: "font-mono text-xs font-semibold text-brand" },
+      }),
+      col.accessor("name_fr", {
+        header: "Nom",
+        cell: ({ row: { original: site } }) => (
+          <>
+            <div className="font-medium">{site.name_fr}</div>
+            {site.name_ar ? (
+              <div className="text-xs text-foreground/55" dir="rtl">
+                {site.name_ar}
+              </div>
+            ) : null}
+          </>
+        ),
+      }),
+      col.accessor((site) => site.activity?.code ?? "", {
+        id: "activity",
+        header: "Activité",
+        cell: ({ row: { original: site } }) => (
+          <div className="flex flex-col gap-1">
+            <RegimeBadge regime={site.activity?.regime} />
+            <span className="text-xs text-foreground/55">
+              {site.activity?.code ?? "—"}
+            </span>
+          </div>
+        ),
+      }),
+      col.accessor((site) => (site.wilaya_code ? `${site.wilaya_code} · ${site.wilaya ?? ""}` : site.wilaya ?? "—"), {
+        id: "wilaya",
+        header: "Wilaya",
+        meta: { className: "text-foreground/80" },
+        cell: (info) => (
+          <>
+            {info.getValue()}
+            {info.row.original.wilaya_code ? null : (
+              <span className="block text-xs text-amber-700">non confirmée</span>
+            )}
+          </>
+        ),
+      }),
+      col.accessor((site) => (site.is_active ? "Actif" : "Inactif"), {
+        id: "status",
+        header: "Statut",
+        cell: (info) => (
+          <AlertBadge label={info.getValue()} tone={info.row.original.is_active ? "success" : "critical"} />
+        ),
+      }),
+      col.display({
+        id: "actions",
+        header: "Actions",
+        enableSorting: false,
+        enableHiding: false,
+        meta: { align: "right" },
+        cell: ({ row: { original: site } }) => (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="secondary">
+                Menu
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => openEdit(site)}>Modifier</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onToggleActive(site)} disabled={pending}>
+                {site.is_active ? "Désactiver" : "Réactiver"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ),
+      }),
+    ],
+    [openEdit, onToggleActive, pending],
+  );
 
   return (
     <div className="space-y-6">
@@ -251,91 +337,14 @@ export function SitesManager({
           </Button>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-surface">
-          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
-            <thead className="bg-surface-muted text-xs uppercase tracking-wide text-foreground/60">
-              <tr>
-                <th className="px-4 py-3 font-semibold">Code</th>
-                <th className="px-4 py-3 font-semibold">Nom</th>
-                <th className="px-4 py-3 font-semibold">Activité</th>
-                <th className="px-4 py-3 font-semibold">Wilaya</th>
-                <th className="px-4 py-3 font-semibold">Statut</th>
-                <th className="px-4 py-3 font-semibold text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sites.map((site) => (
-                <tr key={site.id} className="border-t border-border">
-                  <td className="px-4 py-3 font-mono text-xs font-semibold text-brand">
-                    {site.code}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="font-medium">{site.name_fr}</div>
-                    {site.name_ar ? (
-                      <div className="text-xs text-foreground/55" dir="rtl">
-                        {site.name_ar}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-col gap-1">
-                      <RegimeBadge regime={site.activity?.regime} />
-                      <span className="text-xs text-foreground/55">
-                        {site.activity?.code ?? "—"}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-foreground/80">
-                    {site.wilaya_code
-                      ? `${site.wilaya_code} · ${site.wilaya ?? ""}`
-                      : site.wilaya ?? "—"}
-                    {site.wilaya_code ? null : (
-                      <span className="block text-xs text-amber-700">non confirmée</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {site.is_active ? (
-                      <AlertBadge label="Actif" tone="success" />
-                    ) : (
-                      <AlertBadge label="Inactif" tone="critical" />
-                    )}
-                  </td>
-                  <td className="relative px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      className="rounded-md border border-border px-2 py-1 text-xs font-semibold hover:bg-brand-muted"
-                      onClick={() =>
-                        setMenuId((id) => (id === site.id ? null : site.id))
-                      }
-                      aria-expanded={menuId === site.id}
-                    >
-                      Menu
-                    </button>
-                    {menuId === site.id ? (
-                      <div className="absolute right-4 z-10 mt-1 w-44 rounded-md border border-border bg-surface py-1 shadow-sm">
-                        <button
-                          type="button"
-                          className="block w-full px-3 py-2 text-left text-sm hover:bg-brand-muted"
-                          onClick={() => openEdit(site)}
-                        >
-                          Modifier
-                        </button>
-                        <button
-                          type="button"
-                          className="block w-full px-3 py-2 text-left text-sm hover:bg-brand-muted"
-                          onClick={() => onToggleActive(site)}
-                          disabled={pending}
-                        >
-                          {site.is_active ? "Désactiver" : "Réactiver"}
-                        </button>
-                      </div>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          data={sites}
+          columns={columns}
+          getRowId={(site) => site.id}
+          searchPlaceholder="Code, nom, wilaya"
+          searchText={(site) => [site.code, site.name_fr, site.name_ar, site.wilaya, site.wilaya_code, site.activity?.code].filter(Boolean).join(" ")}
+          emptyTitle="Aucun chantier enregistré"
+        />
       )}
 
       {open ? (

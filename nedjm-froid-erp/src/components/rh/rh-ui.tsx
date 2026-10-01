@@ -1,6 +1,11 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Fragment } from "react";
-import { useUiTabs } from "@/components/layout/ui-layout-context";
+import { FileText } from "lucide-react";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+
+export { RhModal, RhTabs } from "@/components/rh/rh-ui-client";
 
 /* —— tokens (Tailwind) —— */
 export const rhInput =
@@ -171,9 +176,11 @@ export function RhPanel({
 }) {
   return (
     <div
-      className={`overflow-hidden rounded-2xl border border-border/80 bg-surface shadow-[var(--card-shadow)] ${
-        padded ? "p-4 sm:p-5" : ""
-      } ${className}`}
+      className={cn(
+        "overflow-hidden rounded-2xl border border-[var(--card-border)] bg-[var(--card-bg)] shadow-[var(--card-shadow)] backdrop-blur-[var(--card-blur)]",
+        padded && "p-4 sm:p-5",
+        className,
+      )}
     >
       {children}
     </div>
@@ -188,47 +195,6 @@ export function RhToolbar({ children }: { children: ReactNode }) {
   );
 }
 
-export function RhTabs({
-  items,
-  value,
-  onChange,
-  uiKey,
-}: {
-  items: { id: string; label: string }[];
-  value: string;
-  onChange: (id: string) => void;
-  /** Tabset of the interface catalogue (src/lib/ui/registry.ts): hidden / ordered / renamed per role. */
-  uiKey?: string;
-}) {
-  const shown = useUiTabs(uiKey, items, value, onChange);
-  return (
-    <div
-      role="tablist"
-      className="flex flex-wrap gap-1 rounded-2xl border border-border/60 bg-surface-muted/60 p-1"
-    >
-      {shown.map((item) => {
-        const active = item.id === value;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            className={`rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
-              active
-                ? "bg-brand text-white shadow-sm shadow-brand/25"
-                : "text-foreground/65 hover:bg-surface hover:text-foreground"
-            }`}
-            onClick={() => onChange(item.id)}
-          >
-            {item.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export function RhAlert({
   tone = "danger",
   children,
@@ -236,31 +202,14 @@ export function RhAlert({
   tone?: "danger" | "success" | "warning" | "info";
   children: ReactNode;
 }) {
-  const styles = {
-    danger: "border-red-200/80 bg-red-50 text-red-900 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-100",
-    success:
-      "border-emerald-200/80 bg-emerald-50 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-100",
-    warning:
-      "border-amber-200/80 bg-amber-50 text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100",
-    info: "border-sky-200/80 bg-sky-50 text-sky-950 dark:border-sky-900/40 dark:bg-sky-950/40 dark:text-sky-100",
-  }[tone];
-  return (
-    <div className={`rounded-xl border px-4 py-3 text-sm leading-relaxed ${styles}`}>{children}</div>
-  );
+  return <Alert tone={tone}>{children}</Alert>;
 }
 
 export function RhEmpty({ title, body }: { title: string; body?: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 px-6 py-14 text-center">
       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-muted text-brand">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
-          <path
-            d="M7 8h10M7 12h7M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-          />
-        </svg>
+        <FileText className="size-5" aria-hidden />
       </div>
       <p className="font-display text-base font-semibold text-foreground">{title}</p>
       {body ? <p className="max-w-sm text-sm text-foreground/55">{body}</p> : null}
@@ -270,7 +219,7 @@ export function RhEmpty({ title, body }: { title: string; body?: string }) {
 
 export function RhTableWrap({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-border/70 bg-surface">
+    <div className="overflow-x-auto rounded-2xl border border-[var(--card-border)] bg-[var(--card-bg)] shadow-[var(--card-shadow)]">
       {children}
     </div>
   );
@@ -284,79 +233,6 @@ export function rhTd() {
   return "px-3.5 py-3 align-middle text-sm text-foreground/85";
 }
 
-export function RhModal({
-  title,
-  subtitle,
-  tabs,
-  children,
-  footer,
-  onClose,
-  wide = false,
-  size,
-}: {
-  title: ReactNode;
-  subtitle?: ReactNode;
-  tabs?: ReactNode;
-  children: ReactNode;
-  footer?: ReactNode;
-  onClose: () => void;
-  wide?: boolean;
-  /** xl = fiche employé / large forms */
-  size?: "md" | "lg" | "xl";
-}) {
-  const maxW =
-    size === "xl" || (wide && !size)
-      ? "sm:max-w-[min(100rem,98vw)]"
-      : size === "lg"
-        ? "sm:max-w-5xl"
-        : wide
-          ? "sm:max-w-5xl"
-          : "sm:max-w-3xl";
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-slate-950/50 p-0 backdrop-blur-md sm:items-stretch sm:p-2 lg:p-3">
-      <div
-        role="dialog"
-        aria-modal="true"
-        className={`flex h-[100dvh] w-full flex-col overflow-hidden border border-white/40 bg-surface shadow-[0_24px_80px_-20px_rgba(15,23,42,0.45)] ring-1 ring-black/5 sm:h-[calc(100dvh-1rem)] sm:rounded-[1.15rem] lg:h-[calc(100dvh-1.5rem)] ${maxW}`}
-      >
-        <div className="h-1 w-full shrink-0 bg-gradient-to-r from-brand via-[#5b8aff] to-brand/40" />
-        <div className="shrink-0 border-b border-border/50 bg-[linear-gradient(180deg,color-mix(in_oklab,var(--surface)_92%,white)_0%,var(--surface-muted)_100%)] px-4 pb-2.5 pt-3 sm:px-5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <h3 className="font-display text-base font-semibold tracking-tight text-foreground sm:text-lg">
-                {title}
-              </h3>
-              {subtitle ? (
-                <div className="mt-1 text-sm text-foreground/55">{subtitle}</div>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-border/70 bg-surface/80 text-foreground/60 shadow-sm transition hover:bg-surface-muted hover:text-foreground"
-              aria-label="Fermer"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-                <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-              </svg>
-            </button>
-          </div>
-          {tabs ? <div className="mt-3.5">{tabs}</div> : null}
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[radial-gradient(1200px_400px_at_50%_-10%,color-mix(in_oklab,var(--color-brand-muted)_70%,transparent),transparent)] px-2 py-2 sm:px-4 sm:py-2.5">
-          {children}
-        </div>
-        {footer ? (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border/50 bg-surface/90 px-3 py-2 backdrop-blur-md sm:px-4">
-            {footer}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 export function RhChip({
   children,
   tone = "neutral",
@@ -364,18 +240,7 @@ export function RhChip({
   children: ReactNode;
   tone?: "neutral" | "brand" | "success" | "warning" | "danger";
 }) {
-  const map = {
-    neutral: "bg-surface-muted text-foreground/70",
-    brand: "bg-brand-muted text-brand",
-    success: "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200",
-    warning: "bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-100",
-    danger: "bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-100",
-  }[tone];
-  return (
-    <span className={`inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-semibold ${map}`}>
-      {children}
-    </span>
-  );
+  return <Badge tone={tone}>{children}</Badge>;
 }
 
 export function RhIconButton(props: ButtonHTMLAttributes<HTMLButtonElement>) {
@@ -383,7 +248,10 @@ export function RhIconButton(props: ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       type="button"
-      className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 bg-surface text-foreground/70 transition hover:bg-surface-muted hover:text-foreground disabled:opacity-50 ${className}`}
+      className={cn(
+        "inline-flex h-10 w-10 items-center justify-center rounded-[var(--btn-radius)] border border-border/70 bg-surface text-foreground/70 transition hover:bg-surface-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand/50 focus-visible:outline-none active:scale-95 disabled:opacity-50 [&_svg]:size-4",
+        className,
+      )}
       {...rest}
     >
       {children}
@@ -408,7 +276,7 @@ export function RhStat({
   value: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-surface px-4 py-3">
+    <div className="rounded-2xl border border-[var(--card-border)] bg-[var(--card-bg)] px-4 py-3 shadow-[var(--card-shadow)]">
       <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/45">
         {label}
       </p>

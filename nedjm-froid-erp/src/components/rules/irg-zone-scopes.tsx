@@ -14,9 +14,12 @@ import {
   type RuleSourceForm,
 } from "@/components/rules/rule-ui";
 import { Button } from "@/components/ui/button";
-import { RhAlert, RhChip, RhField, RhTableWrap, rhInput, rhSelect, rhTd, rhTh } from "@/components/rh/rh-ui";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
+import { RhAlert, RhChip, RhField, rhInput, rhSelect } from "@/components/rh/rh-ui";
 
 type Grouping = { key: string; label: string; codes: string[] };
+
+const zoneCol = dataColumns<ZoneScopeCatalog["zones"][number]>();
 
 function scopeAt(scopes: ZoneScopeRow[], zone: string, month: string) {
   return scopes.find(
@@ -41,7 +44,87 @@ export function IrgZoneScopes({
   const [dialog, setDialog] = useState<string | null>(null);
   const month = period.month_start;
   const names = useMemo(() => new Map(catalog.wilayas.map((w) => [w.code, w.name_fr])), [catalog.wilayas]);
-  const wilayaText = (codes: string[]) => codes.map((c) => `${c} ${names.get(c) ?? ""}`.trim()).join(", ");
+
+  const columns = useMemo(() => {
+    const wilayaText = (codes: string[]) => codes.map((c) => `${c} ${names.get(c) ?? ""}`.trim()).join(", ");
+    return [
+      zoneCol.accessor("label_fr", {
+        header: "Zone",
+        meta: { className: "align-top" },
+        cell: ({ row }) => (
+          <>
+            <span className="font-medium">{row.original.label_fr}</span>
+            <span className="mt-0.5 block font-mono text-xs text-foreground/55">{row.original.code}</span>
+          </>
+        ),
+      }),
+      zoneCol.display({
+        id: "current",
+        header: `Wilayas · paie de ${frMonth(month)}`,
+        meta: { label: "Wilayas", className: "align-top" },
+        cell: ({ row }) => {
+          const z = row.original;
+          const current = scopeAt(catalog.scopes, z.code, month);
+          return current ? (
+            <>
+              <RhChip tone="success">Portée approuvée dès {frMonth(current.effective_from)}</RhChip>
+              <span className="mt-1 block text-xs">{wilayaText(current.wilaya_codes)}</span>
+              {current.scope_mode === "GROUP" && current.group_from ? (
+                <span className="mt-0.5 block text-xs text-foreground/55">
+                  Reprise du groupement {current.group_from}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <RhChip tone="warning">Catalogue, non daté</RhChip>
+              <span className="mt-1 block text-xs">
+                {z.catalog_wilayas.length ? z.catalog_wilayas.join(", ") : "Aucune wilaya"}
+              </span>
+            </>
+          );
+        },
+      }),
+      zoneCol.display({
+        id: "future",
+        header: "À venir",
+        meta: { className: "align-top" },
+        cell: ({ row }) => {
+          const future = catalog.scopes
+            .filter((s) => s.zone_code === row.original.code && s.effective_from > month)
+            .sort((a, b) => a.effective_from.localeCompare(b.effective_from));
+          return future.length ? (
+            <ul className="space-y-1 text-xs">
+              {future.map((s) => (
+                <li key={s.id}>
+                  <RhChip tone="warning">
+                    Dès {frMonth(s.effective_from)} : {s.wilaya_codes.length} wilayas
+                  </RhChip>
+                  {s.effective_to ? <span className="ml-1">jusqu&apos;au {frDay(s.effective_to)}</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <span className="text-foreground/40">—</span>
+          );
+        },
+      }),
+      ...(canEdit
+        ? [
+            zoneCol.display({
+              id: "actions",
+              header: "",
+              meta: { align: "right", className: "whitespace-nowrap align-top" },
+              cell: ({ row }) => (
+                <Button variant="secondary" size="sm" onClick={() => setDialog(row.original.code)}>
+                  Proposer une portée
+                </Button>
+              ),
+            }),
+          ]
+        : []),
+    ];
+  }, [canEdit, catalog.scopes, month, names]);
 
   const groupings = useMemo<Grouping[]>(() => {
     const list: Grouping[] = catalog.scopes.map((s) => ({
@@ -65,86 +148,16 @@ export function IrgZoneScopes({
         Une portée datée remplace la liste du catalogue à partir de son mois. Le choix de zone fait sur le site reste
         prioritaire. Chaque changement de portée est une proposition : approbation, puis décision D2.
       </p>
-      <div className="mt-3">
-        <RhTableWrap>
-          <table className="min-w-full text-sm">
-            <thead className="border-b border-border/70 bg-surface-muted/80">
-              <tr>
-                <th className={rhTh()}>Zone</th>
-                <th className={rhTh()}>Wilayas · paie de {frMonth(month)}</th>
-                <th className={rhTh()}>À venir</th>
-                {canEdit ? <th className={rhTh()} /> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {!catalog.zones.length ? (
-                <tr>
-                  <td className={`${rhTd()} text-foreground/55`} colSpan={canEdit ? 4 : 3}>
-                    Aucune zone IRG active.
-                  </td>
-                </tr>
-              ) : null}
-              {catalog.zones.map((z) => {
-                const current = scopeAt(catalog.scopes, z.code, month);
-                const future = catalog.scopes
-                  .filter((s) => s.zone_code === z.code && s.effective_from > month)
-                  .sort((a, b) => a.effective_from.localeCompare(b.effective_from));
-                return (
-                  <tr key={z.code} className="border-b border-border/60 align-top">
-                    <td className={rhTd()}>
-                      <span className="font-medium">{z.label_fr}</span>
-                      <span className="mt-0.5 block font-mono text-xs text-foreground/55">{z.code}</span>
-                    </td>
-                    <td className={rhTd()}>
-                      {current ? (
-                        <>
-                          <RhChip tone="success">Portée approuvée dès {frMonth(current.effective_from)}</RhChip>
-                          <span className="mt-1 block text-xs">{wilayaText(current.wilaya_codes)}</span>
-                          {current.scope_mode === "GROUP" && current.group_from ? (
-                            <span className="mt-0.5 block text-xs text-foreground/55">
-                              Reprise du groupement {current.group_from}
-                            </span>
-                          ) : null}
-                        </>
-                      ) : (
-                        <>
-                          <RhChip tone="warning">Catalogue, non daté</RhChip>
-                          <span className="mt-1 block text-xs">
-                            {z.catalog_wilayas.length ? z.catalog_wilayas.join(", ") : "Aucune wilaya"}
-                          </span>
-                        </>
-                      )}
-                    </td>
-                    <td className={rhTd()}>
-                      {future.length ? (
-                        <ul className="space-y-1 text-xs">
-                          {future.map((s) => (
-                            <li key={s.id}>
-                              <RhChip tone="warning">
-                                Dès {frMonth(s.effective_from)} : {s.wilaya_codes.length} wilayas
-                              </RhChip>
-                              {s.effective_to ? <span className="ml-1">jusqu&apos;au {frDay(s.effective_to)}</span> : null}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <span className="text-foreground/40">—</span>
-                      )}
-                    </td>
-                    {canEdit ? (
-                      <td className={`${rhTd()} whitespace-nowrap text-right`}>
-                        <Button variant="secondary" onClick={() => setDialog(z.code)}>
-                          Proposer une portée
-                        </Button>
-                      </td>
-                    ) : null}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </RhTableWrap>
-      </div>
+      <DataTable
+        className="mt-3"
+        data={catalog.zones}
+        columns={columns}
+        getRowId={(z) => z.code}
+        searchable={false}
+        columnToggle={false}
+        pageSize={0}
+        emptyTitle="Aucune zone IRG active."
+      />
       {dialog ? (
         <ZoneScopeDialog
           zone={catalog.zones.find((z) => z.code === dialog)!}

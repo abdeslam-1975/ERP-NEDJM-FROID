@@ -2,33 +2,24 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhChip, RhPanel, RhTabs, rhInput } from "@/components/rh/rh-ui";
+import { AppearancePanel } from "@/components/settings/appearance-panel";
 import {
   resetTabsetLayout,
   saveTabsetLayout,
-  saveUiTheme,
   setRoleItemsHidden,
   type UiControlData,
 } from "@/lib/actions/ui-control";
 import { NAV_GROUPS_TABSET, UI_LEVELS, UI_NAV_GROUPS, UI_TABSETS, findItem } from "@/lib/ui/registry";
-import {
-  EMPTY_THEME,
-  isHexColor,
-  resolveTabset,
-  type UiLayoutData,
-  type UiOverride,
-  type UiTheme,
-} from "@/lib/ui/resolve";
+import { DEFAULT_LAYOUT, resolveTabset, type UiLayoutData, type UiOverride } from "@/lib/ui/resolve";
 
 type Panel = "visibility" | "order" | "appearance";
 type HiddenRow = { role_id: string; item_key: string };
 
-const DEFAULT_BRAND = "#3b6ef5";
-const DEFAULT_SIDEBAR = "#1a2f8a";
-
 function catalogView(overrides: Record<string, UiOverride>): UiLayoutData {
-  return { unrestricted: true, hidden: [], overrides, theme: EMPTY_THEME };
+  return { ...DEFAULT_LAYOUT, overrides };
 }
 
 export function UiControlManager({ initial }: { initial: UiControlData }) {
@@ -52,7 +43,7 @@ export function UiControlManager({ initial }: { initial: UiControlData }) {
       ) : panel === "order" ? (
         <OrderPanel overrides={overrides} setOverrides={setOverrides} />
       ) : (
-        <AppearancePanel initial={initial.theme} />
+        <AppearancePanel initialTheme={initial.theme} initialDesign={initial.design} designReady={initial.designReady} />
       )}
     </div>
   );
@@ -354,21 +345,21 @@ function OrderEditor({
             <div className="flex flex-col">
               <button
                 type="button"
-                className="rounded px-2 text-foreground/60 hover:bg-surface disabled:opacity-30"
+                className="rounded-md px-1.5 py-0.5 text-foreground/60 hover:bg-surface hover:text-foreground disabled:opacity-30"
                 onClick={() => move(index, -1)}
                 disabled={index === 0}
                 aria-label="Monter"
               >
-                ▲
+                <ChevronUp className="size-4" aria-hidden />
               </button>
               <button
                 type="button"
-                className="rounded px-2 text-foreground/60 hover:bg-surface disabled:opacity-30"
+                className="rounded-md px-1.5 py-0.5 text-foreground/60 hover:bg-surface hover:text-foreground disabled:opacity-30"
                 onClick={() => move(index, 1)}
                 disabled={index === rows.length - 1}
                 aria-label="Descendre"
               >
-                ▼
+                <ChevronDown className="size-4" aria-hidden />
               </button>
             </div>
             <span className="w-6 text-center text-xs font-semibold text-foreground/45">{index + 1}</span>
@@ -422,144 +413,3 @@ function OrderEditor({
   );
 }
 
-function AppearancePanel({ initial }: { initial: UiTheme }) {
-  const router = useRouter();
-  const [brand, setBrand] = useState<string | null>(initial.brand_color);
-  const [sidebar, setSidebar] = useState<string | null>(initial.sidebar_color);
-  const [appName, setAppName] = useState(initial.app_name ?? "");
-  const [appSubtitle, setAppSubtitle] = useState(initial.app_subtitle ?? "");
-  const [message, setMessage] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
-  const [pending, startTransition] = useTransition();
-  const shownBrand = brand ?? DEFAULT_BRAND;
-  const shownSidebar = sidebar ?? DEFAULT_SIDEBAR;
-
-  function submit(theme: UiTheme, text: string) {
-    setMessage(null);
-    startTransition(async () => {
-      const res = await saveUiTheme(theme);
-      if (!res.ok) {
-        setMessage({ tone: "danger", text: res.error });
-        return;
-      }
-      setBrand(res.data.brand_color);
-      setSidebar(res.data.sidebar_color);
-      setAppName(res.data.app_name ?? "");
-      setAppSubtitle(res.data.app_subtitle ?? "");
-      setMessage({ tone: "success", text });
-      router.refresh();
-    });
-  }
-
-  return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <RhPanel className="space-y-4">
-        {message ? <RhAlert tone={message.tone}>{message.text}</RhAlert> : null}
-        <ColorField
-          label="Couleur principale (boutons, onglets actifs) · اللون الرئيسي"
-          value={brand}
-          fallback={DEFAULT_BRAND}
-          onChange={setBrand}
-        />
-        <ColorField
-          label="Couleur du menu latéral · لون القائمة الجانبية"
-          value={sidebar}
-          fallback={DEFAULT_SIDEBAR}
-          onChange={setSidebar}
-        />
-        <label className="block text-sm font-medium text-foreground/75">
-          Nom affiché en haut du menu · اسم البرنامج
-          <input className={rhInput} value={appName} placeholder="NEDJM FROID" maxLength={40} onChange={(e) => setAppName(e.target.value)} />
-        </label>
-        <label className="block text-sm font-medium text-foreground/75">
-          Sous-titre · العنوان الفرعي
-          <input
-            className={rhInput}
-            value={appSubtitle}
-            placeholder="ERP · نجم فرويد"
-            maxLength={60}
-            onChange={(e) => setAppSubtitle(e.target.value)}
-          />
-        </label>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            disabled={pending}
-            onClick={() =>
-              submit(
-                { brand_color: brand, sidebar_color: sidebar, app_name: appName, app_subtitle: appSubtitle },
-                "Apparence enregistrée. · تم حفظ المظهر.",
-              )
-            }
-          >
-            Enregistrer · حفظ
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={pending}
-            onClick={() => submit(EMPTY_THEME, "Apparence par défaut rétablie. · تم استرجاع المظهر الأصلي.")}
-          >
-            Rétablir par défaut · استرجاع الأصل
-          </Button>
-        </div>
-      </RhPanel>
-
-      <RhPanel padded={false}>
-        <p className="border-b border-border/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-foreground/55">
-          Aperçu · معاينة
-        </p>
-        <div className="flex">
-          <div className="w-40 space-y-3 p-3 text-white" style={{ backgroundColor: shownSidebar }}>
-            <div>
-              <p className="text-sm font-bold">{appName.trim() || "NEDJM FROID"}</p>
-              <p className="text-[10px] opacity-70">{appSubtitle.trim() || "ERP · نجم فرويد"}</p>
-            </div>
-            <p className="rounded-lg px-2 py-1.5 text-xs font-semibold" style={{ backgroundColor: shownBrand }}>
-              Module actif
-            </p>
-            <p className="px-2 text-xs opacity-80">Autre module</p>
-          </div>
-          <div className="flex-1 space-y-3 p-3">
-            <span className="inline-block rounded-lg px-3 py-1.5 text-xs font-semibold text-white" style={{ backgroundColor: shownBrand }}>
-              Bouton
-            </span>
-            <p className="text-xs font-semibold" style={{ color: shownBrand }}>
-              Lien
-            </p>
-          </div>
-        </div>
-      </RhPanel>
-    </div>
-  );
-}
-
-function ColorField({
-  label,
-  value,
-  fallback,
-  onChange,
-}: {
-  label: string;
-  value: string | null;
-  fallback: string;
-  onChange: (value: string | null) => void;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <p className="text-sm font-medium text-foreground/75">{label}</p>
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          type="color"
-          className="h-10 w-16 cursor-pointer rounded-lg border border-border bg-surface"
-          value={isHexColor(value) ? value : fallback}
-          onChange={(e) => onChange(e.target.value)}
-          aria-label={label}
-        />
-        <code className="text-xs text-foreground/60">{value ?? `${fallback} (par défaut)`}</code>
-        {value ? (
-          <Button variant="ghost" className="h-8 px-2.5 text-xs" onClick={() => onChange(null)}>
-            Couleur par défaut
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  );
-}

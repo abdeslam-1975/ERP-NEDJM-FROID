@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type ReactNode } from "react";
+import { useMemo, useState, useTransition, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhChip, RhPageHeader, RhPanel } from "@/components/rh/rh-ui";
 import { decideDecision, executeDecision, type DecisionDetail } from "@/lib/actions/decisions";
 import type {
@@ -71,6 +72,258 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
     </div>
   );
 }
+
+const compactTable = { searchable: false, columnToggle: false, pageSize: 0 } as const;
+const amountMeta = { align: "right", className: "tabular-nums" } as const;
+
+type DraftSlip = NonNullable<DecisionDetail["assignment"]>["draft_slips"][number];
+type RuleSlip = NonNullable<DecisionDetail["rule_application"]>["slips"][number];
+type DeclarationMonth = DeclarationDecisionContext["months"][number] & { reasons: string[] };
+
+const draftSlipCol = dataColumns<DraftSlip>();
+const draftSlipColumns = [
+  draftSlipCol.accessor("period", { header: "Mois" }),
+  draftSlipCol.accessor("run_site", { header: "Paie brouillon" }),
+  draftSlipCol.accessor("irg_amount", { header: "IRG actuel", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+  draftSlipCol.accessor("net_payable", { header: "Net actuel", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+];
+
+const ruleSlipCol = dataColumns<RuleSlip>();
+const ruleSlipColumns = [
+  ruleSlipCol.accessor("period", { header: "Mois" }),
+  ruleSlipCol.accessor((s) => payrollRunStatusLabel(s.status), { id: "status", header: "Statut" }),
+  ruleSlipCol.accessor("runs", { header: "Paies", meta: amountMeta }),
+  ruleSlipCol.accessor("slips", { header: "Bulletins", meta: amountMeta }),
+  ruleSlipCol.display({
+    id: "effect",
+    header: "Effet",
+    cell: ({ row: { original: s } }) =>
+      s.affected ? (
+        <RhChip tone="warning">Signalée, recalcul sur décision D3</RhChip>
+      ) : s.status === "DRAFT" ? (
+        <RhChip>Mois antérieur, inchangée</RhChip>
+      ) : (
+        <RhChip>Pour information, jamais modifiée</RhChip>
+      ),
+  }),
+];
+
+const reopenTransferCol = dataColumns<PayrollReopenContext["transfers"][number]>();
+const reopenTransferColumns = [
+  reopenTransferCol.accessor("batch_no", { header: "Lot" }),
+  reopenTransferCol.accessor("mode", { header: "Mode" }),
+  reopenTransferCol.accessor((t) => TRANSFER_STATUS[t.status] ?? t.status, {
+    id: "status",
+    header: "Statut",
+    cell: (info) => {
+      const status = info.row.original.status;
+      return (
+        <RhChip tone={status === "EXECUTED" ? "danger" : status === "CANCELLED" ? "neutral" : "warning"}>{info.getValue()}</RhChip>
+      );
+    },
+  }),
+  reopenTransferCol.accessor("lines", { header: "Lignes", meta: amountMeta }),
+  reopenTransferCol.accessor("amount", { header: "Montant", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+  reopenTransferCol.accessor((t) => t.executed_at ?? "", {
+    id: "executed_at",
+    header: "Exécution",
+    cell: (info) => (info.getValue() ? dateTime(info.getValue()) : "—"),
+  }),
+];
+
+const repriseCol = dataColumns<PayrollChainContext["reprise_months"][number]>();
+const repriseColumns = [
+  repriseCol.accessor("period", { header: "Mois" }),
+  repriseCol.accessor((m) => (m.open ? "Ouverts" : "Figés"), {
+    id: "params",
+    header: "Paramètres",
+    cell: (info) => (info.row.original.open ? <RhChip tone="warning">Ouverts</RhChip> : <RhChip>Figés</RhChip>),
+  }),
+  repriseCol.accessor("runs", { header: "Paies", meta: amountMeta }),
+  repriseCol.accessor("validated", { header: "Validées", meta: amountMeta }),
+  repriseCol.accessor("slips", { header: "Bulletins", meta: amountMeta }),
+];
+
+const transferSlipCol = dataColumns<TransferDecisionContext["slips"][number]>();
+const transferSlipColumns = [
+  transferSlipCol.accessor((s) => `${s.matricule} · ${s.employee}`, { id: "employee", header: "Salarié" }),
+  transferSlipCol.accessor("net_payable", { header: "Net", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+  transferSlipCol.display({
+    id: "reasons",
+    header: "Motifs",
+    cell: ({ row }) => (
+      <div className="flex flex-wrap gap-1">
+        {row.original.reasons.map((r) => (
+          <RhChip key={r} tone="warning">
+            {transferReasonLabel(r)}
+          </RhChip>
+        ))}
+      </div>
+    ),
+  }),
+];
+
+const internalTransferCol = dataColumns<TransferDecisionContext["internal_transfers"][number]>();
+const internalTransferColumns = [
+  internalTransferCol.accessor("batch_no", {
+    header: "Lot",
+    cell: ({ row: { original: t } }) => (
+      <>
+        {t.batch_no}
+        {t.double_payment_risk ? (
+          <span className="ml-1">
+            <RhChip tone="danger">Risque de double paiement</RhChip>
+          </span>
+        ) : null}
+      </>
+    ),
+  }),
+  internalTransferCol.accessor((t) => TRANSFER_STATUS[t.status] ?? t.status, { id: "status", header: "Statut" }),
+  internalTransferCol.accessor("lines", { header: "Lignes", meta: amountMeta }),
+  internalTransferCol.accessor("amount", { header: "Montant", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+  internalTransferCol.accessor((t) => t.executed_at ?? "", {
+    id: "executed_at",
+    header: "Exécution",
+    cell: (info) => (info.getValue() ? dateTime(info.getValue()) : "—"),
+  }),
+];
+
+const conflictCol = dataColumns<AttendanceConflictContext["conflicts"][number]>();
+const conflictColumns = [
+  conflictCol.accessor((l) => `${l.matricule} · ${l.employee}`, {
+    id: "employee",
+    header: "Salarié",
+    meta: { className: "align-top" },
+    cell: (info) => (
+      <>
+        {info.getValue()}
+        <div className="text-xs text-foreground/55">{info.row.original.source_ref}</div>
+      </>
+    ),
+  }),
+  conflictCol.accessor("work_date", { header: "Date", meta: { className: "align-top" }, cell: (info) => frDate(info.getValue()) }),
+  conflictCol.accessor("imported_code", {
+    header: "Import",
+    meta: { className: "align-top" },
+    cell: ({ row: { original: l } }) => (
+      <>
+        <b>{l.imported_code}</b> <span className="text-xs text-foreground/60">({l.site_name})</span>
+      </>
+    ),
+  }),
+  conflictCol.accessor(
+    (l) =>
+      l.existing.length
+        ? l.existing.map((e) => existingValueText(e, e.site_name)).join(" ; ")
+        : "Congé approuvé (aucune présence saisie)",
+    { id: "existing", header: "Déjà enregistré", meta: { className: "align-top text-xs" } },
+  ),
+  conflictCol.display({
+    id: "kinds",
+    header: "Conflit",
+    meta: { className: "align-top" },
+    cell: ({ row: { original: l } }) => (
+      <div className="flex flex-wrap gap-1">
+        {l.kinds.map((k) => (
+          <RhChip key={k} tone="warning">
+            {conflictLabel(k)}
+          </RhChip>
+        ))}
+        {l.resolution ? (
+          <RhChip tone="brand">{l.resolution === "IMPORT" ? "Import retenu" : "Existant conservé"}</RhChip>
+        ) : null}
+      </div>
+    ),
+  }),
+];
+
+const pairCol = dataColumns<CodeMappingContext["pairs"][number]>();
+const pairColumns = [
+  pairCol.accessor("source_code", { header: "Code du fichier", meta: { className: "font-mono" } }),
+  pairCol.accessor("legend_code", {
+    header: "Code du référentiel proposé",
+    cell: ({ row: { original: p } }) => (
+      <>
+        <span className="font-mono">{p.legend_code}</span> — {p.legend_label}
+      </>
+    ),
+  }),
+  pairCol.accessor("lines", { header: "Lignes", meta: amountMeta }),
+  pairCol.accessor(
+    (p) => (p.policy ? `${p.policy.legend_code} (${p.policy.status === "ACTIVE" ? "active" : "à confirmer"})` : "—"),
+    { id: "policy", header: "Politique existante", meta: { className: "text-xs" } },
+  ),
+];
+
+const blockerCol = dataColumns<UnapprovedRulesContext["blockers"][number]>();
+const blockerColumns = [
+  blockerCol.accessor((b) => b.title || "Proposition", {
+    id: "title",
+    header: "Règle",
+    cell: (info) => (
+      <Link className="font-semibold text-brand hover:underline" href={`/rh/legal/propositions?id=${info.row.original.proposal_id}`}>
+        {info.getValue()}
+      </Link>
+    ),
+  }),
+  blockerCol.accessor((b) => ruleFamilyLabel(b.family), { id: "family", header: "Famille" }),
+  blockerCol.accessor((b) => proposalStatusLabel(b.status), { id: "status", header: "Statut" }),
+  blockerCol.accessor((b) => b.month ?? "", {
+    id: "month",
+    header: "Mois concerné",
+    cell: (info) => (info.getValue() ? frDate(info.getValue()).slice(3) : "—"),
+  }),
+];
+
+const versionCol = dataColumns<LegendCoefficientContext["versions"][number]>();
+const versionColumns = [
+  versionCol.accessor("effective_from", {
+    header: "À partir de",
+    cell: (info) => (info.getValue() <= "1900-01-01" ? "Origine" : frDate(info.getValue()).slice(3)),
+  }),
+  versionCol.accessor("coefficient", { header: "Coefficient", meta: { className: "tabular-nums" } }),
+  versionCol.accessor((v) => (v.decision_id ? "Décision D14" : "Valeur initiale"), {
+    id: "origin",
+    header: "Origine",
+    cell: (info) =>
+      info.row.original.decision_id ? (
+        <Link className="text-brand hover:underline" href={`/decisions/${info.row.original.decision_id}`}>
+          Décision D14
+        </Link>
+      ) : (
+        "Valeur initiale"
+      ),
+  }),
+];
+
+const declarationMonthCol = dataColumns<DeclarationMonth>();
+const declarationMonthColumns = [
+  declarationMonthCol.accessor("period", { header: "Mois" }),
+  declarationMonthCol.accessor("runs", {
+    header: "Paies (validées)",
+    meta: amountMeta,
+    cell: ({ row: { original: m } }) => `${m.runs} (${m.validated})`,
+  }),
+  declarationMonthCol.accessor("slips", { header: "Bulletins", meta: amountMeta }),
+  declarationMonthCol.accessor("gross", { header: "Brut", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+  declarationMonthCol.accessor("irg", { header: "IRG", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+  declarationMonthCol.accessor((m) => m.reasons.length, {
+    id: "reasons",
+    header: "Décision requise",
+    cell: ({ row: { original: m } }) =>
+      m.reasons.length ? (
+        <div className="flex flex-wrap gap-1">
+          {m.reasons.map((r) => (
+            <RhChip key={r} tone="warning">
+              {declarationReasonLabel(r)}
+            </RhChip>
+          ))}
+        </div>
+      ) : (
+        <span className="text-foreground/55">Non</span>
+      ),
+  }),
+];
 
 export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }) {
   const router = useRouter();
@@ -321,26 +574,13 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
             {d.assignment.zone_notice}
           </p>
           {d.assignment.draft_slips.length ? (
-            <table className="mt-3 min-w-full text-sm">
-              <thead className="text-left text-xs uppercase text-foreground/55">
-                <tr>
-                  <th className="py-1 pr-4">Mois</th>
-                  <th className="py-1 pr-4">Paie brouillon</th>
-                  <th className="py-1 pr-4 text-right">IRG actuel</th>
-                  <th className="py-1 text-right">Net actuel</th>
-                </tr>
-              </thead>
-              <tbody>
-                {d.assignment.draft_slips.map((s) => (
-                  <tr key={s.slip_id} className="border-t border-border/60">
-                    <td className="py-1 pr-4">{s.period}</td>
-                    <td className="py-1 pr-4">{s.run_site}</td>
-                    <td className="py-1 pr-4 text-right tabular-nums">{money(s.irg_amount)}</td>
-                    <td className="py-1 text-right tabular-nums">{money(s.net_payable)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              className="mt-3"
+              data={d.assignment.draft_slips}
+              columns={draftSlipColumns}
+              getRowId={(s) => s.slip_id}
+              {...compactTable}
+            />
           ) : null}
         </RhPanel>
       ) : null}
@@ -419,36 +659,13 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
           <h4 className="mt-4 text-sm font-semibold">Bulletins des mois concernés</h4>
           <p className="mt-1 text-sm text-foreground/75">{ruleApplicationSlipNotice(d.rule_application.slips)}</p>
           {d.rule_application.slips.length ? (
-            <table className="mt-2 min-w-full text-sm">
-              <thead className="text-left text-xs uppercase text-foreground/55">
-                <tr>
-                  <th className="py-1 pr-4">Mois</th>
-                  <th className="py-1 pr-4">Statut</th>
-                  <th className="py-1 pr-4 text-right">Paies</th>
-                  <th className="py-1 pr-4 text-right">Bulletins</th>
-                  <th className="py-1">Effet</th>
-                </tr>
-              </thead>
-              <tbody>
-                {d.rule_application.slips.map((s) => (
-                  <tr key={`${s.period_key}-${s.status}`} className="border-t border-border/60">
-                    <td className="py-1 pr-4">{s.period}</td>
-                    <td className="py-1 pr-4">{payrollRunStatusLabel(s.status)}</td>
-                    <td className="py-1 pr-4 text-right tabular-nums">{s.runs}</td>
-                    <td className="py-1 pr-4 text-right tabular-nums">{s.slips}</td>
-                    <td className="py-1">
-                      {s.affected ? (
-                        <RhChip tone="warning">Signalée, recalcul sur décision D3</RhChip>
-                      ) : s.status === "DRAFT" ? (
-                        <RhChip>Mois antérieur, inchangée</RhChip>
-                      ) : (
-                        <RhChip>Pour information, jamais modifiée</RhChip>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable
+              className="mt-2"
+              data={d.rule_application.slips}
+              columns={ruleSlipColumns}
+              getRowId={(s) => `${s.period_key}-${s.status}`}
+              {...compactTable}
+            />
           ) : null}
         </RhPanel>
       ) : null}
@@ -637,34 +854,13 @@ function ReopenPanel({ c }: { c: PayrollReopenContext }) {
 
       <h4 className="mt-4 text-sm font-semibold">Virements préparés ou exécutés</h4>
       {c.transfers.length ? (
-        <table className="mt-2 min-w-full text-sm">
-          <thead className="text-left text-xs uppercase text-foreground/55">
-            <tr>
-              <th className="py-1 pr-4">Lot</th>
-              <th className="py-1 pr-4">Mode</th>
-              <th className="py-1 pr-4">Statut</th>
-              <th className="py-1 pr-4 text-right">Lignes</th>
-              <th className="py-1 pr-4 text-right">Montant</th>
-              <th className="py-1">Exécution</th>
-            </tr>
-          </thead>
-          <tbody>
-            {c.transfers.map((t) => (
-              <tr key={t.batch_no} className="border-t border-border/60">
-                <td className="py-1 pr-4">{t.batch_no}</td>
-                <td className="py-1 pr-4">{t.mode}</td>
-                <td className="py-1 pr-4">
-                  <RhChip tone={t.status === "EXECUTED" ? "danger" : t.status === "CANCELLED" ? "neutral" : "warning"}>
-                    {TRANSFER_STATUS[t.status] ?? t.status}
-                  </RhChip>
-                </td>
-                <td className="py-1 pr-4 text-right tabular-nums">{t.lines}</td>
-                <td className="py-1 pr-4 text-right tabular-nums">{money(t.amount)}</td>
-                <td className="py-1">{t.executed_at ? dateTime(t.executed_at) : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          className="mt-2"
+          data={c.transfers}
+          columns={reopenTransferColumns}
+          getRowId={(t) => t.batch_no}
+          {...compactTable}
+        />
       ) : (
         <p className="mt-1 text-sm text-foreground/60">
           Aucun lot de virement enregistré dans l&apos;application pour ces bulletins (ce qui ne prouve pas qu&apos;aucun paiement
@@ -742,30 +938,14 @@ function ChainPanel({ c }: { c: PayrollChainContext }) {
         {open.length} mois de reprise (janvier–août 2026) encore ouvert(s) aux changements de paramètres.
         {c.pending_rules ? ` ${c.pending_rules} proposition(s) de règle en cours visent un mois de reprise.` : ""}
       </p>
-      <table className="mt-3 min-w-full text-sm">
-        <thead className="text-left text-xs uppercase text-foreground/55">
-          <tr>
-            <th className="py-1 pr-4">Mois</th>
-            <th className="py-1 pr-4">Paramètres</th>
-            <th className="py-1 pr-4 text-right">Paies</th>
-            <th className="py-1 pr-4 text-right">Validées</th>
-            <th className="py-1 text-right">Bulletins</th>
-          </tr>
-        </thead>
-        <tbody>
-          {c.reprise_months.map((m) => (
-            <tr key={m.month} className="border-t border-border/60">
-              <td className="py-1 pr-4">{m.period}</td>
-              <td className="py-1 pr-4">
-                {m.open ? <RhChip tone="warning">Ouverts</RhChip> : <RhChip>Figés</RhChip>}
-              </td>
-              <td className="py-1 pr-4 text-right tabular-nums">{m.runs}</td>
-              <td className="py-1 pr-4 text-right tabular-nums">{m.validated}</td>
-              <td className="py-1 text-right tabular-nums">{m.slips}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable
+        className="mt-3"
+        data={c.reprise_months}
+        columns={repriseColumns}
+        getRowId={(m) => m.month}
+        emptyTitle="Aucun mois de reprise"
+        {...compactTable}
+      />
       <p className="mt-3 rounded-xl border border-amber-200/80 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
         Les mois de reprise ont été payés et déclarés hors de l&apos;application. Ce choix ne modifie aucun bulletin : il fixe
         seulement jusqu&apos;où leurs paramètres restent modifiables. Il est définitif.
@@ -802,66 +982,24 @@ function TransferPanel({ c }: { c: TransferDecisionContext }) {
       <RiskNotices notices={transferRiskNotices(c)} />
 
       <h4 className="mt-4 text-sm font-semibold">Bulletins demandés et motifs du blocage</h4>
-      <table className="mt-2 min-w-full text-sm">
-        <thead className="text-left text-xs uppercase text-foreground/55">
-          <tr>
-            <th className="py-1 pr-4">Salarié</th>
-            <th className="py-1 pr-4 text-right">Net</th>
-            <th className="py-1">Motifs</th>
-          </tr>
-        </thead>
-        <tbody>
-          {c.slips.map((s) => (
-            <tr key={s.slip_id} className="border-t border-border/60">
-              <td className="py-1 pr-4">
-                {s.matricule} · {s.employee}
-              </td>
-              <td className="py-1 pr-4 text-right tabular-nums">{money(s.net_payable)}</td>
-              <td className="py-1">
-                <div className="flex flex-wrap gap-1">
-                  {s.reasons.map((r) => (
-                    <RhChip key={r} tone="warning">
-                      {transferReasonLabel(r)}
-                    </RhChip>
-                  ))}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable
+        className="mt-2"
+        data={c.slips}
+        columns={transferSlipColumns}
+        getRowId={(s) => s.slip_id}
+        emptyTitle="Aucun bulletin"
+        {...compactTable}
+      />
 
       <h4 className="mt-4 text-sm font-semibold">1 · Virements de l&apos;application (ces salariés, ce mois)</h4>
       {c.internal_transfers.length ? (
-        <table className="mt-2 min-w-full text-sm">
-          <thead className="text-left text-xs uppercase text-foreground/55">
-            <tr>
-              <th className="py-1 pr-4">Lot</th>
-              <th className="py-1 pr-4">Statut</th>
-              <th className="py-1 pr-4 text-right">Lignes</th>
-              <th className="py-1 pr-4 text-right">Montant</th>
-              <th className="py-1">Exécution</th>
-            </tr>
-          </thead>
-          <tbody>
-            {c.internal_transfers.map((t) => (
-              <tr key={t.batch_no} className="border-t border-border/60">
-                <td className="py-1 pr-4">
-                  {t.batch_no}
-                  {t.double_payment_risk ? (
-                    <span className="ml-1">
-                      <RhChip tone="danger">Risque de double paiement</RhChip>
-                    </span>
-                  ) : null}
-                </td>
-                <td className="py-1 pr-4">{TRANSFER_STATUS[t.status] ?? t.status}</td>
-                <td className="py-1 pr-4 text-right tabular-nums">{t.lines}</td>
-                <td className="py-1 pr-4 text-right tabular-nums">{money(t.amount)}</td>
-                <td className="py-1">{t.executed_at ? dateTime(t.executed_at) : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          className="mt-2"
+          data={c.internal_transfers}
+          columns={internalTransferColumns}
+          getRowId={(t) => t.batch_no}
+          {...compactTable}
+        />
       ) : (
         <p className="mt-1 text-sm text-foreground/60">Aucun lot de virement enregistré dans l&apos;application.</p>
       )}
@@ -899,50 +1037,17 @@ function AttendanceConflictPanel({ c }: { c: AttendanceConflictContext }) {
       </dl>
       <RiskNotices notices={attendanceConflictNotices(c)} />
       <h4 className="mt-4 text-sm font-semibold">Données concernées : valeur importée et valeur déjà enregistrée</h4>
-      <div className="mt-2 overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="text-left text-xs uppercase text-foreground/55">
-            <tr>
-              <th className="py-1 pr-4">Salarié</th>
-              <th className="py-1 pr-4">Date</th>
-              <th className="py-1 pr-4">Import</th>
-              <th className="py-1 pr-4">Déjà enregistré</th>
-              <th className="py-1">Conflit</th>
-            </tr>
-          </thead>
-          <tbody>
-            {c.conflicts.map((l) => (
-              <tr key={l.line_id} className="border-t border-border/60 align-top">
-                <td className="py-1 pr-4">
-                  {l.matricule} · {l.employee}
-                  <div className="text-xs text-foreground/55">{l.source_ref}</div>
-                </td>
-                <td className="py-1 pr-4">{frDate(l.work_date)}</td>
-                <td className="py-1 pr-4">
-                  <b>{l.imported_code}</b> <span className="text-xs text-foreground/60">({l.site_name})</span>
-                </td>
-                <td className="py-1 pr-4 text-xs">
-                  {l.existing.length
-                    ? l.existing.map((e) => existingValueText(e, e.site_name)).join(" ; ")
-                    : "Congé approuvé (aucune présence saisie)"}
-                </td>
-                <td className="py-1">
-                  <div className="flex flex-wrap gap-1">
-                    {l.kinds.map((k) => (
-                      <RhChip key={k} tone="warning">
-                        {conflictLabel(k)}
-                      </RhChip>
-                    ))}
-                    {l.resolution ? (
-                      <RhChip tone="brand">{l.resolution === "IMPORT" ? "Import retenu" : "Existant conservé"}</RhChip>
-                    ) : null}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        className="mt-2"
+        data={c.conflicts}
+        columns={conflictColumns}
+        getRowId={(l) => l.line_id}
+        searchable={c.conflicts.length > 10}
+        searchPlaceholder="Salarié, matricule, code"
+        columnToggle={false}
+        pageSize={c.conflicts.length > 50 ? 50 : 0}
+        emptyTitle="Aucun conflit"
+      />
     </RhPanel>
   );
 }
@@ -960,32 +1065,14 @@ function CodeMappingPanel({ c }: { c: CodeMappingContext }) {
           <Fact label="Motif de la demande">{c.reason || "—"}</Fact>
         </div>
       </dl>
-      <table className="mt-4 min-w-full text-sm">
-        <thead className="text-left text-xs uppercase text-foreground/55">
-          <tr>
-            <th className="py-1 pr-4">Code du fichier</th>
-            <th className="py-1 pr-4">Code du référentiel proposé</th>
-            <th className="py-1 pr-4 text-right">Lignes</th>
-            <th className="py-1">Politique existante</th>
-          </tr>
-        </thead>
-        <tbody>
-          {c.pairs.map((p) => (
-            <tr key={p.source_code} className="border-t border-border/60">
-              <td className="py-1 pr-4 font-mono">{p.source_code}</td>
-              <td className="py-1 pr-4">
-                <span className="font-mono">{p.legend_code}</span> — {p.legend_label}
-              </td>
-              <td className="py-1 pr-4 text-right tabular-nums">{p.lines}</td>
-              <td className="py-1 text-xs">
-                {p.policy
-                  ? `${p.policy.legend_code} (${p.policy.status === "ACTIVE" ? "active" : "à confirmer"})`
-                  : "—"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable
+        className="mt-4"
+        data={c.pairs}
+        columns={pairColumns}
+        getRowId={(p) => p.source_code}
+        emptyTitle="Aucune correspondance"
+        {...compactTable}
+      />
       <p className="mt-3 text-xs text-foreground/60">
         « Pour ce lot seulement » convertit les codes de ce lot puis l&apos;analyse à nouveau. « Comme politique » propose
         en plus la correspondance pour les prochains lots : elle ne s&apos;appliquera qu&apos;après une seconde confirmation
@@ -1031,30 +1118,14 @@ function UnapprovedRulesPanel({ c }: { c: UnapprovedRulesContext }) {
         <Fact label="Présences validées du mois">{c.attendance_days}</Fact>
         <Fact label="Paie du mois">{c.run_status ? payrollRunStatusLabel(c.run_status) : "Aucune"}</Fact>
       </dl>
-      <table className="mt-4 min-w-full text-sm">
-        <thead className="text-left text-xs uppercase text-foreground/55">
-          <tr>
-            <th className="py-1 pr-4">Règle</th>
-            <th className="py-1 pr-4">Famille</th>
-            <th className="py-1 pr-4">Statut</th>
-            <th className="py-1">Mois concerné</th>
-          </tr>
-        </thead>
-        <tbody>
-          {c.blockers.map((b) => (
-            <tr key={b.proposal_id} className="border-t border-border/60">
-              <td className="py-1 pr-4">
-                <Link className="font-semibold text-brand hover:underline" href={`/rh/legal/propositions?id=${b.proposal_id}`}>
-                  {b.title || "Proposition"}
-                </Link>
-              </td>
-              <td className="py-1 pr-4">{ruleFamilyLabel(b.family)}</td>
-              <td className="py-1 pr-4">{proposalStatusLabel(b.status)}</td>
-              <td className="py-1">{b.month ? frDate(b.month).slice(3) : "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable
+        className="mt-4"
+        data={c.blockers}
+        columns={blockerColumns}
+        getRowId={(b) => b.proposal_id}
+        emptyTitle="Aucune règle en attente"
+        {...compactTable}
+      />
       {legacy.length ? (
         <p className="mt-3 text-xs text-foreground/60">
           Héritées (avertissement) : {legacy.map((r) => r.code).join(", ")}.
@@ -1080,32 +1151,14 @@ function LegendCoefficientPanel({ c }: { c: LegendCoefficientContext }) {
           <Fact label="Motif de la demande">{c.reason || "—"}</Fact>
         </div>
       </dl>
-      <table className="mt-4 min-w-full text-sm">
-        <thead className="text-left text-xs uppercase text-foreground/55">
-          <tr>
-            <th className="py-1 pr-4">À partir de</th>
-            <th className="py-1 pr-4">Coefficient</th>
-            <th className="py-1">Origine</th>
-          </tr>
-        </thead>
-        <tbody>
-          {c.versions.map((v) => (
-            <tr key={v.effective_from} className="border-t border-border/60">
-              <td className="py-1 pr-4">{v.effective_from <= "1900-01-01" ? "Origine" : frDate(v.effective_from).slice(3)}</td>
-              <td className="py-1 pr-4 tabular-nums">{v.coefficient}</td>
-              <td className="py-1">
-                {v.decision_id ? (
-                  <Link className="text-brand hover:underline" href={`/decisions/${v.decision_id}`}>
-                    Décision D14
-                  </Link>
-                ) : (
-                  "Valeur initiale"
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable
+        className="mt-4"
+        data={c.versions}
+        columns={versionColumns}
+        getRowId={(v) => v.effective_from}
+        emptyTitle="Aucune version"
+        {...compactTable}
+      />
       <RiskNotices notices={legendCoefficientNotices(c)} />
     </RhPanel>
   );
@@ -1133,6 +1186,10 @@ function LegalEntryPathPanel({ c }: { c: LegalEntryPathContext }) {
 }
 
 function DeclarationPanel({ c }: { c: DeclarationDecisionContext }) {
+  const months = useMemo(
+    () => c.months.map((m) => ({ ...m, reasons: c.month_reasons[String(m.month)] ?? [] })),
+    [c.months, c.month_reasons],
+  );
   return (
     <RhPanel>
       <h3 className="font-display text-base font-semibold">
@@ -1142,47 +1199,14 @@ function DeclarationPanel({ c }: { c: DeclarationDecisionContext }) {
       <RiskNotices notices={declarationRiskNotices(c)} />
 
       <h4 className="mt-4 text-sm font-semibold">Mois couverts par le fichier</h4>
-      <table className="mt-2 min-w-full text-sm">
-        <thead className="text-left text-xs uppercase text-foreground/55">
-          <tr>
-            <th className="py-1 pr-4">Mois</th>
-            <th className="py-1 pr-4 text-right">Paies (validées)</th>
-            <th className="py-1 pr-4 text-right">Bulletins</th>
-            <th className="py-1 pr-4 text-right">Brut</th>
-            <th className="py-1 pr-4 text-right">IRG</th>
-            <th className="py-1">Décision requise</th>
-          </tr>
-        </thead>
-        <tbody>
-          {c.months.map((m) => {
-            const reasons = c.month_reasons[String(m.month)] ?? [];
-            return (
-              <tr key={m.month} className="border-t border-border/60">
-                <td className="py-1 pr-4">{m.period}</td>
-                <td className="py-1 pr-4 text-right tabular-nums">
-                  {m.runs} ({m.validated})
-                </td>
-                <td className="py-1 pr-4 text-right tabular-nums">{m.slips}</td>
-                <td className="py-1 pr-4 text-right tabular-nums">{money(m.gross)}</td>
-                <td className="py-1 pr-4 text-right tabular-nums">{money(m.irg)}</td>
-                <td className="py-1">
-                  {reasons.length ? (
-                    <div className="flex flex-wrap gap-1">
-                      {reasons.map((r) => (
-                        <RhChip key={r} tone="warning">
-                          {declarationReasonLabel(r)}
-                        </RhChip>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-foreground/55">Non</span>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <DataTable
+        className="mt-2"
+        data={months}
+        columns={declarationMonthColumns}
+        getRowId={(m) => String(m.month)}
+        emptyTitle="Aucun mois couvert"
+        {...compactTable}
+      />
 
       <h4 className="mt-4 text-sm font-semibold">1 · Registre des exports de l&apos;application</h4>
       <div className="mt-1">

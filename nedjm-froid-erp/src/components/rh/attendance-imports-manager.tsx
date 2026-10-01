@@ -60,20 +60,8 @@ import {
 } from "@/lib/hr/attendance-archive";
 import { QuickDialog } from "@/components/rules/rule-ui";
 import { Button } from "@/components/ui/button";
-import {
-  RhAlert,
-  RhChip,
-  RhField,
-  RhPageHeader,
-  RhPanel,
-  RhStat,
-  RhTabs,
-  RhTableWrap,
-  RhToolbar,
-  rhInput,
-  rhTd,
-  rhTh,
-} from "@/components/rh/rh-ui";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
+import { RhAlert, RhChip, RhField, RhPageHeader, RhPanel, RhStat, RhTabs, RhToolbar, rhInput } from "@/components/rh/rh-ui";
 
 type SiteOption = { id: string; code: string; name: string };
 type LegendOption = { code: string; label: string };
@@ -228,6 +216,62 @@ export function AttendanceImportsManager({
 // ---------------------------------------------------------------------------
 // List
 // ---------------------------------------------------------------------------
+const batchCol = dataColumns<ArchiveBatch>();
+
+const batchColumns = [
+  batchCol.accessor("batch_no", {
+    header: "Lot",
+    cell: ({ row }) => (
+      <>
+        <span className="font-semibold">{row.original.batch_no}</span>
+        <div className="text-xs text-foreground/55">{row.original.format === "GRID" ? "Grille" : "Lignes"}</div>
+      </>
+    ),
+  }),
+  batchCol.accessor("period_from", {
+    header: "Période",
+    cell: ({ row: { original: b } }) => (
+      <>
+        {periodText(b)}
+        <div className="text-xs text-foreground/55">
+          {b.nature === "OPERATIONAL" ? "Opérationnel" : b.nature === "REPRISE" ? "Reprise" : "Reprise et opérationnel"}
+        </div>
+      </>
+    ),
+  }),
+  batchCol.accessor((b) => b.site_names.join(", "), { id: "sites", header: "Chantier(s)" }),
+  batchCol.accessor((b) => provenanceLabel(b.provenance_kind), {
+    id: "provenance",
+    header: "Provenance",
+    cell: (i) => <span className="text-xs">{i.getValue()}</span>,
+  }),
+  batchCol.accessor("lines_read", {
+    header: "Lignes",
+    meta: { className: "tabular-nums text-xs" },
+    cell: ({ row: { original: b } }) => (
+      <>
+        {b.lines_read} lues · {b.analysis.counts.ok} acceptées · {b.lines_rejected} rejetées
+        {b.analysis.counts.conflict ? ` · ${b.analysis.counts.conflict} en conflit` : ""}
+      </>
+    ),
+  }),
+  batchCol.accessor((b) => batchStatusLabel(b.status), {
+    id: "status",
+    header: "Statut",
+    cell: ({ row }) => <RhChip tone={batchStatusTone(row.original.status)}>{batchStatusLabel(row.original.status)}</RhChip>,
+  }),
+  batchCol.accessor("created_at", {
+    header: "Déposé",
+    meta: { className: "text-xs" },
+    cell: ({ row }) => (
+      <>
+        {row.original.created_by_name ?? "?"}
+        <div className="text-foreground/55">{dateTime(row.original.created_at)}</div>
+      </>
+    ),
+  }),
+];
+
 function BatchList({
   batches,
   selected,
@@ -239,62 +283,17 @@ function BatchList({
   onOpen: (id: string) => void;
   view: View;
 }) {
-  if (!batches.length) {
-    return (
-      <RhAlert tone="info">
-        {view === "validation" ? "Aucun lot importé en attente de validation." : "Aucun lot d'import pour le moment."}
-      </RhAlert>
-    );
-  }
   return (
-    <RhTableWrap>
-      <table className="w-full min-w-[900px]">
-        <thead className="border-b border-border/60">
-          <tr>
-            <th className={rhTh()}>Lot</th>
-            <th className={rhTh()}>Période</th>
-            <th className={rhTh()}>Chantier(s)</th>
-            <th className={rhTh()}>Provenance</th>
-            <th className={rhTh()}>Lignes</th>
-            <th className={rhTh()}>Statut</th>
-            <th className={rhTh()}>Déposé</th>
-          </tr>
-        </thead>
-        <tbody>
-          {batches.map((b) => (
-            <tr
-              key={b.id}
-              onClick={() => onOpen(b.id)}
-              className={`cursor-pointer border-b border-border/40 hover:bg-brand-muted/40 ${b.id === selected ? "bg-brand-muted/60" : ""}`}
-            >
-              <td className={rhTd()}>
-                <span className="font-semibold">{b.batch_no}</span>
-                <div className="text-xs text-foreground/55">{b.format === "GRID" ? "Grille" : "Lignes"}</div>
-              </td>
-              <td className={rhTd()}>
-                {periodText(b)}
-                <div className="text-xs text-foreground/55">{b.nature === "OPERATIONAL" ? "Opérationnel" : b.nature === "REPRISE" ? "Reprise" : "Reprise et opérationnel"}</div>
-              </td>
-              <td className={rhTd()}>{b.site_names.join(", ")}</td>
-              <td className={rhTd()}>
-                <span className="text-xs">{provenanceLabel(b.provenance_kind)}</span>
-              </td>
-              <td className={`${rhTd()} tabular-nums text-xs`}>
-                {b.lines_read} lues · {b.analysis.counts.ok} acceptées · {b.lines_rejected} rejetées
-                {b.analysis.counts.conflict ? ` · ${b.analysis.counts.conflict} en conflit` : ""}
-              </td>
-              <td className={rhTd()}>
-                <RhChip tone={batchStatusTone(b.status)}>{batchStatusLabel(b.status)}</RhChip>
-              </td>
-              <td className={`${rhTd()} text-xs`}>
-                {b.created_by_name ?? "?"}
-                <div className="text-foreground/55">{dateTime(b.created_at)}</div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </RhTableWrap>
+    <DataTable
+      data={batches}
+      columns={batchColumns}
+      getRowId={(b) => b.id}
+      searchPlaceholder="Rechercher un lot, un chantier…"
+      searchText={(b) => [b.batch_no, b.site_names.join(" "), provenanceLabel(b.provenance_kind), b.created_by_name].filter(Boolean).join(" ")}
+      onRowClick={(b) => onOpen(b.id)}
+      rowClassName={(b) => `hover:bg-brand-muted/40 ${b.id === selected ? "bg-brand-muted/60" : ""}`}
+      emptyTitle={view === "validation" ? "Aucun lot importé en attente de validation." : "Aucun lot d'import pour le moment."}
+    />
   );
 }
 
@@ -612,6 +611,88 @@ function PiecesList({ documents, onOpen }: { documents: ArchiveDetail["documents
 
 const LINE_FILTERS = ["ALL", "ERROR", "CONFLICT", "WARNING", "OK", "SAME", "DUPLICATE"] as const;
 
+const lineCol = dataColumns<ArchiveLineRow>();
+
+const lineColumns = [
+  lineCol.accessor("source_ref", { header: "Ligne", meta: { className: "align-top text-xs" } }),
+  lineCol.accessor((l) => l.employee_name ?? [l.last_name, l.first_name].filter(Boolean).join(" "), {
+    id: "employee",
+    header: "Salarié",
+    meta: { className: "align-top" },
+    cell: ({ row: { original: l } }) => (
+      <>
+        {l.employee_name ?? <span className="text-foreground/55">{[l.last_name, l.first_name].filter(Boolean).join(" ") || "—"}</span>}
+        <div className="text-xs text-foreground/55">Mat. {l.matricule || "—"}</div>
+      </>
+    ),
+  }),
+  lineCol.accessor((l) => l.work_date ?? "", {
+    id: "work_date",
+    header: "Date",
+    meta: { className: "align-top" },
+    cell: ({ row: { original: l } }) => (
+      <>
+        {l.kind === "HOURS" ? monthLabel(l.work_date ?? "0000-00") : frDay(l.work_date)}
+        {l.raw_date && !l.work_date ? <div className="text-xs text-foreground/55">« {l.raw_date} »</div> : null}
+      </>
+    ),
+  }),
+  lineCol.accessor((l) => l.site_name ?? l.site_code ?? "—", { id: "site", header: "Chantier", meta: { className: "align-top" } }),
+  lineCol.accessor((l) => l.legend_code ?? l.source_code ?? "", {
+    id: "code",
+    header: "Code",
+    meta: { className: "align-top" },
+    cell: ({ row: { original: l } }) => (
+      <>
+        {l.kind === "HOURS"
+          ? Object.entries(l.hours)
+              .map(([k, v]) => `${k} ${v} h`)
+              .join(" · ") || "—"
+          : (l.legend_code ?? l.source_code ?? "—")}
+        {l.kind === "DAY" && l.source_code && l.legend_code && l.source_code !== l.legend_code ? (
+          <div className="text-xs text-foreground/55">fichier : {l.source_code}</div>
+        ) : null}
+      </>
+    ),
+  }),
+  lineCol.accessor((l) => lineStatusLabel(l.status), {
+    id: "status",
+    header: "Statut",
+    meta: { className: "align-top" },
+    cell: ({ row: { original: l } }) => (
+      <>
+        <RhChip tone={lineStatusTone(l.status)}>{lineStatusLabel(l.status)}</RhChip>
+        {l.resolution ? (
+          <div className="mt-1 text-xs text-foreground/60">{l.resolution === "IMPORT" ? "Import retenu" : "Existant conservé"}</div>
+        ) : null}
+      </>
+    ),
+  }),
+  lineCol.display({
+    id: "detail",
+    header: "Détail",
+    enableSorting: false,
+    meta: { className: "align-top text-xs" },
+    cell: ({ row: { original: l } }) => (
+      <>
+        {[...l.errors, ...l.warnings].map((c) => (
+          <div key={c}>{anomalyLabel(c)}</div>
+        ))}
+        {l.conflict_kinds.map((c) => (
+          <div key={c} className="text-amber-700 dark:text-amber-300">
+            {conflictLabel(c)}
+          </div>
+        ))}
+        {l.existing.length ? (
+          <div className="text-foreground/60">
+            Déjà enregistré : {l.existing.map((e) => existingValueText(e, e.site_name ?? undefined)).join(" ; ")}
+          </div>
+        ) : null}
+      </>
+    ),
+  }),
+];
+
 function LinesTable({ batchId, counts }: { batchId: string; counts: ArchiveBatch["analysis"]["counts"] }) {
   const [status, setStatus] = useState<(typeof LINE_FILTERS)[number]>("ALL");
   const [page, setPage] = useState(0);
@@ -680,77 +761,15 @@ function LinesTable({ batchId, counts }: { batchId: string; counts: ArchiveBatch
         </Button>
       </RhToolbar>
       {state.error ? <RhAlert tone="danger">{state.error}</RhAlert> : null}
-      <RhTableWrap>
-        <table className="w-full min-w-[1000px] text-sm">
-          <thead className="border-b border-border/60">
-            <tr>
-              <th className={rhTh()}>Ligne</th>
-              <th className={rhTh()}>Salarié</th>
-              <th className={rhTh()}>Date</th>
-              <th className={rhTh()}>Chantier</th>
-              <th className={rhTh()}>Code</th>
-              <th className={rhTh()}>Statut</th>
-              <th className={rhTh()}>Détail</th>
-            </tr>
-          </thead>
-          <tbody>
-            {state.rows.map((l) => (
-              <tr key={l.id} className="border-b border-border/40 align-top">
-                <td className={`${rhTd()} text-xs`}>{l.source_ref}</td>
-                <td className={rhTd()}>
-                  {l.employee_name ?? <span className="text-foreground/55">{[l.last_name, l.first_name].filter(Boolean).join(" ") || "—"}</span>}
-                  <div className="text-xs text-foreground/55">Mat. {l.matricule || "—"}</div>
-                </td>
-                <td className={rhTd()}>
-                  {l.kind === "HOURS" ? monthLabel(l.work_date ?? "0000-00") : frDay(l.work_date)}
-                  {l.raw_date && !l.work_date ? <div className="text-xs text-foreground/55">« {l.raw_date} »</div> : null}
-                </td>
-                <td className={rhTd()}>{l.site_name ?? l.site_code ?? "—"}</td>
-                <td className={rhTd()}>
-                  {l.kind === "HOURS"
-                    ? Object.entries(l.hours)
-                        .map(([k, v]) => `${k} ${v} h`)
-                        .join(" · ") || "—"
-                    : (l.legend_code ?? l.source_code ?? "—")}
-                  {l.kind === "DAY" && l.source_code && l.legend_code && l.source_code !== l.legend_code ? (
-                    <div className="text-xs text-foreground/55">fichier : {l.source_code}</div>
-                  ) : null}
-                </td>
-                <td className={rhTd()}>
-                  <RhChip tone={lineStatusTone(l.status)}>{lineStatusLabel(l.status)}</RhChip>
-                  {l.resolution ? (
-                    <div className="mt-1 text-xs text-foreground/60">
-                      {l.resolution === "IMPORT" ? "Import retenu" : "Existant conservé"}
-                    </div>
-                  ) : null}
-                </td>
-                <td className={`${rhTd()} text-xs`}>
-                  {[...l.errors, ...l.warnings].map((c) => (
-                    <div key={c}>{anomalyLabel(c)}</div>
-                  ))}
-                  {l.conflict_kinds.map((c) => (
-                    <div key={c} className="text-amber-700 dark:text-amber-300">
-                      {conflictLabel(c)}
-                    </div>
-                  ))}
-                  {l.existing.length ? (
-                    <div className="text-foreground/60">
-                      Déjà enregistré : {l.existing.map((e) => existingValueText(e, e.site_name ?? undefined)).join(" ; ")}
-                    </div>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-            {!loading && !state.rows.length ? (
-              <tr>
-                <td colSpan={7} className={`${rhTd()} text-center text-foreground/55`}>
-                  Aucune ligne.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </RhTableWrap>
+      <DataTable
+        data={state.rows}
+        columns={lineColumns}
+        getRowId={(l) => l.id}
+        searchable={false}
+        columnToggle={false}
+        pageSize={0}
+        emptyTitle={loading ? "Chargement…" : "Aucune ligne."}
+      />
     </div>
   );
 }
@@ -900,6 +919,8 @@ function ConflictResolver({
 // ---------------------------------------------------------------------------
 // D11 correspondences and D12 policy
 // ---------------------------------------------------------------------------
+const mappingCol = dataColumns<CodeMapping>();
+
 function MappingsPanel({
   mappings,
   access,
@@ -929,6 +950,66 @@ function MappingsPanel({
     REVOKED: "Révoquée",
   };
 
+  const mappingColumns = [
+    mappingCol.accessor("source_code", { header: "Code du fichier", meta: { className: "font-mono" } }),
+    mappingCol.accessor("legend_code", { header: "Code retenu", meta: { className: "font-mono" } }),
+    mappingCol.accessor((m) => statusText[m.status] ?? m.status, {
+      id: "status",
+      header: "Statut",
+      cell: ({ row: { original: m } }) => (
+        <RhChip tone={m.status === "ACTIVE" ? "success" : m.status === "REVOKED" ? "danger" : "warning"}>
+          {statusText[m.status] ?? m.status}
+        </RhChip>
+      ),
+    }),
+    mappingCol.accessor("created_at", {
+      header: "Origine",
+      meta: { className: "text-xs" },
+      cell: ({ row: { original: m } }) => (
+        <>
+          <Link href={`/decisions/${m.decision_id}`} className="text-brand hover:underline">
+            Décision
+          </Link>
+          {m.batch_no ? ` · lot ${m.batch_no}` : ""} · {dateTime(m.created_at)}
+        </>
+      ),
+    }),
+    mappingCol.display({
+      id: "follow_up",
+      header: "Suivi",
+      enableSorting: false,
+      meta: { className: "text-xs" },
+      cell: ({ row: { original: m } }) => (
+        <>
+          {m.confirmed_at ? `Confirmée par ${m.confirmed_by_name ?? "?"} le ${dateTime(m.confirmed_at)}` : ""}
+          {m.revoked_at ? ` Révoquée le ${dateTime(m.revoked_at)} : ${m.revoke_reason}` : ""}
+        </>
+      ),
+    }),
+    mappingCol.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      meta: { align: "right" },
+      cell: ({ row: { original: m } }) =>
+        access.mappingDecider && m.status === "PENDING_CONFIRMATION" ? (
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" disabled={pending} onClick={() => confirm(m)}>
+              Confirmer
+            </Button>
+            <Button variant="ghost" disabled={pending} onClick={() => onRevoke(m)}>
+              Refuser
+            </Button>
+          </div>
+        ) : access.mappingDecider && m.status === "ACTIVE" ? (
+          <Button variant="ghost" disabled={pending} onClick={() => onRevoke(m)}>
+            Révoquer
+          </Button>
+        ) : null,
+    }),
+  ];
+
   return (
     <RhPanel>
       <div className="space-y-3">
@@ -941,62 +1022,14 @@ function MappingsPanel({
           </p>
         </div>
         {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
-        {!mappings.length ? <RhAlert tone="info">Aucune correspondance conservée.</RhAlert> : null}
-        {mappings.length ? (
-          <RhTableWrap>
-            <table className="w-full min-w-[760px] text-sm">
-              <thead className="border-b border-border/60">
-                <tr>
-                  <th className={rhTh()}>Code du fichier</th>
-                  <th className={rhTh()}>Code retenu</th>
-                  <th className={rhTh()}>Statut</th>
-                  <th className={rhTh()}>Origine</th>
-                  <th className={rhTh()}>Suivi</th>
-                  <th className={rhTh()} />
-                </tr>
-              </thead>
-              <tbody>
-                {mappings.map((m) => (
-                  <tr key={m.id} className="border-b border-border/40">
-                    <td className={`${rhTd()} font-mono`}>{m.source_code}</td>
-                    <td className={`${rhTd()} font-mono`}>{m.legend_code}</td>
-                    <td className={rhTd()}>
-                      <RhChip tone={m.status === "ACTIVE" ? "success" : m.status === "REVOKED" ? "danger" : "warning"}>
-                        {statusText[m.status] ?? m.status}
-                      </RhChip>
-                    </td>
-                    <td className={`${rhTd()} text-xs`}>
-                      <Link href={`/decisions/${m.decision_id}`} className="text-brand hover:underline">
-                        Décision
-                      </Link>
-                      {m.batch_no ? ` · lot ${m.batch_no}` : ""} · {dateTime(m.created_at)}
-                    </td>
-                    <td className={`${rhTd()} text-xs`}>
-                      {m.confirmed_at ? `Confirmée par ${m.confirmed_by_name ?? "?"} le ${dateTime(m.confirmed_at)}` : ""}
-                      {m.revoked_at ? ` Révoquée le ${dateTime(m.revoked_at)} : ${m.revoke_reason}` : ""}
-                    </td>
-                    <td className={`${rhTd()} text-right`}>
-                      {access.mappingDecider && m.status === "PENDING_CONFIRMATION" ? (
-                        <div className="flex justify-end gap-2">
-                          <Button variant="secondary" disabled={pending} onClick={() => confirm(m)}>
-                            Confirmer
-                          </Button>
-                          <Button variant="ghost" disabled={pending} onClick={() => onRevoke(m)}>
-                            Refuser
-                          </Button>
-                        </div>
-                      ) : access.mappingDecider && m.status === "ACTIVE" ? (
-                        <Button variant="ghost" disabled={pending} onClick={() => onRevoke(m)}>
-                          Révoquer
-                        </Button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </RhTableWrap>
-        ) : null}
+        <DataTable
+          data={mappings}
+          columns={mappingColumns}
+          getRowId={(m) => m.id}
+          searchPlaceholder="Rechercher un code…"
+          searchText={(m) => [m.source_code, m.legend_code, m.batch_no].filter(Boolean).join(" ")}
+          emptyTitle="Aucune correspondance conservée."
+        />
       </div>
     </RhPanel>
   );

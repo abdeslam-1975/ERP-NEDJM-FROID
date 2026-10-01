@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
+import { EMPTY_USER_PREFS, parseDesign, parseUserPrefs } from "@/lib/ui/design";
 import {
   DEFAULT_LAYOUT,
   EMPTY_THEME,
@@ -13,7 +14,7 @@ import {
 
 /**
  * Interface choices for the signed-in user, read once per request. Any read failure (for example the
- * sys_ui_* tables not migrated yet) falls back to the default interface: everything visible.
+ * sys_ui_* tables not migrated yet) falls back to the default interface: everything visible, default look.
  */
 export const getUiLayout = cache(async function getUiLayout(): Promise<UiLayoutData> {
   const workspace = await getWorkspaceProfile();
@@ -21,12 +22,14 @@ export const getUiLayout = cache(async function getUiLayout(): Promise<UiLayoutD
   const supabase = await createClient();
   const roleIds = [...new Set(workspace.roles.map((r) => r.roleId))];
   try {
-    const [hiddenRes, overridesRes, themeRes] = await Promise.all([
+    const [hiddenRes, overridesRes, themeRes, prefsRes] = await Promise.all([
       workspace.isSuperAdmin || !roleIds.length
         ? Promise.resolve({ data: [] as { role_id: string; item_key: string }[], error: null })
         : supabase.from("sys_ui_role_hidden").select("role_id, item_key").in("role_id", roleIds),
       supabase.from("sys_ui_item_overrides").select("item_key, sort_order, label_fr, label_ar, group_key"),
-      supabase.from("sys_ui_theme").select("brand_color, sidebar_color, app_name, app_subtitle").eq("id", 1).maybeSingle(),
+      // "*" so that a database without the design columns still returns the colours.
+      supabase.from("sys_ui_theme").select("*").eq("id", 1).maybeSingle(),
+      supabase.from("sys_ui_user_prefs").select("mode, density").eq("user_id", workspace.id).maybeSingle(),
     ]);
     const overrides: Record<string, UiOverride> = {};
     if (!overridesRes.error) {
@@ -39,7 +42,7 @@ export const getUiLayout = cache(async function getUiLayout(): Promise<UiLayoutD
         };
       }
     }
-    const raw = themeRes.error ? null : (themeRes.data as UiTheme | null);
+    const raw = themeRes.error ? null : (themeRes.data as (UiTheme & Record<string, unknown>) | null);
     const theme: UiTheme = raw
       ? {
           brand_color: isHexColor(raw.brand_color) ? raw.brand_color : null,
@@ -53,6 +56,8 @@ export const getUiLayout = cache(async function getUiLayout(): Promise<UiLayoutD
       hidden: hiddenRes.error ? [] : hiddenKeysForRoles(hiddenRes.data ?? [], roleIds),
       overrides,
       theme,
+      design: parseDesign(raw),
+      prefs: prefsRes.error ? EMPTY_USER_PREFS : parseUserPrefs(prefsRes.data),
     };
   } catch {
     return { ...DEFAULT_LAYOUT, unrestricted: workspace.isSuperAdmin };

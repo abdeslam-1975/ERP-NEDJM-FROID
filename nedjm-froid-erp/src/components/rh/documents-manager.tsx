@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -27,21 +27,37 @@ import {
 } from "@/components/rh/mission-order-dialog";
 import { buildMissionOrderHtml } from "@/components/rh/mission-order-print";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import {
   CatalogSelect,
   RhAlert,
   RhField,
   RhPageHeader,
   RhPanel,
-  RhTableWrap,
   RhTabs,
   bi,
   rhInput,
-  rhTd,
-  rhTh,
 } from "@/components/rh/rh-ui";
 
 type SiteOpt = { id: string; name_fr: string };
+
+const corrCol = dataColumns<HrCorrespondenceRow>();
+const fileCol = dataColumns<HrFileRow>();
+
+const otherCorrColumns = [
+  corrCol.accessor("number", { header: "N°" }),
+  corrCol.accessor("type_code", { header: "Type" }),
+  corrCol.accessor((r) => `${r.matricule} ${r.employee_name}`, { id: "employee", header: "Employé" }),
+  corrCol.accessor((r) => `${r.start_date ?? "—"} → ${r.end_date ?? "—"}`, { id: "period", header: "Période" }),
+  corrCol.accessor("status_code", { header: "Statut" }),
+];
+
+const fileColumns = [
+  fileCol.accessor((r) => `${r.matricule} ${r.employee_name}`, { id: "employee", header: "Employé" }),
+  fileCol.accessor("doc_type_code", { header: "Type" }),
+  fileCol.accessor((r) => r.issued_on ?? "—", { id: "issued_on", header: "Émis" }),
+  fileCol.accessor((r) => r.expires_on ?? "—", { id: "expires_on", header: "Expire" }),
+];
 
 function textPayload(payload: Record<string, unknown>, key: string) {
   const value = payload[key];
@@ -324,6 +340,62 @@ export function DocumentsManager({
   const omRows = corrRows.filter((row) => row.type_code === "OM");
   const otherCorrRows = corrRows.filter((row) => row.type_code !== "OM");
 
+  const omColumns = [
+    corrCol.accessor("number", {
+      header: "Référence unique — الرقم المرجعي",
+      cell: ({ row: { original: r } }) => (
+        <>
+          <div className="font-mono font-semibold text-brand">{r.number}</div>
+          <div className="mt-0.5 text-[10px] text-foreground/40">{r.id}</div>
+        </>
+      ),
+    }),
+    corrCol.accessor((r) => r.matricule || "—", {
+      id: "matricule",
+      header: "Matricule — الرقم التسلسلي",
+      meta: { className: "font-mono" },
+    }),
+    corrCol.accessor((r) => r.last_name || "—", { id: "last_name", header: "Nom — لقب العامل" }),
+    corrCol.accessor((r) => r.first_name || "—", { id: "first_name", header: "Prénom — اسم العامل" }),
+    corrCol.accessor((r) => r.created_by_name || "—", { id: "created_by", header: "Établi par — منشئ أمر المهمة" }),
+    corrCol.accessor("created_at", {
+      header: "Date d'établissement — تاريخ الإنشاء",
+      cell: (info) => formatEstablishmentDate(info.getValue()),
+    }),
+    corrCol.display({
+      id: "actions",
+      header: "Consulter — عرض",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row: { original: r } }) => (
+        <div className="flex flex-wrap gap-1">
+          <Button variant="secondary" onClick={() => consultMission(r)}>
+            Consulter l&apos;ordre de mission — عرض أمر المهمة
+          </Button>
+          <Button variant="secondary" onClick={() => openMissionRow(r)}>
+            {bi("Modifier", "تعديل")}
+          </Button>
+          {r.start_date ? (
+            <Button
+              variant="secondary"
+              onClick={() =>
+                router.push(
+                  missionPointageHref({
+                    employeeId: r.employee_id,
+                    siteId: r.site_id,
+                    dateDepart: r.start_date,
+                  }),
+                )
+              }
+            >
+              {bi("Pointage", "الحضور")}
+            </Button>
+          ) : null}
+        </div>
+      ),
+    }),
+  ];
+
   return (
     <div className="space-y-5">
       <RhPageHeader
@@ -379,76 +451,16 @@ export function DocumentsManager({
             </div>
           </RhPanel>
 
-          <RhTableWrap>
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-border/70 bg-surface-muted/80">
-                <tr>
-                  {[
-                    "Référence unique — الرقم المرجعي",
-                    "Matricule — الرقم التسلسلي",
-                    "Nom — لقب العامل",
-                    "Prénom — اسم العامل",
-                    "Établi par — منشئ أمر المهمة",
-                    "Date d'établissement — تاريخ الإنشاء",
-                    "Consulter — عرض",
-                  ].map((h) => (
-                    <th key={h} className={rhTh()}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {omRows.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className={`${rhTd()} py-6 text-center text-foreground/55`}>
-                      {bi("Aucun ordre de mission archivé.", "لا توجد أوامر مهمة في الأرشيف.")}
-                    </td>
-                  </tr>
-                ) : (
-                  omRows.map((r) => (
-                    <tr key={r.id} className="border-b border-border/60">
-                      <td className={rhTd()}>
-                        <div className="font-mono font-semibold text-brand">{r.number}</div>
-                        <div className="mt-0.5 text-[10px] text-foreground/40">{r.id}</div>
-                      </td>
-                      <td className={`${rhTd()} font-mono`}>{r.matricule || "—"}</td>
-                      <td className={rhTd()}>{r.last_name || "—"}</td>
-                      <td className={rhTd()}>{r.first_name || "—"}</td>
-                      <td className={rhTd()}>{r.created_by_name || "—"}</td>
-                      <td className={rhTd()}>{formatEstablishmentDate(r.created_at)}</td>
-                      <td className={rhTd()}>
-                        <div className="flex flex-wrap gap-1">
-                          <Button variant="secondary" onClick={() => consultMission(r)}>
-                            Consulter l&apos;ordre de mission — عرض أمر المهمة
-                          </Button>
-                          <Button variant="secondary" onClick={() => openMissionRow(r)}>
-                            {bi("Modifier", "تعديل")}
-                          </Button>
-                          {r.start_date ? (
-                            <Button
-                              variant="secondary"
-                              onClick={() =>
-                                router.push(
-                                  missionPointageHref({
-                                    employeeId: r.employee_id,
-                                    siteId: r.site_id,
-                                    dateDepart: r.start_date,
-                                  }),
-                                )
-                              }
-                            >
-                              {bi("Pointage", "الحضور")}
-                            </Button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </RhTableWrap>
+          <DataTable
+            data={omRows}
+            columns={omColumns}
+            getRowId={(r) => r.id}
+            searchPlaceholder="Référence, matricule, nom…"
+            searchText={(r) =>
+              [r.number, r.id, r.matricule, r.last_name, r.first_name, r.created_by_name].filter(Boolean).join(" ")
+            }
+            emptyTitle={bi("Aucun ordre de mission archivé", "لا توجد أوامر مهمة في الأرشيف")}
+          />
 
           <RhPanel>
             <h3 className="mb-3 text-sm font-semibold text-foreground/80">
@@ -579,15 +591,12 @@ export function DocumentsManager({
               </div>
             </div>
           </RhPanel>
-          <Table
-            headers={["N°", "Type", "Employé", "Période", "Statut"]}
-            rows={otherCorrRows.map((r) => [
-              r.number,
-              r.type_code,
-              `${r.matricule} ${r.employee_name}`,
-              `${r.start_date ?? "—"} → ${r.end_date ?? "—"}`,
-              r.status_code,
-            ])}
+          <DataTable
+            data={otherCorrRows}
+            columns={otherCorrColumns}
+            getRowId={(r) => r.id}
+            searchPlaceholder="N°, type, employé…"
+            emptyTitle="لا توجد سجلات"
           />
           {missionOpen ? (
             <MissionOrderDialog
@@ -718,66 +727,15 @@ export function DocumentsManager({
               </div>
             </div>
           </RhPanel>
-          <Table
-            headers={["Employé", "Type", "Émis", "Expire"]}
-            rows={fileRows.map((r) => [
-              `${r.matricule} ${r.employee_name}`,
-              r.doc_type_code,
-              r.issued_on ?? "—",
-              r.expires_on ?? "—",
-            ])}
+          <DataTable
+            data={fileRows}
+            columns={fileColumns}
+            getRowId={(r) => r.id}
+            searchPlaceholder="Employé, type…"
+            emptyTitle="لا توجد سجلات"
           />
         </>
       )}
     </div>
-  );
-}
-
-function Table({
-  headers,
-  rows,
-  actions,
-}: {
-  headers: string[];
-  rows: string[][];
-  actions?: Array<ReactNode>;
-}) {
-  return (
-    <RhTableWrap>
-      <table className="min-w-full text-sm">
-        <thead className="border-b border-border/70 bg-surface-muted/80">
-          <tr>
-            {headers.map((h) => (
-              <th key={h} className={rhTh()}>
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
-            <tr>
-              <td
-                colSpan={headers.length}
-                className={`${rhTd()} py-6 text-center text-foreground/55`}
-              >
-                لا توجد سجلات.
-              </td>
-            </tr>
-          ) : (
-            rows.map((row, i) => (
-              <tr key={i} className="border-b border-border/60">
-                {row.map((cell, j) => (
-                  <td key={j} className={rhTd()}>
-                    {cell}
-                  </td>
-                ))}
-                {actions ? <td className={rhTd()}>{actions[i]}</td> : null}
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </RhTableWrap>
   );
 }

@@ -11,9 +11,12 @@ import {
   type AssignmentPanel,
 } from "@/lib/actions/hr-assignments";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhChip, RhField, bi, rhInput } from "@/components/rh/rh-ui";
 
 type SiteOption = { id: string; name_fr: string };
+
+const col = dataColumns<AssignmentHistoryRow>();
 
 function frDate(iso: string) {
   return iso.slice(0, 10).split("-").reverse().join("/");
@@ -152,6 +155,69 @@ export function ContractAssignments({
   const current = rows.find((r) => r.effective_from <= today) ?? rows[rows.length - 1] ?? null;
   const open = panel.first_changeable;
 
+  const columns = [
+    col.accessor("effective_from", {
+      header: bi("À partir du", "ابتداءً من"),
+      cell: ({ row: { original: row } }) => (
+        <>
+          {frDate(row.effective_from)}{" "}
+          {current?.id === row.id ? <RhChip tone="success">{bi("En vigueur", "ساري")}</RhChip> : null}
+          {row.effective_from > today ? <RhChip tone="warning">{bi("À venir", "قادم")}</RhChip> : null}
+          <span className="block text-xs text-foreground/50">
+            {row.kind === "INITIAL" ? bi("Affectation initiale", "التعيين الأولي") : bi("Changement daté", "تغيير مؤرخ")}
+            {row.corrected ? ` · ${bi("corrigée par décision D8", "مصحح بقرار")}` : ""}
+          </span>
+        </>
+      ),
+    }),
+    col.accessor("site_name", { header: bi("Chantier", "الورشة") }),
+    col.accessor("reason", {
+      header: bi("Motif", "السبب"),
+      cell: ({ row: { original: row } }) => (
+        <>
+          {row.reason}
+          {row.document_ref ? <span className="text-xs text-foreground/50"> · {row.document_ref}</span> : null}
+          {row.author_name ? <span className="text-xs text-foreground/50"> · {row.author_name}</span> : null}
+        </>
+      ),
+    }),
+    col.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      meta: { align: "right" },
+      cell: ({ row: { original: row } }) => {
+        const openRequest = panel.open_corrections[row.id];
+        return (
+          <div className="flex flex-wrap justify-end gap-2">
+            {openRequest ? (
+              <Link href={`/decisions/${openRequest}`} className="text-xs font-semibold text-brand underline">
+                {bi("Correction en attente (D8)", "تصحيح قيد الانتظار")}
+              </Link>
+            ) : canEdit && row.effective_from >= open ? (
+              <Button
+                variant="secondary"
+                disabled={pending}
+                onClick={() => {
+                  setCorrecting(row);
+                  setFix({ site_id: "", reason: "" });
+                }}
+              >
+                {bi("Erreur de saisie…", "خطأ في الإدخال…")}
+              </Button>
+            ) : null}
+            {canEdit && row.kind === "OFFICIAL" && row.effective_from >= open ? (
+              <Button variant="secondary" disabled={pending} onClick={() => remove(row)}>
+                {bi("Supprimer", "حذف")}
+              </Button>
+            ) : null}
+          </div>
+        );
+      },
+    }),
+  ];
+
   return (
     <div className="space-y-4">
       <RhAlert tone="info">
@@ -175,67 +241,15 @@ export function ContractAssignments({
         </RhAlert>
       ) : null}
 
-      <div className="overflow-x-auto rounded border border-border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-xs uppercase text-foreground/60">
-            <tr>
-              <th className="px-3 py-2 text-left">{bi("À partir du", "ابتداءً من")}</th>
-              <th className="px-3 py-2 text-left">{bi("Chantier", "الورشة")}</th>
-              <th className="px-3 py-2 text-left">{bi("Motif", "السبب")}</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => {
-              const openRequest = panel.open_corrections[row.id];
-              return (
-                <tr key={row.id} className="border-t border-border align-top">
-                  <td className="px-3 py-2">
-                    {frDate(row.effective_from)}{" "}
-                    {current?.id === row.id ? <RhChip tone="success">{bi("En vigueur", "ساري")}</RhChip> : null}
-                    {row.effective_from > today ? <RhChip tone="warning">{bi("À venir", "قادم")}</RhChip> : null}
-                    <span className="block text-xs text-foreground/50">
-                      {row.kind === "INITIAL" ? bi("Affectation initiale", "التعيين الأولي") : bi("Changement daté", "تغيير مؤرخ")}
-                      {row.corrected ? ` · ${bi("corrigée par décision D8", "مصحح بقرار")}` : ""}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2">{row.site_name}</td>
-                  <td className="px-3 py-2">
-                    {row.reason}
-                    {row.document_ref ? <span className="text-xs text-foreground/50"> · {row.document_ref}</span> : null}
-                    {row.author_name ? <span className="text-xs text-foreground/50"> · {row.author_name}</span> : null}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="flex flex-wrap justify-end gap-2">
-                      {openRequest ? (
-                        <Link href={`/decisions/${openRequest}`} className="text-xs font-semibold text-brand underline">
-                          {bi("Correction en attente (D8)", "تصحيح قيد الانتظار")}
-                        </Link>
-                      ) : canEdit && row.effective_from >= open ? (
-                        <Button
-                          variant="secondary"
-                          disabled={pending}
-                          onClick={() => {
-                            setCorrecting(row);
-                            setFix({ site_id: "", reason: "" });
-                          }}
-                        >
-                          {bi("Erreur de saisie…", "خطأ في الإدخال…")}
-                        </Button>
-                      ) : null}
-                      {canEdit && row.kind === "OFFICIAL" && row.effective_from >= open ? (
-                        <Button variant="secondary" disabled={pending} onClick={() => remove(row)}>
-                          {bi("Supprimer", "حذف")}
-                        </Button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={rows}
+        columns={columns}
+        getRowId={(r) => r.id}
+        searchable={false}
+        pageSize={0}
+        columnToggle={false}
+        emptyTitle={bi("Aucune affectation", "لا توجد تعيينات")}
+      />
 
       {correcting ? (
         <div className="rounded border border-amber-300/70 p-3">

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
@@ -51,6 +51,7 @@ import {
 } from "@/lib/contracts/financial";
 import { AlertBadge } from "@/components/castle/alert-badge";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { ContractClausesTab } from "@/components/contracts/contract-clauses-tab";
 import { ContractDocumentsTab } from "@/components/contracts/contract-documents-tab";
 import { ContractExtractionPanel } from "@/components/contracts/contract-extraction-panel";
@@ -98,6 +99,60 @@ function uid() {
     ? crypto.randomUUID()
     : `id-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
+
+const itemCol = dataColumns<ContractItem>();
+const penaltyEventCol = dataColumns<ContractPenaltyEvent>();
+const openInvoiceCol = dataColumns<NonNullable<ContractBalance["open_invoices"]>[number]>();
+const paymentCol = dataColumns<ContractPayment>();
+const movementCol = dataColumns<ConsumptionMovement>();
+
+const penaltyEventColumns = [
+  penaltyEventCol.accessor("event_date", { header: "Date" }),
+  penaltyEventCol.accessor("rule_code", {
+    header: "Règle",
+    cell: ({ row }) =>
+      `${row.original.rule_code} — ${row.original.rule_label}${row.original.rule_mode ? ` (${row.original.rule_mode})` : ""}`,
+  }),
+  penaltyEventCol.accessor("basis_days", { header: "Jours", cell: (c) => c.getValue() ?? "—" }),
+  penaltyEventCol.accessor("amount_ht", { header: "Montant", cell: (c) => money(c.getValue()) }),
+  penaltyEventCol.accessor("note", { header: "Note", cell: (c) => c.getValue() ?? "—" }),
+];
+
+const billingSummaryColumns = [
+  itemCol.accessor("item_code", { header: "Code", meta: { className: "font-mono text-xs" } }),
+  itemCol.accessor((i) => i.consumed_qty ?? 0, { id: "consumed", header: "Consommé" }),
+  itemCol.accessor((i) => i.invoiced_qty ?? 0, { id: "invoiced", header: "Facturé" }),
+  itemCol.accessor((i) => i.billable_qty ?? 0, {
+    id: "billable",
+    header: "Facturable",
+    meta: { className: "font-semibold" },
+  }),
+];
+
+const consumptionColumns = [
+  itemCol.accessor("item_code", { header: "Code", meta: { className: "font-mono text-xs" } }),
+  itemCol.accessor("designation", { header: "Désignation" }),
+  itemCol.accessor("unit", { header: "Unité" }),
+  itemCol.accessor("quantity", { header: "Contractuel" }),
+  itemCol.accessor((i) => i.consumed_qty ?? 0, { id: "consumed", header: "Consommé" }),
+  itemCol.accessor((i) => i.remaining_qty ?? i.quantity, {
+    id: "remaining",
+    header: "Reste",
+    meta: { className: "font-semibold" },
+  }),
+  itemCol.accessor("pct_consumed", {
+    header: "%",
+    cell: (c) => (c.getValue() == null ? "—" : `${c.getValue()}%`),
+  }),
+];
+
+const movementColumns = [
+  movementCol.accessor("movement_date", { header: "Date" }),
+  movementCol.accessor("direction", { header: "Sens" }),
+  movementCol.accessor("item_code", { header: "Code", meta: { className: "font-mono text-xs" } }),
+  movementCol.accessor("quantity", { header: "Qté" }),
+  movementCol.accessor("note", { header: "Note", cell: (c) => c.getValue() ?? "—" }),
+];
 
 export function ContractWorkspace({
   contract,
@@ -161,18 +216,50 @@ export function ContractWorkspace({
   ];
   const tabs = useUiTabs("client_contract", allTabs, tab, setTab);
 
-  function run(fn: () => Promise<void>) {
-    setError(null);
-    setInfo(null);
-    startTransition(async () => {
-      try {
-        await fn();
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Erreur inattendue");
-      }
-    });
-  }
+  const run = useCallback(
+    (fn: () => Promise<void>) => {
+      setError(null);
+      setInfo(null);
+      startTransition(async () => {
+        try {
+          await fn();
+          router.refresh();
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Erreur inattendue");
+        }
+      });
+    },
+    [router],
+  );
+
+  const deleteItem = useCallback(
+    (id: string, message: string) =>
+      run(async () => {
+        const result = await deleteContractItem({
+          id,
+          contract_id: contract.id,
+        });
+        if (!result.ok) throw new Error(result.error);
+        setInfo(message);
+      }),
+    [run, contract.id],
+  );
+  const deleteLabor = useCallback((id: string) => deleteItem(id, "Ligne supprimée."), [deleteItem]);
+  const deleteSpare = useCallback((id: string) => deleteItem(id, "Pièce supprimée."), [deleteItem]);
+  const reverse = useCallback(
+    (paymentId: string, reason: string) =>
+      run(async () => {
+        const result = await reversePayment({
+          payment_id: paymentId,
+          contract_id: contract.id,
+          reversal_date: new Date().toISOString().slice(0, 10),
+          reason,
+        });
+        if (!result.ok) throw new Error(result.error);
+        setInfo("Paiement contre-passé avec traçabilité.");
+      }),
+    [run, contract.id],
+  );
 
   function saveAttributes(next: ContractAttributes, message?: string) {
     setAttrs(next);
@@ -310,16 +397,7 @@ export function ContractWorkspace({
               setInfo("Ligne main-d'œuvre enregistrée.");
             })
           }
-          onDelete={(id) =>
-            run(async () => {
-              const result = await deleteContractItem({
-                id,
-                contract_id: contract.id,
-              });
-              if (!result.ok) throw new Error(result.error);
-              setInfo("Ligne supprimée.");
-            })
-          }
+          onDelete={deleteLabor}
         />
       )}
 
@@ -339,16 +417,7 @@ export function ContractWorkspace({
               setInfo("Pièce enregistrée.");
             })
           }
-          onDelete={(id) =>
-            run(async () => {
-              const result = await deleteContractItem({
-                id,
-                contract_id: contract.id,
-              });
-              if (!result.ok) throw new Error(result.error);
-              setInfo("Pièce supprimée.");
-            })
-          }
+          onDelete={deleteSpare}
         />
       )}
 
@@ -425,18 +494,7 @@ export function ContractWorkspace({
               );
             })
           }
-          onReverse={(paymentId, reason) =>
-            run(async () => {
-              const result = await reversePayment({
-                payment_id: paymentId,
-                contract_id: contract.id,
-                reversal_date: new Date().toISOString().slice(0, 10),
-                reason,
-              });
-              if (!result.ok) throw new Error(result.error);
-              setInfo("Paiement contre-passé avec traçabilité.");
-            })
-          }
+          onReverse={reverse}
         />
       )}
 
@@ -1046,15 +1104,16 @@ function ContreTab({
                 </td>
                 <td className="px-3 py-2 text-right">
                   {!line.system && (
-                    <button
-                      type="button"
-                      className="text-sm text-alert-critical"
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-alert-critical"
                       onClick={() =>
                         setDraft((rows) => rows.filter((r) => r.id !== line.id))
                       }
                     >
                       Retirer
-                    </button>
+                    </Button>
                   )}
                 </td>
               </tr>
@@ -1140,8 +1199,6 @@ function ItemsTab({
   onUpsert: (row: Record<string, unknown>) => void;
   onDelete: (id: string) => void;
 }) {
-  const [q, setQ] = useState("");
-  const [page, setPage] = useState(0);
   const [form, setForm] = useState({
     id: "" as string | undefined,
     item_code: "",
@@ -1156,20 +1213,7 @@ function ItemsTab({
     tax_rate_id: "",
   });
 
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return items;
-    return items.filter(
-      (i) =>
-        i.item_code.toLowerCase().includes(needle) ||
-        i.designation.toLowerCase().includes(needle),
-    );
-  }, [items, q]);
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const pageItems = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-
-  function edit(item: ContractItem) {
+  const edit = useCallback((item: ContractItem) => {
     setForm({
       id: item.id,
       item_code: item.item_code,
@@ -1183,7 +1227,50 @@ function ItemsTab({
       tax_rule: item.tax_rule,
       tax_rate_id: item.tax_rate_id ?? "",
     });
-  }
+  }, []);
+
+  const columns = useMemo(
+    () => [
+      itemCol.accessor("item_code", { header: "Code", meta: { className: "font-mono text-xs" } }),
+      itemCol.accessor("designation", { header: "Désignation" }),
+      itemCol.accessor("unit", { header: "Unité" }),
+      itemCol.accessor("quantity", { header: "Qté" }),
+      itemCol.accessor("supply_unit_price_ht", { header: "PU fourniture", cell: (c) => money(c.getValue()) }),
+      itemCol.accessor("installation_unit_price_ht", { header: "PU pose", cell: (c) => money(c.getValue()) }),
+      itemCol.accessor("total_price_ht", { header: "Total", cell: (c) => money(c.getValue()) }),
+      itemCol.display({
+        id: "tax",
+        header: "TVA",
+        cell: ({ row }) =>
+          row.original.tax_rule === "INHERIT"
+            ? "Auto"
+            : row.original.tax_rule === "EXEMPT"
+              ? "Exonéré"
+              : taxRates.find((r) => r.id === row.original.tax_rate_id)?.label_fr ?? "Taxable",
+      }),
+      itemCol.display({
+        id: "actions",
+        header: "Actions",
+        meta: { align: "right", className: "whitespace-nowrap" },
+        cell: ({ row }) => (
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="secondary" onClick={() => edit(row.original)}>
+              Éditer
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-alert-critical"
+              onClick={() => onDelete(row.original.id)}
+            >
+              Suppr.
+            </Button>
+          </div>
+        ),
+      }),
+    ],
+    [taxRates, edit, onDelete],
+  );
 
   function reset() {
     setForm({
@@ -1203,17 +1290,6 @@ function ItemsTab({
 
   return (
     <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
-      {searchable && (
-        <input
-          className="w-full max-w-md rounded-md border border-border bg-background px-3 py-2 text-sm"
-          placeholder="Recherche code / désignation…"
-          value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setPage(0);
-          }}
-        />
-      )}
       <div className="grid gap-2 sm:grid-cols-7">
         <input
           className={inputClass}
@@ -1344,81 +1420,15 @@ function ItemsTab({
           </Button>
         )}
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[800px] text-left text-sm">
-          <thead className="bg-surface-muted text-xs uppercase text-foreground/60">
-            <tr>
-              <th className="px-3 py-2">Code</th>
-              <th className="px-3 py-2">Désignation</th>
-              <th className="px-3 py-2">Unité</th>
-              <th className="px-3 py-2">Qté</th>
-              <th className="px-3 py-2">PU fourniture</th>
-              <th className="px-3 py-2">PU pose</th>
-              <th className="px-3 py-2">Total</th>
-              <th className="px-3 py-2">TVA</th>
-              <th className="px-3 py-2 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {pageItems.map((item) => (
-              <tr key={item.id} className="border-t border-border">
-                <td className="px-3 py-2 font-mono text-xs">{item.item_code}</td>
-                <td className="px-3 py-2">{item.designation}</td>
-                <td className="px-3 py-2">{item.unit}</td>
-                <td className="px-3 py-2">{item.quantity}</td>
-                <td className="px-3 py-2">{money(item.supply_unit_price_ht)}</td>
-                <td className="px-3 py-2">{money(item.installation_unit_price_ht)}</td>
-                <td className="px-3 py-2">{money(item.total_price_ht)}</td>
-                <td className="px-3 py-2">
-                  {item.tax_rule === "INHERIT"
-                    ? "Auto"
-                    : item.tax_rule === "EXEMPT"
-                      ? "Exonéré"
-                      : taxRates.find((r) => r.id === item.tax_rate_id)?.label_fr ??
-                        "Taxable"}
-                </td>
-                <td className="space-x-3 px-3 py-2 text-right">
-                  <button
-                    type="button"
-                    className="text-sm font-semibold text-brand"
-                    onClick={() => edit(item)}
-                  >
-                    Éditer
-                  </button>
-                  <button
-                    type="button"
-                    className="text-sm text-alert-critical"
-                    onClick={() => onDelete(item.id)}
-                  >
-                    Suppr.
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {pageCount > 1 && (
-        <div className="flex items-center gap-3 text-sm">
-          <Button
-            variant="secondary"
-            disabled={page === 0}
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-          >
-            Préc.
-          </Button>
-          <span>
-            Page {page + 1} / {pageCount} ({filtered.length} lignes)
-          </span>
-          <Button
-            variant="secondary"
-            disabled={page >= pageCount - 1}
-            onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-          >
-            Suiv.
-          </Button>
-        </div>
-      )}
+      <DataTable
+        data={items}
+        columns={columns}
+        getRowId={(item) => item.id}
+        searchable={!!searchable}
+        searchPlaceholder="Recherche code / désignation…"
+        searchText={(i) => `${i.item_code} ${i.designation}`}
+        pageSize={PAGE_SIZE}
+      />
     </section>
   );
 }
@@ -1633,8 +1643,9 @@ function PenaltiesTab({
                   {c.code} · {c.mode}
                 </span>
               </span>
-              <button
-                type="button"
+              <Button
+                size="sm"
+                variant="ghost"
                 className="text-alert-critical"
                 onClick={() =>
                   setDraft((d) => ({
@@ -1647,7 +1658,7 @@ function PenaltiesTab({
                 }
               >
                 Retirer
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -2104,41 +2115,15 @@ function PilotageTab({
         Appliquer
       </Button>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead className="border-b border-border text-xs uppercase text-foreground/55">
-            <tr>
-              <th className="px-2 py-2">Date</th>
-              <th className="px-2 py-2">Règle</th>
-              <th className="px-2 py-2">Jours</th>
-              <th className="px-2 py-2">Montant</th>
-              <th className="px-2 py-2">Note</th>
-            </tr>
-          </thead>
-          <tbody>
-            {events.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-2 py-3 text-foreground/55">
-                  Aucune pénalité appliquée.
-                </td>
-              </tr>
-            ) : (
-              events.map((e) => (
-                <tr key={e.id} className="border-b border-border/60">
-                  <td className="px-2 py-1.5">{e.event_date}</td>
-                  <td className="px-2 py-1.5">
-                    {e.rule_code} — {e.rule_label}
-                    {e.rule_mode ? ` (${e.rule_mode})` : ""}
-                  </td>
-                  <td className="px-2 py-1.5">{e.basis_days ?? "—"}</td>
-                  <td className="px-2 py-1.5">{money(e.amount_ht)}</td>
-                  <td className="px-2 py-1.5">{e.note ?? "—"}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={events}
+        columns={penaltyEventColumns}
+        getRowId={(e) => e.id}
+        searchable={false}
+        columnToggle={false}
+        pageSize={0}
+        emptyTitle="Aucune pénalité appliquée."
+      />
 
       <div className="rounded-md border border-border bg-background p-3">
         <h3 className="font-semibold">Clôture</h3>
@@ -2254,6 +2239,91 @@ function BalanceTab({
     };
   }, [contract.id, contract.items]);
 
+  const openInvoiceColumns = useMemo(
+    () => [
+      openInvoiceCol.accessor("invoice_number", { header: "N°", meta: { className: "font-mono text-xs" } }),
+      openInvoiceCol.accessor("total_ttc", { header: "Total TTC", cell: (c) => money(c.getValue()) }),
+      openInvoiceCol.accessor("paid_ttc", { header: "Payé TTC", cell: (c) => money(c.getValue()) }),
+      openInvoiceCol.accessor("open_ttc", {
+        header: "Reste TTC",
+        meta: { className: "font-semibold" },
+        cell: (c) => money(c.getValue()),
+      }),
+      openInvoiceCol.display({
+        id: "actions",
+        header: "",
+        meta: { align: "right" },
+        cell: ({ row }) => (
+          <Button
+            type="button"
+            size="sm"
+            disabled={pending}
+            onClick={() =>
+              setForm((f) => ({
+                ...f,
+                invoice_id: row.original.invoice_id,
+                amount_ttc: String(row.original.open_ttc),
+              }))
+            }
+          >
+            Payer le reste
+          </Button>
+        ),
+      }),
+    ],
+    [pending],
+  );
+
+  const reversedIds = useMemo(
+    () =>
+      new Set(
+        payments
+          .filter((p) => p.direction === -1 || payments.some((candidate) => candidate.reversal_of === p.id))
+          .map((p) => p.id),
+      ),
+    [payments],
+  );
+
+  const paymentColumns = useMemo(
+    () => [
+      paymentCol.accessor("payment_date", { header: "Date" }),
+      paymentCol.accessor("amount_ttc", {
+        header: "Montant",
+        cell: ({ row }) => (
+          <>
+            {row.original.direction === -1 ? "−" : ""}
+            {money(row.original.amount_ttc)} TTC
+            <span className="block text-xs text-foreground/50">
+              HT {money(row.original.amount_ht)} · TVA {money(row.original.amount_tva)}
+            </span>
+          </>
+        ),
+      }),
+      paymentCol.accessor("method", { header: "Mode" }),
+      paymentCol.accessor("reference", { header: "Réf.", cell: (c) => c.getValue() ?? "—" }),
+      paymentCol.display({
+        id: "actions",
+        header: "",
+        meta: { align: "right" },
+        cell: ({ row }) =>
+          reversedIds.has(row.original.id) ? null : (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-alert-critical"
+              onClick={() => {
+                const reason = window.prompt("Motif obligatoire de contre-passation");
+                if (reason) onReverse(row.original.id, reason);
+              }}
+            >
+              Annuler
+            </Button>
+          ),
+      }),
+    ],
+    [reversedIds, onReverse],
+  );
+
   return (
     <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
       <p className="text-sm text-foreground/70">
@@ -2276,48 +2346,16 @@ function BalanceTab({
       )}
 
       {(balance?.open_invoices?.length ?? 0) > 0 && (
-        <div className="overflow-x-auto">
+        <div>
           <h3 className="mb-2 font-semibold">Factures ouvertes</h3>
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-border text-xs uppercase text-foreground/55">
-              <tr>
-                <th className="px-2 py-2">N°</th>
-                <th className="px-2 py-2">Total TTC</th>
-                <th className="px-2 py-2">Payé TTC</th>
-                <th className="px-2 py-2">Reste TTC</th>
-                <th className="px-2 py-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {balance!.open_invoices!.map((inv) => (
-                <tr key={inv.invoice_id} className="border-b border-border/60">
-                  <td className="px-2 py-1.5 font-mono text-xs">
-                    {inv.invoice_number}
-                  </td>
-                  <td className="px-2 py-1.5">{money(inv.total_ttc)}</td>
-                  <td className="px-2 py-1.5">{money(inv.paid_ttc)}</td>
-                  <td className="px-2 py-1.5 font-semibold">
-                    {money(inv.open_ttc)}
-                  </td>
-                  <td className="px-2 py-1.5">
-                    <Button
-                      type="button"
-                      disabled={pending}
-                      onClick={() =>
-                        setForm((f) => ({
-                          ...f,
-                          invoice_id: inv.invoice_id,
-                          amount_ttc: String(inv.open_ttc),
-                        }))
-                      }
-                    >
-                      Payer le reste
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            data={balance!.open_invoices!}
+            columns={openInvoiceColumns}
+            getRowId={(inv) => inv.invoice_id}
+            searchable={false}
+            columnToggle={false}
+            pageSize={0}
+          />
         </div>
       )}
 
@@ -2444,62 +2482,16 @@ function BalanceTab({
       )}
 
       <h3 className="font-semibold">Paiements</h3>
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead className="border-b border-border text-xs uppercase text-foreground/55">
-            <tr>
-              <th className="px-2 py-2">Date</th>
-              <th className="px-2 py-2">Montant</th>
-              <th className="px-2 py-2">Mode</th>
-              <th className="px-2 py-2">Réf.</th>
-              <th className="px-2 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {payments.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-2 py-3 text-foreground/55">
-                  Aucun paiement.
-                </td>
-              </tr>
-            ) : (
-              payments.map((p) => {
-                const reversed =
-                  p.direction === -1 ||
-                  payments.some((candidate) => candidate.reversal_of === p.id);
-                return (
-                <tr key={p.id} className={`border-b border-border/60 ${reversed ? "opacity-50" : ""}`}>
-                  <td className="px-2 py-1.5">{p.payment_date}</td>
-                  <td className="px-2 py-1.5">
-                    {p.direction === -1 ? "−" : ""}
-                    {money(p.amount_ttc)} TTC
-                    <span className="block text-xs text-foreground/50">
-                      HT {money(p.amount_ht)} · TVA {money(p.amount_tva)}
-                    </span>
-                  </td>
-                  <td className="px-2 py-1.5">{p.method}</td>
-                  <td className="px-2 py-1.5">{p.reference ?? "—"}</td>
-                  <td className="px-2 py-1.5 text-right">
-                    {!reversed && (
-                      <button
-                        className="text-red-600"
-                        onClick={() => {
-                          const reason = window.prompt(
-                            "Motif obligatoire de contre-passation",
-                          );
-                          if (reason) onReverse(p.id, reason);
-                        }}
-                      >
-                        Annuler
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              )})
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={payments}
+        columns={paymentColumns}
+        getRowId={(p) => p.id}
+        searchable={false}
+        columnToggle={false}
+        pageSize={0}
+        emptyTitle="Aucun paiement."
+        rowClassName={(p) => (reversedIds.has(p.id) ? "opacity-50" : undefined)}
+      />
     </section>
   );
 }
@@ -2529,6 +2521,10 @@ function InvoicingTab({
   const [loadError, setLoadError] = useState<string | null>(null);
   const billableItems = useMemo(
     () => contract.items.filter((i) => (i.billable_qty ?? 0) > 0),
+    [contract.items],
+  );
+  const trackedItems = useMemo(
+    () => contract.items.filter((i) => (i.consumed_qty ?? 0) > 0 || (i.invoiced_qty ?? 0) > 0),
     [contract.items],
   );
   const [form, setForm] = useState({
@@ -2940,32 +2936,15 @@ function InvoicingTab({
         Créer brouillon
       </Button>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead className="border-b border-border text-xs uppercase text-foreground/55">
-            <tr>
-              <th className="px-2 py-2">Code</th>
-              <th className="px-2 py-2">Consommé</th>
-              <th className="px-2 py-2">Facturé</th>
-              <th className="px-2 py-2">Facturable</th>
-            </tr>
-          </thead>
-          <tbody>
-            {contract.items
-              .filter((i) => (i.consumed_qty ?? 0) > 0 || (i.invoiced_qty ?? 0) > 0)
-              .map((i) => (
-                <tr key={i.id} className="border-b border-border/60">
-                  <td className="px-2 py-1.5 font-mono text-xs">{i.item_code}</td>
-                  <td className="px-2 py-1.5">{i.consumed_qty ?? 0}</td>
-                  <td className="px-2 py-1.5">{i.invoiced_qty ?? 0}</td>
-                  <td className="px-2 py-1.5 font-semibold">
-                    {i.billable_qty ?? 0}
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={trackedItems}
+        columns={billingSummaryColumns}
+        getRowId={(i) => i.id}
+        searchable={false}
+        columnToggle={false}
+        pageSize={0}
+        emptyTitle="Aucune ligne consommée ou facturée."
+      />
 
       <h3 className="font-semibold">Factures / forts</h3>
       {loadError && <p className="text-sm text-red-600">{loadError}</p>}
@@ -3007,14 +2986,15 @@ function InvoicingTab({
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  <a
-                    href={`/api/contracts/invoices/${inv.id}/pdf`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex h-10 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-hover"
-                  >
-                    PDF
-                  </a>
+                  <Button asChild>
+                    <a
+                      href={`/api/contracts/invoices/${inv.id}/pdf`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      PDF
+                    </a>
+                  </Button>
                   {inv.status === "BROUILLON" && (
                     <Button
                       type="button"
@@ -3063,7 +3043,6 @@ function ConsumptionTab({
 }) {
   const [movements, setMovements] = useState<ConsumptionMovement[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
   const [form, setForm] = useState({
     contract_item_id: "",
     direction: "CONSUME" as "CONSUME" | "REVERSE",
@@ -3097,17 +3076,6 @@ function ConsumptionTab({
 
   const selectedItem = contract.items.find((i) => i.id === form.contract_item_id);
   const showHr = selectedItem?.item_type === "LABOR";
-
-  const rows = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
-    const base = contract.items;
-    if (!needle) return base;
-    return base.filter(
-      (i) =>
-        i.item_code.toLowerCase().includes(needle) ||
-        i.designation.toLowerCase().includes(needle),
-    );
-  }, [contract.items, filter]);
 
   const canPost =
     contract.status === "VALIDE" || contract.status === "EN_COURS";
@@ -3225,84 +3193,27 @@ function ConsumptionTab({
         Enregistrer le mouvement
       </Button>
 
-      <input
-        className="w-full max-w-md rounded-md border border-border bg-background px-3 py-2 text-sm"
-        placeholder="Filtrer soldes code / désignation…"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
+      <DataTable
+        data={contract.items}
+        columns={consumptionColumns}
+        getRowId={(i) => i.id}
+        searchPlaceholder="Filtrer soldes code / désignation…"
+        searchText={(i) => `${i.item_code} ${i.designation}`}
+        pageSize={PAGE_SIZE}
       />
-
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead className="border-b border-border text-xs uppercase text-foreground/55">
-            <tr>
-              <th className="px-2 py-2">Code</th>
-              <th className="px-2 py-2">Désignation</th>
-              <th className="px-2 py-2">Unité</th>
-              <th className="px-2 py-2">Contractuel</th>
-              <th className="px-2 py-2">Consommé</th>
-              <th className="px-2 py-2">Reste</th>
-              <th className="px-2 py-2">%</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((i) => (
-              <tr key={i.id} className="border-b border-border/60">
-                <td className="px-2 py-1.5 font-mono text-xs">{i.item_code}</td>
-                <td className="px-2 py-1.5">{i.designation}</td>
-                <td className="px-2 py-1.5">{i.unit}</td>
-                <td className="px-2 py-1.5">{i.quantity}</td>
-                <td className="px-2 py-1.5">{i.consumed_qty ?? 0}</td>
-                <td className="px-2 py-1.5 font-semibold">
-                  {i.remaining_qty ?? i.quantity}
-                </td>
-                <td className="px-2 py-1.5">
-                  {i.pct_consumed == null ? "—" : `${i.pct_consumed}%`}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
 
       <h3 className="font-semibold">Derniers mouvements</h3>
       {loadError && (
         <p className="text-sm text-red-600">{loadError}</p>
       )}
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-left text-sm">
-          <thead className="border-b border-border text-xs uppercase text-foreground/55">
-            <tr>
-              <th className="px-2 py-2">Date</th>
-              <th className="px-2 py-2">Sens</th>
-              <th className="px-2 py-2">Code</th>
-              <th className="px-2 py-2">Qté</th>
-              <th className="px-2 py-2">Note</th>
-            </tr>
-          </thead>
-          <tbody>
-            {movements.length === 0 ? (
-              <tr>
-                <td className="px-2 py-3 text-foreground/55" colSpan={5}>
-                  Aucun mouvement.
-                </td>
-              </tr>
-            ) : (
-              movements.map((m) => (
-                <tr key={m.id} className="border-b border-border/60">
-                  <td className="px-2 py-1.5">{m.movement_date}</td>
-                  <td className="px-2 py-1.5">{m.direction}</td>
-                  <td className="px-2 py-1.5 font-mono text-xs">
-                    {m.item_code}
-                  </td>
-                  <td className="px-2 py-1.5">{m.quantity}</td>
-                  <td className="px-2 py-1.5">{m.note ?? "—"}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={movements}
+        columns={movementColumns}
+        getRowId={(m) => m.id}
+        searchable={false}
+        columnToggle={false}
+        emptyTitle="Aucun mouvement."
+      />
     </section>
   );
 }

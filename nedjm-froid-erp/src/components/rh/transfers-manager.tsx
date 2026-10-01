@@ -18,19 +18,8 @@ import { TRANSFER_FORMATS, type TransferLine, type TransferMode } from "@/lib/hr
 import { decisionStatusLabel, decisionStatusTone } from "@/lib/decisions/catalog";
 import { NO_TRACE_NOTICE, periodNatureOf, repriseBanner, transferReasonLabel } from "@/lib/hr/external-operations";
 import { Button } from "@/components/ui/button";
-import {
-  RhAlert,
-  RhChip,
-  RhField,
-  RhModal,
-  RhPageHeader,
-  RhTableWrap,
-  RhToolbar,
-  bi,
-  rhInput,
-  rhTd,
-  rhTh,
-} from "@/components/rh/rh-ui";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
+import { RhAlert, RhChip, RhField, RhModal, RhPageHeader, RhToolbar, bi, rhInput } from "@/components/rh/rh-ui";
 
 type SiteOpt = { id: string; name_fr: string };
 
@@ -52,6 +41,21 @@ const D9_OPTIONS: Record<string, string> = {
   RECONCILIATION: "État de rapprochement non bancaire",
   REAL_BATCH: "Lot réel — risque de double paiement",
 };
+
+const batchCol = dataColumns<TransferBatchRow>();
+
+const lineCol = dataColumns<TransferLine>();
+
+const lineColumns = [
+  lineCol.accessor("matricule", { header: "Matricule" }),
+  lineCol.accessor("employee_name", { header: "Bénéficiaire" }),
+  lineCol.accessor("account", { header: "Compte", meta: { className: "font-mono" } }),
+  lineCol.accessor("amount", {
+    header: "Montant (DA)",
+    meta: { align: "right", className: "font-mono" },
+    cell: (i) => money(i.getValue()),
+  }),
+];
 
 function download(fileName: string, content: string) {
   const blob = new Blob(["\ufeff", content], { type: "text/csv;charset=utf-8" });
@@ -256,6 +260,121 @@ export function TransfersManager({
 
   const live = batches.filter((b) => b.status_code !== "CANCELLED");
   const liveTotal = live.reduce((s, b) => s + b.total_amount, 0);
+
+  const batchColumns = [
+    batchCol.accessor("batch_no", {
+      header: "Lot",
+      cell: ({ row }) => {
+        const b = row.original;
+        return (
+          <>
+            <span className="font-mono font-semibold">{b.batch_no}</span>
+            <span className="block text-[11px] text-foreground/55">
+              {new Date(b.created_at).toLocaleString("fr-FR")} · {b.creator_name ?? "—"}
+            </span>
+            <span className="block font-mono text-[10px] text-foreground/40" title={b.sha256}>
+              SHA-256 {b.sha256.slice(0, 16)}…
+            </span>
+            {b.double_payment_risk ? (
+              <span className="mt-1 flex flex-wrap items-center gap-1">
+                <RhChip tone="danger">Risque de double paiement</RhChip>
+                {b.decision_id ? (
+                  <Link href={`/decisions/${b.decision_id}`} className="text-[11px] font-semibold text-brand hover:underline">
+                    Décision D9
+                  </Link>
+                ) : null}
+              </span>
+            ) : null}
+          </>
+        );
+      },
+    }),
+    batchCol.accessor("mode", {
+      header: "Mode",
+      cell: ({ row }) => (
+        <>
+          {row.original.mode}
+          <span className="block text-[11px] text-foreground/55">{row.original.file_format}</span>
+        </>
+      ),
+    }),
+    batchCol.accessor((b) => b.site_name ?? "Tous", { id: "site", header: "Chantier" }),
+    batchCol.accessor("line_count", { header: "Virements", meta: { className: "tabular-nums" } }),
+    batchCol.accessor("total_amount", {
+      header: "Total (DA)",
+      meta: { align: "right", className: "font-mono" },
+      cell: (i) => money(i.getValue()),
+    }),
+    batchCol.accessor((b) => STATUS[b.status_code].label, {
+      id: "status",
+      header: "Statut / dépôt",
+      cell: ({ row }) => {
+        const b = row.original;
+        return (
+          <>
+            <RhChip tone={STATUS[b.status_code].tone}>{STATUS[b.status_code].label}</RhChip>
+            {b.deposit_ref ? (
+              <span className="mt-1 block text-[11px] text-foreground/60">
+                Réf. {b.deposit_ref} · {b.deposit_date} {b.depositor_name ? `· ${b.depositor_name}` : ""}
+              </span>
+            ) : null}
+            {b.executed_at ? (
+              <span className="block text-[11px] text-foreground/60">
+                Exécuté le {new Date(b.executed_at).toLocaleDateString("fr-FR")}
+              </span>
+            ) : null}
+            {b.cancelled_reason ? (
+              <span className="block text-[11px] italic text-foreground/60">{b.cancelled_reason}</span>
+            ) : null}
+          </>
+        );
+      },
+    }),
+    batchCol.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => {
+        const b = row.original;
+        return (
+          <div className="flex flex-wrap gap-1">
+            <Button variant="ghost" disabled={pending} onClick={() => showLines(b)}>
+              Détail
+            </Button>
+            {b.status_code !== "CANCELLED" ? (
+              <a
+                className="inline-flex items-center rounded-xl border border-border/70 px-3 py-1.5 text-xs font-semibold hover:bg-surface-muted"
+                href={`/api/rh/virements?batch=${b.id}`}
+              >
+                Fichier
+              </a>
+            ) : null}
+            {canEdit && b.status_code === "GENERATED" ? (
+              <Button variant="secondary" disabled={pending} onClick={() => setDeposit({ batch: b, ref: "", date: today() })}>
+                Déposé
+              </Button>
+            ) : null}
+            {canEdit && b.status_code === "DEPOSITED" ? (
+              <>
+                <Button disabled={pending} onClick={() => setStatus(b, "EXECUTED")}>
+                  Exécuté
+                </Button>
+                <Button variant="ghost" disabled={pending} onClick={() => setStatus(b, "GENERATED")}>
+                  Annuler le dépôt
+                </Button>
+              </>
+            ) : null}
+            {canEdit && (b.status_code === "GENERATED" || b.status_code === "DEPOSITED") ? (
+              <Button variant="ghost" disabled={pending} onClick={() => cancel(b)}>
+                Annuler le lot
+              </Button>
+            ) : null}
+          </div>
+        );
+      },
+    }),
+  ];
 
   return (
     <div className="space-y-5">
@@ -477,116 +596,14 @@ export function TransfersManager({
         </RhChip>
       </div>
 
-      <RhTableWrap>
-        <table className="min-w-full text-sm">
-          <thead className="border-b border-border/70 bg-surface-muted/80">
-            <tr>
-              <th className={rhTh()}>Lot</th>
-              <th className={rhTh()}>Mode</th>
-              <th className={rhTh()}>Chantier</th>
-              <th className={rhTh()}>Virements</th>
-              <th className={rhTh()}>Total (DA)</th>
-              <th className={rhTh()}>Statut / dépôt</th>
-              <th className={rhTh()} />
-            </tr>
-          </thead>
-          <tbody>
-            {batches.length === 0 ? (
-              <tr>
-                <td className={`${rhTd()} py-6 text-center text-foreground/55`} colSpan={7}>
-                  Aucun lot pour {String(month).padStart(2, "0")}/{year}.
-                </td>
-              </tr>
-            ) : (
-              batches.map((b) => (
-                <tr key={b.id} className="border-b border-border/60 align-top">
-                  <td className={rhTd()}>
-                    <span className="font-mono font-semibold">{b.batch_no}</span>
-                    <span className="block text-[11px] text-foreground/55">
-                      {new Date(b.created_at).toLocaleString("fr-FR")} · {b.creator_name ?? "—"}
-                    </span>
-                    <span className="block font-mono text-[10px] text-foreground/40" title={b.sha256}>
-                      SHA-256 {b.sha256.slice(0, 16)}…
-                    </span>
-                    {b.double_payment_risk ? (
-                      <span className="mt-1 flex flex-wrap items-center gap-1">
-                        <RhChip tone="danger">Risque de double paiement</RhChip>
-                        {b.decision_id ? (
-                          <Link href={`/decisions/${b.decision_id}`} className="text-[11px] font-semibold text-brand hover:underline">
-                            Décision D9
-                          </Link>
-                        ) : null}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className={rhTd()}>
-                    {b.mode}
-                    <span className="block text-[11px] text-foreground/55">{b.file_format}</span>
-                  </td>
-                  <td className={rhTd()}>{b.site_name ?? "Tous"}</td>
-                  <td className={`${rhTd()} tabular-nums`}>{b.line_count}</td>
-                  <td className={`${rhTd()} font-mono`}>{money(b.total_amount)}</td>
-                  <td className={rhTd()}>
-                    <RhChip tone={STATUS[b.status_code].tone}>{STATUS[b.status_code].label}</RhChip>
-                    {b.deposit_ref ? (
-                      <span className="mt-1 block text-[11px] text-foreground/60">
-                        Réf. {b.deposit_ref} · {b.deposit_date} {b.depositor_name ? `· ${b.depositor_name}` : ""}
-                      </span>
-                    ) : null}
-                    {b.executed_at ? (
-                      <span className="block text-[11px] text-foreground/60">
-                        Exécuté le {new Date(b.executed_at).toLocaleDateString("fr-FR")}
-                      </span>
-                    ) : null}
-                    {b.cancelled_reason ? (
-                      <span className="block text-[11px] italic text-foreground/60">{b.cancelled_reason}</span>
-                    ) : null}
-                  </td>
-                  <td className={rhTd()}>
-                    <div className="flex flex-wrap gap-1">
-                      <Button variant="ghost" disabled={pending} onClick={() => showLines(b)}>
-                        Détail
-                      </Button>
-                      {b.status_code !== "CANCELLED" ? (
-                        <a
-                          className="inline-flex items-center rounded-xl border border-border/70 px-3 py-1.5 text-xs font-semibold hover:bg-surface-muted"
-                          href={`/api/rh/virements?batch=${b.id}`}
-                        >
-                          Fichier
-                        </a>
-                      ) : null}
-                      {canEdit && b.status_code === "GENERATED" ? (
-                        <Button
-                          variant="secondary"
-                          disabled={pending}
-                          onClick={() => setDeposit({ batch: b, ref: "", date: today() })}
-                        >
-                          Déposé
-                        </Button>
-                      ) : null}
-                      {canEdit && b.status_code === "DEPOSITED" ? (
-                        <>
-                          <Button disabled={pending} onClick={() => setStatus(b, "EXECUTED")}>
-                            Exécuté
-                          </Button>
-                          <Button variant="ghost" disabled={pending} onClick={() => setStatus(b, "GENERATED")}>
-                            Annuler le dépôt
-                          </Button>
-                        </>
-                      ) : null}
-                      {canEdit && (b.status_code === "GENERATED" || b.status_code === "DEPOSITED") ? (
-                        <Button variant="ghost" disabled={pending} onClick={() => cancel(b)}>
-                          Annuler le lot
-                        </Button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </RhTableWrap>
+      <DataTable
+        data={batches}
+        columns={batchColumns}
+        getRowId={(b) => b.id}
+        searchPlaceholder="Rechercher un lot, un chantier, une référence…"
+        searchText={(b) => [b.batch_no, b.mode, b.site_name ?? "Tous", b.deposit_ref, b.creator_name].filter(Boolean).join(" ")}
+        emptyTitle={`Aucun lot pour ${String(month).padStart(2, "0")}/${year}.`}
+      />
 
       {deposit ? (
         <RhModal
@@ -626,26 +643,16 @@ export function TransfersManager({
 
       {lines ? (
         <RhModal title={`Lot ${lines.batch.batch_no} · ${lines.rows.length} virement(s)`} onClose={() => setLines(null)} size="lg">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr>
-                <th className={rhTh()}>Matricule</th>
-                <th className={rhTh()}>Bénéficiaire</th>
-                <th className={rhTh()}>Compte</th>
-                <th className={rhTh()}>Montant (DA)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lines.rows.map((l) => (
-                <tr key={l.slip_id} className="border-b border-border/60">
-                  <td className={rhTd()}>{l.matricule}</td>
-                  <td className={rhTd()}>{l.employee_name}</td>
-                  <td className={`${rhTd()} font-mono`}>{l.account}</td>
-                  <td className={`${rhTd()} font-mono`}>{money(l.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DataTable
+            data={lines.rows}
+            columns={lineColumns}
+            getRowId={(l) => l.slip_id}
+            searchPlaceholder="Rechercher un matricule ou un bénéficiaire…"
+            searchText={(l) => `${l.matricule} ${l.employee_name}`}
+            pageSize={0}
+            columnToggle={false}
+            emptyTitle="Aucun virement"
+          />
         </RhModal>
       ) : null}
     </div>

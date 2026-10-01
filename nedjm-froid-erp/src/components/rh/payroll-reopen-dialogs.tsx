@@ -9,6 +9,7 @@ import {
   type PayrollSlipVersionRow,
 } from "@/lib/actions/hr-ops";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhChip, RhField, rhInput } from "@/components/rh/rh-ui";
 import { QuickDialog } from "@/components/rules/rule-ui";
 import { runStatusLabel } from "@/lib/hr/payroll-run-status";
@@ -85,6 +86,46 @@ export function ReopenRequestDialog({
   );
 }
 
+const versionCol = dataColumns<PayrollSlipVersionRow>();
+
+const versionColumns = [
+  versionCol.accessor("employee", { header: "Salarié" }),
+  versionCol.accessor("version_no", { header: "V." }),
+  versionCol.accessor((v) => runStatusLabel(v.run_status).fr, {
+    id: "status",
+    header: "Statut",
+    cell: (info) => <RhChip>{info.getValue()}</RhChip>,
+  }),
+  versionCol.accessor("gross_amount", {
+    header: "Brut",
+    meta: { align: "right", className: "tabular-nums" },
+    cell: (info) => money(info.getValue()),
+  }),
+  versionCol.accessor("irg_amount", {
+    header: "IRG",
+    meta: { align: "right", className: "tabular-nums" },
+    cell: (info) => money(info.getValue()),
+  }),
+  versionCol.accessor("net_payable", {
+    header: "Net",
+    meta: { align: "right", className: "tabular-nums" },
+    cell: (info) => money(info.getValue()),
+  }),
+  versionCol.accessor("captured_at", {
+    header: "Figée le",
+    cell: ({ row }) => (
+      <>
+        {dateTime(row.original.captured_at)}
+        {row.original.decision_id ? (
+          <Link href={`/decisions/${row.original.decision_id}`} className="ml-1 text-brand hover:underline">
+            D7
+          </Link>
+        ) : null}
+      </>
+    ),
+  }),
+];
+
 /** Frozen copies taken before each reopening; read-only, never restored automatically. */
 export function SlipVersionsDialog({ runId, label, onClose }: { runId: string; label: string; onClose: () => void }) {
   const [rows, setRows] = useState<PayrollSlipVersionRow[] | null>(null);
@@ -115,43 +156,17 @@ export function SlipVersionsDialog({ runId, label, onClose }: { runId: string; l
     >
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
       {!rows && !error ? <p className="text-sm text-foreground/60">Chargement…</p> : null}
-      {rows && !rows.length ? <p className="text-sm text-foreground/60">Aucune copie figée pour cette paie.</p> : null}
-      {rows?.length ? (
-        <table className="min-w-full text-xs">
-          <thead className="text-left uppercase text-foreground/55">
-            <tr>
-              <th className="py-1 pr-3">Salarié</th>
-              <th className="py-1 pr-3">V.</th>
-              <th className="py-1 pr-3">Statut</th>
-              <th className="py-1 pr-3 text-right">Brut</th>
-              <th className="py-1 pr-3 text-right">IRG</th>
-              <th className="py-1 pr-3 text-right">Net</th>
-              <th className="py-1">Figée le</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((v) => (
-              <tr key={v.id} className="border-t border-border/60">
-                <td className="py-1 pr-3">{v.employee}</td>
-                <td className="py-1 pr-3">{v.version_no}</td>
-                <td className="py-1 pr-3">
-                  <RhChip>{runStatusLabel(v.run_status).fr}</RhChip>
-                </td>
-                <td className="py-1 pr-3 text-right tabular-nums">{money(v.gross_amount)}</td>
-                <td className="py-1 pr-3 text-right tabular-nums">{money(v.irg_amount)}</td>
-                <td className="py-1 pr-3 text-right tabular-nums">{money(v.net_payable)}</td>
-                <td className="py-1">
-                  {dateTime(v.captured_at)}
-                  {v.decision_id ? (
-                    <Link href={`/decisions/${v.decision_id}`} className="ml-1 text-brand hover:underline">
-                      D7
-                    </Link>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {rows ? (
+        <DataTable
+          data={rows}
+          columns={versionColumns}
+          getRowId={(v) => v.id}
+          searchPlaceholder="Rechercher un salarié…"
+          searchText={(v) => v.employee}
+          pageSize={0}
+          columnToggle={false}
+          emptyTitle="Aucune copie figée pour cette paie."
+        />
       ) : null}
     </QuickDialog>
   );

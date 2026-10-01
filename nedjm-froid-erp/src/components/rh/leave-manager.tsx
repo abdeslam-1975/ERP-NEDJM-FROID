@@ -18,7 +18,33 @@ import { LEAVE_KINDS, calendarDays, leaveKindLabel, type LeaveKind } from "@/lib
 import { slashDateIso } from "@/lib/hr/hr-letters";
 import { HrLetterDialog } from "@/components/rh/hr-letter-dialog";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhChip, RhField, bi, rhInput } from "@/components/rh/rh-ui";
+
+const requestCol = dataColumns<LeaveRequestRow>();
+const balanceCol = dataColumns<LeaveBalanceRow>();
+const adjustmentCol = dataColumns<LeaveAdjustmentRow>();
+
+const balanceColumns = [
+  balanceCol.accessor("employee_label", { header: bi("Employé", "العامل") }),
+  balanceCol.accessor("months", { header: bi("Mois travaillés", "الأشهر"), meta: { align: "right", className: "tabular-nums" } }),
+  balanceCol.accessor("accrued", { header: bi("Acquis", "المكتسب"), meta: { align: "right", className: "tabular-nums" } }),
+  balanceCol.accessor("adjustments", {
+    header: bi("Ajustements", "التعديلات"),
+    meta: { align: "right", className: "tabular-nums" },
+  }),
+  balanceCol.accessor("taken", { header: bi("Pris", "المستهلك"), meta: { align: "right", className: "tabular-nums" } }),
+  balanceCol.accessor("pending", {
+    header: bi("En attente", "قيد الانتظار"),
+    meta: { align: "right", className: "tabular-nums" },
+    cell: (info) => info.getValue() || "",
+  }),
+  balanceCol.accessor("balance", {
+    header: bi("Solde", "الرصيد"),
+    meta: { align: "right", className: "font-semibold tabular-nums" },
+    cell: (info) => <span className={info.getValue() < 0 ? "text-red-600" : undefined}>{info.getValue()}</span>,
+  }),
+];
 
 const STATUS: Record<LeaveRequestRow["status"], { label: string; tone: "neutral" | "success" | "warning" | "danger" }> = {
   SUBMITTED: { label: "En attente · قيد الانتظار", tone: "warning" },
@@ -53,7 +79,6 @@ export function LeaveManager({
   const [balances, setBalances] = useState(initialBalances);
   const [adjustments, setAdjustments] = useState(initialAdjustments);
   const [filter, setFilter] = useState<"pending" | "all">("pending");
-  const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -72,11 +97,8 @@ export function LeaveManager({
 
   const active = employees.filter((e) => e.employment_status !== "EXITED");
   const balanceOf = useMemo(() => new Map(balances.map((b) => [b.employee_id, b])), [balances]);
-  const q = search.trim().toLowerCase();
   const visible = requests.filter(
-    (r) =>
-      (filter === "all" || r.status === "SUBMITTED" || (r.status === "APPROVED" && r.end_date >= today())) &&
-      (!q || r.employee_label.toLowerCase().includes(q)),
+    (r) => filter === "all" || r.status === "SUBMITTED" || (r.status === "APPROVED" && r.end_date >= today()),
   );
   const draftDays = draft.start_date && draft.end_date ? calendarDays(draft.start_date, draft.end_date) : 0;
   const draftBalance = draft.employee_id ? balanceOf.get(draft.employee_id) : undefined;
@@ -160,6 +182,137 @@ export function LeaveManager({
       await reload();
     });
   }
+
+  const requestColumns = [
+    requestCol.accessor("employee_label", {
+      header: bi("Employé", "العامل"),
+      cell: ({ row }) => (
+        <>
+          {row.original.employee_label}
+          {row.original.reason ? <div className="text-xs text-foreground/55">{row.original.reason}</div> : null}
+        </>
+      ),
+    }),
+    requestCol.accessor((r) => leaveKindLabel(r.kind).fr, {
+      id: "kind",
+      header: bi("Nature", "النوع"),
+      cell: ({ row }) => {
+        const k = leaveKindLabel(row.original.kind);
+        return (
+          <>
+            {k.fr} <span className="text-xs text-foreground/50">({k.legend})</span>
+            {row.original.cnas_ref ? (
+              <div className="text-xs text-foreground/55">CNAS : {row.original.cnas_ref}</div>
+            ) : null}
+          </>
+        );
+      },
+    }),
+    requestCol.accessor("start_date", {
+      header: bi("Période", "الفترة"),
+      meta: { className: "tabular-nums" },
+      cell: ({ row }) => (
+        <>
+          {slashDateIso(row.original.start_date)} → {slashDateIso(row.original.end_date)}
+        </>
+      ),
+    }),
+    requestCol.accessor("days", { header: bi("Jours", "الأيام"), meta: { align: "right", className: "tabular-nums" } }),
+    requestCol.accessor((r) => STATUS[r.status].label, {
+      id: "status",
+      header: bi("Statut", "الحالة"),
+      cell: ({ row }) => {
+        const st = STATUS[row.original.status];
+        return (
+          <>
+            <RhChip tone={st.tone}>{st.label}</RhChip>
+            {row.original.decided_by_name ? (
+              <div className="text-xs text-foreground/50">
+                {row.original.decided_by_name}
+                {row.original.decision_note ? ` · ${row.original.decision_note}` : ""}
+              </div>
+            ) : null}
+          </>
+        );
+      },
+    }),
+    requestCol.accessor((r) => r.correspondence_number ?? "", {
+      id: "number",
+      header: bi("Titre", "السند"),
+      meta: { className: "tabular-nums" },
+      cell: (info) => info.getValue() || "—",
+    }),
+    requestCol.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      meta: { align: "right", className: "space-x-1 whitespace-nowrap" },
+      cell: ({ row: { original: row } }) => (
+        <>
+          {row.status === "APPROVED" ? (
+            <Button variant="secondary" onClick={() => setPrintRow(row)}>
+              {bi("Titre de congé", "سند العطلة")}
+            </Button>
+          ) : null}
+          {canDecide && row.status === "SUBMITTED" ? (
+            <>
+              <Button disabled={pending} onClick={() => decide(row, "APPROVED")}>
+                {bi("Approuver", "اعتماد")}
+              </Button>
+              <Button variant="secondary" disabled={pending} onClick={() => decide(row, "REJECTED")}>
+                {bi("Refuser", "رفض")}
+              </Button>
+            </>
+          ) : null}
+          {(canDecide && (row.status === "SUBMITTED" || row.status === "APPROVED")) ||
+          (!canDecide && row.status === "SUBMITTED") ? (
+            <Button variant="secondary" disabled={pending} onClick={() => decide(row, "CANCELLED")}>
+              {bi("Annuler", "إلغاء")}
+            </Button>
+          ) : null}
+        </>
+      ),
+    }),
+  ];
+
+  const adjustmentColumns = [
+    adjustmentCol.accessor("employee_label", { header: bi("Employé", "العامل") }),
+    adjustmentCol.accessor("days", {
+      header: bi("Jours", "الأيام"),
+      meta: { align: "right", className: "tabular-nums" },
+      cell: (info) => (info.getValue() > 0 ? `+${info.getValue()}` : info.getValue()),
+    }),
+    adjustmentCol.accessor("as_of", {
+      header: bi("Date", "التاريخ"),
+      meta: { className: "tabular-nums" },
+      cell: (info) => slashDateIso(info.getValue()),
+    }),
+    adjustmentCol.accessor("reason", {
+      header: bi("Motif", "السبب"),
+      cell: ({ row }) => (
+        <>
+          {row.original.reason}
+          {row.original.author_name ? (
+            <span className="text-xs text-foreground/50"> · {row.original.author_name}</span>
+          ) : null}
+        </>
+      ),
+    }),
+    adjustmentCol.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      meta: { align: "right" },
+      cell: ({ row }) =>
+        canDecide ? (
+          <Button variant="secondary" disabled={pending} onClick={() => removeAdjustment(row.original)}>
+            {bi("Supprimer", "حذف")}
+          </Button>
+        ) : null,
+    }),
+  ];
 
   const tabBtn = (key: typeof tab, label: string) => (
     <Button variant={tab === key ? "primary" : "secondary"} onClick={() => setTab(key)}>
@@ -276,138 +429,37 @@ export function LeaveManager({
             </div>
           ) : null}
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex gap-2">
-              <Button variant={filter === "pending" ? "primary" : "secondary"} onClick={() => setFilter("pending")}>
-                {bi("À traiter / en cours", "الجارية")}
-              </Button>
-              <Button variant={filter === "all" ? "primary" : "secondary"} onClick={() => setFilter("all")}>
-                {bi("Historique complet", "الكل")}
-              </Button>
-            </div>
-            <input
-              className={`${rhInput} mt-0 w-64`}
-              placeholder={bi("Rechercher un employé…", "بحث")}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          <div className="overflow-x-auto rounded-2xl border border-border/80 bg-surface">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-muted text-xs uppercase text-foreground/60">
-                <tr>
-                  <th className="px-3 py-2 text-left">{bi("Employé", "العامل")}</th>
-                  <th className="px-3 py-2 text-left">{bi("Nature", "النوع")}</th>
-                  <th className="px-3 py-2 text-left">{bi("Période", "الفترة")}</th>
-                  <th className="px-3 py-2 text-right">{bi("Jours", "الأيام")}</th>
-                  <th className="px-3 py-2 text-left">{bi("Statut", "الحالة")}</th>
-                  <th className="px-3 py-2 text-left">{bi("Titre", "السند")}</th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {visible.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-3 py-6 text-center text-foreground/50">
-                      {bi("Aucune demande.", "لا توجد طلبات.")}
-                    </td>
-                  </tr>
-                ) : (
-                  visible.map((row) => {
-                    const k = leaveKindLabel(row.kind);
-                    const st = STATUS[row.status];
-                    return (
-                      <tr key={row.id} className="border-t border-border/60 align-top">
-                        <td className="px-3 py-2">
-                          {row.employee_label}
-                          {row.reason ? <div className="text-xs text-foreground/55">{row.reason}</div> : null}
-                        </td>
-                        <td className="px-3 py-2">
-                          {k.fr} <span className="text-xs text-foreground/50">({k.legend})</span>
-                          {row.cnas_ref ? <div className="text-xs text-foreground/55">CNAS : {row.cnas_ref}</div> : null}
-                        </td>
-                        <td className="px-3 py-2 tabular-nums">
-                          {slashDateIso(row.start_date)} → {slashDateIso(row.end_date)}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums">{row.days}</td>
-                        <td className="px-3 py-2">
-                          <RhChip tone={st.tone}>{st.label}</RhChip>
-                          {row.decided_by_name ? (
-                            <div className="text-xs text-foreground/50">
-                              {row.decided_by_name}
-                              {row.decision_note ? ` · ${row.decision_note}` : ""}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="px-3 py-2 tabular-nums">{row.correspondence_number ?? "—"}</td>
-                        <td className="space-x-1 whitespace-nowrap px-3 py-2 text-right">
-                          {row.status === "APPROVED" ? (
-                            <Button variant="secondary" onClick={() => setPrintRow(row)}>
-                              {bi("Titre de congé", "سند العطلة")}
-                            </Button>
-                          ) : null}
-                          {canDecide && row.status === "SUBMITTED" ? (
-                            <>
-                              <Button disabled={pending} onClick={() => decide(row, "APPROVED")}>
-                                {bi("Approuver", "اعتماد")}
-                              </Button>
-                              <Button variant="secondary" disabled={pending} onClick={() => decide(row, "REJECTED")}>
-                                {bi("Refuser", "رفض")}
-                              </Button>
-                            </>
-                          ) : null}
-                          {(canDecide && (row.status === "SUBMITTED" || row.status === "APPROVED")) ||
-                          (!canDecide && row.status === "SUBMITTED") ? (
-                            <Button variant="secondary" disabled={pending} onClick={() => decide(row, "CANCELLED")}>
-                              {bi("Annuler", "إلغاء")}
-                            </Button>
-                          ) : null}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            data={visible}
+            columns={requestColumns}
+            getRowId={(r) => r.id}
+            searchPlaceholder={bi("Rechercher un employé…", "بحث")}
+            searchText={(r) => r.employee_label}
+            toolbar={
+              <div className="flex gap-2">
+                <Button variant={filter === "pending" ? "primary" : "secondary"} onClick={() => setFilter("pending")}>
+                  {bi("À traiter / en cours", "الجارية")}
+                </Button>
+                <Button variant={filter === "all" ? "primary" : "secondary"} onClick={() => setFilter("all")}>
+                  {bi("Historique complet", "الكل")}
+                </Button>
+              </div>
+            }
+            emptyTitle={bi("Aucune demande", "لا توجد طلبات")}
+          />
         </>
       ) : null}
 
       {tab === "balances" ? (
-        <div className="overflow-x-auto rounded-2xl border border-border/80 bg-surface">
-          <table className="w-full text-sm">
-            <thead className="bg-surface-muted text-xs uppercase text-foreground/60">
-              <tr>
-                <th className="px-3 py-2 text-left">{bi("Employé", "العامل")}</th>
-                <th className="px-3 py-2 text-right">{bi("Mois travaillés", "الأشهر")}</th>
-                <th className="px-3 py-2 text-right">{bi("Acquis", "المكتسب")}</th>
-                <th className="px-3 py-2 text-right">{bi("Ajustements", "التعديلات")}</th>
-                <th className="px-3 py-2 text-right">{bi("Pris", "المستهلك")}</th>
-                <th className="px-3 py-2 text-right">{bi("En attente", "قيد الانتظار")}</th>
-                <th className="px-3 py-2 text-right">{bi("Solde", "الرصيد")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {balances
-                .filter((b) => !q || b.employee_label.toLowerCase().includes(q))
-                .map((b) => (
-                  <tr key={b.employee_id} className="border-t border-border/60">
-                    <td className="px-3 py-2">{b.employee_label}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{b.months}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{b.accrued}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{b.adjustments}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{b.taken}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{b.pending || ""}</td>
-                    <td
-                      className={`px-3 py-2 text-right font-semibold tabular-nums ${b.balance < 0 ? "text-red-600" : ""}`}
-                    >
-                      {b.balance}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
+        <div className="space-y-1">
+          <DataTable
+            data={balances}
+            columns={balanceColumns}
+            getRowId={(b) => b.employee_id}
+            searchPlaceholder={bi("Rechercher un employé…", "بحث")}
+            searchText={(b) => b.employee_label}
+            emptyTitle={bi("Aucun solde", "لا توجد أرصدة")}
+          />
           <p className="px-3 py-2 text-xs text-foreground/55">
             {bi(
               `Taux : ${balances[0]?.rate ?? 2.5} j / mois (variable légale CONGE_JOURS_MOIS, modifiable dans Paramètres RH).`,
@@ -473,47 +525,14 @@ export function LeaveManager({
               </div>
             </div>
           ) : null}
-          <div className="overflow-x-auto rounded-2xl border border-border/80 bg-surface">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-muted text-xs uppercase text-foreground/60">
-                <tr>
-                  <th className="px-3 py-2 text-left">{bi("Employé", "العامل")}</th>
-                  <th className="px-3 py-2 text-right">{bi("Jours", "الأيام")}</th>
-                  <th className="px-3 py-2 text-left">{bi("Date", "التاريخ")}</th>
-                  <th className="px-3 py-2 text-left">{bi("Motif", "السبب")}</th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {adjustments.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-foreground/50">
-                      {bi("Aucun ajustement.", "لا توجد تعديلات.")}
-                    </td>
-                  </tr>
-                ) : (
-                  adjustments.map((a) => (
-                    <tr key={a.id} className="border-t border-border/60">
-                      <td className="px-3 py-2">{a.employee_label}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{a.days > 0 ? `+${a.days}` : a.days}</td>
-                      <td className="px-3 py-2 tabular-nums">{slashDateIso(a.as_of)}</td>
-                      <td className="px-3 py-2">
-                        {a.reason}
-                        {a.author_name ? <span className="text-xs text-foreground/50"> · {a.author_name}</span> : null}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {canDecide ? (
-                          <Button variant="secondary" disabled={pending} onClick={() => removeAdjustment(a)}>
-                            {bi("Supprimer", "حذف")}
-                          </Button>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            data={adjustments}
+            columns={adjustmentColumns}
+            getRowId={(a) => a.id}
+            searchPlaceholder={bi("Rechercher un employé…", "بحث")}
+            searchText={(a) => [a.employee_label, a.reason, a.author_name].filter(Boolean).join(" ")}
+            emptyTitle={bi("Aucun ajustement", "لا توجد تعديلات")}
+          />
         </>
       ) : null}
 

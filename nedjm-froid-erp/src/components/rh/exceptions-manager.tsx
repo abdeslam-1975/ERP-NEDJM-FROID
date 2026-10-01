@@ -11,17 +11,15 @@ import {
 import type { SalaryRubrique } from "@/lib/actions/hr-salary";
 import { RETENUE_CATEGORY, sortBySalaryClass, type SalaryCategory } from "@/lib/hr/payroll-calc";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import {
   RhAlert,
   RhChip,
   RhField,
   RhModal,
   RhPageHeader,
-  RhTableWrap,
   bi,
   rhInput,
-  rhTd,
-  rhTh,
 } from "@/components/rh/rh-ui";
 import { SALARY_CLASSES, classTitle } from "@/components/rh/contract-salary-fields";
 import {
@@ -34,6 +32,16 @@ import {
 } from "@/lib/hr/salary-value-mode";
 
 type Emp = { id: string; label: string };
+
+const col = dataColumns<SalaryExceptionRow>();
+
+function statusLabel(status: SalaryExceptionRow["status_code"]) {
+  return status === "APPROVED"
+    ? bi("Approuvée", "معتمدة")
+    : status === "CANCELLED"
+      ? bi("Annulée", "ملغاة")
+      : bi("Brouillon", "مسودة");
+}
 
 type FormState = {
   id?: string;
@@ -204,6 +212,134 @@ export function ExceptionsManager({
     });
   }
 
+  function rowUnit(row: SalaryExceptionRow) {
+    return row.unit ?? rubriques.find((r) => r.id === row.rubrique_id)?.unit ?? "month";
+  }
+
+  const columns = [
+    col.accessor("employee_label", { header: bi("Employé", "العامل") }),
+    col.accessor((r) => `${r.rubrique_code} · ${r.rubrique_label_fr}`, {
+      id: "rubrique",
+      header: bi("Rubrique", "البند"),
+      cell: ({ row: { original: row } }) => (
+        <>
+          {row.rubrique_code} · {row.rubrique_label_fr}
+          <span className="mt-0.5 block text-xs" dir="rtl">
+            {row.rubrique_label_ar}
+          </span>
+          <span className="text-[11px] text-foreground/55">{classTitle(row.category)}</span>
+        </>
+      ),
+    }),
+    col.accessor((r) => r.period_year * 100 + r.period_month, {
+      id: "period",
+      header: bi("Période", "الفترة"),
+      cell: ({ row: { original: row } }) => (
+        <>
+          {String(row.period_month).padStart(2, "0")}/{row.period_year}
+          {row.duration_mode === "until" && row.until_year
+            ? ` → ${String(row.until_month).padStart(2, "0")}/${row.until_year}`
+            : ` · ${bi("une fois", "مرة واحدة")}`}
+          <span className="mt-0.5 block text-xs text-foreground/60">{row.reason}</span>
+        </>
+      ),
+    }),
+    col.accessor("amount", {
+      header: bi("Montant", "المبلغ"),
+      meta: { className: "font-mono" },
+      cell: ({ row: { original: row } }) => (
+        <>
+          {row.amount} {valueSuffix(rowUnit(row))}
+          <span className="mt-0.5 block text-[11px] font-sans text-foreground/55">{valueModeLabel(rowUnit(row), bi)}</span>
+        </>
+      ),
+    }),
+    col.accessor((r) => statusLabel(r.status_code), {
+      id: "status",
+      header: bi("Statut", "الحالة"),
+      cell: ({ row: { original: row } }) => (
+        <>
+          <RhChip
+            tone={row.status_code === "APPROVED" ? "success" : row.status_code === "CANCELLED" ? "danger" : "warning"}
+          >
+            {statusLabel(row.status_code)}
+          </RhChip>
+          <span className="mt-1 block text-[11px] text-foreground/55">
+            {bi("Saisie", "أدخلها")} : {row.creator_name ?? "—"}
+          </span>
+          {row.approved_at ? (
+            <span className="block text-[11px] text-foreground/55">
+              {bi("Approuvée par", "اعتمدها")} {row.approver_name ?? row.grantor_name ?? "—"} ·{" "}
+              {new Date(row.approved_at).toLocaleDateString("fr-FR")}
+            </span>
+          ) : null}
+          {row.decided_note ? (
+            <span className="block text-[11px] italic text-foreground/55">{row.decided_note}</span>
+          ) : null}
+        </>
+      ),
+    }),
+    col.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row: { original: row } }) =>
+        canEdit ? (
+          <div className="flex flex-wrap gap-1">
+            {row.status_code === "DRAFT" ? (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setForm({
+                    id: row.id,
+                    employee_id: row.employee_id,
+                    category: row.category,
+                    rubrique_id: row.rubrique_id,
+                    amount: String(row.amount),
+                    unit: rowUnit(row),
+                    period_year: row.period_year,
+                    period_month: row.period_month,
+                    duration_mode: row.duration_mode,
+                    until_year: row.until_year ? String(row.until_year) : "",
+                    until_month: row.until_month ? String(row.until_month) : "",
+                    reason: row.reason,
+                    status_code: row.status_code,
+                  });
+                  setOpen(true);
+                }}
+              >
+                {bi("Modifier", "تعديل")}
+              </Button>
+            ) : null}
+            {row.status_code === "DRAFT" ? (
+              row.created_by === currentUserId && !canApproveOwn ? (
+                <span className="self-center text-[11px] text-foreground/55">
+                  {bi("À approuver par un autre responsable", "ينتظر اعتماد مسؤول آخر")}
+                </span>
+              ) : (
+                <Button disabled={pending} onClick={() => decide(row, "APPROVED")}>
+                  {bi("Approuver", "اعتماد")}
+                </Button>
+              )
+            ) : null}
+            {row.status_code === "DRAFT" ? (
+              <Button variant="ghost" disabled={pending} onClick={() => remove(row)}>
+                {bi("Supprimer", "حذف")}
+              </Button>
+            ) : null}
+            {row.status_code === "APPROVED" ? (
+              <Button variant="secondary" disabled={pending} onClick={() => decide(row, "CANCELLED")}>
+                {bi("Annuler", "إلغاء")}
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          "—"
+        ),
+    }),
+  ];
+
   return (
     <div className="space-y-5">
       <RhPageHeader
@@ -214,12 +350,9 @@ export function ExceptionsManager({
         )}
         actions={
           <>
-            <Link
-              className="rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted hover:text-foreground"
-              href="/rh/paie"
-            >
-              {bi("Paie", "الأجور")}
-            </Link>
+            <Button asChild variant="secondary">
+              <Link href="/rh/paie">{bi("Paie", "الأجور")}</Link>
+            </Button>
             {canEdit ? (
               <Button onClick={openNew}>{bi("Nouvelle exception", "استثناء جديد")}</Button>
             ) : null}
@@ -228,151 +361,18 @@ export function ExceptionsManager({
       />
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
       {info && !error ? <RhAlert tone="success">{info}</RhAlert> : null}
-      <RhTableWrap>
-        <table className="min-w-full text-sm">
-          <thead className="border-b border-border/70 bg-surface-muted/80">
-            <tr>
-              <th className={rhTh()}>{bi("Employé", "العامل")}</th>
-              <th className={rhTh()}>{bi("Rubrique", "البند")}</th>
-              <th className={rhTh()}>{bi("Période", "الفترة")}</th>
-              <th className={rhTh()}>{bi("Montant", "المبلغ")}</th>
-              <th className={rhTh()}>{bi("Statut", "الحالة")}</th>
-              <th className={rhTh()} />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td className={`${rhTd()} py-6 text-center text-foreground/55`} colSpan={6}>
-                  {bi("Aucune exception.", "لا استثناءات.")}
-                </td>
-              </tr>
-            ) : (
-              rows.map((row) => (
-                <tr key={row.id} className="border-b border-border/60">
-                  <td className={rhTd()}>{row.employee_label}</td>
-                  <td className={rhTd()}>
-                    {row.rubrique_code} · {row.rubrique_label_fr}
-                    <span className="mt-0.5 block text-xs" dir="rtl">
-                      {row.rubrique_label_ar}
-                    </span>
-                    <span className="text-[11px] text-foreground/55">{classTitle(row.category)}</span>
-                  </td>
-                  <td className={rhTd()}>
-                    {String(row.period_month).padStart(2, "0")}/{row.period_year}
-                    {row.duration_mode === "until" && row.until_year
-                      ? ` → ${String(row.until_month).padStart(2, "0")}/${row.until_year}`
-                      : ` · ${bi("une fois", "مرة واحدة")}`}
-                    <span className="mt-0.5 block text-xs text-foreground/60">{row.reason}</span>
-                  </td>
-                  <td className={`${rhTd()} font-mono`}>
-                    {row.amount}{" "}
-                    {valueSuffix(
-                      row.unit ??
-                        rubriques.find((r) => r.id === row.rubrique_id)?.unit ??
-                        "month",
-                    )}
-                    <span className="mt-0.5 block text-[11px] font-sans text-foreground/55">
-                      {valueModeLabel(
-                        row.unit ??
-                          rubriques.find((r) => r.id === row.rubrique_id)?.unit ??
-                          "month",
-                        bi,
-                      )}
-                    </span>
-                  </td>
-                  <td className={rhTd()}>
-                    <RhChip
-                      tone={
-                        row.status_code === "APPROVED"
-                          ? "success"
-                          : row.status_code === "CANCELLED"
-                            ? "danger"
-                            : "warning"
-                      }
-                    >
-                      {row.status_code === "APPROVED"
-                        ? bi("Approuvée", "معتمدة")
-                        : row.status_code === "CANCELLED"
-                          ? bi("Annulée", "ملغاة")
-                          : bi("Brouillon", "مسودة")}
-                    </RhChip>
-                    <span className="mt-1 block text-[11px] text-foreground/55">
-                      {bi("Saisie", "أدخلها")} : {row.creator_name ?? "—"}
-                    </span>
-                    {row.approved_at ? (
-                      <span className="block text-[11px] text-foreground/55">
-                        {bi("Approuvée par", "اعتمدها")} {row.approver_name ?? row.grantor_name ?? "—"} ·{" "}
-                        {new Date(row.approved_at).toLocaleDateString("fr-FR")}
-                      </span>
-                    ) : null}
-                    {row.decided_note ? (
-                      <span className="block text-[11px] italic text-foreground/55">{row.decided_note}</span>
-                    ) : null}
-                  </td>
-                  <td className={rhTd()}>
-                    {canEdit ? (
-                      <div className="flex flex-wrap gap-1">
-                        {row.status_code === "DRAFT" ? (
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            setForm({
-                              id: row.id,
-                              employee_id: row.employee_id,
-                              category: row.category,
-                              rubrique_id: row.rubrique_id,
-                              amount: String(row.amount),
-                              unit:
-                                row.unit ??
-                                rubriques.find((r) => r.id === row.rubrique_id)?.unit ??
-                                "month",
-                              period_year: row.period_year,
-                              period_month: row.period_month,
-                              duration_mode: row.duration_mode,
-                              until_year: row.until_year ? String(row.until_year) : "",
-                              until_month: row.until_month ? String(row.until_month) : "",
-                              reason: row.reason,
-                              status_code: row.status_code,
-                            });
-                            setOpen(true);
-                          }}
-                        >
-                          {bi("Modifier", "تعديل")}
-                        </Button>
-                        ) : null}
-                        {row.status_code === "DRAFT" ? (
-                          row.created_by === currentUserId && !canApproveOwn ? (
-                            <span className="self-center text-[11px] text-foreground/55">
-                              {bi("À approuver par un autre responsable", "ينتظر اعتماد مسؤول آخر")}
-                            </span>
-                          ) : (
-                            <Button disabled={pending} onClick={() => decide(row, "APPROVED")}>
-                              {bi("Approuver", "اعتماد")}
-                            </Button>
-                          )
-                        ) : null}
-                        {row.status_code === "DRAFT" ? (
-                          <Button variant="ghost" disabled={pending} onClick={() => remove(row)}>
-                            {bi("Supprimer", "حذف")}
-                          </Button>
-                        ) : null}
-                        {row.status_code === "APPROVED" ? (
-                          <Button variant="secondary" disabled={pending} onClick={() => decide(row, "CANCELLED")}>
-                            {bi("Annuler", "إلغاء")}
-                          </Button>
-                        ) : null}
-                      </div>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </RhTableWrap>
+      <DataTable
+        data={rows}
+        columns={columns}
+        getRowId={(r) => r.id}
+        searchPlaceholder="Employé, rubrique, motif…"
+        searchText={(r) =>
+          [r.employee_label, r.rubrique_code, r.rubrique_label_fr, r.rubrique_label_ar, r.reason, statusLabel(r.status_code)]
+            .filter(Boolean)
+            .join(" ")
+        }
+        emptyTitle={bi("Aucune exception", "لا استثناءات")}
+      />
 
       {open ? (
         <RhModal

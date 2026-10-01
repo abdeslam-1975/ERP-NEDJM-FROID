@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
@@ -18,7 +18,13 @@ import {
   type FinanceHubData,
   type FinanceTransaction,
 } from "@/lib/actions/finance";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { RhTabs } from "@/components/rh/rh-ui";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
+
+const txCol = dataColumns<FinanceTransaction>();
+const expenseCol = dataColumns<CashAdvance["expenses"][number]>();
 
 type Tab = "dashboard" | "operations" | "advances" | "reconciliation";
 
@@ -55,7 +61,7 @@ export function FinanceHub({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(loadError ?? null);
 
-  function run(action: () => Promise<{ ok: boolean; error?: string }>, success: string) {
+  const run = useCallback((action: () => Promise<{ ok: boolean; error?: string }>, success: string) => {
     setError(null);
     setMessage(null);
     startTransition(async () => {
@@ -67,7 +73,7 @@ export function FinanceHub({
       setMessage(success);
       router.refresh();
     });
-  }
+  }, [router]);
 
   const totalBank = initialData.accounts
     .filter((a) => a.account_type === "BANK" && a.active)
@@ -90,39 +96,16 @@ export function FinanceHub({
               Soldes en temps réel, journal immuable, rapprochement et avances de caisse.
             </p>
           </div>
-          <a
-            href="/finance/parametres"
-            className="rounded-md border border-white/30 bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/20"
-          >
-            Paramètres
-          </a>
+          <Button asChild variant="ghost" className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white">
+            <a href="/finance/parametres">Paramètres</a>
+          </Button>
         </div>
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-900 dark:bg-green-950/30 dark:text-green-200">
-          {message}
-        </div>
-      )}
+      {error && <Alert tone="danger">{error}</Alert>}
+      {message && <Alert tone="success">{message}</Alert>}
 
-      <div className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-surface p-1">
-        {tabs.map(({ id: value, label }) => (
-          <button
-            key={value}
-            className={`whitespace-nowrap rounded-md px-4 py-2 text-sm font-semibold ${
-              tab === value ? "bg-brand text-white" : "text-foreground/65 hover:bg-surface-muted"
-            }`}
-            onClick={() => setTab(value)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <RhTabs items={tabs} value={tab} onChange={(id) => setTab(id as typeof tab)} />
 
       {tab === "dashboard" && (
         <Dashboard
@@ -396,51 +379,67 @@ function Ledger({
   compact?: boolean;
 }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
         <h2 className="font-bold">{compact ? "Derniers mouvements" : "Journal financier"}</h2>
         <span className="text-xs text-foreground/50">{transactions.length} ligne(s)</span>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-sm">
-          <thead className="bg-surface-muted text-left text-xs uppercase text-foreground/55">
-            <tr>
-              <th className="px-3 py-2">Date</th>
-              <th className="px-3 py-2">Compte</th>
-              <th className="px-3 py-2">Libellé</th>
-              <th className="px-3 py-2">Catégorie</th>
-              <th className="px-3 py-2">Référence</th>
-              <th className="px-3 py-2 text-right">Entrée</th>
-              <th className="px-3 py-2 text-right">Sortie</th>
-              <th className="px-3 py-2">État</th>
-            </tr>
-          </thead>
-          <tbody>
-            {transactions.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-foreground/50">Aucun mouvement.</td></tr>
-            ) : transactions.map((t) => (
-              <tr key={t.id} className={`border-t border-border/70 ${t.reversal_of || t.is_reversed ? "opacity-55" : ""}`}>
-                <td className="px-3 py-2">{t.movement_date}</td>
-                <td className="px-3 py-2 font-semibold">{t.account_name}</td>
-                <td className="max-w-[260px] truncate px-3 py-2">{t.description}</td>
-                <td className="px-3 py-2 text-foreground/65">{t.category_label ?? "—"}</td>
-                <td className="px-3 py-2 font-mono text-xs">{t.reference ?? "—"}</td>
-                <td className="px-3 py-2 text-right font-semibold text-green-700">{t.direction === "IN" ? money(t.amount) : ""}</td>
-                <td className="px-3 py-2 text-right font-semibold text-red-700">{t.direction === "OUT" ? money(t.amount) : ""}</td>
-                <td className="px-3 py-2">
-                  {t.reversal_of ? <Badge tone="slate">Contre-passation</Badge>
-                    : t.is_reversed ? <Badge tone="red">Annulé</Badge>
-                    : t.reconciled_at ? <Badge tone="green">Rapproché</Badge>
-                    : <Badge tone="amber">Ouvert</Badge>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={transactions}
+        columns={ledgerColumns}
+        getRowId={(t) => t.id}
+        searchable={!compact}
+        columnToggle={!compact}
+        pageSize={compact ? 0 : 25}
+        searchPlaceholder="Libellé, compte, catégorie, référence"
+        searchText={(t) => [t.description, t.account_name, t.category_label, t.reference].filter(Boolean).join(" ")}
+        rowClassName={(t) => (t.reversal_of || t.is_reversed ? "opacity-55" : undefined)}
+        emptyTitle="Aucun mouvement."
+      />
     </section>
   );
 }
+
+function transactionState(t: FinanceTransaction) {
+  return t.reversal_of ? "Contre-passation" : t.is_reversed ? "Annulé" : t.reconciled_at ? "Rapproché" : "Ouvert";
+}
+
+const STATE_TONE = { "Contre-passation": "slate", Annulé: "red", Rapproché: "green", Ouvert: "amber" } as const;
+
+const ledgerColumns = [
+  txCol.accessor("movement_date", { header: "Date" }),
+  txCol.accessor("account_name", { header: "Compte", meta: { className: "font-semibold" } }),
+  txCol.accessor("description", { header: "Libellé", meta: { className: "max-w-[260px] truncate" } }),
+  txCol.accessor((t) => t.category_label ?? "", {
+    id: "category",
+    header: "Catégorie",
+    meta: { className: "text-foreground/65" },
+    cell: (info) => info.getValue() || "—",
+  }),
+  txCol.accessor((t) => t.reference ?? "", {
+    id: "reference",
+    header: "Référence",
+    meta: { className: "font-mono text-xs" },
+    cell: (info) => info.getValue() || "—",
+  }),
+  txCol.accessor((t) => (t.direction === "IN" ? t.amount : 0), {
+    id: "in",
+    header: "Entrée",
+    meta: { align: "right", className: "font-semibold text-green-700 tabular-nums" },
+    cell: (info) => (info.row.original.direction === "IN" ? money(info.row.original.amount) : ""),
+  }),
+  txCol.accessor((t) => (t.direction === "OUT" ? t.amount : 0), {
+    id: "out",
+    header: "Sortie",
+    meta: { align: "right", className: "font-semibold text-red-700 tabular-nums" },
+    cell: (info) => (info.row.original.direction === "OUT" ? money(info.row.original.amount) : ""),
+  }),
+  txCol.accessor(transactionState, {
+    id: "state",
+    header: "État",
+    cell: (info) => <Badge tone={STATE_TONE[info.getValue()]}>{info.getValue()}</Badge>,
+  }),
+];
 
 function Advances({
   data,
@@ -468,6 +467,38 @@ function Advances({
     description: "",
     receipt_reference: "",
   });
+  const selectedOpen = selected?.status === "OPEN";
+  const expenseColumns = useMemo(
+    () => [
+      expenseCol.accessor("expense_date", { header: "Date" }),
+      expenseCol.accessor("category_label", { header: "Catégorie" }),
+      expenseCol.accessor("description", { header: "Libellé" }),
+      expenseCol.accessor("amount", {
+        header: "Montant",
+        meta: { align: "right", className: "font-semibold tabular-nums" },
+        cell: (info) => money(info.getValue()),
+      }),
+      expenseCol.display({
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        enableHiding: false,
+        meta: { align: "right" },
+        cell: ({ row }) =>
+          selectedOpen && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-alert-critical"
+              onClick={() => run(() => deleteCashAdvanceExpense(row.original.id), "Justificatif supprimé.")}
+            >
+              Supprimer
+            </Button>
+          ),
+      }),
+    ],
+    [selectedOpen, run],
+  );
 
   return (
     <div className="grid gap-5 xl:grid-cols-[380px_1fr]">
@@ -566,24 +597,15 @@ function Advances({
                 </div>
               </div>
             )}
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[650px] text-sm">
-                <thead className="bg-surface-muted text-left text-xs uppercase text-foreground/55">
-                  <tr><th className="px-3 py-2">Date</th><th className="px-3 py-2">Catégorie</th><th className="px-3 py-2">Libellé</th><th className="px-3 py-2 text-right">Montant</th><th /></tr>
-                </thead>
-                <tbody>
-                  {selected.expenses.map((e) => (
-                    <tr key={e.id} className="border-t border-border">
-                      <td className="px-3 py-2">{e.expense_date}</td>
-                      <td className="px-3 py-2">{e.category_label}</td>
-                      <td className="px-3 py-2">{e.description}</td>
-                      <td className="px-3 py-2 text-right font-semibold">{money(e.amount)}</td>
-                      <td className="px-3 py-2 text-right">{selected.status === "OPEN" && <button className="text-red-600" onClick={() => run(() => deleteCashAdvanceExpense(e.id), "Justificatif supprimé.")}>Supprimer</button>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              data={selected.expenses}
+              columns={expenseColumns}
+              getRowId={(e) => e.id}
+              searchable={false}
+              columnToggle={false}
+              pageSize={0}
+              emptyTitle="Aucun justificatif"
+            />
             {selected.status === "OPEN" && (
               <div className="flex flex-wrap items-end gap-3 rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-900 dark:bg-green-950/20">
                 <div className="min-w-[220px]">
@@ -644,82 +666,110 @@ function Reconciliation({
     () => data.transactions.filter((t) => !accountId || t.account_id === accountId),
     [data.transactions, accountId],
   );
+  const columns = useMemo(
+    () => [
+      txCol.accessor("movement_date", { header: "Date" }),
+      txCol.accessor("account_name", { header: "Compte", meta: { className: "font-semibold" } }),
+      txCol.accessor("description", { header: "Libellé" }),
+      txCol.accessor((t) => (t.direction === "OUT" ? -t.amount : t.amount), {
+        id: "amount",
+        header: "Montant",
+        meta: { align: "right", className: "font-semibold tabular-nums" },
+        cell: ({ row }) => (
+          <span className={row.original.direction === "IN" ? "text-green-700" : "text-red-700"}>
+            {row.original.direction === "OUT" ? "−" : "+"}
+            {money(row.original.amount)}
+          </span>
+        ),
+      }),
+      txCol.accessor("source_type", {
+        header: "Source",
+        cell: (info) => <Badge tone="slate">{info.getValue()}</Badge>,
+      }),
+      txCol.display({
+        id: "actions",
+        header: "Actions",
+        enableSorting: false,
+        enableHiding: false,
+        meta: { align: "right" },
+        cell: ({ row }) => {
+          const t = row.original;
+          return (
+            <div className="flex justify-end gap-2">
+              {!t.reversal_of && !t.is_reversed && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={pending}
+                  onClick={() => run(() => reconcileFinanceMovement({
+                    transaction_id: t.id,
+                    reconciled: !t.reconciled_at,
+                    reference: t.reconciled_at ? null : window.prompt("Référence du relevé (facultatif)") ?? "",
+                  }), t.reconciled_at ? "Rapprochement retiré." : "Mouvement rapproché.")}
+                >
+                  {t.reconciled_at ? "Dépointer" : "Pointer"}
+                </Button>
+              )}
+              {!t.reconciled_at &&
+                !t.reversal_of &&
+                !t.is_reversed &&
+                ["MANUAL", "TRANSFER"].includes(t.source_type) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-alert-critical"
+                  disabled={pending}
+                  onClick={() => {
+                    const reason = window.prompt("Motif obligatoire de contre-passation");
+                    if (reason) {
+                      run(
+                        () =>
+                          t.source_type === "TRANSFER"
+                            ? reverseFinanceTransfer({
+                                transaction_id: t.id,
+                                reversal_date: today(),
+                                reason,
+                              })
+                            : reverseFinanceMovement({
+                                transaction_id: t.id,
+                                reversal_date: today(),
+                                reason,
+                              }),
+                        "Contre-passation créée.",
+                      );
+                    }
+                  }}
+                >
+                  Annuler
+                </Button>
+              )}
+            </div>
+          );
+        },
+      }),
+    ],
+    [pending, run],
+  );
   return (
     <section className="rounded-xl border border-border bg-surface p-4 shadow-sm">
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="font-bold">Rapprochement bancaire / caisse</h2>
-          <p className="text-sm text-foreground/55">Marquez les lignes pointées sur le relevé sans modifier leur contenu économique.</p>
-        </div>
-        <select className={`${inputClass} w-72`} value={accountId} onChange={(e) => setAccountId(e.target.value)}>
-          <option value="">Tous les comptes</option>
-          {data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-        </select>
+      <div className="mb-4">
+        <h2 className="font-bold">Rapprochement bancaire / caisse</h2>
+        <p className="text-sm text-foreground/55">Marquez les lignes pointées sur le relevé sans modifier leur contenu économique.</p>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[850px] text-sm">
-          <thead className="bg-surface-muted text-left text-xs uppercase text-foreground/55">
-            <tr><th className="px-3 py-2">Date</th><th className="px-3 py-2">Compte</th><th className="px-3 py-2">Libellé</th><th className="px-3 py-2 text-right">Montant</th><th className="px-3 py-2">Source</th><th className="px-3 py-2 text-right">Actions</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((t) => (
-              <tr key={t.id} className="border-t border-border">
-                <td className="px-3 py-2">{t.movement_date}</td>
-                <td className="px-3 py-2 font-semibold">{t.account_name}</td>
-                <td className="px-3 py-2">{t.description}</td>
-                <td className={`px-3 py-2 text-right font-semibold ${t.direction === "IN" ? "text-green-700" : "text-red-700"}`}>{t.direction === "OUT" ? "−" : "+"}{money(t.amount)}</td>
-                <td className="px-3 py-2"><Badge tone="slate">{t.source_type}</Badge></td>
-                <td className="space-x-2 px-3 py-2 text-right">
-                  {!t.reversal_of && !t.is_reversed && (
-                    <button
-                      disabled={pending}
-                      className="font-semibold text-brand disabled:opacity-50"
-                      onClick={() => run(() => reconcileFinanceMovement({
-                        transaction_id: t.id,
-                        reconciled: !t.reconciled_at,
-                        reference: t.reconciled_at ? null : window.prompt("Référence du relevé (facultatif)") ?? "",
-                      }), t.reconciled_at ? "Rapprochement retiré." : "Mouvement rapproché.")}
-                    >
-                      {t.reconciled_at ? "Dépointer" : "Pointer"}
-                    </button>
-                  )}
-                  {!t.reconciled_at &&
-                    !t.reversal_of &&
-                    !t.is_reversed &&
-                    ["MANUAL", "TRANSFER"].includes(t.source_type) && (
-                    <button
-                      disabled={pending}
-                      className="text-red-600 disabled:opacity-50"
-                      onClick={() => {
-                        const reason = window.prompt("Motif obligatoire de contre-passation");
-                        if (reason) {
-                          run(
-                            () =>
-                              t.source_type === "TRANSFER"
-                                ? reverseFinanceTransfer({
-                                    transaction_id: t.id,
-                                    reversal_date: today(),
-                                    reason,
-                                  })
-                                : reverseFinanceMovement({
-                                    transaction_id: t.id,
-                                    reversal_date: today(),
-                                    reason,
-                                  }),
-                            "Contre-passation créée.",
-                          );
-                        }
-                      }}
-                    >
-                      Annuler
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={rows}
+        getRowId={(t) => t.id}
+        searchPlaceholder="Libellé, compte"
+        searchText={(t) => [t.description, t.account_name, t.reference].filter(Boolean).join(" ")}
+        emptyTitle="Aucun mouvement."
+        toolbar={
+          <select className={`${inputClass} w-72`} value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+            <option value="">Tous les comptes</option>
+            {data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        }
+        columns={columns}
+      />
     </section>
   );
 }

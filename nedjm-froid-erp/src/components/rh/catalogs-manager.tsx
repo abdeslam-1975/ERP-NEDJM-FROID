@@ -10,6 +10,7 @@ import {
   type LegendRow,
 } from "@/lib/actions/hr-catalogs";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { LegendCoefficientRequest } from "@/components/rh/legend-coefficient-request";
 import {
   formatLegendCoefficient,
@@ -22,12 +23,11 @@ import {
   RhPageHeader,
   RhPanel,
   RhSectionTitle,
-  RhTableWrap,
   bi,
   rhInput,
-  rhTd,
-  rhTh,
 } from "@/components/rh/rh-ui";
+
+const col = dataColumns<CatalogItem>();
 
 const emptyLegend = {
   id: "",
@@ -78,6 +78,42 @@ export function CatalogsManager({
   const filtered = useMemo(
     () => rows.filter((r) => r.kind === kind),
     [rows, kind],
+  );
+
+  const columns = useMemo(
+    () => [
+      col.accessor("code", { header: "Code", meta: { className: "font-mono text-xs" } }),
+      col.accessor("label_fr", { header: "FR" }),
+      col.accessor("label_ar", {
+        header: "AR",
+        cell: (info) => <span dir="rtl">{info.getValue()}</span>,
+      }),
+      col.display({
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row: { original: row } }) => (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              setForm({
+                id: row.id,
+                code: row.code,
+                label_ar: row.label_ar,
+                label_fr: row.label_fr,
+                extra: JSON.stringify(row.extra ?? {}),
+                sort_order: row.sort_order,
+              })
+            }
+          >
+            Modifier
+          </Button>
+        ),
+      }),
+    ],
+    [],
   );
 
   return (
@@ -247,47 +283,15 @@ export function CatalogsManager({
           </Button>
         </div>
         <div className="mt-4">
-          <RhTableWrap>
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-border/70 bg-surface-muted/80">
-                <tr>
-                  <th className={rhTh()}>Code</th>
-                  <th className={rhTh()}>FR</th>
-                  <th className={rhTh()}>AR</th>
-                  <th className={rhTh()} />
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((row) => (
-                  <tr key={row.id} className="border-t border-border/60">
-                    <td className={`${rhTd()} font-mono text-xs`}>{row.code}</td>
-                    <td className={rhTd()}>{row.label_fr}</td>
-                    <td className={rhTd()} dir="rtl">
-                      {row.label_ar}
-                    </td>
-                    <td className={rhTd()}>
-                      <button
-                        type="button"
-                        className="text-xs font-semibold text-brand"
-                        onClick={() =>
-                          setForm({
-                            id: row.id,
-                            code: row.code,
-                            label_ar: row.label_ar,
-                            label_fr: row.label_fr,
-                            extra: JSON.stringify(row.extra ?? {}),
-                            sort_order: row.sort_order,
-                          })
-                        }
-                      >
-                        Modifier
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </RhTableWrap>
+          <DataTable
+            data={filtered}
+            columns={columns}
+            getRowId={(r) => r.id}
+            searchPlaceholder="Code, libellé…"
+            searchText={(r) => [r.code, r.label_fr, r.label_ar].filter(Boolean).join(" ")}
+            columnToggle={false}
+            emptyTitle="Aucune valeur dans cette liste"
+          />
         </div>
       </RhPanel>
 
@@ -299,16 +303,16 @@ export function CatalogsManager({
             تغيير الرمز ينشئ رمزاً جديداً ولا يغيّر رمزاً مستعملاً في الحضور. تغيير معامل رمز موجود يتم بطلب مؤرخ
             (قرار D14) يحدد شهر السريان.
           </p>
-          <button
-            type="button"
-            className="text-xs font-semibold text-brand"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => {
               setLegOriginId("");
               setLegForm(emptyLegend);
             }}
           >
             Nouveau code
-          </button>
+          </Button>
         </div>
         <div className="grid gap-3 sm:grid-cols-6">
           <input

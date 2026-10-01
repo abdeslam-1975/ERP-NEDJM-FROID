@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ignoreWatchItem,
@@ -34,20 +34,8 @@ import {
 import { MetaFields } from "@/components/rules/legal-documents-manager";
 import { QuickDialog } from "@/components/rules/rule-ui";
 import { Button } from "@/components/ui/button";
-import {
-  RhAlert,
-  RhChip,
-  RhField,
-  RhPageHeader,
-  RhPanel,
-  RhStat,
-  RhTableWrap,
-  RhTabs,
-  RhToolbar,
-  rhInput,
-  rhTd,
-  rhTh,
-} from "@/components/rh/rh-ui";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
+import { RhAlert, RhChip, RhField, RhPageHeader, RhPanel, RhStat, RhTabs, RhToolbar, rhInput } from "@/components/rh/rh-ui";
 
 type Tab = "textes" | "sources" | "domaines" | "mots-cles" | "historique";
 type ItemFilter = "relevant" | "new" | "baseline" | "imported" | "ignored" | "all";
@@ -60,6 +48,9 @@ type Dialog =
   | null;
 
 const DOCUMENTS_PATH = "/rh/legal/documents";
+
+const sourceCol = dataColumns<WatchSource>();
+const domainCol = dataColumns<WatchDomain>();
 
 function dateTime(iso: string | null) {
   if (!iso) return "—";
@@ -102,6 +93,8 @@ export function LegalWatchManager({
   const lastRun = workspace.runs[0] ?? null;
   const toReview = workspace.items.filter((i) => itemMatches(i, "relevant")).length;
   const failing = workspace.sources.filter((s) => s.is_active && s.last_status === "ERROR").length;
+  const editSource = useCallback((source: WatchSource | null) => setDialog({ kind: "source", source }), []);
+  const editDomain = useCallback((domain: WatchDomain | null) => setDialog({ kind: "domain", domain }), []);
 
   function done(text: string) {
     setDialog(null);
@@ -193,12 +186,10 @@ export function LegalWatchManager({
           sources={workspace.sources}
           canManage={access.manage}
           hasDomains={workspace.domains.some((d) => d.is_active)}
-          onEdit={(source) => setDialog({ kind: "source", source })}
+          onEdit={editSource}
         />
       ) : null}
-      {tab === "domaines" ? (
-        <DomainsTab domains={workspace.domains} canManage={access.manage} onEdit={(domain) => setDialog({ kind: "domain", domain })} />
-      ) : null}
+      {tab === "domaines" ? <DomainsTab domains={workspace.domains} canManage={access.manage} onEdit={editDomain} /> : null}
       {tab === "mots-cles" ? <KeywordsTab workspace={workspace} canManage={access.manage} onDone={done} /> : null}
       {tab === "historique" ? <HistoryTab workspace={workspace} /> : null}
 
@@ -313,6 +304,73 @@ function SourcesTab({
   hasDomains: boolean;
   onEdit: (source: WatchSource | null) => void;
 }) {
+  const columns = useMemo(
+    () => [
+      sourceCol.accessor("label", {
+        header: "Source",
+        cell: ({ row }) => (
+          <>
+            <p className="font-semibold">{row.original.label}</p>
+            <a
+              href={row.original.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="break-all text-xs text-brand hover:underline"
+            >
+              {row.original.url}
+            </a>
+          </>
+        ),
+      }),
+      sourceCol.accessor("frequency", { header: "Fréquence", cell: (c) => watchFrequencyLabel(c.getValue()) }),
+      sourceCol.accessor("last_checked_at", { header: "Dernière vérification", cell: (c) => dateTime(c.getValue()) }),
+      sourceCol.display({
+        id: "next",
+        header: "Prochaine",
+        cell: ({ row }) => {
+          const s = row.original;
+          const next = nextCheckAt(s);
+          return s.is_active ? (next ? `après le ${dateTime(next.toISOString())}` : "à la prochaine") : "—";
+        },
+      }),
+      sourceCol.display({
+        id: "state",
+        header: "État",
+        cell: ({ row }) => {
+          const s = row.original;
+          return (
+            <>
+              <div className="flex flex-wrap gap-1.5">
+                {!s.is_active ? <RhChip>Désactivée</RhChip> : null}
+                <RhChip tone={watchCheckTone(s.last_status)}>{watchCheckLabel(s.last_status)}</RhChip>
+                {s.consecutive_failures > 1 ? <RhChip tone="danger">{s.consecutive_failures} échecs de suite</RhChip> : null}
+                {s.is_active && !s.baseline_done ? <RhChip tone="warning">Référence à établir</RhChip> : null}
+              </div>
+              {s.last_status === "ERROR" && s.last_error ? (
+                <p className="mt-1 text-xs text-red-700 dark:text-red-300">{s.last_error}</p>
+              ) : null}
+            </>
+          );
+        },
+      }),
+      ...(canManage
+        ? [
+            sourceCol.display({
+              id: "actions",
+              header: "",
+              meta: { align: "right" },
+              cell: ({ row }) => (
+                <Button variant="secondary" size="sm" onClick={() => onEdit(row.original)}>
+                  Modifier
+                </Button>
+              ),
+            }),
+          ]
+        : []),
+    ],
+    [canManage, onEdit],
+  );
+
   return (
     <div className="space-y-3">
       <RhToolbar>
@@ -331,54 +389,7 @@ function SourcesTab({
           ses conditions d&apos;utilisation).
         </RhAlert>
       ) : (
-        <RhTableWrap>
-          <table className="w-full min-w-[56rem]">
-            <thead>
-              <tr>
-                <th className={rhTh()}>Source</th>
-                <th className={rhTh()}>Fréquence</th>
-                <th className={rhTh()}>Dernière vérification</th>
-                <th className={rhTh()}>Prochaine</th>
-                <th className={rhTh()}>État</th>
-                <th className={rhTh()} />
-              </tr>
-            </thead>
-            <tbody>
-              {sources.map((s) => {
-                const next = nextCheckAt(s);
-                return (
-                  <tr key={s.id} className="border-t border-border/50">
-                    <td className={rhTd()}>
-                      <p className="font-semibold">{s.label}</p>
-                      <a href={s.url} target="_blank" rel="noopener noreferrer" className="break-all text-xs text-brand hover:underline">
-                        {s.url}
-                      </a>
-                    </td>
-                    <td className={rhTd()}>{watchFrequencyLabel(s.frequency)}</td>
-                    <td className={rhTd()}>{dateTime(s.last_checked_at)}</td>
-                    <td className={rhTd()}>{s.is_active ? (next ? `après le ${dateTime(next.toISOString())}` : "à la prochaine") : "—"}</td>
-                    <td className={rhTd()}>
-                      <div className="flex flex-wrap gap-1.5">
-                        {!s.is_active ? <RhChip>Désactivée</RhChip> : null}
-                        <RhChip tone={watchCheckTone(s.last_status)}>{watchCheckLabel(s.last_status)}</RhChip>
-                        {s.consecutive_failures > 1 ? <RhChip tone="danger">{s.consecutive_failures} échecs de suite</RhChip> : null}
-                        {s.is_active && !s.baseline_done ? <RhChip tone="warning">Référence à établir</RhChip> : null}
-                      </div>
-                      {s.last_status === "ERROR" && s.last_error ? <p className="mt-1 text-xs text-red-700 dark:text-red-300">{s.last_error}</p> : null}
-                    </td>
-                    <td className={rhTd()}>
-                      {canManage ? (
-                        <Button variant="secondary" onClick={() => onEdit(s)}>
-                          Modifier
-                        </Button>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </RhTableWrap>
+        <DataTable data={sources} columns={columns} getRowId={(s) => s.id} searchable={false} columnToggle={false} pageSize={0} />
       )}
     </div>
   );
@@ -393,6 +404,32 @@ function DomainsTab({
   canManage: boolean;
   onEdit: (domain: WatchDomain | null) => void;
 }) {
+  const columns = useMemo(
+    () => [
+      domainCol.accessor("domain", { header: "Domaine", meta: { className: "font-mono" } }),
+      domainCol.accessor("label", { header: "Organisme" }),
+      domainCol.accessor("is_active", {
+        header: "État",
+        cell: (c) => <RhChip tone={c.getValue() ? "success" : "neutral"}>{c.getValue() ? "Autorisé" : "Désactivé"}</RhChip>,
+      }),
+      ...(canManage
+        ? [
+            domainCol.display({
+              id: "actions",
+              header: "",
+              meta: { align: "right" },
+              cell: ({ row }) => (
+                <Button variant="secondary" size="sm" onClick={() => onEdit(row.original)}>
+                  Modifier
+                </Button>
+              ),
+            }),
+          ]
+        : []),
+    ],
+    [canManage, onEdit],
+  );
+
   return (
     <div className="space-y-3">
       <RhToolbar>
@@ -402,36 +439,15 @@ function DomainsTab({
         </p>
         {canManage ? <Button onClick={() => onEdit(null)}>Ajouter un domaine</Button> : null}
       </RhToolbar>
-      <RhTableWrap>
-        <table className="w-full min-w-[40rem]">
-          <thead>
-            <tr>
-              <th className={rhTh()}>Domaine</th>
-              <th className={rhTh()}>Organisme</th>
-              <th className={rhTh()}>État</th>
-              <th className={rhTh()} />
-            </tr>
-          </thead>
-          <tbody>
-            {domains.map((d) => (
-              <tr key={d.id} className="border-t border-border/50">
-                <td className={`${rhTd()} font-mono`}>{d.domain}</td>
-                <td className={rhTd()}>{d.label}</td>
-                <td className={rhTd()}>
-                  <RhChip tone={d.is_active ? "success" : "neutral"}>{d.is_active ? "Autorisé" : "Désactivé"}</RhChip>
-                </td>
-                <td className={rhTd()}>
-                  {canManage ? (
-                    <Button variant="secondary" onClick={() => onEdit(d)}>
-                      Modifier
-                    </Button>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </RhTableWrap>
+      <DataTable
+        data={domains}
+        columns={columns}
+        getRowId={(d) => d.id}
+        searchable={false}
+        columnToggle={false}
+        pageSize={0}
+        emptyTitle="Aucun domaine autorisé."
+      />
     </div>
   );
 }

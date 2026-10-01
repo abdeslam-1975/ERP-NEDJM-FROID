@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useCallback, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
@@ -16,6 +16,8 @@ import {
   type Supplier,
 } from "@/lib/actions/purchases";
 import { Button } from "@/components/ui/button";
+import { RhTabs } from "@/components/rh/rh-ui";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 
 type Tab = "dashboard" | "proformas" | "orders" | "receipts" | "invoices" | "suppliers";
 const PURCHASE_TABS: { id: Tab; label: string }[] = [
@@ -32,6 +34,79 @@ const inputClass =
 const money = (value: number) =>
   new Intl.NumberFormat("fr-DZ", { style: "currency", currency: "DZD" }).format(value);
 
+type Order = PurchaseHubData["orders"][number];
+
+const proformaCol = dataColumns<PurchaseHubData["proformas"][number]>();
+const orderCol = dataColumns<Order>();
+const receiptCol = dataColumns<PurchaseHubData["receipts"][number]>();
+const invoiceCol = dataColumns<PurchaseHubData["invoices"][number]>();
+const supplierCol = dataColumns<Supplier>();
+const amountMeta = { align: "right", className: "whitespace-nowrap tabular-nums" } as const;
+
+function quantities(order: Order) {
+  return {
+    ordered: order.lines.reduce((sum, line) => sum + line.quantity, 0),
+    received: order.lines.reduce((sum, line) => sum + line.received_quantity, 0),
+    invoiced: order.lines.reduce((sum, line) => sum + line.invoiced_quantity, 0),
+  };
+}
+
+const receptionColumn = orderCol.accessor((order) => quantities(order).received, {
+  id: "reception",
+  header: "Réception",
+  cell: ({ row }) => {
+    const { received, ordered } = quantities(row.original);
+    return `${received} / ${ordered}`;
+  },
+});
+
+const invoicingColumn = orderCol.accessor((order) => quantities(order).invoiced, {
+  id: "invoicing",
+  header: "Facturation",
+  cell: ({ row }) => {
+    const { invoiced, received } = quantities(row.original);
+    return `${invoiced} / ${received}`;
+  },
+});
+
+const controlColumns = [
+  orderCol.accessor("order_number", { header: "Commande", meta: { className: "font-semibold" } }),
+  orderCol.accessor("supplier_name", { header: "Fournisseur" }),
+  orderCol.accessor("total_ht", { header: "Commandé HT", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+  receptionColumn,
+  invoicingColumn,
+  orderCol.accessor("status", { header: "Statut", cell: (info) => <Status value={info.getValue()} /> }),
+];
+
+const orderColumns = [
+  orderCol.accessor("order_number", { header: "N° BC" }),
+  orderCol.accessor("order_date", { header: "Date" }),
+  orderCol.accessor("supplier_name", { header: "Fournisseur" }),
+  orderCol.accessor("total_ht", { header: "HT", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+  orderCol.accessor("total_ttc", { header: "TTC", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+  receptionColumn,
+  invoicingColumn,
+  orderCol.accessor("status", { header: "Statut", cell: (info) => <Status value={info.getValue()} /> }),
+  orderCol.display({
+    id: "pdf",
+    header: "",
+    enableSorting: false,
+    enableHiding: false,
+    cell: ({ row }) => (
+      <a className="font-semibold text-brand" href={`/api/purchases/orders/${row.original.id}/pdf`} target="_blank">PDF</a>
+    ),
+  }),
+];
+
+const receiptColumns = [
+  receiptCol.accessor("receipt_number", { header: "N° réception" }),
+  receiptCol.accessor("receipt_date", { header: "Date" }),
+  receiptCol.accessor("order_number", { header: "Commande" }),
+  receiptCol.accessor((row) => row.delivery_note_number ?? "—", { id: "delivery_note", header: "Bon livraison" }),
+  receiptCol.accessor((row) => row.received_by_name ?? "—", { id: "received_by", header: "Réceptionné par" }),
+  receiptCol.accessor("status", { header: "Statut", cell: (info) => <Status value={info.getValue()} /> }),
+];
+
 export function PurchaseHub({
   initialData,
   loadError,
@@ -45,7 +120,7 @@ export function PurchaseHub({
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [message, setMessage] = useState<string | null>(null);
 
-  function run(action: () => Promise<{ ok: boolean; error?: string }>, success: string) {
+  const run = useCallback((action: () => Promise<{ ok: boolean; error?: string }>, success: string) => {
     setError(null);
     setMessage(null);
     startTransition(async () => {
@@ -57,7 +132,7 @@ export function PurchaseHub({
       setMessage(success);
       router.refresh();
     });
-  }
+  }, [router]);
 
   const tabs = useUiTabs("purchases", PURCHASE_TABS, tab, setTab);
 
@@ -71,25 +146,13 @@ export function PurchaseHub({
             Proforma → commande → réceptions multiples → factures multiples → paiement.
           </p>
         </div>
-        <a className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-semibold" href="/achats/parametres">
-          Paramètres documentaires
-        </a>
+        <Button asChild variant="secondary">
+          <a href="/achats/parametres">Paramètres documentaires</a>
+        </Button>
       </header>
       {error && <Notice tone="error">{error}</Notice>}
       {message && <Notice tone="success">{message}</Notice>}
-      <div className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1">
-        {tabs.map(({ id: value, label }) => (
-          <button
-            key={value}
-            onClick={() => setTab(value)}
-            className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-semibold transition ${
-              tab === value ? "bg-brand text-white shadow-sm" : "hover:bg-surface-muted"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <RhTabs items={tabs} value={tab} onChange={(id) => setTab(id as typeof tab)} />
       {tab === "dashboard" && <Dashboard data={initialData} />}
       {tab === "proformas" && <Proformas data={initialData} pending={pending} run={run} />}
       {tab === "orders" && <Orders data={initialData} pending={pending} run={run} />}
@@ -124,30 +187,16 @@ function Dashboard({ data }: { data: PurchaseHubData }) {
         <p className="mt-1 text-sm text-foreground/55">
           Le système interdit de facturer une quantité supérieure aux réceptions acceptées.
         </p>
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs uppercase text-foreground/45">
-              <tr><th className="py-2">Commande</th><th>Fournisseur</th><th>Commandé HT</th><th>Réception</th><th>Facturation</th><th>Statut</th></tr>
-            </thead>
-            <tbody>
-              {data.orders.slice(0, 12).map((order) => {
-                const ordered = order.lines.reduce((sum, line) => sum + line.quantity, 0);
-                const received = order.lines.reduce((sum, line) => sum + line.received_quantity, 0);
-                const invoiced = order.lines.reduce((sum, line) => sum + line.invoiced_quantity, 0);
-                return (
-                  <tr key={order.id} className="border-t border-border">
-                    <td className="py-3 font-semibold">{order.order_number}</td>
-                    <td>{order.supplier_name}</td>
-                    <td>{money(order.total_ht)}</td>
-                    <td>{received} / {ordered}</td>
-                    <td>{invoiced} / {received}</td>
-                    <td><Status value={order.status} /></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          className="mt-4"
+          data={data.orders.slice(0, 12)}
+          columns={controlColumns}
+          getRowId={(order) => order.id}
+          searchable={false}
+          columnToggle={false}
+          pageSize={0}
+          emptyTitle="Aucune commande"
+        />
       </section>
     </div>
   );
@@ -190,6 +239,30 @@ function Proformas({ data, pending, run }: { data: PurchaseHubData; pending: boo
     note: "",
   });
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
+  const columns = useMemo(
+    () => [
+      proformaCol.accessor("proforma_number", { header: "N°" }),
+      proformaCol.accessor("proforma_date", { header: "Date" }),
+      proformaCol.accessor("supplier_name", { header: "Fournisseur" }),
+      proformaCol.accessor("total_ht", { header: "HT", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+      proformaCol.accessor("total_ttc", { header: "TTC", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+      proformaCol.accessor("status", { header: "Statut", cell: (info) => <Status value={info.getValue()} /> }),
+      proformaCol.display({
+        id: "actions",
+        header: "Actions",
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row: { original: row } }) =>
+          row.status === "DRAFT" ? (
+            <div className="flex gap-2">
+              <Button size="sm" variant="secondary" disabled={pending} onClick={() => run(() => setProformaStatus({ proforma_id: row.id, status: "APPROVED" }), "Proforma approuvée.")}>Approuver</Button>
+              <Button size="sm" variant="ghost" className="text-alert-critical" disabled={pending} onClick={() => run(() => setProformaStatus({ proforma_id: row.id, status: "CANCELLED" }), "Proforma annulée.")}>Annuler</Button>
+            </div>
+          ) : "—",
+      }),
+    ],
+    [pending, run],
+  );
 
   function updateLine(index: number, patch: Partial<DraftLine>) {
     setLines((current) => current.map((line, i) => (i === index ? { ...line, ...patch } : line)));
@@ -253,7 +326,7 @@ function Proformas({ data, pending, run }: { data: PurchaseHubData; pending: boo
               <select className={inputClass} value={line.tax_rate_id} onChange={(e) => updateLine(index, { tax_rate_id: e.target.value })}>
                 <option value="">Sans TVA</option>{data.taxRates.map((row) => <option key={row.id} value={row.id}>{row.label_fr}</option>)}
               </select>
-              <button className="px-2 text-sm font-semibold text-red-600" disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((_, i) => i !== index))}>Retirer</button>
+              <Button variant="ghost" className="px-2 text-alert-critical" disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((_, i) => i !== index))}>Retirer</Button>
             </div>
           ))}
         </div>
@@ -262,22 +335,13 @@ function Proformas({ data, pending, run }: { data: PurchaseHubData; pending: boo
           <Button disabled={pending || !form.supplier_id} onClick={submit}>Enregistrer la proforma</Button>
         </div>
       </Panel>
-      <DocumentTable
-        headers={["N°", "Date", "Fournisseur", "HT", "TTC", "Statut", "Actions"]}
-        rows={data.proformas.map((row) => [
-          row.proforma_number,
-          row.proforma_date,
-          row.supplier_name,
-          money(row.total_ht),
-          money(row.total_ttc),
-          <Status key="s" value={row.status} />,
-          row.status === "DRAFT" ? (
-            <div key="a" className="flex gap-3">
-              <button className="font-semibold text-brand" disabled={pending} onClick={() => run(() => setProformaStatus({ proforma_id: row.id, status: "APPROVED" }), "Proforma approuvée.")}>Approuver</button>
-              <button className="font-semibold text-red-600" disabled={pending} onClick={() => run(() => setProformaStatus({ proforma_id: row.id, status: "CANCELLED" }), "Proforma annulée.")}>Annuler</button>
-            </div>
-          ) : "—",
-        ])}
+      <DataTable
+        data={data.proformas}
+        getRowId={(row) => row.id}
+        searchPlaceholder="N°, fournisseur"
+        searchText={(row) => [row.proforma_number, row.supplier_name].join(" ")}
+        emptyTitle="Aucune proforma"
+        columns={columns}
       />
     </div>
   );
@@ -310,14 +374,13 @@ function Orders({ data, pending, run }: { data: PurchaseHubData; pending: boolea
         </div>
         <Button className="mt-4" disabled={pending || !form.proforma_id} onClick={() => run(() => createOrderFromProforma({ ...form, expected_delivery_date: form.expected_delivery_date || null, document_profile_id: form.document_profile_id || null }), "Bon de commande créé.")}>Créer le bon de commande</Button>
       </Panel>
-      <DocumentTable
-        headers={["N° BC", "Date", "Fournisseur", "HT", "TTC", "Réception", "Facturation", "Statut", ""]}
-        rows={data.orders.map((row) => {
-          const ordered = row.lines.reduce((sum, line) => sum + line.quantity, 0);
-          const received = row.lines.reduce((sum, line) => sum + line.received_quantity, 0);
-          const invoiced = row.lines.reduce((sum, line) => sum + line.invoiced_quantity, 0);
-          return [row.order_number, row.order_date, row.supplier_name, money(row.total_ht), money(row.total_ttc), `${received} / ${ordered}`, `${invoiced} / ${received}`, <Status key="s" value={row.status} />, <a key="pdf" className="font-semibold text-brand" href={`/api/purchases/orders/${row.id}/pdf`} target="_blank">PDF</a>];
-        })}
+      <DataTable
+        data={data.orders}
+        getRowId={(row) => row.id}
+        searchPlaceholder="N° BC, fournisseur"
+        searchText={(row) => [row.order_number, row.supplier_name].join(" ")}
+        emptyTitle="Aucun bon de commande"
+        columns={orderColumns}
       />
     </div>
   );
@@ -364,7 +427,13 @@ function Receipts({ data, pending, run }: { data: PurchaseHubData; pending: bool
           }).filter((line) => line.quantity > 0),
         }), "Réception enregistrée.")}>Valider la réception</Button>
       </Panel>
-      <DocumentTable headers={["N° réception", "Date", "Commande", "Bon livraison", "Réceptionné par", "Statut"]} rows={data.receipts.map((row) => [row.receipt_number, row.receipt_date, row.order_number, row.delivery_note_number ?? "—", row.received_by_name ?? "—", <Status key="s" value={row.status} />])} />
+      <DataTable
+        data={data.receipts}
+        columns={receiptColumns}
+        getRowId={(row) => row.id}
+        searchPlaceholder="N° réception, commande, bon de livraison"
+        emptyTitle="Aucune réception"
+      />
     </div>
   );
 }
@@ -395,6 +464,44 @@ function Invoices({ data, pending, run }: { data: PurchaseHubData; pending: bool
     reference: "",
     note: "",
   });
+  const columns = useMemo(
+    () => [
+      invoiceCol.accessor("internal_number", {
+        header: "Interne / fournisseur",
+        cell: ({ row: { original: row } }) => (
+          <span className="font-semibold">{row.internal_number}<small className="block font-normal text-foreground/50">{row.supplier_invoice_number}</small></span>
+        ),
+      }),
+      invoiceCol.accessor("supplier_name", { header: "Fournisseur" }),
+      invoiceCol.accessor("order_number", { header: "BC" }),
+      invoiceCol.accessor("total_ht", { header: "HT", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+      invoiceCol.accessor("total_tva", { header: "TVA", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+      invoiceCol.accessor("retention_amount", {
+        header: "RG",
+        meta: { className: "whitespace-nowrap" },
+        cell: ({ row: { original: row } }) => `${money(row.retention_amount)} · ${row.retention_status}`,
+      }),
+      invoiceCol.accessor("stamp_amount", { header: "Timbre", meta: amountMeta, cell: (info) => money(info.getValue()) }),
+      invoiceCol.accessor("net_payable", {
+        header: "Net / reste",
+        meta: amountMeta,
+        cell: ({ row: { original: row } }) => (
+          <span>{money(row.net_payable)}<small className="block text-red-600">Reste {money(row.open_amount)}</small></span>
+        ),
+      }),
+      invoiceCol.display({
+        id: "actions",
+        header: "Action",
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row: { original: row } }) =>
+          row.retention_status === "HELD" && (!row.retention_due_date || row.retention_due_date <= today()) ? (
+            <Button size="sm" variant="secondary" disabled={pending} onClick={() => run(() => releaseSupplierRetention(row.id), "Retenue de garantie libérée.")}>Libérer RG</Button>
+          ) : "—",
+      }),
+    ],
+    [pending, run],
+  );
   return (
     <div className="space-y-5">
       <Panel title="Comptabiliser une facture fournisseur" subtitle="Le contrôle BC ↔ réception ↔ facture est automatique.">
@@ -441,17 +548,14 @@ function Invoices({ data, pending, run }: { data: PurchaseHubData; pending: bool
         <Button className="mt-4" disabled={pending || !payment.invoice_id || !payment.account_id || !payment.payment_method_id || Number(payment.amount) <= 0} onClick={() => run(() => postSupplierPayment({ ...payment, amount: Number(payment.amount) }), "Paiement fournisseur enregistré.")}>Enregistrer le paiement</Button>
       </Panel>
 
-      <DocumentTable headers={["Interne / fournisseur", "Fournisseur", "BC", "HT", "TVA", "RG", "Timbre", "Net / reste", "Action"]} rows={data.invoices.map((row) => [
-        <span key="n" className="font-semibold">{row.internal_number}<small className="block font-normal text-foreground/50">{row.supplier_invoice_number}</small></span>,
-        row.supplier_name,
-        row.order_number,
-        money(row.total_ht),
-        money(row.total_tva),
-        `${money(row.retention_amount)} · ${row.retention_status}`,
-        money(row.stamp_amount),
-        <span key="o">{money(row.net_payable)}<small className="block text-red-600">Reste {money(row.open_amount)}</small></span>,
-        row.retention_status === "HELD" && (!row.retention_due_date || row.retention_due_date <= today()) ? <button key="r" className="font-semibold text-brand" disabled={pending} onClick={() => run(() => releaseSupplierRetention(row.id), "Retenue de garantie libérée.")}>Libérer RG</button> : "—",
-      ])} />
+      <DataTable
+        data={data.invoices}
+        getRowId={(row) => row.id}
+        searchPlaceholder="N° facture, fournisseur, BC"
+        searchText={(row) => [row.internal_number, row.supplier_invoice_number, row.supplier_name, row.order_number].filter(Boolean).join(" ")}
+        emptyTitle="Aucune facture fournisseur"
+        columns={columns}
+      />
     </div>
   );
 }
@@ -463,7 +567,7 @@ function Suppliers({ rows, pending, run }: { rows: Supplier[]; pending: boolean;
     bank_details: "", active: true, notes: "",
   };
   const [form, setForm] = useState(empty);
-  function edit(row: Supplier) {
+  const edit = useCallback((row: Supplier) => {
     setForm({
       id: row.id, code: row.code, legal_name: row.legal_name, trade_name: row.trade_name ?? "",
       nif: row.nif ?? "", nis: row.nis ?? "", rc: row.rc ?? "", ai: row.ai ?? "",
@@ -471,7 +575,26 @@ function Suppliers({ rows, pending, run }: { rows: Supplier[]; pending: boolean;
       contact_name: row.contact_name ?? "", payment_terms_days: String(row.payment_terms_days),
       bank_details: row.bank_details ?? "", active: row.active, notes: row.notes ?? "",
     });
-  }
+  }, []);
+  const columns = useMemo(
+    () => [
+      supplierCol.accessor("code", { header: "Code" }),
+      supplierCol.accessor("legal_name", { header: "Raison sociale" }),
+      supplierCol.accessor((row) => row.nif ?? "—", { id: "nif", header: "NIF" }),
+      supplierCol.accessor((row) => row.rc ?? "—", { id: "rc", header: "RC" }),
+      supplierCol.accessor((row) => row.phone ?? row.email ?? "—", { id: "contact", header: "Contact" }),
+      supplierCol.accessor((row) => (row.active ? "Actif" : "Inactif"), { id: "active", header: "État" }),
+      supplierCol.display({
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        enableHiding: false,
+        meta: { align: "right" },
+        cell: ({ row }) => <Button size="sm" variant="secondary" onClick={() => edit(row.original)}>Modifier</Button>,
+      }),
+    ],
+    [edit],
+  );
   return (
     <div className="grid gap-5 xl:grid-cols-[430px_1fr]">
       <Panel title={form.id ? "Modifier le fournisseur" : "Nouveau fournisseur"} subtitle="Les identifiants sont conservés dans le référentiel.">
@@ -494,7 +617,14 @@ function Suppliers({ rows, pending, run }: { rows: Supplier[]; pending: boolean;
           {form.id && <Button variant="secondary" onClick={() => setForm(empty)}>Annuler</Button>}
         </div>
       </Panel>
-      <DocumentTable headers={["Code", "Raison sociale", "NIF", "RC", "Contact", "État", ""]} rows={rows.map((row) => [row.code, row.legal_name, row.nif ?? "—", row.rc ?? "—", row.phone ?? row.email ?? "—", row.active ? "Actif" : "Inactif", <button key="e" className="font-semibold text-brand" onClick={() => edit(row)}>Modifier</button>])} />
+      <DataTable
+        data={rows}
+        getRowId={(row) => row.id}
+        searchPlaceholder="Code, raison sociale, NIF, RC"
+        searchText={(row) => [row.code, row.legal_name, row.trade_name, row.nif, row.rc, row.phone, row.email].filter(Boolean).join(" ")}
+        emptyTitle="Aucun fournisseur"
+        columns={columns}
+      />
     </div>
   );
 }
@@ -519,15 +649,4 @@ function Status({ value }: { value: string }) {
   const positive = ["APPROVED", "RECEIVED", "POSTED", "CLOSED"].includes(value);
   const negative = ["CANCELLED"].includes(value);
   return <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold ${negative ? "bg-red-100 text-red-700" : positive ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-800"}`}>{value}</span>;
-}
-
-function DocumentTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
-  return (
-    <div className="overflow-x-auto rounded-xl border border-border bg-surface">
-      <table className="w-full text-sm">
-        <thead className="bg-surface-muted text-left text-xs uppercase tracking-wide text-foreground/50"><tr>{headers.map((header) => <th key={header} className="whitespace-nowrap px-4 py-3">{header}</th>)}</tr></thead>
-        <tbody>{rows.length === 0 ? <tr><td colSpan={headers.length} className="px-4 py-10 text-center text-foreground/45">Aucune donnée.</td></tr> : rows.map((row, rowIndex) => <tr key={rowIndex} className="border-t border-border">{row.map((cell, cellIndex) => <td key={cellIndex} className="whitespace-nowrap px-4 py-3">{cell}</td>)}</tr>)}</tbody>
-      </table>
-    </div>
-  );
 }

@@ -10,20 +10,18 @@ import {
   type AgencyRow,
   type InterimStatementRow,
 } from "@/lib/actions/hr-interim";
-import type { InterimStatement } from "@/lib/hr/interim-billing";
+import type { InterimLine, InterimStatement } from "@/lib/hr/interim-billing";
 import { printHtml } from "@/components/rh/print-frame";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import {
   RhAlert,
   RhChip,
   RhField,
   RhModal,
   RhPageHeader,
-  RhTableWrap,
   RhToolbar,
   rhInput,
-  rhTd,
-  rhTh,
 } from "@/components/rh/rh-ui";
 
 type SiteOpt = { id: string; name_fr: string };
@@ -61,6 +59,19 @@ const emptyAgency = (): AgencyForm => ({
 function money(n: number) {
   return new Intl.NumberFormat("fr-DZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 }
+
+const agencyCol = dataColumns<AgencyRow>();
+const lineCol = dataColumns<InterimLine>();
+const statementCol = dataColumns<InterimStatementRow>();
+
+const lineColumns = [
+  lineCol.accessor("matricule", { header: "Matricule" }),
+  lineCol.accessor("employee_name", { header: "Intérimaire" }),
+  lineCol.accessor("site_name", { header: "Chantier" }),
+  lineCol.accessor("days_billed", { header: "Jours", meta: { className: "tabular-nums" } }),
+  lineCol.accessor("daily_rate", { header: "Taux (DA)", meta: { className: "font-mono" }, cell: (i) => money(i.getValue()) }),
+  lineCol.accessor("amount", { header: "Montant (DA)", meta: { className: "font-mono" }, cell: (i) => money(i.getValue()) }),
+];
 
 export function InterimManager({
   initialAgencies,
@@ -212,6 +223,146 @@ export function InterimManager({
   const reconcileGap =
     reconcile && reconcile.amount.trim() ? Math.round((Number(reconcile.amount) - reconcile.row.amount_ttc) * 100) / 100 : null;
 
+  const agencyColumns = [
+    agencyCol.accessor("code", { header: "Code", meta: { className: "font-mono font-semibold" } }),
+    agencyCol.accessor("name", {
+      header: "Raison sociale",
+      cell: ({ row: { original: a } }) => (
+        <>
+          {a.name} {a.is_active ? null : <RhChip tone="warning">Inactive</RhChip>}
+          <span className="block text-[11px] text-foreground/55">
+            NIF {a.nif || "—"} · RC {a.rc || "—"}
+          </span>
+        </>
+      ),
+    }),
+    agencyCol.accessor((a) => a.contact_name ?? "", {
+      id: "contact",
+      header: "Contact",
+      cell: ({ row: { original: a } }) => (
+        <>
+          {a.contact_name || "—"}
+          <span className="block text-[11px] text-foreground/55">{[a.phone, a.email].filter(Boolean).join(" · ")}</span>
+        </>
+      ),
+    }),
+    agencyCol.accessor("default_daily_rate", {
+      header: "Taux jour (DA)",
+      meta: { className: "font-mono" },
+      cell: (i) => money(i.getValue()),
+    }),
+    agencyCol.accessor("markup_pct", {
+      header: "Coef. / TVA",
+      meta: { className: "tabular-nums" },
+      cell: ({ row: { original: a } }) => (
+        <>
+          {a.markup_pct} % / {a.vat_pct} %
+        </>
+      ),
+    }),
+    agencyCol.accessor("workers", { header: "Intérimaires", meta: { className: "tabular-nums" } }),
+    agencyCol.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row: { original: a } }) =>
+        canEdit ? (
+          <Button
+            variant="ghost"
+            onClick={() =>
+              setAgencyForm({
+                ...a,
+                default_daily_rate: String(a.default_daily_rate),
+                markup_pct: String(a.markup_pct),
+                vat_pct: String(a.vat_pct),
+              })
+            }
+          >
+            Modifier
+          </Button>
+        ) : null,
+    }),
+  ];
+
+  const statementColumns = [
+    statementCol.accessor("statement_no", {
+      header: "Relevé",
+      cell: ({ row: { original: s } }) => (
+        <>
+          <span className="font-mono font-semibold">{s.statement_no}</span>
+          <span className="block text-[11px] text-foreground/55">{new Date(s.created_at).toLocaleString("fr-FR")}</span>
+        </>
+      ),
+    }),
+    statementCol.accessor("agency_name", { header: "Agence" }),
+    statementCol.accessor((s) => s.site_name ?? "Tous", { id: "site", header: "Chantier" }),
+    statementCol.accessor("days_total", { header: "Jours", meta: { className: "tabular-nums" } }),
+    statementCol.accessor("amount_ttc", {
+      header: "HT / TTC (DA)",
+      meta: { className: "font-mono" },
+      cell: ({ row: { original: s } }) => (
+        <>
+          {money(s.amount_ht)}
+          <span className="block font-semibold">{money(s.amount_ttc)}</span>
+        </>
+      ),
+    }),
+    statementCol.accessor((s) => STATUS[s.status_code].label, {
+      id: "status",
+      header: "Statut / facture agence",
+      cell: ({ row: { original: s } }) => (
+        <>
+          <RhChip tone={STATUS[s.status_code].tone}>{STATUS[s.status_code].label}</RhChip>
+          {s.agency_invoice_ref ? (
+            <span className="mt-1 block text-[11px] text-foreground/60">
+              Facture {s.agency_invoice_ref}
+              {s.agency_invoice_amount != null ? ` · ${money(s.agency_invoice_amount)} DA` : ""}
+              {s.agency_invoice_amount != null && Math.abs(s.agency_invoice_amount - s.amount_ttc) >= 0.01 ? (
+                <span className="block text-red-700">Écart {money(s.agency_invoice_amount - s.amount_ttc)} DA</span>
+              ) : null}
+            </span>
+          ) : null}
+          {s.cancelled_reason ? (
+            <span className="block text-[11px] italic text-foreground/60">{s.cancelled_reason}</span>
+          ) : null}
+        </>
+      ),
+    }),
+    statementCol.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row: { original: s } }) => (
+        <div className="flex flex-wrap gap-1">
+          <Button variant="ghost" disabled={pending} onClick={() => print(s)}>
+            Imprimer
+          </Button>
+          {canEdit && s.status_code === "ISSUED" ? (
+            <>
+              <Button
+                variant="secondary"
+                disabled={pending}
+                onClick={() => setReconcile({ row: s, ref: "", amount: String(s.amount_ttc) })}
+              >
+                Rapprocher
+              </Button>
+              <Button variant="ghost" disabled={pending} onClick={() => cancel(s)}>
+                Annuler
+              </Button>
+            </>
+          ) : null}
+          {canEdit && s.status_code === "RECONCILED" ? (
+            <Button variant="ghost" disabled={pending} onClick={() => setStatus(s, "ISSUED")}>
+              Annuler le rapprochement
+            </Button>
+          ) : null}
+        </div>
+      ),
+    }),
+  ];
+
   return (
     <div className="space-y-5">
       <RhPageHeader
@@ -230,68 +381,16 @@ export function InterimManager({
             </Button>
           ) : null}
         </div>
-        <RhTableWrap>
-          <table className="min-w-full text-sm">
-            <thead className="border-b border-border/70 bg-surface-muted/80">
-              <tr>
-                <th className={rhTh()}>Code</th>
-                <th className={rhTh()}>Raison sociale</th>
-                <th className={rhTh()}>Contact</th>
-                <th className={rhTh()}>Taux jour (DA)</th>
-                <th className={rhTh()}>Coef. / TVA</th>
-                <th className={rhTh()}>Intérimaires</th>
-                <th className={rhTh()} />
-              </tr>
-            </thead>
-            <tbody>
-              {agencies.length === 0 ? (
-                <tr>
-                  <td className={`${rhTd()} py-6 text-center text-foreground/55`} colSpan={7}>
-                    Aucune agence. Créez-en une, puis choisissez-la dans le contrat (type INTERIM).
-                  </td>
-                </tr>
-              ) : (
-                agencies.map((a) => (
-                  <tr key={a.id} className="border-b border-border/60">
-                    <td className={`${rhTd()} font-mono font-semibold`}>{a.code}</td>
-                    <td className={rhTd()}>
-                      {a.name} {a.is_active ? null : <RhChip tone="warning">Inactive</RhChip>}
-                      <span className="block text-[11px] text-foreground/55">
-                        NIF {a.nif || "—"} · RC {a.rc || "—"}
-                      </span>
-                    </td>
-                    <td className={rhTd()}>
-                      {a.contact_name || "—"}
-                      <span className="block text-[11px] text-foreground/55">{[a.phone, a.email].filter(Boolean).join(" · ")}</span>
-                    </td>
-                    <td className={`${rhTd()} font-mono`}>{money(a.default_daily_rate)}</td>
-                    <td className={`${rhTd()} tabular-nums`}>
-                      {a.markup_pct} % / {a.vat_pct} %
-                    </td>
-                    <td className={`${rhTd()} tabular-nums`}>{a.workers}</td>
-                    <td className={rhTd()}>
-                      {canEdit ? (
-                        <Button
-                          variant="ghost"
-                          onClick={() =>
-                            setAgencyForm({
-                              ...a,
-                              default_daily_rate: String(a.default_daily_rate),
-                              markup_pct: String(a.markup_pct),
-                              vat_pct: String(a.vat_pct),
-                            })
-                          }
-                        >
-                          Modifier
-                        </Button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </RhTableWrap>
+        <DataTable
+          data={agencies}
+          columns={agencyColumns}
+          getRowId={(a) => a.id}
+          searchPlaceholder="Code, raison sociale, contact…"
+          searchText={(a) => [a.code, a.name, a.nif, a.rc, a.contact_name, a.phone, a.email].filter(Boolean).join(" ")}
+          pageSize={0}
+          emptyTitle="Aucune agence"
+          emptyBody="Créez-en une, puis choisissez-la dans le contrat (type INTERIM)."
+        />
       </section>
 
       <section className="space-y-3">
@@ -372,30 +471,15 @@ export function InterimManager({
               </div>
             </div>
             {preview.lines.length ? (
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr>
-                    <th className={rhTh()}>Matricule</th>
-                    <th className={rhTh()}>Intérimaire</th>
-                    <th className={rhTh()}>Chantier</th>
-                    <th className={rhTh()}>Jours</th>
-                    <th className={rhTh()}>Taux (DA)</th>
-                    <th className={rhTh()}>Montant (DA)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.lines.map((l) => (
-                    <tr key={l.contract_id} className="border-b border-border/60">
-                      <td className={rhTd()}>{l.matricule}</td>
-                      <td className={rhTd()}>{l.employee_name}</td>
-                      <td className={rhTd()}>{l.site_name}</td>
-                      <td className={`${rhTd()} tabular-nums`}>{l.days_billed}</td>
-                      <td className={`${rhTd()} font-mono`}>{money(l.daily_rate)}</td>
-                      <td className={`${rhTd()} font-mono`}>{money(l.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <DataTable
+                data={preview.lines}
+                columns={lineColumns}
+                getRowId={(l) => l.contract_id}
+                searchPlaceholder="Matricule, intérimaire, chantier…"
+                searchText={(l) => [l.matricule, l.employee_name, l.site_name].join(" ")}
+                pageSize={0}
+                columnToggle={false}
+              />
             ) : (
               <p className="text-foreground/60">Aucune présence validée à facturer pour cette agence sur la période.</p>
             )}
@@ -412,89 +496,18 @@ export function InterimManager({
           </RhChip>
         </div>
 
-        <RhTableWrap>
-          <table className="min-w-full text-sm">
-            <thead className="border-b border-border/70 bg-surface-muted/80">
-              <tr>
-                <th className={rhTh()}>Relevé</th>
-                <th className={rhTh()}>Agence</th>
-                <th className={rhTh()}>Chantier</th>
-                <th className={rhTh()}>Jours</th>
-                <th className={rhTh()}>HT / TTC (DA)</th>
-                <th className={rhTh()}>Statut / facture agence</th>
-                <th className={rhTh()} />
-              </tr>
-            </thead>
-            <tbody>
-              {statements.length === 0 ? (
-                <tr>
-                  <td className={`${rhTd()} py-6 text-center text-foreground/55`} colSpan={7}>
-                    Aucun relevé pour {String(month).padStart(2, "0")}/{year}.
-                  </td>
-                </tr>
-              ) : (
-                statements.map((s) => (
-                  <tr key={s.id} className="border-b border-border/60 align-top">
-                    <td className={rhTd()}>
-                      <span className="font-mono font-semibold">{s.statement_no}</span>
-                      <span className="block text-[11px] text-foreground/55">{new Date(s.created_at).toLocaleString("fr-FR")}</span>
-                    </td>
-                    <td className={rhTd()}>{s.agency_name}</td>
-                    <td className={rhTd()}>{s.site_name ?? "Tous"}</td>
-                    <td className={`${rhTd()} tabular-nums`}>{s.days_total}</td>
-                    <td className={`${rhTd()} font-mono`}>
-                      {money(s.amount_ht)}
-                      <span className="block font-semibold">{money(s.amount_ttc)}</span>
-                    </td>
-                    <td className={rhTd()}>
-                      <RhChip tone={STATUS[s.status_code].tone}>{STATUS[s.status_code].label}</RhChip>
-                      {s.agency_invoice_ref ? (
-                        <span className="mt-1 block text-[11px] text-foreground/60">
-                          Facture {s.agency_invoice_ref}
-                          {s.agency_invoice_amount != null ? ` · ${money(s.agency_invoice_amount)} DA` : ""}
-                          {s.agency_invoice_amount != null && Math.abs(s.agency_invoice_amount - s.amount_ttc) >= 0.01 ? (
-                            <span className="block text-red-700">
-                              Écart {money(s.agency_invoice_amount - s.amount_ttc)} DA
-                            </span>
-                          ) : null}
-                        </span>
-                      ) : null}
-                      {s.cancelled_reason ? (
-                        <span className="block text-[11px] italic text-foreground/60">{s.cancelled_reason}</span>
-                      ) : null}
-                    </td>
-                    <td className={rhTd()}>
-                      <div className="flex flex-wrap gap-1">
-                        <Button variant="ghost" disabled={pending} onClick={() => print(s)}>
-                          Imprimer
-                        </Button>
-                        {canEdit && s.status_code === "ISSUED" ? (
-                          <>
-                            <Button
-                              variant="secondary"
-                              disabled={pending}
-                              onClick={() => setReconcile({ row: s, ref: "", amount: String(s.amount_ttc) })}
-                            >
-                              Rapprocher
-                            </Button>
-                            <Button variant="ghost" disabled={pending} onClick={() => cancel(s)}>
-                              Annuler
-                            </Button>
-                          </>
-                        ) : null}
-                        {canEdit && s.status_code === "RECONCILED" ? (
-                          <Button variant="ghost" disabled={pending} onClick={() => setStatus(s, "ISSUED")}>
-                            Annuler le rapprochement
-                          </Button>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </RhTableWrap>
+        <DataTable
+          data={statements}
+          columns={statementColumns}
+          getRowId={(s) => s.id}
+          searchPlaceholder="N° de relevé, agence, chantier…"
+          searchText={(s) =>
+            [s.statement_no, s.agency_name, s.site_name, s.agency_invoice_ref, STATUS[s.status_code].label]
+              .filter(Boolean)
+              .join(" ")
+          }
+          emptyTitle={`Aucun relevé pour ${String(month).padStart(2, "0")}/${year}`}
+        />
       </section>
 
       {agencyForm ? (

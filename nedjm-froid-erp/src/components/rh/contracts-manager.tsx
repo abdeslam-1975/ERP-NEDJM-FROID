@@ -14,19 +14,17 @@ import type { IrgCatalog } from "@/lib/actions/hr-irg";
 import type { PosteRow } from "@/lib/actions/hr-postes";
 import { gridAsOf } from "@/lib/hr/payroll-calc";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import {
   CatalogSelect,
   RhAlert,
   RhField,
   RhModal,
   RhPageHeader,
-  RhTableWrap,
   RhTabs,
   bi,
   catalogOptions,
   rhInput,
-  rhTd,
-  rhTh,
 } from "@/components/rh/rh-ui";
 import { ContractSalaryFields, type SelectedSalaryLine } from "@/components/rh/contract-salary-fields";
 import { LegalSettings } from "@/components/rh/legal-settings";
@@ -46,6 +44,8 @@ type SiteOpt = {
   activity_code_id?: string | null;
 };
 type ActivityOpt = { id: string; code: string; label_fr: string };
+
+const col = dataColumns<HrContractRow>();
 
 type FormState = {
   id?: string;
@@ -381,6 +381,42 @@ export function ContractsManager({
     });
   }
 
+  const columns = [
+    col.accessor((r) => `${r.matricule} ${r.employee_name}`, {
+      id: "employee",
+      header: bi("Employé", "العامل"),
+      cell: ({ row }) => (
+        <>
+          <span className="font-mono text-xs">{row.original.matricule}</span> {row.original.employee_name}
+        </>
+      ),
+    }),
+    col.accessor("site_name", { header: bi("Chantier", "الورشة") }),
+    col.accessor((r) => r.contract_type_code ?? "", {
+      id: "type",
+      header: bi("Type", "النوع"),
+      cell: (info) => info.getValue() || "—",
+    }),
+    col.accessor("salaire_net_ref_monthly", { header: bi("Net chantier", "صافي الميدان") }),
+    col.accessor("status", { header: bi("Statut", "الحالة") }),
+    col.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => (
+        <>
+          <Button variant="secondary" onClick={() => openRow(row.original)}>
+            {bi("Modifier", "تعديل")}
+          </Button>{" "}
+          <Button variant="secondary" onClick={() => setPrintId(row.original.id)}>
+            {bi("Imprimer", "طباعة")}
+          </Button>
+        </>
+      ),
+    }),
+  ];
+
   return (
     <div className="space-y-5">
       <RhPageHeader
@@ -391,12 +427,9 @@ export function ContractsManager({
         )}
         actions={
           <>
-            <Link
-              className="rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted hover:text-foreground"
-              href="/rh/paie/exceptions"
-            >
-              {bi("Exceptions", "استثناءات")}
-            </Link>
+            <Button asChild variant="secondary">
+              <Link href="/rh/paie/exceptions">{bi("Exceptions", "استثناءات")}</Link>
+            </Button>
             <Button
               onClick={() => {
                 openModal(emptyForm(), defaultContractLines());
@@ -409,45 +442,16 @@ export function ContractsManager({
       />
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
       {info && !error ? <RhAlert tone="success">{info}</RhAlert> : null}
-      <RhTableWrap>
-        <table className="min-w-full text-sm">
-          <thead className="border-b border-border/70 bg-surface-muted/80">
-            <tr>
-              <th className={rhTh()}>{bi("Employé", "العامل")}</th>
-              <th className={rhTh()}>{bi("Chantier", "الورشة")}</th>
-              <th className={rhTh()}>{bi("Type", "النوع")}</th>
-              <th className={rhTh()}>{bi("Net chantier", "صافي الميدان")}</th>
-              <th className={rhTh()}>{bi("Statut", "الحالة")}</th>
-              <th className={rhTh()} />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id} className="border-b border-border/60">
-                <td className={rhTd()}>
-                  <span className="font-mono text-xs">{row.matricule}</span>{" "}
-                  {row.employee_name}
-                </td>
-                <td className={rhTd()}>{row.site_name}</td>
-                <td className={rhTd()}>{row.contract_type_code ?? "—"}</td>
-                <td className={rhTd()}>{row.salaire_net_ref_monthly}</td>
-                <td className={rhTd()}>{row.status}</td>
-                <td className={rhTd()}>
-                  <Button
-                    variant="secondary"
-                    onClick={() => openRow(row)}
-                  >
-                    {bi("Modifier", "تعديل")}
-                  </Button>{" "}
-                  <Button variant="secondary" onClick={() => setPrintId(row.id)}>
-                    {bi("Imprimer", "طباعة")}
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </RhTableWrap>
+      <DataTable
+        data={rows}
+        columns={columns}
+        getRowId={(r) => r.id}
+        searchPlaceholder="Employé, matricule, chantier…"
+        searchText={(r) =>
+          [r.matricule, r.employee_name, r.site_name, r.contract_type_code, r.status].filter(Boolean).join(" ")
+        }
+        emptyTitle="Aucun contrat"
+      />
 
       {open ? (
         <RhModal

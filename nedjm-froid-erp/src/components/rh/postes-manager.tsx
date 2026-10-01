@@ -281,15 +281,16 @@ export function PostesManager({
                                   <td className="px-2 py-1">{g.notes}</td>
                                   <td className="px-2 py-1 text-right">
                                     {canEdit ? (
-                                      <button
-                                        type="button"
-                                        className="text-red-600 hover:underline"
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-alert-critical hover:text-alert-critical"
                                         onClick={() => {
                                           if (window.confirm("Supprimer cette ligne de grille ?")) run(() => deleteGridRow(g.id));
                                         }}
                                       >
                                         {bi("Supprimer", "حذف")}
-                                      </button>
+                                      </Button>
                                     ) : null}
                                   </td>
                                 </tr>

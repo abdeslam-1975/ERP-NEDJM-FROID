@@ -10,6 +10,7 @@ import {
 } from "@/lib/actions/contracts";
 import { AlertBadge } from "@/components/castle/alert-badge";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 
 const STATUS_OPTIONS = [
   { value: "BROUILLON", label: "Brouillon" },
@@ -18,6 +19,8 @@ const STATUS_OPTIONS = [
   { value: "CLOTURE", label: "Clôturé" },
   { value: "ANNULE", label: "Annulé" },
 ] as const;
+
+const col = dataColumns<ContractListRow>();
 
 function money(n: number) {
   return new Intl.NumberFormat("fr-DZ", {
@@ -111,7 +114,6 @@ export function ContractsManager({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const [q, setQ] = useState("");
   const [form, setForm] = useState<FormState>(
     emptyForm(
       sites[0]?.id ?? "",
@@ -119,18 +121,68 @@ export function ContractsManager({
     ),
   );
 
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return initialContracts.filter((c) => {
-      if (focusClientId && c.client_id !== focusClientId) return false;
-      if (!needle) return true;
-      return (
-        c.contract_number.toLowerCase().includes(needle) ||
-        c.client_name.toLowerCase().includes(needle) ||
-        (c.site_name ?? "").toLowerCase().includes(needle)
-      );
-    });
-  }, [initialContracts, q, focusClientId]);
+  const filtered = useMemo(
+    () => (focusClientId ? initialContracts.filter((c) => c.client_id === focusClientId) : initialContracts),
+    [initialContracts, focusClientId],
+  );
+
+  const columns = useMemo(
+    () => [
+      col.accessor("contract_number", {
+        header: "N°",
+        meta: { className: "font-mono text-xs font-semibold text-brand" },
+      }),
+      col.accessor("client_name", { header: "Client" }),
+      col.accessor((c) => c.site_name ?? "", {
+        id: "site",
+        header: "Site",
+        meta: { className: "text-foreground/75" },
+        cell: (info) => info.getValue() || "—",
+      }),
+      col.accessor("total_amount_ht", {
+        header: "Montant HT",
+        meta: { className: "tabular-nums" },
+        cell: (info) => money(info.getValue()),
+      }),
+      col.accessor((c) => STATUS_OPTIONS.find((s) => s.value === c.status)?.label ?? c.status, {
+        id: "status",
+        header: "Statut",
+        cell: (info) => {
+          const status = info.row.original.status;
+          return (
+            <AlertBadge
+              label={info.getValue()}
+              tone={status === "EN_COURS" ? "success" : status === "ANNULE" ? "critical" : "info"}
+            />
+          );
+        },
+      }),
+      col.accessor((c) => c.labor_count + c.spare_count, {
+        id: "lines",
+        header: "Lignes",
+        meta: { className: "text-xs text-foreground/65" },
+        cell: (info) => `${info.row.original.labor_count} labor · ${info.row.original.spare_count} pièces`,
+      }),
+      col.display({
+        id: "actions",
+        header: "Actions",
+        enableSorting: false,
+        enableHiding: false,
+        meta: { align: "right" },
+        cell: ({ row }) => (
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="secondary" onClick={() => openEdit(row.original)}>
+              Éditer
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/referentiels/contrats/${row.original.id}`}>Workspace</Link>
+            </Button>
+          </div>
+        ),
+      }),
+    ],
+    [],
+  );
 
   function openCreate() {
     const next = emptyForm(
@@ -240,81 +292,14 @@ export function ContractsManager({
         </p>
       ) : null}
 
-      <input
-        className="w-full max-w-md rounded-md border border-border bg-surface px-3 py-2 text-sm"
-        placeholder="Rechercher n°, client, site…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
+      <DataTable
+        data={filtered}
+        columns={columns}
+        getRowId={(c) => c.id}
+        searchPlaceholder="Rechercher n°, client, site…"
+        searchText={(c) => [c.contract_number, c.client_name, c.site_name].filter(Boolean).join(" ")}
+        emptyTitle="Aucun contrat trouvé."
       />
-
-      {filtered.length === 0 ? (
-        <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed border-border bg-surface-muted text-sm text-foreground/60">
-          Aucun contrat trouvé.
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-surface">
-          <table className="w-full min-w-[960px] text-left text-sm">
-            <thead className="bg-surface-muted text-xs uppercase tracking-wide text-foreground/60">
-              <tr>
-                <th className="px-4 py-3">N°</th>
-                <th className="px-4 py-3">Client</th>
-                <th className="px-4 py-3">Site</th>
-                <th className="px-4 py-3">Montant HT</th>
-                <th className="px-4 py-3">Statut</th>
-                <th className="px-4 py-3">Lignes</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((c) => (
-                <tr key={c.id} className="border-t border-border">
-                  <td className="px-4 py-3 font-mono text-xs font-semibold text-brand">
-                    {c.contract_number}
-                  </td>
-                  <td className="px-4 py-3">{c.client_name}</td>
-                  <td className="px-4 py-3 text-foreground/75">
-                    {c.site_name ?? "—"}
-                  </td>
-                  <td className="px-4 py-3">{money(c.total_amount_ht)}</td>
-                  <td className="px-4 py-3">
-                    <AlertBadge
-                      label={
-                        STATUS_OPTIONS.find((s) => s.value === c.status)
-                          ?.label ?? c.status
-                      }
-                      tone={
-                        c.status === "EN_COURS"
-                          ? "success"
-                          : c.status === "ANNULE"
-                            ? "critical"
-                            : "info"
-                      }
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-xs text-foreground/65">
-                    {c.labor_count} labor · {c.spare_count} pièces
-                  </td>
-                  <td className="space-x-3 px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      className="text-sm font-semibold text-foreground/70 hover:text-brand"
-                      onClick={() => openEdit(c)}
-                    >
-                      Éditer
-                    </button>
-                    <Link
-                      href={`/referentiels/contrats/${c.id}`}
-                      className="text-sm font-semibold text-brand hover:underline"
-                    >
-                      Workspace
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
 
       {open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

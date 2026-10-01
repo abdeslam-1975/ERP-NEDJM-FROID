@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
   upsertClient,
@@ -93,6 +94,30 @@ function fromClient(client: ClientRow): Draft {
 
 const ACCEPTED = ["application/pdf", "image/jpeg", "image/png"];
 const MAX_BYTES = 10 * 1024 * 1024;
+
+const col = dataColumns<ClientContractLink>();
+
+const contractColumns = [
+  col.accessor("contract_number", {
+    header: "N°",
+    cell: (info) => (
+      <Link href={`/referentiels/contrats/${info.row.original.id}`} className="font-semibold text-brand hover:underline">
+        {info.getValue()}
+      </Link>
+    ),
+  }),
+  col.accessor((contract) => contract.site_name ?? "", {
+    id: "site",
+    header: "Site",
+    cell: (info) => info.getValue() || "—",
+  }),
+  col.accessor("status", { header: "Statut" }),
+  col.accessor((contract) => contract.ods_date ?? "", {
+    id: "ods",
+    header: "ODS",
+    cell: (info) => info.getValue() || "—",
+  }),
+];
 
 function fileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} o`;
@@ -369,37 +394,16 @@ export function ClientFiche({
               </span>
             )}
           </div>
-          {contracts.length === 0 ? (
-            <p className="mt-4 text-sm">Aucun contrat lié.</p>
-          ) : (
-            <table className="mt-4 w-full text-sm">
-              <thead className="text-left text-foreground/60">
-                <tr>
-                  <th className="py-2">N°</th>
-                  <th>Site</th>
-                  <th>Statut</th>
-                  <th>ODS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contracts.map((contract) => (
-                  <tr key={contract.id} className="border-t border-border">
-                    <td className="py-2">
-                      <Link
-                        href={`/referentiels/contrats/${contract.id}`}
-                        className="font-semibold text-brand hover:underline"
-                      >
-                        {contract.contract_number}
-                      </Link>
-                    </td>
-                    <td>{contract.site_name ?? "—"}</td>
-                    <td>{contract.status}</td>
-                    <td>{contract.ods_date ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          <DataTable
+            className="mt-4"
+            data={contracts}
+            columns={contractColumns}
+            getRowId={(contract) => contract.id}
+            searchable={false}
+            columnToggle={false}
+            pageSize={0}
+            emptyTitle="Aucun contrat lié."
+          />
         </section>
       ) : null}
 
