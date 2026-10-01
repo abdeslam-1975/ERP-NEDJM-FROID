@@ -136,7 +136,7 @@ export async function upsertHrContract(
     };
   }
   const supabase = await createClient();
-  let closedPrevious = 0;
+  let closePlan: { id: string; end_date: string }[] = [];
   if (p.affectation_principale) {
     const { data: existing, error: existingErr } = await supabase
       .from("hr_contracts")
@@ -159,18 +159,7 @@ export async function upsertHrContract(
       },
     );
     if (!plan.ok) return plan;
-    for (const close of plan.close) {
-      const { error: closeErr } = await supabase
-        .from("hr_contracts")
-        .update({
-          end_date: close.end_date,
-          status: "ENDED",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", close.id);
-      if (closeErr) return { ok: false, error: closeErr.message };
-      closedPrevious += 1;
-    }
+    closePlan = plan.close;
   }
   const payload = {
     employee_id: p.employee_id,
@@ -198,10 +187,12 @@ export async function upsertHrContract(
   // After creation the site mirrors the dated assignment in force; it changes only through assignments.
   const updatePayload: Partial<typeof payload> = { ...payload };
   delete updatePayload.site_id;
-  const q = p.id
-    ? supabase.from("hr_contracts").update(updatePayload).eq("id", p.id)
-    : supabase.from("hr_contracts").insert(payload);
-  const { data, error } = await q.select("id").maybeSingle();
+  const { data: savedId, error } = await supabase.rpc("hr_contract_save", {
+    p_close: closePlan,
+    p_id: p.id ?? null,
+    p_payload: p.id ? updatePayload : payload,
+  });
+  const data = typeof savedId === "string" ? { id: savedId } : null;
   if (error) {
     if (isPrincipalExclusionError(error.message)) {
       return {
@@ -241,7 +232,7 @@ export async function upsertHrContract(
     ok: true,
     data: {
       id: data.id,
-      closed_previous: closedPrevious,
+      closed_previous: closePlan.length,
       payroll_notice: signal.ok ? payrollSignalNotice(signal.data) : null,
       warning,
     },

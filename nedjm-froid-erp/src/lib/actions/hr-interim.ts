@@ -229,7 +229,7 @@ export async function issueInterimStatement(input: {
     return { ok: false, error: `Taux journalier manquant : ${r.statement.missingRate.join(", ")}.` };
   }
   const supabase = await createClient();
-  const numbered = await nextRegisterNumber(supabase, "hr_interim_statements", "statement_no", "ITM");
+  const numbered = await nextRegisterNumber(supabase, "ITM");
   if (!numbered.ok) return numbered;
   const no = numbered.data;
   const { data, error } = await supabase

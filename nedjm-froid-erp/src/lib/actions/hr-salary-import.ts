@@ -205,28 +205,25 @@ export async function applySalaryRubriquesImport(input: unknown): Promise<
     return { ok: false, error: "Aucune rubrique nouvelle ou modifiée à confirmer. · لا توجد بنود جديدة أو معدَّلة للتأكيد." };
   }
   const supabase = await createClient();
-  let cleared = 0;
+  const clearIds: string[] = [];
   if (parsed.data.replace_scope) {
     for (const row of toWrite) {
       const prev = existing.data.find((e) => e.code === row.code);
       if (!prev || !row.incoming) continue;
       if (prev.apply_scope === row.incoming.apply_scope) continue;
-      const { error } = await supabase
-        .from("hr_salary_assignments")
-        .delete()
-        .eq("rubrique_id", prev.id);
-      if (error) return { ok: false, error: error.message };
-      cleared += 1;
+      clearIds.push(prev.id);
     }
   }
   const payloads = toWrite
     .map((row) => row.incoming)
     .filter((d): d is RubriqueDraft => Boolean(d))
     .map((d) => ({ ...d, ...salaryClassFlags(d.category) }));
-  const { error } = await supabase.from("hr_salary_rubriques").upsert(payloads, {
-    onConflict: "code",
+  const { error } = await supabase.rpc("hr_salary_rubriques_import", {
+    p_clear_rubrique_ids: clearIds,
+    p_rows: payloads,
   });
   if (error) return { ok: false, error: error.message };
+  const cleared = clearIds.length;
   const listed = await listSalaryRubriques();
   revalidate();
   return {

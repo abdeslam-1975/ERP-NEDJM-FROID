@@ -284,7 +284,7 @@ export async function createTransferBatch(input: {
     }
   }
 
-  const numbered = await nextRegisterNumber(supabase, "hr_payroll_transfer_batches", "batch_no", "VIR");
+  const numbered = await nextRegisterNumber(supabase, "VIR");
   if (!numbered.ok) return numbered;
   const batchNo = numbered.data;
 

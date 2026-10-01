@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   editableRowValueCodes,
   isEditableColumn,
-  mergeRowValues,
   pickVisibleValues,
+  rowValuePatch,
   visibleColumns,
   type AttendanceColumn,
 } from "@/lib/hr/attendance-columns";
@@ -61,13 +61,12 @@ describe("attendance columns", () => {
     expect([...editableRowValueCodes(columns, access)]).toEqual(["POSTE_EFFECTIF"]);
   });
 
-  it("merges only editable values and clears empty ones", () => {
+  it("patches only editable values and clears empty ones", () => {
     const editable = new Set(["COMMENTAIRE", "POSTE_EFFECTIF"]);
-    const stored = { COMMENTAIRE: "old", VALIDATION: "OK" };
     expect(
-      mergeRowValues(stored, { COMMENTAIRE: " ", POSTE_EFFECTIF: " Soudeur ", VALIDATION: "NO" }, editable),
-    ).toEqual({ VALIDATION: "OK", POSTE_EFFECTIF: "Soudeur" });
-    expect(mergeRowValues(stored, { COMMENTAIRE: "old" }, editable)).toBeNull();
+      rowValuePatch({ COMMENTAIRE: " ", POSTE_EFFECTIF: " Soudeur ", VALIDATION: "NO" }, editable),
+    ).toEqual({ set: { POSTE_EFFECTIF: "Soudeur" }, unset: ["COMMENTAIRE"] });
+    expect(rowValuePatch({ VALIDATION: "NO" }, editable)).toBeNull();
   });
 
   it("strips values of columns the role cannot view", () => {

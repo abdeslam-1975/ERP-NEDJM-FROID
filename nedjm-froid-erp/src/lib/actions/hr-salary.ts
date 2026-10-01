@@ -296,17 +296,6 @@ export async function replaceContractSalaryLines(input: {
     if (rub.apply_scope === "employee") employeeLines.push(line);
     else contractLines.push(line);
   }
-  const { error: delCtr } = await supabase
-    .from("hr_salary_assignments")
-    .delete()
-    .eq("contract_id", input.contract_id);
-  if (delCtr) return { ok: false, error: delCtr.message };
-  const { error: delEmp } = await supabase
-    .from("hr_salary_assignments")
-    .delete()
-    .eq("employee_id", input.employee_id);
-  if (delEmp) return { ok: false, error: delEmp.message };
-
   const rows = [
     ...contractLines.map((line) => ({
       rubrique_id: line.rubrique_id,
@@ -327,10 +316,12 @@ export async function replaceContractSalaryLines(input: {
       is_active: true,
     })),
   ];
-  if (rows.length) {
-    const { error } = await supabase.from("hr_salary_assignments").insert(rows);
-    if (error) return { ok: false, error: error.message };
-  }
+  const { error } = await supabase.rpc("hr_salary_assignments_replace", {
+    p_contract_id: input.contract_id,
+    p_employee_id: input.employee_id,
+    p_rows: rows,
+  });
+  if (error) return { ok: false, error: error.message };
   revalidateSalary();
   return { ok: true, data: { count: rows.length } };
 }

@@ -45,7 +45,6 @@ function billingWorld(opts: {
   contractRate: number | null;
   agencyRate: number;
   insertError?: { message: string; code: string };
-  lastStatementNo?: string;
 }) {
   return installFake(
     (q) => {
@@ -84,9 +83,6 @@ function billingWorld(opts: {
       }
       if (q.table === "hr_interim_statements" && q.op === "insert") {
         return opts.insertError ? { data: null, error: opts.insertError } : { data: { id: STATEMENT }, error: null };
-      }
-      if (q.table === "hr_interim_statements" && q.op === "select") {
-        return { data: opts.lastStatementNo ? { statement_no: opts.lastStatementNo } : null, error: null };
       }
       return undefined;
     },
@@ -136,7 +132,7 @@ describe("issueInterimStatement", () => {
     const fake = billingWorld({ contractRate: 3000, agencyRate: 2500 });
     const r = await issueInterimStatement({ agency_id: AGENCY, year: 2026, month: 9 });
     expect(r).toEqual({ ok: true, data: { id: STATEMENT, statement_no: "000007/26" } });
-    expect(fake.rpcs).toEqual([{ fn: "hr_next_doc_number", args: { p_prefix: "ITM" } }]);
+    expect(fake.rpcs).toEqual([{ fn: "hr_next_register_number", args: { p_register: "ITM" } }]);
     const insert = fake.queries.find((q) => q.table === "hr_interim_statements" && q.op === "insert");
     expect(insert?.payload).toMatchObject({
       statement_no: "000007/26",
@@ -150,14 +146,6 @@ describe("issueInterimStatement", () => {
     });
     const attendance = fake.queries.find((q) => q.table === "hr_attendance");
     expect(attendance?.filters).toContainEqual(["eq", "status_code", "VALIDATED"]);
-  });
-
-  it("never reuses a statement number already in the register", async () => {
-    const fake = billingWorld({ contractRate: 3000, agencyRate: 2500, lastStatementNo: "000009/26" });
-    const r = await issueInterimStatement({ agency_id: AGENCY, year: 2026, month: 9 });
-    expect(r).toEqual({ ok: true, data: { id: STATEMENT, statement_no: "000010/26" } });
-    const lookup = fake.queries.find((q) => q.table === "hr_interim_statements" && q.op === "select");
-    expect(lookup?.filters).toContainEqual(["like", "statement_no", "%/26"]);
   });
 
   it("blocks the statement when a worker has no daily rate", async () => {

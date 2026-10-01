@@ -157,30 +157,22 @@ export function editableRowValueCodes(
 }
 
 /**
- * Applies the submitted values of editable columns onto the stored ones.
- * An empty string removes the value. Returns null when nothing changes.
+ * The submitted values of editable columns as a patch for the database merge: non-empty values to
+ * write, emptied ones to remove. Null when the row carries nothing editable.
  */
-export function mergeRowValues(
-  stored: Record<string, string>,
+export function rowValuePatch(
   submitted: Record<string, string>,
   editable: Set<string>,
-): Record<string, string> | null {
-  const next = { ...stored };
-  let changed = false;
+): { set: Record<string, string>; unset: string[] } | null {
+  const set: Record<string, string> = {};
+  const unset: string[] = [];
   for (const [code, raw] of Object.entries(submitted)) {
     if (!editable.has(code)) continue;
     const value = raw.trim();
-    if (!value) {
-      if (code in next) {
-        delete next[code];
-        changed = true;
-      }
-    } else if (next[code] !== value) {
-      next[code] = value;
-      changed = true;
-    }
+    if (value) set[code] = value;
+    else unset.push(code);
   }
-  return changed ? next : null;
+  return Object.keys(set).length || unset.length ? { set, unset } : null;
 }
 
 export function pickVisibleValues(

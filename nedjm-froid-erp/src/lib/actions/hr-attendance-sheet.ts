@@ -16,8 +16,8 @@ import {
 import {
   editableRowValueCodes,
   isEditableColumn,
-  mergeRowValues,
   pickVisibleValues,
+  rowValuePatch,
   POSTE_EFFECTIF,
   type AttendanceColumn,
   type AttendanceColumnAccess,
@@ -203,48 +203,21 @@ export async function saveAttendanceSheetRows(
     return { ok: false, error: "Aucune colonne modifiable pour votre rôle. · لا توجد أعمدة قابلة للتعديل." };
   }
 
-  const employeeIds = [...new Set(p.rows.map((r) => r.employee_id))];
-  if (!employeeIds.length) return { ok: true, data: { count: 0 } };
-  const { data: existing, error: exErr } = await supabase
-    .from("hr_attendance_sheet_rows")
-    .select("id, employee_id, cell_values")
-    .eq("site_id", p.site_id)
-    .eq("period_year", p.year)
-    .eq("period_month", p.month)
-    .in("employee_id", employeeIds);
-  if (exErr) return { ok: false, error: exErr.message };
-  const byEmployee = new Map((existing ?? []).map((r) => [r.employee_id, r]));
-
-  let count = 0;
-  const inserts: Record<string, unknown>[] = [];
-  for (const row of p.rows) {
-    const stored = byEmployee.get(row.employee_id);
-    const storedValues = (stored?.cell_values ?? {}) as Record<string, string>;
-    const next = mergeRowValues(storedValues, row.values, editable);
-    if (!next) continue;
-    if (stored) {
-      const { error } = await supabase
-        .from("hr_attendance_sheet_rows")
-        .update({ cell_values: next })
-        .eq("id", stored.id);
-      if (error) return { ok: false, error: error.message };
-    } else {
-      inserts.push({
-        site_id: p.site_id,
-        employee_id: row.employee_id,
-        period_year: p.year,
-        period_month: p.month,
-        cell_values: next,
-      });
-    }
-    count += 1;
-  }
-  if (inserts.length) {
-    const { error } = await supabase.from("hr_attendance_sheet_rows").insert(inserts);
-    if (error) return { ok: false, error: error.message };
-  }
+  // Merged key by key in the database, in one transaction: a concurrent edit of another column survives.
+  const rows = p.rows.flatMap((row) => {
+    const patch = rowValuePatch(row.values, editable);
+    return patch ? [{ employee_id: row.employee_id, ...patch }] : [];
+  });
+  if (!rows.length) return { ok: true, data: { count: 0 } };
+  const { data, error } = await supabase.rpc("hr_attendance_sheet_merge", {
+    p_site: p.site_id,
+    p_year: p.year,
+    p_month: p.month,
+    p_rows: rows,
+  });
+  if (error) return { ok: false, error: error.message };
   revalidatePath("/rh/presence");
-  return { ok: true, data: { count } };
+  return { ok: true, data: { count: Number(data ?? 0) } };
 }
 
 export type AttendanceColumnsAdmin = {

@@ -469,49 +469,17 @@ export async function upsertHrEmployee(
     core.attrs = { ...previous, ...(full.data.attrs ?? {}) };
   }
 
-  let id: string | undefined = p.id;
-  if (id) {
-    const { data, error } = await supabase
-      .from("hr_employees")
-      .update(core)
-      .eq("id", id)
-      .select("id")
-      .maybeSingle();
-    if (error) {
-      return {
-        ok: false,
-        error: error.message.includes("hr_employees_matricule_key")
-          ? "Matricule déjà utilisé."
-          : error.message,
-      };
-    }
-    if (!data) return { ok: false, error: "Employé introuvable ou accès refusé." };
-    id = data.id;
-  } else {
-    const { data, error } = await supabase
-      .from("hr_employees")
-      .insert(core)
-      .select("id")
-      .maybeSingle();
-    if (error) {
-      return {
-        ok: false,
-        error: error.message.includes("hr_employees_matricule_key")
-          ? "Matricule déjà utilisé."
-          : error.message,
-      };
-    }
-    if (!data) return { ok: false, error: "Création refusée (RBAC)." };
-    id = data.id;
-  }
-
-  if (!id) return { ok: false, error: "Identifiant employé manquant." };
-
+  let satellites: {
+    p_civil: Record<string, unknown> | null;
+    p_contacts: Record<string, unknown> | null;
+    p_bank: Record<string, unknown> | null;
+    p_social: Record<string, unknown> | null;
+    p_qualification: Record<string, unknown> | null;
+  } = { p_civil: null, p_contacts: null, p_bank: null, p_social: null, p_qualification: null };
   if (full.success) {
     const f = full.data;
-    const satellites = await Promise.all([
-      supabase.from("hr_employee_civil").upsert({
-        employee_id: id,
+    satellites = {
+      p_civil: {
         sex_code: f.sex_code,
         marital_code: f.marital_code,
         children_count: maritalAllowsChildren(f.marital_code)
@@ -526,9 +494,8 @@ export async function upsertHrEmployee(
         nationality: f.nationality,
         commune_birth: f.commune_birth,
         wilaya_birth: f.wilaya_birth,
-      }),
-      supabase.from("hr_employee_contacts").upsert({
-        employee_id: id,
+      },
+      p_contacts: {
         address_ar: f.address_ar,
         address_fr: f.address_fr,
         wilaya_code: f.wilaya_code,
@@ -537,49 +504,46 @@ export async function upsertHrEmployee(
         phone: f.phone,
         whatsapp: f.whatsapp,
         email: f.email,
-      }),
-      supabase.from("hr_employee_bank").upsert({
-        employee_id: id,
+      },
+      p_bank: {
         payment_mode_code: f.payment_mode_code,
         account_no: f.account_no,
         account_key: f.account_key,
-      }),
-      supabase.from("hr_employee_social").upsert({
-        employee_id: id,
+      },
+      p_social: {
         declaration_date: f.declaration_date,
         social_profile_code: f.social_profile_code,
-      }),
-    ]);
-    const { data: existingQual, error: qualReadError } = await supabase
-      .from("hr_employee_qualifications")
-      .select("id")
-      .eq("employee_id", id)
-      .maybeSingle();
-    const qual = {
-      employee_id: id,
-      level_code: f.level_code,
-      diploma_ar: f.diploma_ar,
-      diploma_fr: f.diploma_fr,
-      experience_years: f.experience_years ?? null,
-      languages: f.languages,
+      },
+      p_qualification: {
+        level_code: f.level_code,
+        diploma_ar: f.diploma_ar,
+        diploma_fr: f.diploma_fr,
+        experience_years: f.experience_years ?? null,
+        languages: f.languages,
+      },
     };
-    const qualWrite = qualReadError
-      ? { error: qualReadError }
-      : existingQual?.id
-        ? await supabase
-            .from("hr_employee_qualifications")
-            .update(qual)
-            .eq("id", existingQual.id)
-        : await supabase.from("hr_employee_qualifications").insert(qual);
-    const satelliteError = [...satellites, qualWrite].find((r) => r.error)?.error;
-    if (satelliteError) {
-      revalidateHr();
-      return {
-        ok: false,
-        error: `Fiche principale enregistrée, mais une partie des informations n'a pas été sauvegardée : ${satelliteError.message}. Rouvrez la fiche pour compléter.`,
-      };
-    }
   }
+
+  const { data: savedId, error } = await supabase.rpc("hr_employee_save", {
+    p_id: p.id ?? null,
+    p_core: core,
+    ...satellites,
+  });
+  if (error) {
+    return {
+      ok: false,
+      error: error.message.includes("hr_employees_matricule_key")
+        ? "Matricule déjà utilisé."
+        : error.message,
+    };
+  }
+  if (typeof savedId !== "string") {
+    return {
+      ok: false,
+      error: p.id ? "Employé introuvable ou accès refusé." : "Création refusée (RBAC).",
+    };
+  }
+  const id = savedId;
 
   revalidateHr();
   return { ok: true, data: { id } };
