@@ -12,6 +12,7 @@ import {
   type InterimStatement,
 } from "@/lib/hr/interim-billing";
 import { loadLegendsAt } from "@/lib/hr/legends-at";
+import { nextRegisterNumber } from "@/lib/hr/doc-number";
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -228,8 +229,9 @@ export async function issueInterimStatement(input: {
     return { ok: false, error: `Taux journalier manquant : ${r.statement.missingRate.join(", ")}.` };
   }
   const supabase = await createClient();
-  const { data: no, error: numErr } = await supabase.rpc("hr_next_doc_number", { p_prefix: "ITM" });
-  if (numErr || typeof no !== "string") return { ok: false, error: numErr?.message ?? "Numérotation impossible." };
+  const numbered = await nextRegisterNumber(supabase, "hr_interim_statements", "statement_no", "ITM");
+  if (!numbered.ok) return numbered;
+  const no = numbered.data;
   const { data, error } = await supabase
     .from("hr_interim_statements")
     .insert({
@@ -251,7 +253,12 @@ export async function issueInterimStatement(input: {
   if (error) {
     return {
       ok: false,
-      error: error.code === "23505" ? "Un relevé actif existe déjà pour cette agence et cette période : annulez-le d'abord." : error.message,
+      error:
+        error.code === "23505"
+          ? error.message.includes("statement_no")
+            ? "Numéro de relevé pris par une création simultanée : réessayez."
+            : "Un relevé actif existe déjà pour cette agence et cette période : annulez-le d'abord."
+          : error.message,
     };
   }
   revalidateInterim();

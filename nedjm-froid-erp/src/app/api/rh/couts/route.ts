@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
+import { spreadsheetCell } from "@/lib/csv";
 import { workspaceHasRole } from "@/lib/auth/require-roles";
 import { loadCostReport } from "@/lib/actions/hr-costs";
 import { journalCsv } from "@/lib/hr/cost-allocation";
@@ -10,7 +11,7 @@ const COST_ROLES = ["SUPER_ADMIN", "ADMIN_RH", "GERANT", "ADMIN_FINANCE"];
 function csv(rows: (string | number)[][]) {
   return (
     rows
-      .map((r) => r.map((v) => (typeof v === "number" ? v.toFixed(2) : /[;"\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)).join(";"))
+      .map((r) => r.map((v) => (typeof v === "number" ? v.toFixed(2) : spreadsheetCell(v))).join(";"))
       .join("\r\n") + "\r\n"
   );
 }

@@ -15,6 +15,7 @@ import {
   type TransferMode,
 } from "@/lib/hr/payroll-transfers";
 import { periodNatureOf, transferReasonLabel } from "@/lib/hr/external-operations";
+import { nextRegisterNumber } from "@/lib/hr/doc-number";
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -283,8 +284,9 @@ export async function createTransferBatch(input: {
     }
   }
 
-  const { data: batchNo, error: numErr } = await supabase.rpc("hr_next_doc_number", { p_prefix: "VIR" });
-  if (numErr || typeof batchNo !== "string") return { ok: false, error: numErr?.message ?? "Numérotation impossible." };
+  const numbered = await nextRegisterNumber(supabase, "hr_payroll_transfer_batches", "batch_no", "VIR");
+  if (!numbered.ok) return numbered;
+  const batchNo = numbered.data;
 
   const settings = await getHrBulletinSettings();
   const employerName = (settings.ok ? settings.data.employer_name : "") || "NEDJM FROID";
@@ -324,7 +326,12 @@ export async function createTransferBatch(input: {
   if (error) {
     return {
       ok: false,
-      error: error.code === "23505" ? "Un bulletin vient d'être inclus dans un autre lot : régénérez." : error.message,
+      error:
+        error.code === "23505"
+          ? error.message.includes("batch_no")
+            ? "Numéro de lot pris par une création simultanée : réessayez."
+            : "Un bulletin vient d'être inclus dans un autre lot : régénérez."
+          : error.message,
     };
   }
   const r = (data ?? {}) as { ok?: boolean; id?: string; reason?: string };

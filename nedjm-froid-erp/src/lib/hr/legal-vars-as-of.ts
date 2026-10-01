@@ -101,11 +101,13 @@ export async function legalVarVersionsAsOf(
   supabase: Supabase,
   asOf: string,
 ): Promise<{ vars: Record<string, number>; rows: Record<string, RuleRowTrace> }> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("ref_global_var_versions")
     .select("id, value_numeric, effective_from, effective_to, proposal_id, decision_id, ref_global_vars ( key )")
     .lte("effective_from", asOf)
     .order("effective_from", { ascending: false });
+  // An empty map would let payroll run with every legal rate missing.
+  if (error) throw new Error(`Variables légales illisibles : ${error.message}`);
   const vars: Record<string, number> = {};
   const rows: Record<string, RuleRowTrace> = {};
   for (const row of data ?? []) {

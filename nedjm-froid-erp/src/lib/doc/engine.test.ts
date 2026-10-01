@@ -103,6 +103,14 @@ describe("sanitizer", () => {
     expect(render('<p onmouseover="x()">a</p>')).toBe("<p>a</p>");
   });
 
+  it("applies the same checks to attributes computed at render time and to entity-encoded urls", () => {
+    expect(render(`<img data-attr-onerror="'alert(1)'" src="">`)).not.toMatch(/onerror/i);
+    expect(render(`<a data-attr-href="'javascript:alert(1)'">l</a>`)).not.toMatch(/javascript:/i);
+    expect(render(`<iframe data-attr-srcdoc="'x'"></iframe>`)).not.toMatch(/srcdoc/i);
+    expect(sanitizeTemplate('<a href="&#106;avascript:alert(1)">l</a>')).not.toMatch(/href/i);
+    expect(render(`<a data-attr-href="'https://ok.test/x'">l</a>`)).toContain('href="https://ok.test/x"');
+  });
+
   it("leaves safe markup byte-identical", () => {
     const safe = '<!doctype html>\n<html><head><style>.a { color: #000; }</style></head><body><p class="a" style="margin: 0">é <b>x</b></p><img src="" alt=""><br></body></html>';
     expect(sanitizeTemplate(safe)).toBe(safe);

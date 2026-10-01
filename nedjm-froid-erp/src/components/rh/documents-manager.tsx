@@ -298,7 +298,7 @@ export function DocumentsManager({
           r.data.archive_url
             ? `Ordre ${r.data.number} enregistré et archivé.`
             : `Ordre de mission ${r.data.number} enregistré.`
-        } Jours MS proposés dans le pointage, à valider. · أيام المهمة مقترحة في جدول الحضور وتنتظر الاعتماد.`,
+        }${r.data.archive_error ? ` Archive non créée : ${r.data.archive_error}` : ""} Jours MS proposés dans le pointage, à valider. · أيام المهمة مقترحة في جدول الحضور وتنتظر الاعتماد.`,
       );
       setPointageHref(
         missionPointageHref({

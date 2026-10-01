@@ -14,5 +14,7 @@ describe("safeInternalPath", () => {
     expect(safeInternalPath("https://evil.com")).toBe("/");
     expect(safeInternalPath("evil.com")).toBe("/");
     expect(safeInternalPath("/\\evil")).toBe("/");
+    expect(safeInternalPath("/\t/evil.com")).toBe("/");
+    expect(safeInternalPath("/\u0000/evil.com")).toBe("/");
   });
 });

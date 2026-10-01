@@ -30,6 +30,16 @@ export async function runLegalWatch(
   const { data: started, error: startErr } = await client.rpc("ref_watch_run_start", { p_trigger: trigger });
   if (startErr) throw new Error(startErr.message);
   const run = started as StartResult;
+  try {
+    return await checkSources(client, run, t0, budgetMs);
+  } catch (e) {
+    // A run left RUNNING blocks every new check until it goes stale; close it, pages not recorded stay due.
+    await client.rpc("ref_watch_run_finish", { p_run: run.run_id, p_note: `Interrompue : ${errorText(e)}` });
+    throw e;
+  }
+}
+
+async function checkSources(client: SupabaseClient, run: StartResult, t0: number, budgetMs: number): Promise<WatchRunSummary> {
   let skipped = 0;
 
   for (const s of run.sources ?? []) {

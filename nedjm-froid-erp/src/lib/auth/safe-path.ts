@@ -7,6 +7,7 @@ export function safeInternalPath(next: unknown, fallback = "/"): string {
   if (!path.startsWith("/")) return fallback;
   if (path.startsWith("//")) return fallback;
   if (path.includes("\\")) return fallback;
-  if (/[\r\n]/.test(path)) return fallback;
+  // Browsers drop tabs and other control characters, so "/\t/evil.com" would become "//evil.com".
+  if (/[\u0000-\u001f\u007f]/.test(path)) return fallback;
   return path;
 }

@@ -498,16 +498,16 @@ export async function createProforma(input: unknown): Promise<ActionResult<{ id:
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("pur_create_proforma", {
     p_supplier_id: value.supplier_id,
-    p_site_id: value.site_id ?? undefined,
+    p_site_id: value.site_id ?? null,
     p_proforma_number: value.proforma_number,
-    p_supplier_reference: value.supplier_reference ?? undefined,
+    p_supplier_reference: value.supplier_reference ?? null,
     p_proforma_date: value.proforma_date,
-    p_validity_date: value.validity_date ?? undefined,
+    p_validity_date: value.validity_date ?? null,
     p_currency_code: value.currency_code,
-    p_delivery_terms: value.delivery_terms ?? undefined,
-    p_payment_terms: value.payment_terms ?? undefined,
-    p_attachment_url: value.attachment_url ?? undefined,
-    p_note: value.note ?? undefined,
+    p_delivery_terms: value.delivery_terms ?? null,
+    p_payment_terms: value.payment_terms ?? null,
+    p_attachment_url: value.attachment_url ?? null,
+    p_note: value.note ?? null,
     p_lines: value.lines,
   });
   if (error) return fail(error);
@@ -537,10 +537,10 @@ export async function createOrderFromProforma(input: unknown): Promise<ActionRes
     p_proforma_id: parsed.data.proforma_id,
     p_order_number: parsed.data.order_number,
     p_order_date: parsed.data.order_date,
-    p_expected_delivery_date: parsed.data.expected_delivery_date ?? undefined,
-    p_delivery_address: parsed.data.delivery_address ?? undefined,
-    p_document_profile_id: parsed.data.document_profile_id ?? undefined,
-    p_note: parsed.data.note ?? undefined,
+    p_expected_delivery_date: parsed.data.expected_delivery_date ?? null,
+    p_delivery_address: parsed.data.delivery_address ?? null,
+    p_document_profile_id: parsed.data.document_profile_id ?? null,
+    p_note: parsed.data.note ?? null,
   });
   if (error) return fail(error);
   refreshPurchases();
@@ -556,9 +556,9 @@ export async function postReceipt(input: unknown): Promise<ActionResult<{ id: st
     p_order_id: parsed.data.order_id,
     p_receipt_number: parsed.data.receipt_number,
     p_receipt_date: parsed.data.receipt_date,
-    p_delivery_note_number: parsed.data.delivery_note_number ?? undefined,
-    p_received_by_name: parsed.data.received_by_name ?? undefined,
-    p_note: parsed.data.note ?? undefined,
+    p_delivery_note_number: parsed.data.delivery_note_number ?? null,
+    p_received_by_name: parsed.data.received_by_name ?? null,
+    p_note: parsed.data.note ?? null,
     p_lines: parsed.data.lines,
   });
   if (error) return fail(error);
@@ -577,13 +577,13 @@ export async function postSupplierInvoice(input: unknown): Promise<ActionResult<
     p_internal_number: value.internal_number,
     p_supplier_invoice_number: value.supplier_invoice_number,
     p_invoice_date: value.invoice_date,
-    p_due_date: value.due_date ?? undefined,
+    p_due_date: value.due_date ?? null,
     p_retention_rate: value.retention_rate,
-    p_retention_due_date: value.retention_due_date ?? undefined,
-    p_stamp_rule_id: value.stamp_rule_id ?? undefined,
+    p_retention_due_date: value.retention_due_date ?? null,
+    p_stamp_rule_id: value.stamp_rule_id ?? null,
     p_receipt_ids: value.receipt_ids,
-    p_attachment_url: value.attachment_url ?? undefined,
-    p_note: value.note ?? undefined,
+    p_attachment_url: value.attachment_url ?? null,
+    p_note: value.note ?? null,
     p_lines: value.lines,
   });
   if (error) return fail(error);
@@ -602,8 +602,8 @@ export async function postSupplierPayment(input: unknown): Promise<ActionResult>
     p_payment_method_id: parsed.data.payment_method_id,
     p_amount: parsed.data.amount,
     p_payment_date: parsed.data.payment_date,
-    p_reference: parsed.data.reference ?? undefined,
-    p_note: parsed.data.note ?? undefined,
+    p_reference: parsed.data.reference ?? null,
+    p_note: parsed.data.note ?? null,
   });
   if (error) return fail(error);
   refreshPurchases();

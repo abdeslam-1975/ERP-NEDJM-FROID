@@ -336,9 +336,24 @@ function attrValue(attrs: RawAttrs, key: string) {
 const BLOCKED_TAGS = new Set(["script", "iframe", "object", "embed", "frame", "frameset", "base", "applet"]);
 const FONT_HOSTS = ["https://fonts.googleapis.com/", "https://fonts.gstatic.com/"];
 
+function decodeNumericEntities(value: string) {
+  return value
+    .replace(/&#x([0-9a-f]+);?/gi, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);?/g, (_, dec: string) => String.fromCodePoint(Number(dec)));
+}
+
 function unsafeUrl(value: string) {
-  const v = value.replace(/[\s\u0000-\u001f]/g, "").toLowerCase();
+  const v = decodeNumericEntities(value).replace(/[\s\u0000-\u001f]/g, "").toLowerCase();
   return v.startsWith("javascript:") || v.startsWith("vbscript:") || v.startsWith("data:text/html");
+}
+
+const URL_ATTRS = new Set(["href", "src", "xlink:href", "action", "formaction"]);
+
+/** Attributes computed at render time pass the same checks as the template's own attributes. */
+function unsafeDynamicAttr(name: string, value: string) {
+  if (name.startsWith("on") || name === "srcdoc") return true;
+  if (URL_ATTRS.has(name) && unsafeUrl(value)) return true;
+  return name === "style" && /expression\s*\(|javascript:/i.test(decodeNumericEntities(value));
 }
 
 function sanitizeNode(el: HTMLElement) {
@@ -359,8 +374,8 @@ function sanitizeNode(el: HTMLElement) {
     const kept = attrs.filter(([k, v]) => {
       const key = k.toLowerCase();
       if (key.startsWith("on")) return false;
-      if ((key === "href" || key === "src" || key === "xlink:href" || key === "action") && unsafeUrl(decodeAttr(v))) return false;
-      if (key === "style" && /expression\s*\(|javascript:/i.test(decodeAttr(v))) return false;
+      if (URL_ATTRS.has(key) && unsafeUrl(decodeAttr(v))) return false;
+      if (key === "style" && /expression\s*\(|javascript:/i.test(decodeNumericEntities(decodeAttr(v)))) return false;
       return true;
     });
     if (kept.length !== attrs.length) writeAttrs(child, kept);
@@ -453,7 +468,9 @@ function renderNode(node: HTMLElement, attrs: RawAttrs, scopes: Scopes, design: 
   for (const [k, v] of current) {
     const key = k.toLowerCase();
     if (key.startsWith(DOC_ATTR_PREFIX)) {
-      dynamic.push([key.slice(DOC_ATTR_PREFIX.length), escapeHtml(formatValue(evalExpr(decodeAttr(v), scopes)))]);
+      const name = key.slice(DOC_ATTR_PREFIX.length);
+      const value = formatValue(evalExpr(decodeAttr(v), scopes));
+      if (!unsafeDynamicAttr(name, value)) dynamic.push([name, escapeHtml(value)]);
       if (design) out.push([k, v]);
       continue;
     }

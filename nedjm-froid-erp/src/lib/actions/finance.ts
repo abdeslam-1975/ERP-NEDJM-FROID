@@ -260,7 +260,8 @@ export async function getFinanceHubData(): Promise<ActionResult<FinanceHubData>>
     account_name: one(t.account)?.name ?? "—",
     category_label: one(t.category)?.label_fr ?? null,
     method_label: one(t.method)?.label_fr ?? null,
-    is_reversed: (t.reversals ?? []).length > 0,
+    // reversal_of is unique: PostgREST embeds the reversal as one object (or null), not a list.
+    is_reversed: one(t.reversals) != null,
   }));
 
   const advances: CashAdvance[] = (advancesResult.data ?? []).map((a) => {

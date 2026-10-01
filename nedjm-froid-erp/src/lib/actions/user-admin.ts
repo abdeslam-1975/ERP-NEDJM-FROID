@@ -27,6 +27,43 @@ async function requireUserAdmin() {
   return { error: null, workspace };
 }
 
+type AdminWorkspace = NonNullable<Awaited<ReturnType<typeof getWorkspaceProfile>>>;
+type ServiceClient = ReturnType<typeof createServiceClient>;
+
+// Same rule as provisionUser: below SUPER_ADMIN, nobody manages an account of level ≥ 80,
+// and a site-scoped ADMIN_RH only manages accounts attached to its own sites.
+async function targetManageError(
+  service: ServiceClient,
+  workspace: AdminWorkspace,
+  targetId: string,
+): Promise<string | null> {
+  if (workspace.isSuperAdmin) return null;
+  const { data, error } = await service
+    .from("sys_user_site_roles")
+    .select("site_id, role:sys_roles ( code, hierarchy_level )")
+    .eq("user_id", targetId);
+  if (error) return error.message;
+  const rows = (data ?? []).map((row) => {
+    const role = Array.isArray(row.role) ? row.role[0] : row.role;
+    return {
+      siteId: (row.site_id as string | null) ?? null,
+      code: (role?.code as string | undefined) ?? "",
+      level: (role?.hierarchy_level as number | undefined) ?? 0,
+    };
+  });
+  if (rows.some((r) => r.code === "SUPER_ADMIN" || r.level >= 80)) {
+    return "Seul un SUPER_ADMIN peut gérer un compte de niveau ≥ 80.";
+  }
+  const adminRh = workspace.roles.filter((r) => r.roleCode === "ADMIN_RH");
+  if (adminRh.length > 0 && adminRh.every((r) => r.siteId !== null)) {
+    const sites = new Set(adminRh.map((r) => r.siteId));
+    if (rows.length === 0 || rows.some((r) => r.siteId === null || !sites.has(r.siteId))) {
+      return "Ce compte n'est pas rattaché à vos chantiers.";
+    }
+  }
+  return null;
+}
+
 export type AdminUserRow = {
   id: string;
   email: string;
@@ -298,6 +335,9 @@ export async function adminResetPassword(
     };
   }
 
+  const denied = await targetManageError(service, gate.workspace, parsed.data.user_id);
+  if (denied) return { ok: false, error: denied };
+
   const { error } = await service.auth.admin.updateUserById(
     parsed.data.user_id,
     { password: parsed.data.password },
@@ -359,6 +399,9 @@ export async function setUserLifecycleStatus(
       error: e instanceof Error ? e.message : "Service role indisponible",
     };
   }
+
+  const denied = await targetManageError(service, gate.workspace, parsed.data.user_id);
+  if (denied) return { ok: false, error: denied };
 
   const { data, error } = await service
     .from("sys_users")

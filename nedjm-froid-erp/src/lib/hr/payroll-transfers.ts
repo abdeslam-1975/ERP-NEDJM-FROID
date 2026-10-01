@@ -1,3 +1,4 @@
+import { spreadsheetCell } from "@/lib/csv";
 import { normalizePaymentMode } from "./payroll-declarations";
 
 export type TransferMode = "CCP" | "BANK";
@@ -117,7 +118,7 @@ export function buildReconciliationCsv(input: {
   externalCount: number;
   reasonLabel: (code: string) => string;
 }) {
-  const esc = (v: string) => (/[;"\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const esc = spreadsheetCell;
   const lines = [
     "ETAT DE RAPPROCHEMENT NON BANCAIRE - CE N'EST PAS UN ORDRE DE PAIEMENT - NE PAS DEPOSER",
     `Periode;${esc(input.period)};Chantier;${esc(input.siteName)};Mode;${input.mode}`,

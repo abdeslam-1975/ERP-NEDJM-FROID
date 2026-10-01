@@ -1,3 +1,5 @@
+import { spreadsheetCell } from "@/lib/csv";
+
 export type CostSlip = {
   id: string;
   employee_id: string;
@@ -234,10 +236,6 @@ export function buildPayrollJournal(input: {
   return { lines, debit, credit: creditTotal, balanced: Math.abs(debit - creditTotal) < 0.01 };
 }
 
-function csvCell(v: string) {
-  return /[;"\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-}
-
 export function journalCsv(input: { journalCode: string; date: string; piece: string; label: string; lines: readonly JournalLine[] }) {
   const rows = [
     ["Journal", "Date", "Piece", "Compte", "Libelle", "Analytique", "Debit", "Credit"],
@@ -252,5 +250,5 @@ export function journalCsv(input: { journalCode: string; date: string; piece: st
       l.credit ? l.credit.toFixed(2) : "",
     ]),
   ];
-  return rows.map((r) => r.map(csvCell).join(";")).join("\r\n") + "\r\n";
+  return rows.map((r) => r.map(spreadsheetCell).join(";")).join("\r\n") + "\r\n";
 }

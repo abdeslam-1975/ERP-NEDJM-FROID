@@ -509,7 +509,7 @@ export async function upsertHrEmployee(
 
   if (full.success) {
     const f = full.data;
-    await Promise.all([
+    const satellites = await Promise.all([
       supabase.from("hr_employee_civil").upsert({
         employee_id: id,
         sex_code: f.sex_code,
@@ -550,7 +550,7 @@ export async function upsertHrEmployee(
         social_profile_code: f.social_profile_code,
       }),
     ]);
-    const { data: existingQual } = await supabase
+    const { data: existingQual, error: qualReadError } = await supabase
       .from("hr_employee_qualifications")
       .select("id")
       .eq("employee_id", id)
@@ -563,13 +563,21 @@ export async function upsertHrEmployee(
       experience_years: f.experience_years ?? null,
       languages: f.languages,
     };
-    if (existingQual?.id) {
-      await supabase
-        .from("hr_employee_qualifications")
-        .update(qual)
-        .eq("id", existingQual.id);
-    } else {
-      await supabase.from("hr_employee_qualifications").insert(qual);
+    const qualWrite = qualReadError
+      ? { error: qualReadError }
+      : existingQual?.id
+        ? await supabase
+            .from("hr_employee_qualifications")
+            .update(qual)
+            .eq("id", existingQual.id)
+        : await supabase.from("hr_employee_qualifications").insert(qual);
+    const satelliteError = [...satellites, qualWrite].find((r) => r.error)?.error;
+    if (satelliteError) {
+      revalidateHr();
+      return {
+        ok: false,
+        error: `Fiche principale enregistrée, mais une partie des informations n'a pas été sauvegardée : ${satelliteError.message}. Rouvrez la fiche pour compléter.`,
+      };
     }
   }
 
@@ -635,8 +643,14 @@ export async function upsertHrEmployeeField(
   if (p.value_type === "catalog" && !p.catalog_kind) {
     return { ok: false, error: "Choisissez une liste pour cette colonne." };
   }
+  if (p.is_required !== undefined) {
+    const workspace = await getWorkspaceProfile();
+    if (!workspace?.isSuperAdmin) {
+      return { ok: false, error: "Réservé à SUPER_ADMIN. · محصور في SUPER_ADMIN." };
+    }
+  }
   const supabase = await createClient();
-  const payload = {
+  const payload: Record<string, unknown> = {
     code: p.code,
     label_ar: p.label_ar,
     label_fr: p.label_fr,
@@ -648,8 +662,8 @@ export async function upsertHrEmployeeField(
     sort_order: p.sort_order,
     is_active: p.is_active,
     is_system: false,
-    is_required: p.is_required ?? false,
   };
+  if (p.is_required !== undefined) payload.is_required = p.is_required;
   const q = p.id
     ? supabase.from("hr_employee_fields").update(payload).eq("id", p.id).eq("is_system", false)
     : supabase.from("hr_employee_fields").insert(payload);

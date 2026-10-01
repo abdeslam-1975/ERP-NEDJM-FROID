@@ -487,7 +487,7 @@ async function archiveMissionOrderSnapshot(input: {
     });
     if (upErr) return { ok: false, error: upErr.message };
     const archiveUrl = hrFileHref(path);
-    await upsertHrFile({
+    const filed = await upsertHrFile({
       employee_id: input.employeeId,
       doc_type_code: "OM_ARCHIVE",
       file_url: archiveUrl,
@@ -495,6 +495,7 @@ async function archiveMissionOrderSnapshot(input: {
       storage_path: path,
       notes: `Ordre de mission ${input.number} · أمر بمهمة`,
     });
+    if (!filed.ok) return { ok: false, error: filed.error };
     const { data: current } = await supabase
       .from("hr_correspondences")
       .select("payload")
@@ -539,6 +540,7 @@ export async function upsertHrCorrespondence(input: unknown): Promise<
     number: string;
     site_id: string | null;
     archive_url: string | null;
+    archive_error: string | null;
   }>
 > {
   const parsed = hrCorrespondenceSchema.safeParse(input);
@@ -647,6 +649,7 @@ export async function upsertHrCorrespondence(input: unknown): Promise<
   }
 
   let archiveUrl: string | null = archiveUrlOf(previous);
+  let archiveError: string | null = null;
   if (fields) {
     const archived = await archiveMissionOrderSnapshot({
       correspondenceId: id,
@@ -655,8 +658,9 @@ export async function upsertHrCorrespondence(input: unknown): Promise<
       fields: missionPayload(fields),
     });
     if (archived.ok) archiveUrl = archived.data.archive_url;
+    else archiveError = archived.error;
   }
 
   revalidate();
-  return { ok: true, data: { id, number, site_id: siteId, archive_url: archiveUrl } };
+  return { ok: true, data: { id, number, site_id: siteId, archive_url: archiveUrl, archive_error: archiveError } };
 }

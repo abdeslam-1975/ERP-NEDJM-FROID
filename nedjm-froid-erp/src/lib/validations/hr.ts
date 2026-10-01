@@ -276,7 +276,8 @@ export const hrEmployeeFieldMetaSchema = z.object({
 });
 
 export const hrFicheSettingsSchema = z.object({
-  id: z.string().uuid().optional(),
+  // The seeded singleton row uses the nil-style id 00000000-…-0001, which z.uuid() rejects.
+  id: z.guid().optional(),
   title: z.string().trim().min(1).max(160),
   matricule_label: z.string().trim().min(1).max(80),
   letterhead_url: optText(800),

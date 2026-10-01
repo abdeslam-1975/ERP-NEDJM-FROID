@@ -126,11 +126,11 @@ export async function uploadHrFicheLetterhead(
   if (error) return { ok: false, error: error.message };
   const { data } = supabase.storage.from("hr-photos").getPublicUrl(path);
   const current = await getHrFicheSettings();
-  if (current.ok) {
-    await saveHrFicheSettings({
-      ...current.data,
-      letterhead_url: data.publicUrl,
-    });
-  }
+  if (!current.ok) return { ok: false, error: current.error };
+  const saved = await saveHrFicheSettings({
+    ...current.data,
+    letterhead_url: data.publicUrl,
+  });
+  if (!saved.ok) return { ok: false, error: saved.error };
   return { ok: true, data: { url: data.publicUrl } };
 }

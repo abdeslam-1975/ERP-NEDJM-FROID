@@ -117,14 +117,17 @@ export async function loginAction(
   const touchResult = await ignoreSlow<{ error: { message: string } | null }>(
     Promise.resolve(supabase.rpc("sys_touch_login")),
   );
+  // Supabase builders only send the request once awaited: a bare `void builder` never runs.
   if (touchResult?.error) {
-    void supabase
-      .from("sys_users")
-      .update({ last_login_at: new Date().toISOString() })
-      .eq("id", data.user.id);
+    await ignoreSlow(
+      supabase
+        .from("sys_users")
+        .update({ last_login_at: new Date().toISOString() })
+        .eq("id", data.user.id),
+    );
   }
 
-  void supabase.rpc("sys_audit_write", {
+  await ignoreSlow(supabase.rpc("sys_audit_write", {
     p_user_id: data.user.id,
     p_action: "LOGIN",
     p_table_name: "sys_users",
@@ -137,7 +140,7 @@ export async function loginAction(
     p_ip: null,
     p_user_agent: null,
     p_request_id: null,
-  });
+  }));
 
   if (profile.must_reset_password) {
     redirect("/compte/changer-mot-de-passe");
@@ -199,7 +202,7 @@ export async function changePasswordAction(
     };
   }
 
-  void supabase.rpc("sys_audit_write", {
+  await ignoreSlow(supabase.rpc("sys_audit_write", {
     p_user_id: user.id,
     p_action: "UPDATE",
     p_table_name: "sys_users",
@@ -209,7 +212,7 @@ export async function changePasswordAction(
     p_ip: null,
     p_user_agent: null,
     p_request_id: null,
-  });
+  }));
 
   redirect("/");
 }

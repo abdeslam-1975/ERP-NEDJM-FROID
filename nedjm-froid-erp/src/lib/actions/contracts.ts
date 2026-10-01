@@ -392,7 +392,8 @@ export async function getContract(
       items:contract_items (
         id, item_type, item_code, designation, unit,
         quantity, unit_price_ht, total_price_ht, sort_order,
-        tax_rule, tax_rate_id
+        tax_rule, tax_rate_id,
+        supply_unit_price_ht, installation_unit_price_ht, situation_type_id
       )
     `,
     )
@@ -1017,8 +1018,9 @@ export async function postConsumption(
     p_direction: p.direction,
     p_quantity: p.quantity,
     p_movement_date: p.movement_date ?? undefined,
-    p_note: p.note ?? undefined,
-    p_hr_employee_id: p.hr_employee_id ?? undefined,
+    p_note: p.note ?? null,
+    // Always sent: the older 6-argument overload would otherwise make the call ambiguous.
+    p_hr_employee_id: p.hr_employee_id ?? null,
   });
 
   if (error) {
@@ -1610,10 +1612,11 @@ export async function applyPenalty(
     p_rule_label: p.rule_label,
     p_amount_ht: p.amount_ht,
     p_event_date: p.event_date ?? undefined,
-    p_note: p.note ?? undefined,
-    p_basis_days: p.basis_days ?? undefined,
-    p_rule_mode: p.rule_mode ?? undefined,
-    p_hr_employee_id: p.hr_employee_id ?? undefined,
+    p_note: p.note ?? null,
+    // Always sent: the older 6-argument overload would otherwise make the call ambiguous.
+    p_basis_days: p.basis_days ?? null,
+    p_rule_mode: p.rule_mode ?? null,
+    p_hr_employee_id: p.hr_employee_id ?? null,
   });
   if (error) return { ok: false, error: error.message };
   const result = (data ?? {}) as { id?: string; amount_ht?: number };

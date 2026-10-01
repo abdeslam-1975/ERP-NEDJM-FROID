@@ -818,7 +818,13 @@ async function computePayrollSlips(
   const endDay = new Date(p.period_year, p.period_month, 0).getDate();
   const end = `${p.period_year}-${String(p.period_month).padStart(2, "0")}-${String(endDay).padStart(2, "0")}`;
 
-  const { vars: legalVars, rows: legalVarRows } = await legalVarVersionsAsOf(supabase, start);
+  let legalVersions: Awaited<ReturnType<typeof legalVarVersionsAsOf>>;
+  try {
+    legalVersions = await legalVarVersionsAsOf(supabase, start);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  const { vars: legalVars, rows: legalVarRows } = legalVersions;
   const irgLoaded = await loadIrgEngine(supabase, start);
   if (!irgLoaded.ok) return irgLoaded;
   const irgEngine = irgLoaded.data;
@@ -1369,6 +1375,10 @@ export async function listPayrollSlips(input: {
       : { data: [] as Array<{ id: string; poste_fr: string | null; qualification_code: string | null; site_id: string }> },
     supabase.from("ref_sites").select("id, name_fr"),
   ]);
+  // A failed read would print slips without bank account, address or site instead of reporting it.
+  for (const res of [civil, contacts, bank, quals, contracts, sites]) {
+    if ("error" in res && res.error) return { ok: false, error: res.error.message };
+  }
   const civilMap = new Map((civil.data ?? []).map((r) => [r.employee_id, r]));
   const contactMap = new Map((contacts.data ?? []).map((r) => [r.employee_id, r]));
   const bankMap = new Map((bank.data ?? []).map((r) => [r.employee_id, r]));

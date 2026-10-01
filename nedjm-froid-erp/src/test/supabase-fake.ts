@@ -29,7 +29,7 @@ export function createSupabaseFake(opts: {
       return opts.onQuery?.(q) ?? { data: q.single ? null : [], error: null };
     };
     const chain: Record<string, unknown> = {};
-    const passthrough = ["select", "eq", "neq", "in", "is", "lte", "gte", "lt", "gt", "or", "order", "limit", "range", "match", "not"];
+    const passthrough = ["select", "eq", "neq", "in", "is", "lte", "gte", "lt", "gt", "or", "order", "limit", "range", "match", "not", "like", "ilike"];
     for (const name of passthrough) {
       chain[name] = (...args: unknown[]) => {
         if (name !== "select") q.filters.push([name, ...args]);

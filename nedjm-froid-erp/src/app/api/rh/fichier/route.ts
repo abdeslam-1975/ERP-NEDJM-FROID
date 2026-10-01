@@ -19,7 +19,8 @@ export async function GET(request: NextRequest) {
   }
 
   // Generated HTML archives (ordres de mission) are rendered from the app origin so relative assets resolve.
-  if (path.endsWith(".html")) {
+  // They never contain scripts: sandboxed without allow-scripts, an uploaded HTML file cannot act in the session.
+  if (path.endsWith(".html") && /(^|\/)OM_ARCHIVE-[^/]+\.html$/.test(path)) {
     const { data, error } = await supabase.storage.from(HR_DOCS_BUCKET).download(path);
     if (error || !data) {
       return NextResponse.json({ error: "Fichier introuvable ou accès refusé." }, { status: 404 });
@@ -30,7 +31,8 @@ export async function GET(request: NextRequest) {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "script-src 'unsafe-inline'; object-src 'none'; base-uri 'none'",
+        "Content-Security-Policy":
+          "sandbox allow-modals allow-popups; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
       },
     });
   }
