@@ -728,11 +728,11 @@ export function AttendanceManager({
 
   const STICKY = "sticky left-0";
   const TH =
-    "sticky top-0 z-10 border-b-2 border-[color-mix(in_oklab,var(--border)_70%,var(--foreground))] bg-[color-mix(in_oklab,var(--surface-muted)_80%,var(--border))] py-2.5 text-[12px] font-bold text-foreground";
+    "sticky top-0 z-10 border-b-2 border-[color-mix(in_oklab,var(--border)_70%,var(--foreground))] bg-[color-mix(in_oklab,var(--surface-muted)_80%,var(--border))] py-1.5 text-[12px] font-bold text-foreground";
   const TH_WEEKEND = "bg-[color-mix(in_oklab,var(--border)_90%,var(--foreground)_10%)]";
   const TD = "border-b border-border/60";
   const TF =
-    "sticky bottom-0 z-10 border-t-2 border-[color-mix(in_oklab,var(--border)_70%,var(--foreground))] bg-[color-mix(in_oklab,var(--surface-muted)_80%,var(--border))] py-2 text-[12px] font-bold tabular-nums text-foreground";
+    "sticky bottom-0 z-10 border-t-2 border-[color-mix(in_oklab,var(--border)_70%,var(--foreground))] bg-[color-mix(in_oklab,var(--surface-muted)_80%,var(--border))] py-1.5 text-[12px] font-bold tabular-nums text-foreground";
 
   function renderHeader(col: AttendanceColumn): ReactNode {
     if (col.kind === "DAYS") {
@@ -742,15 +742,15 @@ export function AttendanceManager({
         return (
           <th
             key={i}
-            className={`${TH} min-w-[38px] px-0.5 text-center ${isWeekend(day) ? TH_WEEKEND : ""}`}
+            className={`${TH} w-[28px] min-w-[28px] px-px text-center ${isWeekend(day) ? TH_WEEKEND : ""}`}
           >
             <div
-              className={`mx-auto flex w-8 flex-col items-center rounded-lg py-0.5 leading-tight ${
+              className={`mx-auto flex w-6 flex-col items-center rounded-md py-0.5 leading-tight ${
                 today ? "bg-brand text-white shadow-sm shadow-brand/30" : ""
               }`}
             >
-              <span className="text-[13px] font-bold tabular-nums">{day}</span>
-              <span className={`text-[10px] font-semibold ${today ? "text-white/85" : "text-foreground/60"}`}>
+              <span className="text-[12px] font-bold tabular-nums">{day}</span>
+              <span className={`text-[9px] font-semibold ${today ? "text-white/85" : "text-foreground/60"}`}>
                 {weekday(day)}
               </span>
             </div>
@@ -762,9 +762,9 @@ export function AttendanceManager({
       return extraCodes.map((code) => {
         const legend = legendMap.get(code.toUpperCase());
         return (
-          <th key={code} className={`${TH} min-w-[44px] px-1 text-center`} title={legend?.label_fr}>
+          <th key={code} className={`${TH} min-w-[34px] px-0.5 text-center`} title={legend?.label_fr}>
             <span
-              className="inline-flex h-6 min-w-[2rem] items-center justify-center rounded-md px-1.5 text-[11px] font-bold"
+              className="inline-flex h-5 min-w-[1.75rem] items-center justify-center rounded-md px-1.5 text-[11px] font-bold"
               style={softTone(legend?.color_bg) ?? { background: "var(--surface)" }}
             >
               {code}
@@ -799,10 +799,10 @@ export function AttendanceManager({
       const fallback = isWeekend(day) ? "bg-surface-muted/70" : "bg-transparent";
       const omMark = !proposed && value === stored && cell?.source_code === "OM";
       return (
-        <td key={i} className={`${TD} border-r border-r-border/30 p-[2px]`}>
+        <td key={i} className={`${TD} border-r border-r-border/30 p-px`}>
           <input
             readOnly={!canEditDays}
-            className={`h-8 w-full min-w-[34px] rounded-md border-0 text-center text-[11px] font-semibold uppercase outline-none transition focus:ring-2 focus:ring-brand ${
+            className={`h-6 w-full min-w-[26px] rounded border-0 px-0 text-center text-[10px] font-semibold uppercase outline-none transition focus:ring-2 focus:ring-brand ${
               proposed ? PROPOSED_CLS : tone ? "" : fallback
             } ${canEditDays ? "cursor-pointer hover:ring-1 hover:ring-brand/40" : "cursor-default"}`}
             style={
@@ -857,9 +857,9 @@ export function AttendanceManager({
   function renderValueInput(col: AttendanceColumn, p: Person, placeholder?: string) {
     const edited = rowDrafts[p.id]?.[col.code] !== undefined;
     return (
-      <td className={`${TD} p-[2px]`}>
+      <td className={`${TD} p-px`}>
         <input
-          className={`h-8 w-full min-w-[120px] rounded-md border-0 px-2 text-[12px] outline-none transition placeholder:text-foreground/30 focus:ring-2 focus:ring-brand ${
+          className={`h-6 w-full min-w-[120px] rounded border-0 px-2 text-[12px] outline-none transition placeholder:text-foreground/30 focus:ring-2 focus:ring-brand ${
             edited ? "bg-amber-50 dark:bg-amber-950/30" : "bg-transparent hover:bg-surface-muted/60"
           }`}
           type={col.value_type === "number" ? "number" : col.value_type === "date" ? "date" : "text"}
