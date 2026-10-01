@@ -5,6 +5,7 @@ import {
   type HrBulletinSettings,
 } from "@/lib/hr/bulletin-settings";
 import { formatDa, renderTemplate } from "@/lib/doc/engine";
+import { movementCounts } from "@/lib/doc/movement-labels";
 import {
   PAYSLIP_CNAS_SECTION,
   PAYSLIP_IRG_SECTION,
@@ -560,6 +561,7 @@ export function bulletinDocData(models: BulletinModel[], origin = "") {
         days_leave: m.days_leave,
         days_absence: m.days_absence,
         jours: m.days_by_code,
+        comptes: movementCounts(m),
         employee_ss: m.employee_ss,
         employer_ss: m.employer_ss,
         fos_amount: m.fos_amount,

@@ -35,7 +35,7 @@ const money = (path: string, label: string, group: string): DocField => ({ path,
 const days = (path: string, label: string): DocField => ({ path, label, group: "Jours", format: "da0" });
 const pct = (path: string, label: string): DocField => ({ path, label, group: "Taux", format: "num" });
 const byCode = (code: string, label: string): DocField => ({
-  path: `jours.${code}`,
+  path: `comptes.${code}`,
   label: `${label} (${code})`,
   group: "Jours par code de pointage",
   format: "days",
