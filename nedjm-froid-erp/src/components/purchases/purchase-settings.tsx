@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useCallback, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
@@ -14,7 +14,25 @@ import {
   type SituationType,
   type StampRule,
 } from "@/lib/actions/purchases";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { RhTabs } from "@/components/rh/rh-ui";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
+
+const profileCol = dataColumns<DocumentProfile>();
+const situationCol = dataColumns<SituationType>();
+const stampCol = dataColumns<StampRule>();
+
+function editColumn<T extends { id: string }>(col: ReturnType<typeof dataColumns<T>>, edit: (row: T) => void) {
+  return col.display({
+    id: "actions",
+    header: "",
+    enableSorting: false,
+    enableHiding: false,
+    meta: { align: "right" },
+    cell: ({ row }) => <Button size="sm" variant="secondary" onClick={() => edit(row.original)}>Modifier</Button>,
+  });
+}
 
 type Tab = "profiles" | "situations" | "stamp" | "sequences";
 const SETTINGS_TABS: { id: Tab; label: string }[] = [
@@ -59,15 +77,11 @@ export function PurchaseSettings({
           <h1 className="text-2xl font-bold">Paramètres achats & facturation</h1>
           <p className="text-sm text-foreground/55">Types de situation, règles légales du timbre et numérotation.</p>
         </div>
-        <a href="/achats" className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-semibold">Retour aux achats</a>
+        <Button asChild variant="secondary"><a href="/achats">Retour aux achats</a></Button>
       </header>
-      {error && <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
-      {message && <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">{message}</div>}
-      <div className="flex gap-1 rounded-xl border border-border bg-surface p-1">
-        {tabs.map(({ id: value, label }) => (
-          <button key={value} onClick={() => setTab(value)} className={`rounded-lg px-4 py-2 text-sm font-semibold ${tab === value ? "bg-brand text-white" : "hover:bg-surface-muted"}`}>{label}</button>
-        ))}
-      </div>
+      {error && <Alert tone="danger">{error}</Alert>}
+      {message && <Alert tone="success">{message}</Alert>}
+      <RhTabs items={tabs} value={tab} onChange={(id) => setTab(id as typeof tab)} />
       {tab === "profiles" && <Profiles rows={initialData.documentProfiles} pending={pending} run={run} />}
       {tab === "situations" && <Situations rows={initialData.situations} pending={pending} run={run} />}
       {tab === "stamp" && <StampRules rows={initialData.stampRules} methods={initialData.paymentMethods} pending={pending} run={run} />}
@@ -85,7 +99,7 @@ function Profiles({ rows, pending, run }: { rows: DocumentProfile[]; pending: bo
     footer: "", active: true, is_default: false,
   };
   const [form, setForm] = useState(empty);
-  function edit(row: DocumentProfile) {
+  const edit = useCallback((row: DocumentProfile) => {
     setForm({
       id: row.id, code: row.code, label_fr: row.label_fr, legal_name: row.legal_name,
       address: row.address ?? "", city: row.city ?? "", phone: row.phone ?? "",
@@ -93,7 +107,18 @@ function Profiles({ rows, pending, run }: { rows: DocumentProfile[]; pending: bo
       ai: row.ai ?? "", capital: row.capital ?? "", bank_details: row.bank_details ?? "",
       footer: row.footer ?? "", active: row.active, is_default: row.is_default,
     });
-  }
+  }, []);
+  const columns = useMemo(
+    () => [
+      profileCol.accessor("code", { header: "Code" }),
+      profileCol.accessor("label_fr", { header: "Profil" }),
+      profileCol.accessor("legal_name", { header: "Raison sociale" }),
+      profileCol.accessor((row) => `NIF ${row.nif ?? "—"} · RC ${row.rc ?? "—"}`, { id: "ids", header: "Identifiants" }),
+      profileCol.accessor((row) => (row.is_default ? "Par défaut" : row.active ? "Actif" : "Inactif"), { id: "state", header: "État" }),
+      editColumn(profileCol, edit),
+    ],
+    [edit],
+  );
   return (
     <ConfigGrid>
       <Editor title={form.id ? "Modifier le profil" : "Nouveau profil d’impression"}>
@@ -116,7 +141,15 @@ function Profiles({ rows, pending, run }: { rows: DocumentProfile[]; pending: bo
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_default} onChange={(e) => setForm((f) => ({ ...f, is_default: e.target.checked, active: e.target.checked ? true : f.active }))} /> Profil par défaut</label>
         <Buttons pending={pending} editing={Boolean(form.id)} reset={() => setForm(empty)} save={() => run(() => upsertDocumentProfile({ ...form, id: form.id || undefined }), "Profil d’impression enregistré.")} />
       </Editor>
-      <Table headers={["Code", "Profil", "Raison sociale", "Identifiants", "État", ""]} rows={rows.map((row) => [row.code, row.label_fr, row.legal_name, `NIF ${row.nif ?? "—"} · RC ${row.rc ?? "—"}`, row.is_default ? "Par défaut" : row.active ? "Actif" : "Inactif", <button key="e" className="font-semibold text-brand" onClick={() => edit(row)}>Modifier</button>])} />
+      <DataTable
+        data={rows}
+        getRowId={(row) => row.id}
+        searchable={false}
+        columnToggle={false}
+        pageSize={0}
+        emptyTitle="Aucun profil d’impression"
+        columns={columns}
+      />
     </ConfigGrid>
   );
 }
@@ -124,9 +157,22 @@ function Profiles({ rows, pending, run }: { rows: DocumentProfile[]; pending: bo
 function Situations({ rows, pending, run }: { rows: SituationType[]; pending: boolean; run: Runner }) {
   const empty = { id: "", code: "", label_fr: "", label_ar: "", includes_supply: true, includes_installation: false, active: true, sort_order: "0" };
   const [form, setForm] = useState(empty);
-  function edit(row: SituationType) {
+  const edit = useCallback((row: SituationType) => {
     setForm({ id: row.id, code: row.code, label_fr: row.label_fr, label_ar: row.label_ar ?? "", includes_supply: row.includes_supply, includes_installation: row.includes_installation, active: row.active, sort_order: String(row.sort_order) });
-  }
+  }, []);
+  const columns = useMemo(
+    () => [
+      situationCol.accessor("code", { header: "Code" }),
+      situationCol.accessor("label_fr", { header: "Libellé" }),
+      situationCol.accessor((row) => [row.includes_supply && "Fourniture", row.includes_installation && "Pose"].filter(Boolean).join(" + "), {
+        id: "composition",
+        header: "Composition",
+      }),
+      situationCol.accessor((row) => (row.active ? "Actif" : "Inactif"), { id: "active", header: "État" }),
+      editColumn(situationCol, edit),
+    ],
+    [edit],
+  );
   return (
     <ConfigGrid>
       <Editor title={form.id ? "Modifier le type" : "Nouveau type de situation"}>
@@ -138,7 +184,15 @@ function Situations({ rows, pending, run }: { rows: SituationType[]; pending: bo
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} /> Actif</label>
         <Buttons pending={pending} editing={Boolean(form.id)} reset={() => setForm(empty)} save={() => run(() => upsertSituationType({ ...form, id: form.id || undefined, sort_order: Number(form.sort_order) }), "Type de situation enregistré.")} />
       </Editor>
-      <Table headers={["Code", "Libellé", "Composition", "État", ""]} rows={rows.map((row) => [row.code, row.label_fr, [row.includes_supply && "Fourniture", row.includes_installation && "Pose"].filter(Boolean).join(" + "), row.active ? "Actif" : "Inactif", <button key="e" className="font-semibold text-brand" onClick={() => edit(row)}>Modifier</button>])} />
+      <DataTable
+        data={rows}
+        getRowId={(row) => row.id}
+        searchable={false}
+        columnToggle={false}
+        pageSize={0}
+        emptyTitle="Aucun type de situation"
+        columns={columns}
+      />
     </ConfigGrid>
   );
 }
@@ -151,7 +205,7 @@ function StampRules({ rows, methods, pending, run }: { rows: StampRule[]; method
     valid_from: "", valid_to: "", priority: "100", active: true, legal_reference: "",
   };
   const [form, setForm] = useState(empty);
-  function edit(row: StampRule) {
+  const edit = useCallback((row: StampRule) => {
     setForm({
       id: row.id, code: row.code, label_fr: row.label_fr, calculation_mode: row.calculation_mode,
       calculation_base: row.calculation_base, fixed_amount: String(row.fixed_amount ?? 0),
@@ -160,7 +214,18 @@ function StampRules({ rows, methods, pending, run }: { rows: StampRule[]; method
       valid_to: row.valid_to ?? "", priority: String(row.priority), active: row.active,
       legal_reference: row.legal_reference ?? "",
     });
-  }
+  }, []);
+  const columns = useMemo(
+    () => [
+      stampCol.accessor("code", { header: "Code" }),
+      stampCol.accessor("label_fr", { header: "Règle" }),
+      stampCol.accessor("calculation_mode", { header: "Mode" }),
+      stampCol.accessor((row) => `${row.valid_from ?? "—"} → ${row.valid_to ?? "—"}`, { id: "validity", header: "Validité" }),
+      stampCol.accessor((row) => row.legal_reference ?? "—", { id: "reference", header: "Référence" }),
+      editColumn(stampCol, edit),
+    ],
+    [edit],
+  );
   function save() {
     let brackets: unknown = [];
     try {
@@ -209,7 +274,15 @@ function StampRules({ rows, methods, pending, run }: { rows: StampRule[]; method
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.active} onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))} /> Règle active</label>
         <Buttons pending={pending} editing={Boolean(form.id)} reset={() => setForm(empty)} save={save} />
       </Editor>
-      <Table headers={["Code", "Règle", "Mode", "Validité", "Référence", ""]} rows={rows.map((row) => [row.code, row.label_fr, row.calculation_mode, `${row.valid_from ?? "—"} → ${row.valid_to ?? "—"}`, row.legal_reference ?? "—", <button key="e" className="font-semibold text-brand" onClick={() => edit(row)}>Modifier</button>])} />
+      <DataTable
+        data={rows}
+        getRowId={(row) => row.id}
+        searchable={false}
+        columnToggle={false}
+        pageSize={0}
+        emptyTitle="Aucune règle de timbre"
+        columns={columns}
+      />
     </ConfigGrid>
   );
 }
@@ -244,7 +317,4 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 function Buttons({ pending, editing, reset, save }: { pending: boolean; editing: boolean; reset: () => void; save: () => void }) {
   return <div className="flex gap-2"><Button disabled={pending} onClick={save}>Enregistrer</Button>{editing && <Button variant="secondary" onClick={reset}>Annuler</Button>}</div>;
-}
-function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
-  return <div className="overflow-x-auto rounded-xl border border-border bg-surface"><table className="w-full text-sm"><thead className="bg-surface-muted text-left text-xs uppercase text-foreground/50"><tr>{headers.map((header) => <th key={header} className="px-4 py-3">{header}</th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i} className="border-t border-border">{row.map((cell, j) => <td key={j} className="px-4 py-3">{cell}</td>)}</tr>)}</tbody></table></div>;
 }

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -19,6 +20,23 @@
   --sidebar-fg: #eef2ff;
   --sidebar-muted: #8fa0d9;
   --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 28px -18px rgba(15, 23, 42, 0.18);
+
+  /* Design tokens: overwritten by the look chosen in Paramètres › Interface (src/lib/ui/design.ts). */
+  --radius: 0.75rem;
+  --app-font-sans: var(--font-source-sans), var(--font-cairo), system-ui, sans-serif;
+  --btn-radius: var(--radius-xl);
+  --btn-bg: var(--color-brand);
+  --btn-fg: #fff;
+  --btn-border: transparent;
+  --btn-hover-bg: var(--color-brand-hover);
+  --btn-shadow: 0 1px 2px color-mix(in srgb, var(--color-brand) 25%, transparent);
+  --tbl-head-bg: color-mix(in oklab, var(--surface-muted) 88%, transparent);
+  --tbl-row-border: 1px solid color-mix(in oklab, var(--border) 75%, transparent);
+  --tbl-cell-border: 0 solid transparent;
+  --tbl-stripe: transparent;
+  --card-bg: var(--surface);
+  --card-border: color-mix(in oklab, var(--border) 80%, transparent);
+  --card-blur: 0px;
 }
 
 .dark {
@@ -53,42 +71,88 @@
   --color-border: var(--border);
   --color-sidebar: var(--sidebar);
   --color-sidebar-fg: var(--sidebar-fg);
-  --font-sans: var(--font-source-sans);
-  --font-display: var(--font-libre-franklin);
+  --font-sans: var(--app-font-sans);
+  --font-display: var(--font-libre-franklin), var(--app-font-sans);
+
+  /* shadcn/ui token names, mapped onto the application palette. */
+  --color-card: var(--surface);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--foreground);
+  --color-primary: var(--color-brand);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: var(--surface-muted);
+  --color-secondary-foreground: var(--foreground);
+  --color-muted: var(--surface-muted);
+  --color-muted-foreground: color-mix(in oklab, var(--foreground) 60%, transparent);
+  --color-accent: var(--color-brand-muted);
+  --color-accent-foreground: var(--foreground);
+  --color-destructive: var(--color-alert-critical);
+  --color-input: var(--border);
+  --color-ring: var(--color-brand);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: var(--app-font-sans);
+}
+
+@layer base {
+  /* Every table follows the table style chosen in Paramètres › Interface; explicit utility classes still win. */
+  table {
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  thead tr {
+    background: var(--tbl-head-bg);
+  }
+
+  tbody > tr > td {
+    border-bottom: var(--tbl-row-border);
+  }
+
+  tbody > tr:last-child > td {
+    border-bottom-width: 0;
+  }
+
+  tbody > tr:nth-child(even) > td {
+    background-color: var(--tbl-stripe);
+  }
+
+  th:not(:last-child),
+  td:not(:last-child) {
+    border-inline-end: var(--tbl-cell-border);
+  }
+
+  thead th {
+    border-bottom: var(--tbl-cell-border);
+  }
+
+  tbody > tr {
+    transition: background-color 120ms ease;
+  }
+
+  tbody > tr:hover > td {
+    background-color: color-mix(in oklab, var(--color-brand-muted) 55%, transparent);
+  }
 }
 
 .rh-scope table {
-  border-collapse: separate;
-  border-spacing: 0;
   width: 100%;
 }
 
-.rh-scope thead tr {
-  background: color-mix(in oklab, var(--surface-muted) 88%, transparent);
-}
-
-.rh-scope tbody tr {
-  border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
-  transition: background 120ms ease;
-}
-
-.rh-scope tbody tr:hover {
-  background: color-mix(in oklab, var(--color-brand-muted) 55%, transparent);
-}
-
-.rh-scope tbody tr:last-child {
-  border-bottom: none;
-}
-
 .app-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 1rem;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-2xl);
   box-shadow: var(--card-shadow);
+  backdrop-filter: blur(var(--card-blur));
+}
+
+@media print {
+  tbody > tr:hover > td {
+    background-color: transparent;
+  }
 }

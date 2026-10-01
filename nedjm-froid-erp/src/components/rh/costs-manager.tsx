@@ -1,9 +1,16 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { saveAccountingSettings, type CostReport } from "@/lib/actions/hr-costs";
-import { ACCOUNT_KEYS, DEFAULT_ACCOUNTS } from "@/lib/hr/cost-allocation";
+import {
+  ACCOUNT_KEYS,
+  DEFAULT_ACCOUNTS,
+  type ContractCost,
+  type JournalLine,
+  type SiteCost,
+} from "@/lib/hr/cost-allocation";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import {
   RhAlert,
   RhChip,
@@ -11,16 +18,62 @@ import {
   RhModal,
   RhPageHeader,
   RhStat,
-  RhTableWrap,
   RhToolbar,
   rhInput,
   rhTd,
-  rhTh,
 } from "@/components/rh/rh-ui";
 
 function money(n: number) {
   return new Intl.NumberFormat("fr-DZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 }
+
+const siteCol = dataColumns<SiteCost>();
+
+const contractCol = dataColumns<ContractCost>();
+
+const contractColumns = [
+  contractCol.accessor((c) => (c.contract_id ? `${c.reference} ${c.client_name}` : ""), {
+    id: "contract",
+    header: "Contrat client",
+    cell: ({ row }) =>
+      row.original.contract_id ? (
+        <>
+          <span className="font-semibold">{row.original.reference}</span> · {row.original.client_name}
+        </>
+      ) : (
+        <RhChip tone="warning">Non affecté</RhChip>
+      ),
+  }),
+  contractCol.accessor("site_name", { header: "Chantier" }),
+  contractCol.accessor("share", {
+    header: "Quote-part du chantier",
+    meta: { align: "right", className: "tabular-nums" },
+    cell: (i) => `${Math.round(i.getValue() * 1000) / 10} %`,
+  }),
+  contractCol.accessor("cost", {
+    header: "Coût imputé",
+    meta: { align: "right", className: "font-mono font-semibold" },
+    cell: (i) => money(i.getValue()),
+  }),
+];
+
+const journalCol = dataColumns<JournalLine>();
+
+const journalColumns = [
+  journalCol.accessor("account", { header: "Compte", meta: { className: "font-mono" } }),
+  journalCol.accessor("label", { header: "Libellé" }),
+  journalCol.accessor("analytic", { header: "Analytique", meta: { className: "font-mono text-xs" } }),
+  journalCol.accessor("debit", {
+    header: "Débit",
+    meta: { align: "right", className: "font-mono" },
+    cell: (i) => (i.getValue() ? money(i.getValue()) : ""),
+  }),
+  journalCol.accessor("credit", {
+    header: "Crédit",
+    meta: { align: "right", className: "font-mono" },
+    cell: (i) => (i.getValue() ? money(i.getValue()) : ""),
+  }),
+];
 
 export function CostsManager({
   report,
@@ -37,6 +90,40 @@ export function CostsManager({
   const [pending, start] = useTransition();
   const year = report?.year ?? new Date().getFullYear();
   const month = report?.month ?? new Date().getMonth() + 1;
+
+  const total = report?.total ?? 0;
+  const siteColumns = useMemo(
+    () => [
+      siteCol.accessor((s) => `${s.site_code} ${s.site_name}`, {
+        id: "site",
+        header: "Chantier",
+        cell: ({ row }) => (
+          <>
+            <span className="font-mono text-xs text-foreground/55">{row.original.site_code}</span> {row.original.site_name}
+          </>
+        ),
+      }),
+      siteCol.accessor("headcount", { header: "Effectif", meta: { className: "tabular-nums" } }),
+      siteCol.accessor("brut", { header: "Brut", meta: { align: "right", className: "font-mono" }, cell: (i) => money(i.getValue()) }),
+      siteCol.accessor("charges", {
+        header: "Charges patronales",
+        meta: { align: "right", className: "font-mono" },
+        cell: (i) => money(i.getValue()),
+      }),
+      siteCol.accessor("cost", {
+        header: "Coût employeur",
+        meta: { align: "right", className: "font-mono font-semibold" },
+        cell: (i) => money(i.getValue()),
+      }),
+      siteCol.accessor((s) => (total ? Math.round((s.cost / total) * 1000) / 10 : 0), {
+        id: "share",
+        header: "Part",
+        meta: { align: "right", className: "tabular-nums" },
+        cell: (i) => `${i.getValue()} %`,
+      }),
+    ],
+    [total],
+  );
 
   function go(y: number, m: number) {
     window.location.search = `?year=${y}&month=${m}`;
@@ -120,74 +207,25 @@ export function CostsManager({
             <RhStat label="Chantiers" value={report.sites.length} />
           </div>
 
-          <RhTableWrap>
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-border/70 bg-surface-muted/80">
-                <tr>
-                  <th className={rhTh()}>Chantier</th>
-                  <th className={rhTh()}>Effectif</th>
-                  <th className={rhTh()}>Brut</th>
-                  <th className={rhTh()}>Charges patronales</th>
-                  <th className={rhTh()}>Coût employeur</th>
-                  <th className={rhTh()}>Part</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.sites.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className={`${rhTd()} py-6 text-center text-foreground/55`}>
-                      Aucun bulletin pour {String(month).padStart(2, "0")}/{year}.
-                    </td>
-                  </tr>
-                ) : (
-                  report.sites.map((s) => (
-                    <tr key={s.site_id ?? "none"} className="border-b border-border/60">
-                      <td className={rhTd()}>
-                        <span className="font-mono text-xs text-foreground/55">{s.site_code}</span> {s.site_name}
-                      </td>
-                      <td className={`${rhTd()} tabular-nums`}>{s.headcount}</td>
-                      <td className={`${rhTd()} font-mono`}>{money(s.brut)}</td>
-                      <td className={`${rhTd()} font-mono`}>{money(s.charges)}</td>
-                      <td className={`${rhTd()} font-mono font-semibold`}>{money(s.cost)}</td>
-                      <td className={`${rhTd()} tabular-nums`}>{report.total ? Math.round((s.cost / report.total) * 1000) / 10 : 0} %</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </RhTableWrap>
+          <DataTable
+            data={report.sites}
+            columns={siteColumns}
+            getRowId={(s) => s.site_id ?? "none"}
+            searchPlaceholder="Rechercher un chantier…"
+            searchText={(s) => `${s.site_code} ${s.site_name}`}
+            pageSize={0}
+            emptyTitle={`Aucun bulletin pour ${String(month).padStart(2, "0")}/${year}.`}
+          />
 
           {report.contracts.length ? (
-            <RhTableWrap>
-              <table className="min-w-full text-sm">
-                <thead className="border-b border-border/70 bg-surface-muted/80">
-                  <tr>
-                    <th className={rhTh()}>Contrat client</th>
-                    <th className={rhTh()}>Chantier</th>
-                    <th className={rhTh()}>Quote-part du chantier</th>
-                    <th className={rhTh()}>Coût imputé</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.contracts.map((c, i) => (
-                    <tr key={`${c.contract_id ?? "none"}-${i}`} className="border-b border-border/60">
-                      <td className={rhTd()}>
-                        {c.contract_id ? (
-                          <>
-                            <span className="font-semibold">{c.reference}</span> · {c.client_name}
-                          </>
-                        ) : (
-                          <RhChip tone="warning">Non affecté</RhChip>
-                        )}
-                      </td>
-                      <td className={rhTd()}>{c.site_name}</td>
-                      <td className={`${rhTd()} tabular-nums`}>{Math.round(c.share * 1000) / 10} %</td>
-                      <td className={`${rhTd()} font-mono font-semibold`}>{money(c.cost)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </RhTableWrap>
+            <DataTable
+              data={report.contracts}
+              columns={contractColumns}
+              getRowId={(c, i) => `${c.contract_id ?? "none"}-${i}`}
+              searchPlaceholder="Rechercher un contrat, un client ou un chantier…"
+              searchText={(c) => [c.reference, c.client_name, c.site_name].join(" ")}
+              pageSize={0}
+            />
           ) : null}
 
           <div className="flex flex-wrap items-center gap-2">
@@ -200,37 +238,24 @@ export function CostsManager({
               </RhChip>
             )}
           </div>
-          <RhTableWrap>
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-border/70 bg-surface-muted/80">
-                <tr>
-                  <th className={rhTh()}>Compte</th>
-                  <th className={rhTh()}>Libellé</th>
-                  <th className={rhTh()}>Analytique</th>
-                  <th className={rhTh()}>Débit</th>
-                  <th className={rhTh()}>Crédit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.journal.lines.map((l, i) => (
-                  <tr key={i} className="border-b border-border/60">
-                    <td className={`${rhTd()} font-mono`}>{l.account}</td>
-                    <td className={rhTd()}>{l.label}</td>
-                    <td className={`${rhTd()} font-mono text-xs`}>{l.analytic}</td>
-                    <td className={`${rhTd()} font-mono`}>{l.debit ? money(l.debit) : ""}</td>
-                    <td className={`${rhTd()} font-mono`}>{l.credit ? money(l.credit) : ""}</td>
-                  </tr>
-                ))}
-                <tr className="font-semibold">
-                  <td className={rhTd()} colSpan={3}>
-                    Totaux
-                  </td>
-                  <td className={`${rhTd()} font-mono`}>{money(report.journal.debit)}</td>
-                  <td className={`${rhTd()} font-mono`}>{money(report.journal.credit)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </RhTableWrap>
+          <DataTable
+            data={report.journal.lines}
+            columns={journalColumns}
+            getRowId={(_, i) => String(i)}
+            searchable={false}
+            columnToggle={false}
+            pageSize={0}
+            emptyTitle="Aucune écriture"
+            footer={
+              <tr className="font-semibold">
+                <td className={rhTd()} colSpan={3}>
+                  Totaux
+                </td>
+                <td className={`${rhTd()} text-right font-mono`}>{money(report.journal.debit)}</td>
+                <td className={`${rhTd()} text-right font-mono`}>{money(report.journal.credit)}</td>
+              </tr>
+            }
+          />
         </>
       ) : null}
 

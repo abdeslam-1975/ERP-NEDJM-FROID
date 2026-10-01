@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState, useTransition } from "react";
+import { Fragment, useCallback, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   listAuditLogs,
@@ -15,9 +15,22 @@ import {
 } from "@/lib/actions/admin-rbac";
 import { PERM_FIELDS, PERM_LABELS, permissionPatch, type PermField } from "@/lib/auth/rbac-fields";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhChip, RhField, RhModal, RhTableWrap, RhToolbar, rhInput, rhTd, rhTh } from "@/components/rh/rh-ui";
 
 const MONTHS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
+
+type MonthRow = {
+  month: number;
+  label: string;
+  lock: PeriodLockRow | undefined;
+  isLocked: boolean;
+  payroll: { runs: number; draft: number; validated: number; locked: number } | undefined;
+};
+
+const roleCol = dataColumns<RoleRow>();
+const auditCol = dataColumns<AuditRow>();
+const monthCol = dataColumns<MonthRow>();
 
 /* ------------------------------------------------------------------ Roles */
 
@@ -62,6 +75,61 @@ export function RolesManager({ initialRoles, canEdit }: { initialRoles: RoleRow[
     });
   }
 
+  const columns = useMemo(
+    () => [
+      roleCol.accessor("code", {
+        header: "Code",
+        meta: { className: "font-mono font-semibold" },
+        cell: ({ row: { original: r } }) => (
+          <>
+            {r.code} {r.is_system ? <RhChip>système</RhChip> : null}
+          </>
+        ),
+      }),
+      roleCol.accessor("label_fr", {
+        header: "Libellé",
+        cell: ({ row: { original: r } }) => (
+          <>
+            {r.label_fr}
+            {r.label_ar ? (
+              <span className="block text-xs text-foreground/60" dir="rtl">
+                {r.label_ar}
+              </span>
+            ) : null}
+          </>
+        ),
+      }),
+      roleCol.accessor("hierarchy_level", { header: "Niveau", meta: { className: "tabular-nums" } }),
+      roleCol.display({
+        id: "options",
+        header: "Options",
+        enableSorting: false,
+        cell: ({ row: { original: r } }) => (
+          <div className="flex flex-wrap gap-1">
+            {r.require_mfa ? <RhChip tone="warning">MFA</RhChip> : null}
+            {r.site_scoped_allowed ? <RhChip>par chantier</RhChip> : <RhChip tone="brand">global</RhChip>}
+            {!r.is_active ? <RhChip tone="danger">inactif</RhChip> : null}
+          </div>
+        ),
+      }),
+      roleCol.accessor("users", { header: "Utilisateurs", meta: { className: "tabular-nums" } }),
+      roleCol.display({
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        enableHiding: false,
+        meta: { align: "right" },
+        cell: ({ row: { original: r } }) =>
+          canEdit && r.code !== "SUPER_ADMIN" ? (
+            <Button size="sm" variant="secondary" onClick={() => setForm({ ...r, label_ar: r.label_ar ?? "" })}>
+              Modifier
+            </Button>
+          ) : null,
+      }),
+    ],
+    [canEdit],
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -80,53 +148,16 @@ export function RolesManager({ initialRoles, canEdit }: { initialRoles: RoleRow[
         ) : null}
       </div>
       {error && !form ? <RhAlert tone="danger">{error}</RhAlert> : null}
-      <RhTableWrap>
-        <table className="min-w-full text-sm">
-          <thead className="border-b border-border/70 bg-surface-muted/80">
-            <tr>
-              <th className={rhTh()}>Code</th>
-              <th className={rhTh()}>Libellé</th>
-              <th className={rhTh()}>Niveau</th>
-              <th className={rhTh()}>Options</th>
-              <th className={rhTh()}>Utilisateurs</th>
-              <th className={rhTh()} />
-            </tr>
-          </thead>
-          <tbody>
-            {roles.map((r) => (
-              <tr key={r.id} className="border-b border-border/60">
-                <td className={`${rhTd()} font-mono font-semibold`}>
-                  {r.code} {r.is_system ? <RhChip>système</RhChip> : null}
-                </td>
-                <td className={rhTd()}>
-                  {r.label_fr}
-                  {r.label_ar ? (
-                    <span className="block text-xs text-foreground/60" dir="rtl">
-                      {r.label_ar}
-                    </span>
-                  ) : null}
-                </td>
-                <td className={`${rhTd()} tabular-nums`}>{r.hierarchy_level}</td>
-                <td className={rhTd()}>
-                  <div className="flex flex-wrap gap-1">
-                    {r.require_mfa ? <RhChip tone="warning">MFA</RhChip> : null}
-                    {r.site_scoped_allowed ? <RhChip>par chantier</RhChip> : <RhChip tone="brand">global</RhChip>}
-                    {!r.is_active ? <RhChip tone="danger">inactif</RhChip> : null}
-                  </div>
-                </td>
-                <td className={`${rhTd()} tabular-nums`}>{r.users}</td>
-                <td className={rhTd()}>
-                  {canEdit && r.code !== "SUPER_ADMIN" ? (
-                    <Button variant="secondary" onClick={() => setForm({ ...r, label_ar: r.label_ar ?? "" })}>
-                      Modifier
-                    </Button>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </RhTableWrap>
+      <DataTable
+        data={roles}
+        columns={columns}
+        getRowId={(r) => r.id}
+        searchPlaceholder="Code, libellé"
+        searchText={(r) => [r.code, r.label_fr, r.label_ar].filter(Boolean).join(" ")}
+        initialSorting={[{ id: "hierarchy_level", desc: true }]}
+        pageSize={0}
+        emptyTitle="Aucun rôle"
+      />
       {form ? (
         <RhModal
           title={form.id ? `Rôle ${form.code}` : "Nouveau rôle"}
@@ -379,6 +410,48 @@ export function AuditViewer({
     });
   }
 
+  const auditColumns = useMemo(
+    () => [
+      auditCol.accessor("occurred_at", {
+        header: "Date",
+        meta: { className: "whitespace-nowrap tabular-nums" },
+        cell: (info) => new Date(info.getValue()).toLocaleString("fr-FR"),
+      }),
+      auditCol.accessor((r) => r.user_name ?? (r.user_id ? r.user_id.slice(0, 8) : "système"), { id: "user", header: "Utilisateur" }),
+      auditCol.accessor("action", {
+        header: "Action",
+        cell: (info) => (
+          <RhChip tone={info.getValue() === "DELETE" ? "danger" : info.getValue() === "CREATE" ? "success" : "neutral"}>
+            {info.getValue()}
+          </RhChip>
+        ),
+      }),
+      auditCol.accessor("table_name", { header: "Table", meta: { className: "font-mono text-xs" } }),
+      auditCol.accessor(
+        (r) => (r.action === "UPDATE" ? diffKeys(r.old_values, r.new_values) : []).slice(0, 6).join(", "),
+        {
+          id: "changed",
+          header: "Champs modifiés",
+          meta: { className: "text-xs text-foreground/70" },
+          cell: (info) => info.getValue() || "—",
+        },
+      ),
+      auditCol.display({
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        enableHiding: false,
+        meta: { align: "right" },
+        cell: ({ row }) => (
+          <Button size="sm" variant="ghost" onClick={() => setDetail(row.original)}>
+            Détail
+          </Button>
+        ),
+      }),
+    ],
+    [],
+  );
+
   return (
     <div className="space-y-4">
       <RhToolbar>
@@ -416,49 +489,15 @@ export function AuditViewer({
         </Button>
       </RhToolbar>
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
-      <RhTableWrap>
-        <table className="min-w-full text-sm">
-          <thead className="border-b border-border/70 bg-surface-muted/80">
-            <tr>
-              <th className={rhTh()}>Date</th>
-              <th className={rhTh()}>Utilisateur</th>
-              <th className={rhTh()}>Action</th>
-              <th className={rhTh()}>Table</th>
-              <th className={rhTh()}>Champs modifiés</th>
-              <th className={rhTh()} />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={6} className={`${rhTd()} py-6 text-center text-foreground/55`}>
-                  Aucune entrée (ou droit « Journal d&apos;audit » manquant).
-                </td>
-              </tr>
-            ) : (
-              rows.map((r) => {
-                const changed = r.action === "UPDATE" ? diffKeys(r.old_values, r.new_values) : [];
-                return (
-                  <tr key={`${r.id}-${r.occurred_at}`} className="border-b border-border/60">
-                    <td className={`${rhTd()} whitespace-nowrap tabular-nums`}>{new Date(r.occurred_at).toLocaleString("fr-FR")}</td>
-                    <td className={rhTd()}>{r.user_name ?? (r.user_id ? r.user_id.slice(0, 8) : "système")}</td>
-                    <td className={rhTd()}>
-                      <RhChip tone={r.action === "DELETE" ? "danger" : r.action === "CREATE" ? "success" : "neutral"}>{r.action}</RhChip>
-                    </td>
-                    <td className={`${rhTd()} font-mono text-xs`}>{r.table_name}</td>
-                    <td className={`${rhTd()} text-xs text-foreground/70`}>{changed.slice(0, 6).join(", ") || "—"}</td>
-                    <td className={rhTd()}>
-                      <Button variant="ghost" onClick={() => setDetail(r)}>
-                        Détail
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </RhTableWrap>
+      <DataTable
+        data={rows}
+        columns={auditColumns}
+        getRowId={(r) => `${r.id}-${r.occurred_at}`}
+        searchable={false}
+        pageSize={0}
+        emptyTitle="Aucune entrée"
+        emptyBody="Ou droit « Journal d'audit » manquant."
+      />
       <div className="flex items-center gap-2 text-sm">
         <Button variant="secondary" disabled={pending || page === 0} onClick={() => load(page - 1)}>
           Précédent
@@ -519,115 +558,132 @@ export function PeriodLocksManager({
   const [locks, setLocks] = useState(initialLocks);
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [pending, start] = useTransition();
-  const byMonth = new Map(locks.map((l) => [l.month, l]));
+  const months = useMemo<MonthRow[]>(() => {
+    const byMonth = new Map(locks.map((l) => [l.month, l]));
+    return MONTHS.map((label, i) => {
+      const lock = byMonth.get(i + 1);
+      return { month: i + 1, label, lock, isLocked: Boolean(lock && !lock.unlocked_at), payroll: payroll[i + 1] };
+    });
+  }, [locks, payroll]);
 
-  function toggle(month: number, locked: boolean) {
-    if (
-      !window.confirm(
-        locked
-          ? `Clôturer ${MONTHS[month - 1]} ${year} ? Les ajustements commerciaux (AN) du mois seront figés.`
-          : `Rouvrir ${MONTHS[month - 1]} ${year} ?`,
-      )
-    ) {
-      return;
-    }
-    setError(null);
-    start(async () => {
-      const r = await setPeriodLock({ year, month, locked });
-      if (!r.ok) {
-        setError(r.error);
+  const toggle = useCallback(
+    (month: number, locked: boolean) => {
+      if (
+        !window.confirm(
+          locked
+            ? `Clôturer ${MONTHS[month - 1]} ${year} ? Les ajustements commerciaux (AN) du mois seront figés.`
+            : `Rouvrir ${MONTHS[month - 1]} ${year} ?`,
+        )
+      ) {
         return;
       }
-      const now = new Date().toISOString();
-      setLocks((prev) => {
-        const cur = prev.find((l) => l.month === month);
-        const next: PeriodLockRow = cur
-          ? locked
-            ? { ...cur, locked_at: now, unlocked_at: null, unlocked_by_name: null, locked_by_name: "vous" }
-            : { ...cur, unlocked_at: now, unlocked_by_name: "vous" }
-          : { id: String(month), year, month, locked_at: now, locked_by_name: "vous", unlocked_at: null, unlocked_by_name: null };
-        return [...prev.filter((l) => l.month !== month), next];
+      setError(null);
+      start(async () => {
+        const r = await setPeriodLock({ year, month, locked });
+        if (!r.ok) {
+          setError(r.error);
+          return;
+        }
+        const now = new Date().toISOString();
+        setLocks((prev) => {
+          const cur = prev.find((l) => l.month === month);
+          const next: PeriodLockRow = cur
+            ? locked
+              ? { ...cur, locked_at: now, unlocked_at: null, unlocked_by_name: null, locked_by_name: "vous" }
+              : { ...cur, unlocked_at: now, unlocked_by_name: "vous" }
+            : { id: String(month), year, month, locked_at: now, locked_by_name: "vous", unlocked_at: null, unlocked_by_name: null };
+          return [...prev.filter((l) => l.month !== month), next];
+        });
       });
-    });
-  }
+    },
+    [year],
+  );
+
+  const columns = useMemo(
+    () => [
+      monthCol.accessor("month", {
+        header: "Mois",
+        meta: { className: "font-semibold" },
+        cell: ({ row }) => `${row.original.label} ${year}`,
+      }),
+      monthCol.accessor((m) => (m.isLocked ? "Clôturé" : "Ouvert"), {
+        id: "adjustments",
+        header: "Ajustements (AN)",
+        cell: ({ row: { original: m } }) => (
+          <>
+            {m.isLocked ? <RhChip tone="danger">Clôturé</RhChip> : <RhChip tone="success">Ouvert</RhChip>}
+            {m.lock ? (
+              <span className="mt-1 block text-[11px] text-foreground/55">
+                {m.isLocked
+                  ? `le ${new Date(m.lock.locked_at).toLocaleDateString("fr-FR")} par ${m.lock.locked_by_name ?? "—"}`
+                  : `rouvert le ${new Date(m.lock.unlocked_at as string).toLocaleDateString("fr-FR")} par ${m.lock.unlocked_by_name ?? "—"}`}
+              </span>
+            ) : null}
+          </>
+        ),
+      }),
+      monthCol.display({
+        id: "payroll",
+        header: "Paie (chantiers)",
+        enableSorting: false,
+        cell: ({ row: { original: m } }) =>
+          m.payroll ? (
+            <div className="flex flex-wrap gap-1 text-[11px]">
+              {m.payroll.locked ? <RhChip tone="danger">{m.payroll.locked} clôturée(s)</RhChip> : null}
+              {m.payroll.validated ? <RhChip tone="success">{m.payroll.validated} validée(s)</RhChip> : null}
+              {m.payroll.draft ? <RhChip>{m.payroll.draft} brouillon(s)</RhChip> : null}
+            </div>
+          ) : (
+            <span className="text-xs text-foreground/45">—</span>
+          ),
+      }),
+      monthCol.display({
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        enableHiding: false,
+        meta: { align: "right" },
+        cell: ({ row: { original: m } }) =>
+          canEdit ? (
+            m.isLocked ? (
+              <Button size="sm" variant="ghost" disabled={pending} onClick={() => toggle(m.month, false)}>
+                Rouvrir
+              </Button>
+            ) : (
+              <Button size="sm" variant="secondary" disabled={pending} onClick={() => toggle(m.month, true)}>
+                Clôturer
+              </Button>
+            )
+          ) : null,
+      }),
+    ],
+    [canEdit, pending, toggle, year],
+  );
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Link className="rounded-xl border border-border/70 px-3 py-1.5 text-sm" href={`?year=${year - 1}`}>
-          ← {year - 1}
-        </Link>
+        <Button asChild variant="secondary" size="sm">
+          <Link href={`?year=${year - 1}`}>← {year - 1}</Link>
+        </Button>
         <span className="font-display text-xl font-semibold">{year}</span>
-        <Link className="rounded-xl border border-border/70 px-3 py-1.5 text-sm" href={`?year=${year + 1}`}>
-          {year + 1} →
-        </Link>
+        <Button asChild variant="secondary" size="sm">
+          <Link href={`?year=${year + 1}`}>{year + 1} →</Link>
+        </Button>
         <p className="ml-2 max-w-2xl text-xs text-foreground/60">
           La clôture fige les ajustements commerciaux (AN) du mois ; seul le SUPER_ADMIN peut encore y écrire. La paie a son
           propre circuit (valider → clôturer) dans le module RH ; son état est rappelé ici.
         </p>
       </div>
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
-      <RhTableWrap>
-        <table className="min-w-full text-sm">
-          <thead className="border-b border-border/70 bg-surface-muted/80">
-            <tr>
-              <th className={rhTh()}>Mois</th>
-              <th className={rhTh()}>Ajustements (AN)</th>
-              <th className={rhTh()}>Paie (chantiers)</th>
-              <th className={rhTh()} />
-            </tr>
-          </thead>
-          <tbody>
-            {MONTHS.map((label, i) => {
-              const month = i + 1;
-              const lock = byMonth.get(month);
-              const isLocked = Boolean(lock && !lock.unlocked_at);
-              const p = payroll[month];
-              return (
-                <tr key={month} className="border-b border-border/60">
-                  <td className={`${rhTd()} font-semibold`}>
-                    {label} {year}
-                  </td>
-                  <td className={rhTd()}>
-                    {isLocked ? <RhChip tone="danger">Clôturé</RhChip> : <RhChip tone="success">Ouvert</RhChip>}
-                    {lock ? (
-                      <span className="mt-1 block text-[11px] text-foreground/55">
-                        {isLocked
-                          ? `le ${new Date(lock.locked_at).toLocaleDateString("fr-FR")} par ${lock.locked_by_name ?? "—"}`
-                          : `rouvert le ${new Date(lock.unlocked_at as string).toLocaleDateString("fr-FR")} par ${lock.unlocked_by_name ?? "—"}`}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className={rhTd()}>
-                    {p ? (
-                      <div className="flex flex-wrap gap-1 text-[11px]">
-                        {p.locked ? <RhChip tone="danger">{p.locked} clôturée(s)</RhChip> : null}
-                        {p.validated ? <RhChip tone="success">{p.validated} validée(s)</RhChip> : null}
-                        {p.draft ? <RhChip>{p.draft} brouillon(s)</RhChip> : null}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-foreground/45">—</span>
-                    )}
-                  </td>
-                  <td className={rhTd()}>
-                    {canEdit ? (
-                      isLocked ? (
-                        <Button variant="ghost" disabled={pending} onClick={() => toggle(month, false)}>
-                          Rouvrir
-                        </Button>
-                      ) : (
-                        <Button variant="secondary" disabled={pending} onClick={() => toggle(month, true)}>
-                          Clôturer
-                        </Button>
-                      )
-                    ) : null}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </RhTableWrap>
+      <DataTable
+        data={months}
+        columns={columns}
+        getRowId={(m) => String(m.month)}
+        searchable={false}
+        columnToggle={false}
+        pageSize={0}
+      />
     </div>
   );
 }

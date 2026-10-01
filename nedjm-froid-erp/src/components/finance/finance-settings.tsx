@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
@@ -17,7 +17,16 @@ import {
   type FinancePaymentMethod,
   type FinanceTaxRate,
 } from "@/lib/actions/finance";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { RhTabs } from "@/components/rh/rh-ui";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
+
+const accountCol = dataColumns<FinanceAccount>();
+const taxCol = dataColumns<FinanceTaxRate>();
+const methodCol = dataColumns<FinancePaymentMethod>();
+const categoryCol = dataColumns<FinanceCategory>();
+const lockCol = dataColumns<FinanceHubData["periodLocks"][number]>();
 
 type Tab = "accounts" | "tax" | "methods" | "categories" | "periods";
 const SETTINGS_TABS: { id: Tab; label: string }[] = [
@@ -45,7 +54,7 @@ export function FinanceSettings({
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [message, setMessage] = useState<string | null>(null);
 
-  function run(action: () => Promise<{ ok: boolean; error?: string }>, success: string) {
+  const run = useCallback((action: () => Promise<{ ok: boolean; error?: string }>, success: string) => {
     setError(null);
     setMessage(null);
     startTransition(async () => {
@@ -57,7 +66,7 @@ export function FinanceSettings({
       setMessage(success);
       router.refresh();
     });
-  }
+  }, [router]);
 
   return (
     <div className="space-y-5">
@@ -69,23 +78,13 @@ export function FinanceSettings({
             Comptes, TVA, modes, catégories et périodes — sans modification du code.
           </p>
         </div>
-        <a href="/finance" className="rounded-md border border-border bg-surface px-4 py-2 text-sm font-semibold">
-          Retour au hub
-        </a>
+        <Button asChild variant="secondary">
+          <a href="/finance">Retour au hub</a>
+        </Button>
       </div>
-      {error && <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
-      {message && <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">{message}</div>}
-      <div className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-surface p-1">
-        {tabs.map(({ id: value, label }) => (
-          <button
-            key={value}
-            onClick={() => setTab(value)}
-            className={`whitespace-nowrap rounded-md px-4 py-2 text-sm font-semibold ${tab === value ? "bg-brand text-white" : "hover:bg-surface-muted"}`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {error && <Alert tone="danger">{error}</Alert>}
+      {message && <Alert tone="success">{message}</Alert>}
+      <RhTabs items={tabs} value={tab} onChange={(id) => setTab(id as typeof tab)} />
       {tab === "accounts" && <AccountsEditor data={initialData} pending={pending} run={run} />}
       {tab === "tax" && <TaxEditor rows={initialData.taxRates} pending={pending} run={run} />}
       {tab === "methods" && <MethodsEditor rows={initialData.methods} pending={pending} run={run} />}
@@ -127,7 +126,7 @@ function AccountsEditor({
   };
   const [form, setForm] = useState(empty);
 
-  function edit(a: FinanceAccount) {
+  const edit = useCallback((a: FinanceAccount) => {
     setForm({
       id: a.id,
       code: a.code,
@@ -144,7 +143,34 @@ function AccountsEditor({
       active: a.active,
       notes: a.notes ?? "",
     });
-  }
+  }, []);
+  const columns = useMemo(
+    () => [
+      accountCol.accessor("code", { header: "Code", meta: { className: "font-mono text-xs" } }),
+      accountCol.accessor("name", { header: "Compte" }),
+      accountCol.accessor("account_type", { header: "Type" }),
+      accountCol.accessor("balance", {
+        header: "Solde",
+        meta: { align: "right", className: "tabular-nums" },
+        cell: (info) =>
+          new Intl.NumberFormat("fr-DZ", { style: "currency", currency: info.row.original.currency_code }).format(info.getValue()),
+      }),
+      accountCol.accessor((a) => (a.active ? "Actif" : "Inactif"), { id: "active", header: "État" }),
+      accountCol.display({
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        enableHiding: false,
+        meta: { align: "right" },
+        cell: ({ row }) => (
+          <Button size="sm" variant="secondary" onClick={() => edit(row.original)}>
+            Modifier
+          </Button>
+        ),
+      }),
+    ],
+    [edit],
+  );
 
   return (
     <div className="grid gap-5 xl:grid-cols-[420px_1fr]">
@@ -173,15 +199,11 @@ function AccountsEditor({
         </div>
       </EditorCard>
       <DataTable
-        headers={["Code", "Compte", "Type", "Solde", "État", ""]}
-        rows={data.accounts.map((a) => [
-          <span key="code" className="font-mono text-xs">{a.code}</span>,
-          a.name,
-          a.account_type,
-          new Intl.NumberFormat("fr-DZ", { style: "currency", currency: a.currency_code }).format(a.balance),
-          a.active ? "Actif" : "Inactif",
-          <button key="edit" className="font-semibold text-brand" onClick={() => edit(a)}>Modifier</button>,
-        ])}
+        data={data.accounts}
+        getRowId={(a) => a.id}
+        searchPlaceholder="Code, compte"
+        emptyTitle="Aucun compte"
+        columns={columns}
       />
     </div>
   );
@@ -190,9 +212,34 @@ function AccountsEditor({
 function TaxEditor({ rows, pending, run }: { rows: FinanceTaxRate[]; pending: boolean; run: Runner }) {
   const empty = { id: "", code: "", label_fr: "", rate_pct: "", active: true, is_default: false, valid_from: "", valid_to: "" };
   const [form, setForm] = useState(empty);
-  function edit(r: FinanceTaxRate) {
+  const edit = useCallback((r: FinanceTaxRate) => {
     setForm({ id: r.id, code: r.code, label_fr: r.label_fr, rate_pct: String(r.rate * 100), active: r.active, is_default: r.is_default, valid_from: r.valid_from ?? "", valid_to: r.valid_to ?? "" });
-  }
+  }, []);
+  const columns = useMemo(
+    () => [
+      taxCol.accessor("code", { header: "Code" }),
+      taxCol.accessor("label_fr", { header: "Libellé" }),
+      taxCol.accessor("rate", {
+        header: "Taux",
+        meta: { className: "tabular-nums" },
+        cell: (info) => `${(info.getValue() * 100).toFixed(2)} %`,
+      }),
+      taxCol.accessor((r) => (r.is_default ? "Par défaut" : r.active ? "Actif" : "Inactif"), { id: "state", header: "État" }),
+      taxCol.display({
+        id: "actions",
+        header: "Actions",
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => (
+          <Actions
+            edit={() => edit(row.original)}
+            remove={() => run(() => deleteFinanceConfig({ entity: "tax_rate", id: row.original.id }), "Taux supprimé.")}
+          />
+        ),
+      }),
+    ],
+    [edit, run],
+  );
   return (
     <ConfigLayout>
       <EditorCard title={form.id ? "Modifier le taux" : "Nouveau taux TVA"}>
@@ -204,7 +251,15 @@ function TaxEditor({ rows, pending, run }: { rows: FinanceTaxRate[]; pending: bo
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_default} onChange={(e) => setForm((f) => ({ ...f, is_default: e.target.checked, active: e.target.checked ? true : f.active }))} /> Taux par défaut</label>
         <FormButtons pending={pending} editing={Boolean(form.id)} reset={() => setForm(empty)} save={() => run(() => upsertFinanceTaxRate({ id: form.id || undefined, code: form.code, label_fr: form.label_fr, rate: Number(form.rate_pct) / 100, active: form.active, is_default: form.is_default, valid_from: form.valid_from || null, valid_to: form.valid_to || null }), "Taux TVA enregistré.")} />
       </EditorCard>
-      <DataTable headers={["Code", "Libellé", "Taux", "État", "Actions"]} rows={rows.map((r) => [r.code, r.label_fr, `${(r.rate * 100).toFixed(2)} %`, r.is_default ? "Par défaut" : r.active ? "Actif" : "Inactif", <Actions key="a" edit={() => edit(r)} remove={() => run(() => deleteFinanceConfig({ entity: "tax_rate", id: r.id }), "Taux supprimé.")} />])} />
+      <DataTable
+        data={rows}
+        getRowId={(r) => r.id}
+        searchable={false}
+        columnToggle={false}
+        pageSize={0}
+        emptyTitle="Aucun taux TVA"
+        columns={columns}
+      />
     </ConfigLayout>
   );
 }
@@ -212,7 +267,28 @@ function TaxEditor({ rows, pending, run }: { rows: FinanceTaxRate[]; pending: bo
 function MethodsEditor({ rows, pending, run }: { rows: FinancePaymentMethod[]; pending: boolean; run: Runner }) {
   const empty = { id: "", code: "", label_fr: "", account_scope: "BOTH" as "BANK" | "CASH" | "BOTH", legacy_contract_method: "AUTRE", active: true, sort_order: "0" };
   const [form, setForm] = useState(empty);
-  function edit(r: FinancePaymentMethod) { setForm({ id: r.id, code: r.code, label_fr: r.label_fr, account_scope: r.account_scope, legacy_contract_method: r.legacy_contract_method ?? "AUTRE", active: r.active, sort_order: String(r.sort_order) }); }
+  const edit = useCallback((r: FinancePaymentMethod) => { setForm({ id: r.id, code: r.code, label_fr: r.label_fr, account_scope: r.account_scope, legacy_contract_method: r.legacy_contract_method ?? "AUTRE", active: r.active, sort_order: String(r.sort_order) }); }, []);
+  const columns = useMemo(
+    () => [
+      methodCol.accessor("code", { header: "Code" }),
+      methodCol.accessor("label_fr", { header: "Libellé" }),
+      methodCol.accessor("account_scope", { header: "Périmètre" }),
+      methodCol.accessor((r) => (r.active ? "Actif" : "Inactif"), { id: "active", header: "État" }),
+      methodCol.display({
+        id: "actions",
+        header: "Actions",
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => (
+          <Actions
+            edit={() => edit(row.original)}
+            remove={() => run(() => deleteFinanceConfig({ entity: "payment_method", id: row.original.id }), "Mode supprimé.")}
+          />
+        ),
+      }),
+    ],
+    [edit, run],
+  );
   return (
     <ConfigLayout>
       <EditorCard title={form.id ? "Modifier le mode" : "Nouveau mode"}>
@@ -223,7 +299,15 @@ function MethodsEditor({ rows, pending, run }: { rows: FinancePaymentMethod[]; p
         <Active checked={form.active} onChange={(active) => setForm((f) => ({ ...f, active }))} />
         <FormButtons pending={pending} editing={Boolean(form.id)} reset={() => setForm(empty)} save={() => run(() => upsertFinanceMethod({ ...form, id: form.id || undefined, sort_order: Number(form.sort_order) }), "Mode enregistré.")} />
       </EditorCard>
-      <DataTable headers={["Code", "Libellé", "Périmètre", "État", "Actions"]} rows={rows.map((r) => [r.code, r.label_fr, r.account_scope, r.active ? "Actif" : "Inactif", <Actions key="a" edit={() => edit(r)} remove={() => run(() => deleteFinanceConfig({ entity: "payment_method", id: r.id }), "Mode supprimé.")} />])} />
+      <DataTable
+        data={rows}
+        getRowId={(r) => r.id}
+        searchable={false}
+        columnToggle={false}
+        pageSize={0}
+        emptyTitle="Aucun mode de paiement"
+        columns={columns}
+      />
     </ConfigLayout>
   );
 }
@@ -231,7 +315,28 @@ function MethodsEditor({ rows, pending, run }: { rows: FinancePaymentMethod[]; p
 function CategoriesEditor({ rows, pending, run }: { rows: FinanceCategory[]; pending: boolean; run: Runner }) {
   const empty = { id: "", code: "", label_fr: "", direction: "BOTH" as "IN" | "OUT" | "BOTH", account_scope: "BOTH" as "BANK" | "CASH" | "BOTH", active: true, sort_order: "0" };
   const [form, setForm] = useState(empty);
-  function edit(r: FinanceCategory) { setForm({ id: r.id, code: r.code, label_fr: r.label_fr, direction: r.direction, account_scope: r.account_scope, active: r.active, sort_order: String(r.sort_order) }); }
+  const edit = useCallback((r: FinanceCategory) => { setForm({ id: r.id, code: r.code, label_fr: r.label_fr, direction: r.direction, account_scope: r.account_scope, active: r.active, sort_order: String(r.sort_order) }); }, []);
+  const columns = useMemo(
+    () => [
+      categoryCol.accessor("code", { header: "Code" }),
+      categoryCol.accessor("label_fr", { header: "Libellé" }),
+      categoryCol.accessor("direction", { header: "Sens" }),
+      categoryCol.accessor("account_scope", { header: "Périmètre" }),
+      categoryCol.display({
+        id: "actions",
+        header: "Actions",
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => (
+          <Actions
+            edit={() => edit(row.original)}
+            remove={() => run(() => deleteFinanceConfig({ entity: "category", id: row.original.id }), "Catégorie supprimée.")}
+          />
+        ),
+      }),
+    ],
+    [edit, run],
+  );
   return (
     <ConfigLayout>
       <EditorCard title={form.id ? "Modifier la catégorie" : "Nouvelle catégorie"}>
@@ -242,13 +347,45 @@ function CategoriesEditor({ rows, pending, run }: { rows: FinanceCategory[]; pen
         <Active checked={form.active} onChange={(active) => setForm((f) => ({ ...f, active }))} />
         <FormButtons pending={pending} editing={Boolean(form.id)} reset={() => setForm(empty)} save={() => run(() => upsertFinanceCategory({ ...form, id: form.id || undefined, sort_order: Number(form.sort_order) }), "Catégorie enregistrée.")} />
       </EditorCard>
-      <DataTable headers={["Code", "Libellé", "Sens", "Périmètre", "Actions"]} rows={rows.map((r) => [r.code, r.label_fr, r.direction, r.account_scope, <Actions key="a" edit={() => edit(r)} remove={() => run(() => deleteFinanceConfig({ entity: "category", id: r.id }), "Catégorie supprimée.")} />])} />
+      <DataTable
+        data={rows}
+        getRowId={(r) => r.id}
+        searchPlaceholder="Code, libellé"
+        emptyTitle="Aucune catégorie"
+        columns={columns}
+      />
     </ConfigLayout>
   );
 }
 
 function PeriodsEditor({ data, pending, run }: { data: FinanceHubData; pending: boolean; run: Runner }) {
   const [form, setForm] = useState({ account_id: data.accounts[0]?.id ?? "", start_date: today().slice(0, 7) + "-01", end_date: today(), reason: "" });
+  const columns = useMemo(
+    () => [
+      lockCol.accessor((l) => l.account_name ?? "Tous", { id: "account", header: "Compte" }),
+      lockCol.accessor("start_date", { header: "Du" }),
+      lockCol.accessor("end_date", { header: "Au" }),
+      lockCol.accessor((l) => l.reason ?? "—", { id: "reason", header: "Motif" }),
+      lockCol.accessor((l) => (l.unlocked_at ? "Déverrouillée" : "Clôturée"), {
+        id: "state",
+        header: "État / action",
+        cell: ({ row }) =>
+          row.original.unlocked_at ? (
+            "Déverrouillée"
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-alert-critical"
+              onClick={() => run(() => unlockFinancePeriod(row.original.id), "Période déverrouillée.")}
+            >
+              Déverrouiller
+            </Button>
+          ),
+      }),
+    ],
+    [run],
+  );
   return (
     <ConfigLayout>
       <EditorCard title="Clôturer une période">
@@ -258,7 +395,13 @@ function PeriodsEditor({ data, pending, run }: { data: FinanceHubData; pending: 
         <Field label="Motif"><input className={inputClass} value={form.reason} onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))} /></Field>
         <Button className="mt-4" disabled={pending} onClick={() => run(() => lockFinancePeriod(form), "Période clôturée.")}>Clôturer</Button>
       </EditorCard>
-      <DataTable headers={["Compte", "Du", "Au", "Motif", "État / action"]} rows={data.periodLocks.map((l) => [l.account_name ?? "Tous", l.start_date, l.end_date, l.reason ?? "—", l.unlocked_at ? "Déverrouillée" : <button key="u" className="font-semibold text-red-600" onClick={() => run(() => unlockFinancePeriod(l.id), "Période déverrouillée.")}>Déverrouiller</button>])} />
+      <DataTable
+        data={data.periodLocks}
+        getRowId={(l) => l.id}
+        searchPlaceholder="Compte, motif"
+        emptyTitle="Aucune période clôturée"
+        columns={columns}
+      />
     </ConfigLayout>
   );
 }
@@ -279,16 +422,11 @@ function FormButtons({ pending, editing, save, reset }: { pending: boolean; edit
   return <div className="flex gap-2 pt-2"><Button disabled={pending} onClick={save}>Enregistrer</Button>{editing && <Button variant="secondary" onClick={reset}>Annuler</Button>}</div>;
 }
 function Actions({ edit, remove }: { edit: () => void; remove: () => void }) {
-  return <span className="space-x-3 whitespace-nowrap"><button className="font-semibold text-brand" onClick={edit}>Modifier</button><button className="text-red-600" onClick={() => { if (window.confirm("Supprimer ce paramètre ?")) remove(); }}>Supprimer</button></span>;
-}
-function DataTable({ headers, rows }: { headers: string[]; rows: React.ReactNode[][] }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
-      <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-sm">
-        <thead className="bg-surface-muted text-left text-xs uppercase text-foreground/55"><tr>{headers.map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr></thead>
-        <tbody>{rows.length === 0 ? <tr><td colSpan={headers.length} className="px-4 py-10 text-center text-foreground/50">Aucune donnée.</td></tr> : rows.map((row, i) => <tr key={i} className="border-t border-border">{row.map((cell, j) => <td key={j} className="px-3 py-2">{cell}</td>)}</tr>)}</tbody>
-      </table></div>
-    </section>
+    <span className="flex items-center gap-2 whitespace-nowrap">
+      <Button size="sm" variant="secondary" onClick={edit}>Modifier</Button>
+      <Button size="sm" variant="ghost" className="text-alert-critical" onClick={() => { if (window.confirm("Supprimer ce paramètre ?")) remove(); }}>Supprimer</Button>
+    </span>
   );
 }
 

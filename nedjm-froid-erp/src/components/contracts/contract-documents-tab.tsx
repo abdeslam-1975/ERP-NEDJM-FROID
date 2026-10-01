@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useCallback, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import {
   deleteContractDocument,
   prepareContractDocumentUpload,
@@ -20,6 +21,8 @@ import {
 } from "@/lib/contracts/document-files";
 
 const FORMAT_LABEL = { PDF: "PDF", WORD: "Word", EXCEL: "Excel", IMAGE: "Image" } as const;
+
+const col = dataColumns<ContractDocumentRow>();
 
 function storage() {
   return createClient(
@@ -120,20 +123,97 @@ export function ContractDocumentsTab({
     });
   }
 
-  function remove(doc: ContractDocumentRow) {
-    if (!window.confirm(`Supprimer « ${doc.file_name} » ? Le fichier sera effacé.`)) return;
-    setError(null);
-    setInfo(null);
-    startTransition(async () => {
-      const result = await deleteContractDocument(doc.id);
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      setInfo(`« ${doc.file_name} » supprimé.`);
-      router.refresh();
-    });
-  }
+  const remove = useCallback(
+    (doc: ContractDocumentRow) => {
+      if (!window.confirm(`Supprimer « ${doc.file_name} » ? Le fichier sera effacé.`)) return;
+      setError(null);
+      setInfo(null);
+      startTransition(async () => {
+        const result = await deleteContractDocument(doc.id);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        setInfo(`« ${doc.file_name} » supprimé.`);
+        router.refresh();
+      });
+    },
+    [router],
+  );
+
+  const columns = useMemo(
+    () => [
+      col.accessor((doc) => doc.title || doc.file_name, {
+        id: "document",
+        header: "Document",
+        cell: (info) => {
+          const doc = info.row.original;
+          return (
+            <>
+              <a
+                href={`/api/contracts/documents/${doc.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-brand hover:underline"
+              >
+                {info.getValue()}
+              </a>
+              {doc.title ? <span className="block text-xs text-foreground/55">{doc.file_name}</span> : null}
+              {doc.notes ? <span className="block text-xs text-foreground/55">{doc.notes}</span> : null}
+            </>
+          );
+        },
+      }),
+      col.accessor((doc) => kindLabel(doc.kind), { id: "kind", header: "Type" }),
+      col.accessor(
+        (doc) => {
+          const format = resolveContractDocType(doc.file_name)?.format;
+          return format ? FORMAT_LABEL[format] : "—";
+        },
+        { id: "format", header: "Format" },
+      ),
+      col.accessor("size_bytes", {
+        header: "Taille",
+        meta: { className: "tabular-nums" },
+        cell: (info) => formatBytes(info.getValue()),
+      }),
+      col.accessor((doc) => doc.signed_on ?? "", {
+        id: "signed_on",
+        header: "Signé le",
+        cell: (info) => info.getValue() || "—",
+      }),
+      col.accessor((doc) => doc.created_at.slice(0, 10), { id: "created_at", header: "Ajouté le" }),
+      col.display({
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        enableHiding: false,
+        meta: { align: "right", className: "whitespace-nowrap" },
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-3">
+            <a
+              href={`/api/contracts/documents/${row.original.id}?download=1`}
+              className="font-semibold text-brand hover:underline"
+            >
+              Télécharger
+            </a>
+            {canWrite ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-alert-critical"
+                disabled={pending}
+                onClick={() => remove(row.original)}
+              >
+                Supprimer
+              </Button>
+            ) : null}
+          </div>
+        ),
+      }),
+    ],
+    [canWrite, pending, remove],
+  );
 
   return (
     <section className="space-y-4 rounded-lg border border-border bg-surface p-4">
@@ -213,73 +293,15 @@ export function ContractDocumentsTab({
 
       {analysis}
 
-      {documents.length === 0 ? (
-        <p className="text-sm">Aucun document joint.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-left text-foreground/60">
-              <tr>
-                <th className="py-2">Document</th>
-                <th>Type</th>
-                <th>Format</th>
-                <th>Taille</th>
-                <th>Signé le</th>
-                <th>Ajouté le</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {documents.map((doc) => {
-                const format = resolveContractDocType(doc.file_name)?.format;
-                return (
-                  <tr key={doc.id} className="border-t border-border align-top">
-                    <td className="py-2">
-                      <a
-                        href={`/api/contracts/documents/${doc.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-semibold text-brand hover:underline"
-                      >
-                        {doc.title || doc.file_name}
-                      </a>
-                      {doc.title ? (
-                        <span className="block text-xs text-foreground/55">{doc.file_name}</span>
-                      ) : null}
-                      {doc.notes ? (
-                        <span className="block text-xs text-foreground/55">{doc.notes}</span>
-                      ) : null}
-                    </td>
-                    <td>{kindLabel(doc.kind)}</td>
-                    <td>{format ? FORMAT_LABEL[format] : "—"}</td>
-                    <td>{formatBytes(doc.size_bytes)}</td>
-                    <td>{doc.signed_on ?? "—"}</td>
-                    <td>{doc.created_at.slice(0, 10)}</td>
-                    <td className="whitespace-nowrap text-right">
-                      <a
-                        href={`/api/contracts/documents/${doc.id}?download=1`}
-                        className="font-semibold text-brand hover:underline"
-                      >
-                        Télécharger
-                      </a>
-                      {canWrite ? (
-                        <button
-                          type="button"
-                          className="ms-3 font-semibold text-alert-critical hover:underline disabled:opacity-50"
-                          disabled={pending}
-                          onClick={() => remove(doc)}
-                        >
-                          Supprimer
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        data={documents}
+        columns={columns}
+        getRowId={(doc) => doc.id}
+        searchable={false}
+        columnToggle={false}
+        pageSize={0}
+        emptyTitle="Aucun document joint."
+      />
     </section>
   );
 }

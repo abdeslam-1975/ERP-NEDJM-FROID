@@ -7,9 +7,12 @@ import type { LeaveEmployee } from "@/lib/actions/hr-leave";
 import { LETTER_KINDS, letterKindLabel, type LetterKind } from "@/lib/hr/hr-letters";
 import { HrLetterDialog } from "@/components/rh/hr-letter-dialog";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhField, bi, rhInput } from "@/components/rh/rh-ui";
 
 const ISSUABLE = LETTER_KINDS.filter((k) => k.code !== "LEAVE");
+
+const col = dataColumns<LetterHistoryRow>();
 
 export function LettersManager({
   history,
@@ -24,9 +27,41 @@ export function LettersManager({
   const [employeeId, setEmployeeId] = useState("");
   const [kind, setKind] = useState<LetterKind>("ATTEST");
   const [open, setOpen] = useState<{ employeeId: string; kind: LetterKind; correspondenceId?: string } | null>(null);
-  const [search, setSearch] = useState("");
-  const q = search.trim().toLowerCase();
-  const rows = history.filter((r) => !q || r.employee_label.toLowerCase().includes(q) || r.number.includes(q));
+
+  const columns = [
+    col.accessor("number", { header: "N°", meta: { className: "tabular-nums" } }),
+    col.accessor((r) => letterKindLabel(r.type_code).fr, {
+      id: "kind",
+      header: bi("Document", "الوثيقة"),
+      cell: ({ row: { original: r } }) => (
+        <>
+          {letterKindLabel(r.type_code).fr}{" "}
+          <span className="text-xs text-foreground/50">({r.lang.toUpperCase()})</span>
+        </>
+      ),
+    }),
+    col.accessor("employee_label", { header: bi("Employé", "العامل") }),
+    col.accessor("created_at", {
+      header: bi("Établi le", "بتاريخ"),
+      meta: { className: "tabular-nums" },
+      cell: (info) => new Date(info.getValue()).toLocaleDateString("fr-DZ", { timeZone: "Africa/Algiers" }),
+    }),
+    col.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      meta: { align: "right" },
+      cell: ({ row: { original: r } }) => (
+        <Button
+          variant="secondary"
+          onClick={() => setOpen({ employeeId: r.employee_id, kind: r.type_code as LetterKind, correspondenceId: r.id })}
+        >
+          {bi("Réimprimer", "إعادة الطباعة")}
+        </Button>
+      ),
+    }),
+  ];
 
   return (
     <div className="space-y-5">
@@ -66,62 +101,14 @@ export function LettersManager({
         </p>
       </div>
 
-      <div className="flex justify-end">
-        <input
-          className={`${rhInput} mt-0 w-64`}
-          placeholder={bi("Rechercher…", "بحث")}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </div>
-      <div className="overflow-x-auto rounded-2xl border border-border/80 bg-surface">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-muted text-xs uppercase text-foreground/60">
-            <tr>
-              <th className="px-3 py-2 text-left">N°</th>
-              <th className="px-3 py-2 text-left">{bi("Document", "الوثيقة")}</th>
-              <th className="px-3 py-2 text-left">{bi("Employé", "العامل")}</th>
-              <th className="px-3 py-2 text-left">{bi("Établi le", "بتاريخ")}</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-foreground/50">
-                  {bi("Aucun document.", "لا توجد وثائق.")}
-                </td>
-              </tr>
-            ) : (
-              rows.map((r) => {
-                const k = letterKindLabel(r.type_code);
-                return (
-                  <tr key={r.id} className="border-t border-border/60">
-                    <td className="px-3 py-2 tabular-nums">{r.number}</td>
-                    <td className="px-3 py-2">
-                      {k.fr} <span className="text-xs text-foreground/50">({r.lang.toUpperCase()})</span>
-                    </td>
-                    <td className="px-3 py-2">{r.employee_label}</td>
-                    <td className="px-3 py-2 tabular-nums">
-                      {new Date(r.created_at).toLocaleDateString("fr-DZ", { timeZone: "Africa/Algiers" })}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <Button
-                        variant="secondary"
-                        onClick={() =>
-                          setOpen({ employeeId: r.employee_id, kind: r.type_code as LetterKind, correspondenceId: r.id })
-                        }
-                      >
-                        {bi("Réimprimer", "إعادة الطباعة")}
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={history}
+        columns={columns}
+        getRowId={(r) => r.id}
+        searchPlaceholder={bi("Rechercher…", "بحث")}
+        searchText={(r) => [r.employee_label, r.number].join(" ")}
+        emptyTitle={bi("Aucun document", "لا توجد وثائق")}
+      />
 
       {open ? (
         <HrLetterDialog

@@ -32,6 +32,7 @@ import { applicationMonthError, frDay, frMonth, monthStartOf } from "@/lib/rules
 import { QuickDialog, PROPOSALS_PATH } from "@/components/rules/rule-ui";
 import { useLegalDocumentOpener } from "@/components/rules/legal-citations";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhChip, RhField, RhPageHeader, RhPanel, RhSectionTitle, rhInput } from "@/components/rh/rh-ui";
 
 const PATH = "/rh/legal/extraction-ia";
@@ -354,6 +355,28 @@ function targetText(s: AiSuggestionView, t: AiTargets): string {
   return "Barème IRG";
 }
 
+const bracketCol = dataColumns<Record<string, unknown>>();
+const bracketColumns = [
+  bracketCol.display({
+    id: "from",
+    header: "De",
+    meta: { className: "tabular-nums" },
+    cell: ({ row }) => (typeof row.original.from === "number" ? numText(row.original.from) : "—"),
+  }),
+  bracketCol.display({
+    id: "to",
+    header: "À",
+    meta: { className: "tabular-nums" },
+    cell: ({ row }) => (typeof row.original.to === "number" ? numText(row.original.to) : "et plus"),
+  }),
+  bracketCol.display({
+    id: "rate",
+    header: "Taux",
+    meta: { className: "tabular-nums" },
+    cell: ({ row }) => (typeof row.original.rate === "number" ? `${numText(row.original.rate)} %` : "—"),
+  }),
+];
+
 function SuggestionCard({
   s,
   targets,
@@ -415,24 +438,15 @@ function SuggestionCard({
       )}
 
       {brackets.length ? (
-        <table className="mt-2 min-w-full text-sm">
-          <thead className="text-left text-xs uppercase text-foreground/55">
-            <tr>
-              <th className="py-1 pr-4">De</th>
-              <th className="py-1 pr-4">À</th>
-              <th className="py-1">Taux</th>
-            </tr>
-          </thead>
-          <tbody>
-            {brackets.map((b, i) => (
-              <tr key={i} className="border-t border-border/60 tabular-nums">
-                <td className="py-1 pr-4">{typeof b.from === "number" ? numText(b.from) : "—"}</td>
-                <td className="py-1 pr-4">{typeof b.to === "number" ? numText(b.to) : "et plus"}</td>
-                <td className="py-1">{typeof b.rate === "number" ? `${numText(b.rate)} %` : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DataTable
+          className="mt-2"
+          data={brackets}
+          columns={bracketColumns}
+          getRowId={(_, i) => String(i)}
+          searchable={false}
+          columnToggle={false}
+          pageSize={0}
+        />
       ) : null}
 
       {s.kind === "IRG_BAREME" ? (

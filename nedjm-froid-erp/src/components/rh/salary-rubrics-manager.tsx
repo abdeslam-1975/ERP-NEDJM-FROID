@@ -28,19 +28,8 @@ import {
   suggestSalaryClass,
 } from "@/lib/hr/payroll-calc";
 import { Button } from "@/components/ui/button";
-import {
-  RhAlert,
-  RhField,
-  RhPageHeader,
-  RhPanel,
-  RhTableWrap,
-  RhTabs,
-  RhToolbar,
-  bi,
-  rhInput,
-  rhTd,
-  rhTh,
-} from "@/components/rh/rh-ui";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
+import { RhAlert, RhField, RhPageHeader, RhPanel, RhTabs, RhToolbar, bi, rhInput } from "@/components/rh/rh-ui";
 
 type Scope = SalaryRubrique["apply_scope"];
 
@@ -100,6 +89,38 @@ function importStatusLabel(status: RubriqueImportPreview["status"]) {
   if (status === "unchanged") return bi("Inchangé", "دون تغيير");
   return bi("Rejeté", "مرفوض");
 }
+
+const rubriqueCol = dataColumns<SalaryRubrique>();
+
+const assignmentCol = dataColumns<SalaryAssignment>();
+
+const importCol = dataColumns<RubriqueImportPreview>();
+
+const importColumns = [
+  importCol.accessor((row) => importStatusLabel(row.status), { id: "status", header: bi("Statut", "الحالة") }),
+  importCol.accessor("code", { header: "Code", meta: { className: "font-mono text-xs" } }),
+  importCol.accessor((row) => row.incoming?.label_fr ?? "—", { id: "label_fr", header: "FR" }),
+  importCol.accessor((row) => row.incoming?.label_ar ?? "—", {
+    id: "label_ar",
+    header: "AR",
+    cell: (i) => <span dir="rtl">{i.getValue()}</span>,
+  }),
+  importCol.accessor((row) => (row.incoming ? scopeLabel(row.incoming.apply_scope) : "—"), {
+    id: "apply_scope",
+    header: bi("Application", "التطبيق"),
+    cell: ({ row }) => (
+      <>
+        {row.original.incoming ? scopeLabel(row.original.incoming.apply_scope) : "—"}
+        {row.original.keep_scope ? ` (${bi("conservé", "محفوظ")})` : ""}
+      </>
+    ),
+  }),
+  importCol.accessor((row) => row.reason ?? "", {
+    id: "reason",
+    header: bi("Note", "ملاحظة"),
+    meta: { className: "text-foreground/70" },
+  }),
+];
 
 function SearchSelect({
   options,
@@ -214,6 +235,146 @@ export function SalaryRubricsManager({
       values.filter((v) => !asg.rubrique_id || v.rubrique_id === asg.rubrique_id),
     [values, asg.rubrique_id],
   );
+
+  function rubriqueName(row: SalaryAssignment) {
+    const rub = rows.find((r) => r.id === row.rubrique_id);
+    return rub ? `${rub.code} · ${rub.label_fr} — ${rub.label_ar}` : row.rubrique_id;
+  }
+
+  const rubriqueColumns = [
+    rubriqueCol.accessor("code", { header: "Code", meta: { className: "font-mono text-xs" } }),
+    rubriqueCol.accessor("label_fr", { header: "FR" }),
+    rubriqueCol.accessor("label_ar", { header: "AR", cell: (i) => <span dir="rtl">{i.getValue()}</span> }),
+    rubriqueCol.accessor((row) => scopeLabel(row.apply_scope), { id: "apply_scope", header: bi("Application", "التطبيق") }),
+    rubriqueCol.accessor((row) => unitLabel(row.unit), { id: "unit", header: bi("Unité", "الوحدة") }),
+    rubriqueCol.accessor("category", { header: bi("Classe", "الصنف") }),
+    rubriqueCol.accessor("default_amount", { header: bi("Défaut", "افتراضي"), meta: { className: "tabular-nums" } }),
+    rubriqueCol.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row: { original: row } }) => (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setForm({ ...row });
+              setAsg({
+                id: "",
+                rubrique_id: row.id,
+                target_id: "",
+                amount: String(row.default_amount || 0),
+              });
+            }}
+          >
+            Modifier
+          </Button>
+          {canEdit ? (
+            <>
+              <Button
+                variant="ghost"
+                disabled={pending}
+                onClick={() => {
+                  start(async () => {
+                    const r = await setSalaryRubriqueActive({
+                      id: row.id,
+                      is_active: !row.is_active,
+                    });
+                    if (!r.ok) {
+                      setError(r.error);
+                      return;
+                    }
+                    setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, is_active: !x.is_active } : x)));
+                  });
+                }}
+              >
+                {row.is_active ? bi("Masquer", "إخفاء") : bi("Afficher", "إظهار")}
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={pending}
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      bi(`Supprimer ${row.label_fr} / ${row.label_ar} et ses valeurs ?`, `حذف ${row.label_ar} وكل قيمه؟`),
+                    )
+                  )
+                    return;
+                  start(async () => {
+                    const r = await deleteSalaryRubrique(row.id);
+                    if (!r.ok) {
+                      setError(r.error);
+                      return;
+                    }
+                    setRows((prev) => prev.filter((x) => x.id !== row.id));
+                    setValues((prev) => prev.filter((x) => x.rubrique_id !== row.id));
+                    if (form.id === row.id) setForm(emptyRubrique());
+                    setInfo(bi("Rubrique supprimée.", "تم حذف البند."));
+                  });
+                }}
+              >
+                {bi("Supprimer", "حذف")}
+              </Button>
+            </>
+          ) : null}
+        </div>
+      ),
+    }),
+  ];
+
+  const assignmentColumns = [
+    assignmentCol.accessor((row) => rubriqueName(row), { id: "rubrique", header: bi("Rubrique", "البند") }),
+    assignmentCol.accessor((row) => scopeLabel(levelOf(row)), { id: "level", header: bi("Application", "التطبيق") }),
+    assignmentCol.accessor((row) => targetName(row), { id: "target", header: bi("Cible", "الهدف") }),
+    assignmentCol.accessor("amount", { header: bi("Montant", "القيمة"), meta: { className: "tabular-nums" } }),
+    assignmentCol.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row: { original: row } }) =>
+        canValues ? (
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              onClick={() =>
+                setAsg({
+                  id: row.id,
+                  rubrique_id: row.rubrique_id,
+                  target_id: row.employee_id ?? row.site_id ?? row.contract_id ?? row.poste_id ?? "",
+                  amount: String(row.amount),
+                  level: levelOf(row),
+                })
+              }
+            >
+              Modifier
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={pending}
+              onClick={() => {
+                if (!window.confirm(bi("Supprimer cette valeur ?", "حذف هذه القيمة؟"))) return;
+                start(async () => {
+                  const r = await deleteSalaryAssignment(row.id);
+                  if (!r.ok) {
+                    setError(r.error);
+                    return;
+                  }
+                  setValues((prev) => prev.filter((x) => x.id !== row.id));
+                  if (asg.id === row.id) {
+                    setAsg({ ...asg, id: "", target_id: "", amount: "0" });
+                  }
+                  setInfo(bi("Valeur supprimée.", "تم حذف القيمة."));
+                });
+              }}
+            >
+              {bi("Supprimer", "حذف")}
+            </Button>
+          </div>
+        ) : null,
+    }),
+  ];
 
   function saveRubrique() {
     setError(null);
@@ -542,37 +703,13 @@ export function SalaryRubricsManager({
             ) : null}
           </RhPanel>
           {importPreview.length ? (
-            <RhTableWrap>
-              <table className="min-w-full text-sm">
-                <thead className="border-b border-border/70 bg-surface-muted/80">
-                  <tr>
-                    <th className={rhTh()}>{bi("Statut", "الحالة")}</th>
-                    <th className={rhTh()}>Code</th>
-                    <th className={rhTh()}>FR</th>
-                    <th className={rhTh()}>AR</th>
-                    <th className={rhTh()}>{bi("Application", "التطبيق")}</th>
-                    <th className={rhTh()}>{bi("Note", "ملاحظة")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {importPreview.map((row) => (
-                    <tr key={`${row.status}-${row.code}`} className="border-t border-border/60">
-                      <td className={rhTd()}>{importStatusLabel(row.status)}</td>
-                      <td className={`${rhTd()} font-mono text-xs`}>{row.code}</td>
-                      <td className={rhTd()}>{row.incoming?.label_fr ?? "—"}</td>
-                      <td className={rhTd()} dir="rtl">
-                        {row.incoming?.label_ar ?? "—"}
-                      </td>
-                      <td className={rhTd()}>
-                        {row.incoming ? scopeLabel(row.incoming.apply_scope) : "—"}
-                        {row.keep_scope ? ` (${bi("conservé", "محفوظ")})` : ""}
-                      </td>
-                      <td className={`${rhTd()} text-foreground/70`}>{row.reason ?? ""}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </RhTableWrap>
+            <DataTable
+              data={importPreview}
+              columns={importColumns}
+              getRowId={(row) => `${row.status}-${row.code}`}
+              searchPlaceholder={bi("Rechercher une rubrique…", "بحث")}
+              searchText={(row) => [row.code, row.incoming?.label_fr, row.incoming?.label_ar, row.reason].filter(Boolean).join(" ")}
+            />
           ) : null}
         </>
       ) : panel === "dict" ? (
@@ -721,127 +858,15 @@ export function SalaryRubricsManager({
             ) : null}
           </RhPanel>
 
-          <RhTableWrap>
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-border/70 bg-surface-muted/80">
-                <tr>
-                  <th className={rhTh()}>Code</th>
-                  <th className={rhTh()}>FR</th>
-                  <th className={rhTh()}>AR</th>
-                  <th className={rhTh()}>{bi("Application", "التطبيق")}</th>
-                  <th className={rhTh()}>{bi("Unité", "الوحدة")}</th>
-                  <th className={rhTh()}>{bi("Classe", "الصنف")}</th>
-                  <th className={rhTh()}>{bi("Défaut", "افتراضي")}</th>
-                  <th className={rhTh()} />
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.length === 0 ? (
-                  <tr>
-                    <td className={`${rhTd()} py-6 text-foreground/55`} colSpan={8}>
-                      {bi("Aucune rubrique pour le moment.", "لا توجد بنود بعد.")}
-                    </td>
-                  </tr>
-                ) : (
-                  sorted.map((row) => (
-                    <tr
-                      key={row.id}
-                      className={`border-t border-border/60 ${row.is_active ? "" : "opacity-50"}`}
-                    >
-                      <td className={`${rhTd()} font-mono text-xs`}>{row.code}</td>
-                      <td className={rhTd()}>{row.label_fr}</td>
-                      <td className={rhTd()} dir="rtl">
-                        {row.label_ar}
-                      </td>
-                      <td className={rhTd()}>{scopeLabel(row.apply_scope)}</td>
-                      <td className={rhTd()}>{unitLabel(row.unit)}</td>
-                      <td className={rhTd()}>{row.category}</td>
-                      <td className={rhTd()}>{row.default_amount}</td>
-                      <td className={rhTd()}>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            variant="secondary"
-                            onClick={() => {
-                              setForm({ ...row });
-                              setAsg({
-                                id: "",
-                                rubrique_id: row.id,
-                                target_id: "",
-                                amount: String(row.default_amount || 0),
-                              });
-                            }}
-                          >
-                            Modifier
-                          </Button>
-                          {canEdit ? (
-                            <>
-                              <Button
-                                variant="ghost"
-                                disabled={pending}
-                                onClick={() => {
-                                  start(async () => {
-                                    const r = await setSalaryRubriqueActive({
-                                      id: row.id,
-                                      is_active: !row.is_active,
-                                    });
-                                    if (!r.ok) {
-                                      setError(r.error);
-                                      return;
-                                    }
-                                    setRows((prev) =>
-                                      prev.map((x) =>
-                                        x.id === row.id
-                                          ? { ...x, is_active: !x.is_active }
-                                          : x,
-                                      ),
-                                    );
-                                  });
-                                }}
-                              >
-                                {row.is_active
-                                  ? bi("Masquer", "إخفاء")
-                                  : bi("Afficher", "إظهار")}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                disabled={pending}
-                                onClick={() => {
-                                  if (
-                                    !window.confirm(
-                                      bi(
-                                        `Supprimer ${row.label_fr} / ${row.label_ar} et ses valeurs ?`,
-                                        `حذف ${row.label_ar} وكل قيمه؟`,
-                                      ),
-                                    )
-                                  )
-                                    return;
-                                  start(async () => {
-                                    const r = await deleteSalaryRubrique(row.id);
-                                    if (!r.ok) {
-                                      setError(r.error);
-                                      return;
-                                    }
-                                    setRows((prev) => prev.filter((x) => x.id !== row.id));
-                                    setValues((prev) =>
-                                      prev.filter((x) => x.rubrique_id !== row.id),
-                                    );
-                                    if (form.id === row.id) setForm(emptyRubrique());
-                                    setInfo(bi("Rubrique supprimée.", "تم حذف البند."));
-                                  });
-                                }}
-                              >
-                                {bi("Supprimer", "حذف")}
-                              </Button>
-                            </>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </RhTableWrap>
+          <DataTable
+            data={sorted}
+            columns={rubriqueColumns}
+            getRowId={(row) => row.id}
+            searchPlaceholder={bi("Rechercher une rubrique…", "بحث")}
+            searchText={(row) => [row.code, row.label_fr, row.label_ar].join(" ")}
+            rowClassName={(row) => (row.is_active ? undefined : "opacity-50")}
+            emptyTitle={bi("Aucune rubrique pour le moment.", "لا توجد بنود بعد.")}
+          />
         </>
       ) : (
         <>
@@ -930,96 +955,18 @@ export function SalaryRubricsManager({
             ) : null}
           </RhPanel>
 
-          <RhTableWrap>
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-border/70 bg-surface-muted/80">
-                <tr>
-                  <th className={rhTh()}>{bi("Rubrique", "البند")}</th>
-                  <th className={rhTh()}>{bi("Application", "التطبيق")}</th>
-                  <th className={rhTh()}>{bi("Cible", "الهدف")}</th>
-                  <th className={rhTh()}>{bi("Montant", "القيمة")}</th>
-                  <th className={rhTh()} />
-                </tr>
-              </thead>
-              <tbody>
-                {visibleAssignments.length === 0 ? (
-                  <tr>
-                    <td className={`${rhTd()} py-6 text-foreground/55`} colSpan={5}>
-                      {bi(
-                        "Aucune valeur. Ajoutez un montant pour l'employé, le chantier ou le contrat selon la rubrique.",
-                        "لا توجد قيم بعد. أضف قيمة للعامل أو الورشة أو العقد حسب ضبط البند.",
-                      )}
-                    </td>
-                  </tr>
-                ) : (
-                  visibleAssignments.map((row) => {
-                    const rub = rows.find((r) => r.id === row.rubrique_id);
-                    return (
-                      <tr key={row.id} className="border-t border-border/60">
-                        <td className={rhTd()}>
-                          {rub ? `${rub.code} · ${rub.label_fr} — ${rub.label_ar}` : row.rubrique_id}
-                        </td>
-                        <td className={rhTd()}>{scopeLabel(levelOf(row))}</td>
-                        <td className={rhTd()}>{targetName(row)}</td>
-                        <td className={rhTd()}>{row.amount}</td>
-                        <td className={rhTd()}>
-                          {canValues ? (
-                            <div className="flex flex-wrap gap-2">
-                              <Button
-                                variant="secondary"
-                                onClick={() =>
-                                  setAsg({
-                                    id: row.id,
-                                    rubrique_id: row.rubrique_id,
-                                    target_id:
-                                      row.employee_id ??
-                                      row.site_id ??
-                                      row.contract_id ??
-                                      row.poste_id ??
-                                      "",
-                                    amount: String(row.amount),
-                                    level: levelOf(row),
-                                  })
-                                }
-                              >
-                                Modifier
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                disabled={pending}
-                                onClick={() => {
-                                  if (
-                                    !window.confirm(
-                                      bi("Supprimer cette valeur ?", "حذف هذه القيمة؟"),
-                                    )
-                                  )
-                                    return;
-                                  start(async () => {
-                                    const r = await deleteSalaryAssignment(row.id);
-                                    if (!r.ok) {
-                                      setError(r.error);
-                                      return;
-                                    }
-                                    setValues((prev) => prev.filter((x) => x.id !== row.id));
-                                    if (asg.id === row.id) {
-                                      setAsg({ ...asg, id: "", target_id: "", amount: "0" });
-                                    }
-                                    setInfo(bi("Valeur supprimée.", "تم حذف القيمة."));
-                                  });
-                                }}
-                              >
-                                {bi("Supprimer", "حذف")}
-                              </Button>
-                            </div>
-                          ) : null}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </RhTableWrap>
+          <DataTable
+            data={visibleAssignments}
+            columns={assignmentColumns}
+            getRowId={(row) => row.id}
+            searchPlaceholder={bi("Rechercher une rubrique ou une cible…", "بحث")}
+            searchText={(row) => `${rubriqueName(row)} ${targetName(row)}`}
+            emptyTitle={bi("Aucune valeur.", "لا توجد قيم بعد.")}
+            emptyBody={bi(
+              "Ajoutez un montant pour l'employé, le chantier ou le contrat selon la rubrique.",
+              "أضف قيمة للعامل أو الورشة أو العقد حسب ضبط البند.",
+            )}
+          />
         </>
       )}
     </div>

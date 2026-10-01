@@ -8,7 +8,10 @@ import {
   type SalaryHistoryRow,
 } from "@/lib/actions/hr-salary-history";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhChip, RhField, bi, rhInput } from "@/components/rh/rh-ui";
+
+const col = dataColumns<SalaryHistoryRow>();
 
 function money(n: number) {
   return n.toLocaleString("fr-DZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -109,6 +112,51 @@ export function ContractSalaryHistory({
   const current = inForce(rows, today);
   const initialId = rows.length ? rows[rows.length - 1].id : null;
 
+  const columns = [
+    col.accessor("effective_from", {
+      header: bi("Date d'effet", "تاريخ السريان"),
+      cell: ({ row: { original: row } }) => (
+        <>
+          {row.effective_from}{" "}
+          {current?.id === row.id ? <RhChip tone="success">{bi("En vigueur", "ساري")}</RhChip> : null}
+          {row.effective_from > today ? <RhChip tone="warning">{bi("À venir", "قادم")}</RhChip> : null}
+        </>
+      ),
+    }),
+    col.accessor("salaire_base_monthly", {
+      header: bi("Salaire de base", "الأجر الأساسي"),
+      meta: { align: "right", className: "tabular-nums" },
+      cell: (i) => money(i.getValue()),
+    }),
+    col.accessor("salaire_net_ref_monthly", {
+      header: bi("Net chantier", "صافي الميدان"),
+      meta: { align: "right", className: "tabular-nums" },
+      cell: (i) => money(i.getValue()),
+    }),
+    col.accessor("reason", {
+      header: bi("Motif", "السبب"),
+      cell: ({ row: { original: row } }) => (
+        <>
+          {row.reason}
+          {row.author_name ? <span className="text-xs text-foreground/50"> · {row.author_name}</span> : null}
+        </>
+      ),
+    }),
+    col.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      meta: { align: "right" },
+      cell: ({ row: { original: row } }) =>
+        canEdit && row.id !== initialId ? (
+          <Button variant="secondary" disabled={pending} onClick={() => remove(row)}>
+            {bi("Supprimer", "حذف")}
+          </Button>
+        ) : null,
+    }),
+  ];
+
   return (
     <div className="space-y-4">
       <RhAlert tone="info">
@@ -120,43 +168,15 @@ export function ContractSalaryHistory({
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
       {notice ? <RhAlert tone="success">{notice}</RhAlert> : null}
 
-      <div className="overflow-x-auto rounded border border-border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-xs uppercase text-foreground/60">
-            <tr>
-              <th className="px-3 py-2 text-left">{bi("Date d'effet", "تاريخ السريان")}</th>
-              <th className="px-3 py-2 text-right">{bi("Salaire de base", "الأجر الأساسي")}</th>
-              <th className="px-3 py-2 text-right">{bi("Net chantier", "صافي الميدان")}</th>
-              <th className="px-3 py-2 text-left">{bi("Motif", "السبب")}</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id} className="border-t border-border">
-                <td className="px-3 py-2">
-                  {row.effective_from}{" "}
-                  {current?.id === row.id ? <RhChip tone="success">{bi("En vigueur", "ساري")}</RhChip> : null}
-                  {row.effective_from > today ? <RhChip tone="warning">{bi("À venir", "قادم")}</RhChip> : null}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">{money(row.salaire_base_monthly)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{money(row.salaire_net_ref_monthly)}</td>
-                <td className="px-3 py-2">
-                  {row.reason}
-                  {row.author_name ? <span className="text-xs text-foreground/50"> · {row.author_name}</span> : null}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {canEdit && row.id !== initialId ? (
-                    <Button variant="secondary" disabled={pending} onClick={() => remove(row)}>
-                      {bi("Supprimer", "حذف")}
-                    </Button>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={rows}
+        columns={columns}
+        getRowId={(r) => r.id}
+        searchable={false}
+        pageSize={0}
+        columnToggle={false}
+        emptyTitle={bi("Aucune version de salaire", "لا توجد نسخ")}
+      />
 
       {canEdit ? (
         <div className="rounded border border-border p-3">

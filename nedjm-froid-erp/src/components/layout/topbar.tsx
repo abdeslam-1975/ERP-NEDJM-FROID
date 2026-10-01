@@ -1,4 +1,4 @@
-import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { DisplayMenu } from "@/components/layout/display-menu";
 import { SiteSwitcher } from "@/components/layout/site-switcher";
 import { GlobalSearch } from "@/components/layout/global-search";
 import { HistoryBackButton } from "@/components/rh/rh-back-button";
@@ -53,7 +53,7 @@ export function Topbar({
           sites={workspace.accessibleSites}
           activeSiteId={workspace.activeSite?.id ?? null}
         />
-        <ThemeToggle />
+        <DisplayMenu />
         <NotificationBell initial={notifications} />
 
         <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface py-1.5 pl-1.5 pr-3 shadow-[var(--card-shadow)]">

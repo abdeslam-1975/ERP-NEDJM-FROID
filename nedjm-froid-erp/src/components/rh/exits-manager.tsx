@@ -14,7 +14,10 @@ import { EXIT_REASONS, exitReasonLabel, type SettlementLine } from "@/lib/hr/lea
 import { slashDateIso, type LetterKind } from "@/lib/hr/hr-letters";
 import { HrLetterDialog } from "@/components/rh/hr-letter-dialog";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhChip, RhField, RhModal, bi, rhInput } from "@/components/rh/rh-ui";
+
+const col = dataColumns<ExitRow>();
 
 function money(n: number) {
   return n.toLocaleString("fr-DZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -169,6 +172,95 @@ export function ExitsManager({
 
   const total = draft ? draft.settlement_lines.reduce((s, l) => s + (Number(l.amount) || 0), 0) : 0;
 
+  const columns = [
+    col.accessor("employee_label", {
+      header: bi("Employé", "العامل"),
+      cell: ({ row: { original: row } }) => (
+        <>
+          {row.employee_label}
+          {row.notes ? <div className="text-xs text-foreground/55">{row.notes}</div> : null}
+        </>
+      ),
+    }),
+    col.accessor("exit_date", {
+      header: bi("Date de sortie", "تاريخ الخروج"),
+      meta: { className: "tabular-nums" },
+      cell: (info) => slashDateIso(info.getValue()),
+    }),
+    col.accessor((r) => exitReasonLabel(r.reason_code).fr, {
+      id: "reason",
+      header: bi("Motif", "السبب"),
+      cell: ({ row }) => {
+        const reason = exitReasonLabel(row.original.reason_code);
+        return (
+          <>
+            {reason.fr} <span className="text-xs text-foreground/50">· {reason.ar}</span>
+          </>
+        );
+      },
+    }),
+    col.accessor((r) => r.leave_balance_days ?? "", {
+      id: "leave_balance_days",
+      header: bi("Reliquat congé", "رصيد العطلة"),
+      meta: { align: "right", className: "tabular-nums" },
+      cell: ({ row }) => row.original.leave_balance_days ?? "—",
+    }),
+    col.accessor("total", {
+      header: bi("Solde (DA)", "التصفية"),
+      meta: { align: "right", className: "font-semibold tabular-nums" },
+      cell: (info) => money(info.getValue()),
+    }),
+    col.accessor((r) => STATUS[r.status].label, {
+      id: "status",
+      header: bi("Statut", "الحالة"),
+      cell: ({ row: { original: row } }) => (
+        <>
+          <RhChip tone={STATUS[row.status].tone}>{STATUS[row.status].label}</RhChip>
+          {row.validated_by_name ? <div className="text-xs text-foreground/50">{row.validated_by_name}</div> : null}
+        </>
+      ),
+    }),
+    col.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      meta: { align: "right", className: "space-x-1 whitespace-nowrap" },
+      cell: ({ row: { original: row } }) => (
+        <>
+          {canEdit && row.status === "DRAFT" ? (
+            <>
+              <Button variant="secondary" disabled={pending} onClick={() => edit(row)}>
+                {bi("Modifier", "تعديل")}
+              </Button>
+              <Button disabled={pending} onClick={() => changeStatus(row, "VALIDATED")}>
+                {bi("Valider", "مصادقة")}
+              </Button>
+              <Button variant="secondary" disabled={pending} onClick={() => remove(row)}>
+                {bi("Supprimer", "حذف")}
+              </Button>
+            </>
+          ) : null}
+          {row.status === "VALIDATED" ? (
+            <>
+              <Button variant="secondary" onClick={() => setLetter({ employeeId: row.employee_id, kind: "CERTIF" })}>
+                {bi("Certificat de travail", "شهادة عمل")}
+              </Button>
+              <Button variant="secondary" onClick={() => setLetter({ employeeId: row.employee_id, kind: "STC" })}>
+                {bi("Solde de tout compte", "وصل التصفية")}
+              </Button>
+              {canEdit ? (
+                <Button variant="secondary" disabled={pending} onClick={() => changeStatus(row, "CANCELLED")}>
+                  {bi("Annuler", "إلغاء")}
+                </Button>
+              ) : null}
+            </>
+          ) : null}
+        </>
+      ),
+    }),
+  ];
+
   return (
     <div className="space-y-5">
       <RhAlert tone="info">
@@ -193,91 +285,14 @@ export function ExitsManager({
         </div>
       ) : null}
 
-      <div className="overflow-x-auto rounded-2xl border border-border/80 bg-surface">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-muted text-xs uppercase text-foreground/60">
-            <tr>
-              <th className="px-3 py-2 text-left">{bi("Employé", "العامل")}</th>
-              <th className="px-3 py-2 text-left">{bi("Date de sortie", "تاريخ الخروج")}</th>
-              <th className="px-3 py-2 text-left">{bi("Motif", "السبب")}</th>
-              <th className="px-3 py-2 text-right">{bi("Reliquat congé", "رصيد العطلة")}</th>
-              <th className="px-3 py-2 text-right">{bi("Solde (DA)", "التصفية")}</th>
-              <th className="px-3 py-2 text-left">{bi("Statut", "الحالة")}</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-foreground/50">
-                  {bi("Aucune sortie.", "لا توجد حالات خروج.")}
-                </td>
-              </tr>
-            ) : (
-              rows.map((row) => {
-                const st = STATUS[row.status];
-                const reason = exitReasonLabel(row.reason_code);
-                return (
-                  <tr key={row.id} className="border-t border-border/60 align-top">
-                    <td className="px-3 py-2">
-                      {row.employee_label}
-                      {row.notes ? <div className="text-xs text-foreground/55">{row.notes}</div> : null}
-                    </td>
-                    <td className="px-3 py-2 tabular-nums">{slashDateIso(row.exit_date)}</td>
-                    <td className="px-3 py-2">
-                      {reason.fr} <span className="text-xs text-foreground/50">· {reason.ar}</span>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{row.leave_balance_days ?? "—"}</td>
-                    <td className="px-3 py-2 text-right font-semibold tabular-nums">{money(row.total)}</td>
-                    <td className="px-3 py-2">
-                      <RhChip tone={st.tone}>{st.label}</RhChip>
-                      {row.validated_by_name ? (
-                        <div className="text-xs text-foreground/50">{row.validated_by_name}</div>
-                      ) : null}
-                    </td>
-                    <td className="space-x-1 whitespace-nowrap px-3 py-2 text-right">
-                      {canEdit && row.status === "DRAFT" ? (
-                        <>
-                          <Button variant="secondary" disabled={pending} onClick={() => edit(row)}>
-                            {bi("Modifier", "تعديل")}
-                          </Button>
-                          <Button disabled={pending} onClick={() => changeStatus(row, "VALIDATED")}>
-                            {bi("Valider", "مصادقة")}
-                          </Button>
-                          <Button variant="secondary" disabled={pending} onClick={() => remove(row)}>
-                            {bi("Supprimer", "حذف")}
-                          </Button>
-                        </>
-                      ) : null}
-                      {row.status === "VALIDATED" ? (
-                        <>
-                          <Button
-                            variant="secondary"
-                            onClick={() => setLetter({ employeeId: row.employee_id, kind: "CERTIF" })}
-                          >
-                            {bi("Certificat de travail", "شهادة عمل")}
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            onClick={() => setLetter({ employeeId: row.employee_id, kind: "STC" })}
-                          >
-                            {bi("Solde de tout compte", "وصل التصفية")}
-                          </Button>
-                          {canEdit ? (
-                            <Button variant="secondary" disabled={pending} onClick={() => changeStatus(row, "CANCELLED")}>
-                              {bi("Annuler", "إلغاء")}
-                            </Button>
-                          ) : null}
-                        </>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={rows}
+        columns={columns}
+        getRowId={(r) => r.id}
+        searchPlaceholder={bi("Rechercher un employé…", "بحث")}
+        searchText={(r) => [r.employee_label, r.notes, exitReasonLabel(r.reason_code).fr].filter(Boolean).join(" ")}
+        emptyTitle={bi("Aucune sortie", "لا توجد حالات خروج")}
+      />
 
       {draft ? (
         <RhModal
@@ -422,15 +437,16 @@ export function ExitsManager({
                     value={String(l.amount)}
                     onChange={(e) => setLine(i, { amount: Number(e.target.value.replace(",", ".")) || 0 })}
                   />
-                  <button
-                    type="button"
-                    className="text-xs text-red-600 hover:underline"
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-alert-critical hover:text-alert-critical"
                     onClick={() =>
                       setDraft({ ...draft, settlement_lines: draft.settlement_lines.filter((_, j) => j !== i) })
                     }
                   >
                     {bi("Retirer", "حذف")}
-                  </button>
+                  </Button>
                 </div>
               ))}
               <div className="flex flex-wrap items-center justify-between gap-2">

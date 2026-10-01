@@ -3,9 +3,15 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { RhAlert, RhTableWrap, rhTd, rhTh } from "@/components/rh/rh-ui";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
+import { RhAlert } from "@/components/rh/rh-ui";
 import { PROPOSALS_PATH, QuickDialog, VerifiedChip } from "@/components/rules/rule-ui";
-import { unverifiedRules, type PayrollSlipTrace, type RuleTraceFamily } from "@/lib/hr/legal-vars-as-of";
+import {
+  unverifiedRules,
+  type PayrollSlipTrace,
+  type RuleTraceFamily,
+  type SlipRuleRef,
+} from "@/lib/hr/legal-vars-as-of";
 
 const FAMILY_LABEL: Record<RuleTraceFamily, string> = {
   LEGAL_VAR: "Variable légale",
@@ -25,6 +31,46 @@ function DecisionLink({ id }: { id: string | null }) {
     </Link>
   );
 }
+
+const col = dataColumns<SlipRuleRef>();
+
+const ruleColumns = [
+  col.accessor("key", {
+    header: "Règle",
+    cell: ({ row }) => (
+      <>
+        <span className="block text-xs text-foreground/55">{FAMILY_LABEL[row.original.family]}</span>
+        <span className="font-mono text-xs">{row.original.key}</span>
+      </>
+    ),
+  }),
+  col.accessor("id", {
+    header: "Version",
+    cell: (info) => <span className="font-mono text-xs">{shortId(info.getValue())}</span>,
+  }),
+  col.accessor((r) => (r.proposal_id ? 1 : 0), {
+    id: "verified",
+    header: "Statut",
+    cell: ({ row }) => (
+      <>
+        <VerifiedChip verified={Boolean(row.original.proposal_id)} />
+        {row.original.proposal_id ? (
+          <Link
+            href={`${PROPOSALS_PATH}?id=${row.original.proposal_id}&tout=1`}
+            className="ml-1 text-xs text-brand hover:underline"
+          >
+            proposition
+          </Link>
+        ) : null}
+      </>
+    ),
+  }),
+  col.accessor((r) => r.decision_id ?? "", {
+    id: "decision",
+    header: "Décision D2",
+    cell: ({ row }) => <DecisionLink id={row.original.decision_id} />,
+  }),
+];
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -98,45 +144,15 @@ export function SlipTraceDialog({
           )}
         </Row>
       </div>
-      <RhTableWrap>
-        <table className="w-full text-sm">
-          <thead>
-            <tr>
-              <th className={rhTh()}>Règle</th>
-              <th className={rhTh()}>Version</th>
-              <th className={rhTh()}>Statut</th>
-              <th className={rhTh()}>Décision D2</th>
-            </tr>
-          </thead>
-          <tbody>
-            {trace.rules.map((r) => (
-              <tr key={`${r.family}:${r.key}:${r.id}`}>
-                <td className={rhTd()}>
-                  <span className="block text-xs text-foreground/55">{FAMILY_LABEL[r.family]}</span>
-                  <span className="font-mono text-xs">{r.key}</span>
-                </td>
-                <td className={rhTd()}>
-                  <span className="font-mono text-xs">{shortId(r.id)}</span>
-                </td>
-                <td className={rhTd()}>
-                  <VerifiedChip verified={Boolean(r.proposal_id)} />
-                  {r.proposal_id ? (
-                    <Link
-                      href={`${PROPOSALS_PATH}?id=${r.proposal_id}&tout=1`}
-                      className="ml-1 text-xs text-brand hover:underline"
-                    >
-                      proposition
-                    </Link>
-                  ) : null}
-                </td>
-                <td className={rhTd()}>
-                  <DecisionLink id={r.decision_id} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </RhTableWrap>
+      <DataTable
+        data={trace.rules}
+        columns={ruleColumns}
+        getRowId={(r) => `${r.family}:${r.key}:${r.id}`}
+        searchable={false}
+        pageSize={0}
+        columnToggle={false}
+        emptyTitle="Aucune règle tracée"
+      />
     </QuickDialog>
   );
 }

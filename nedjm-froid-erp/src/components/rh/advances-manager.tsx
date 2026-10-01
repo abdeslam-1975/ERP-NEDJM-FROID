@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { cancelAdvance, createAdvance, listAdvances, type AdvanceRow } from "@/lib/actions/hr-advances";
 import { Button } from "@/components/ui/button";
+import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhChip, RhField, bi, rhInput } from "@/components/rh/rh-ui";
 
 function money(n: number) {
@@ -13,6 +14,9 @@ const KIND_LABEL: Record<AdvanceRow["kind"], string> = {
   ADVANCE: bi("Avance sur salaire", "تسبيق على الأجر"),
   LOAN: bi("Prêt", "قرض"),
 };
+
+const col = dataColumns<AdvanceRow>();
+const amountMeta = { align: "right", className: "tabular-nums" } as const;
 
 export function AdvancesManager({
   initialRows,
@@ -97,6 +101,63 @@ export function AdvancesManager({
   const principal = Number(draft.principal_amount) || 0;
   const installment = Number(draft.installment_amount) || (draft.kind === "ADVANCE" ? principal : 0);
   const months = principal > 0 && installment > 0 ? Math.ceil(principal / installment) : 0;
+
+  const columns = [
+    col.accessor("employee_label", { header: bi("Employé", "العامل") }),
+    col.accessor((r) => KIND_LABEL[r.kind], {
+      id: "kind",
+      header: bi("Type", "النوع"),
+      cell: ({ row: { original: row } }) => (
+        <>
+          {KIND_LABEL[row.kind]}{" "}
+          {row.status === "CANCELLED" ? (
+            <RhChip tone="danger">{bi("Annulée", "ملغاة")}</RhChip>
+          ) : row.remaining <= 0 ? (
+            <RhChip tone="success">{bi("Soldée", "مسددة")}</RhChip>
+          ) : null}
+        </>
+      ),
+    }),
+    col.accessor("principal_amount", { header: bi("Montant", "المبلغ"), meta: amountMeta, cell: (i) => money(i.getValue()) }),
+    col.accessor("installment_amount", {
+      header: bi("Mensualité", "القسط"),
+      meta: amountMeta,
+      cell: (i) => money(i.getValue()),
+    }),
+    col.accessor("deducted", { header: bi("Retenu", "المقتطع"), meta: amountMeta, cell: (i) => money(i.getValue()) }),
+    col.accessor("remaining", {
+      header: bi("Reste", "المتبقي"),
+      meta: { align: "right", className: "font-semibold tabular-nums" },
+      cell: (i) => money(i.getValue()),
+    }),
+    col.accessor((r) => r.start_year * 100 + r.start_month, {
+      id: "start",
+      header: bi("Début", "البداية"),
+      cell: ({ row }) => `${String(row.original.start_month).padStart(2, "0")}/${row.original.start_year}`,
+    }),
+    col.accessor("reason", {
+      header: bi("Motif", "السبب"),
+      cell: ({ row: { original: row } }) => (
+        <>
+          {row.reason}
+          {row.author_name ? <span className="text-xs text-foreground/50"> · {row.author_name}</span> : null}
+        </>
+      ),
+    }),
+    col.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      meta: { align: "right" },
+      cell: ({ row: { original: row } }) =>
+        canEdit && row.status === "ACTIVE" && row.remaining > 0 ? (
+          <Button variant="secondary" disabled={pending} onClick={() => cancel(row)}>
+            {bi("Annuler", "إلغاء")}
+          </Button>
+        ) : null,
+    }),
+  ];
 
   return (
     <div className="space-y-5">
@@ -211,64 +272,14 @@ export function AdvancesManager({
         </p>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-border/80 bg-surface">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-muted text-xs uppercase text-foreground/60">
-            <tr>
-              <th className="px-3 py-2 text-left">{bi("Employé", "العامل")}</th>
-              <th className="px-3 py-2 text-left">{bi("Type", "النوع")}</th>
-              <th className="px-3 py-2 text-right">{bi("Montant", "المبلغ")}</th>
-              <th className="px-3 py-2 text-right">{bi("Mensualité", "القسط")}</th>
-              <th className="px-3 py-2 text-right">{bi("Retenu", "المقتطع")}</th>
-              <th className="px-3 py-2 text-right">{bi("Reste", "المتبقي")}</th>
-              <th className="px-3 py-2 text-left">{bi("Début", "البداية")}</th>
-              <th className="px-3 py-2 text-left">{bi("Motif", "السبب")}</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {visible.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="px-3 py-6 text-center text-foreground/50">
-                  {bi("Aucune avance.", "لا توجد تسبيقات.")}
-                </td>
-              </tr>
-            ) : (
-              visible.map((row) => (
-                <tr key={row.id} className="border-t border-border/60">
-                  <td className="px-3 py-2">{row.employee_label}</td>
-                  <td className="px-3 py-2">
-                    {KIND_LABEL[row.kind]}{" "}
-                    {row.status === "CANCELLED" ? (
-                      <RhChip tone="danger">{bi("Annulée", "ملغاة")}</RhChip>
-                    ) : row.remaining <= 0 ? (
-                      <RhChip tone="success">{bi("Soldée", "مسددة")}</RhChip>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">{money(row.principal_amount)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{money(row.installment_amount)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{money(row.deducted)}</td>
-                  <td className="px-3 py-2 text-right font-semibold tabular-nums">{money(row.remaining)}</td>
-                  <td className="px-3 py-2">
-                    {String(row.start_month).padStart(2, "0")}/{row.start_year}
-                  </td>
-                  <td className="px-3 py-2">
-                    {row.reason}
-                    {row.author_name ? <span className="text-xs text-foreground/50"> · {row.author_name}</span> : null}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {canEdit && row.status === "ACTIVE" && row.remaining > 0 ? (
-                      <Button variant="secondary" disabled={pending} onClick={() => cancel(row)}>
-                        {bi("Annuler", "إلغاء")}
-                      </Button>
-                    ) : null}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        data={visible}
+        columns={columns}
+        getRowId={(r) => r.id}
+        searchPlaceholder={bi("Rechercher un employé…", "بحث")}
+        searchText={(r) => [r.employee_label, KIND_LABEL[r.kind], r.reason, r.author_name].filter(Boolean).join(" ")}
+        emptyTitle={bi("Aucune avance", "لا توجد تسبيقات")}
+      />
     </div>
   );
 }

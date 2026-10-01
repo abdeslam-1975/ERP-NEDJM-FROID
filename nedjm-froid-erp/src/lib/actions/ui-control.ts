@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { createClient } from "@/lib/supabase/server";
 import { NAV_GROUPS_TABSET, UI_NAV_GROUPS, findItem, findTabset, isGroupKey, itemKey } from "@/lib/ui/registry";
+import { DESIGN_OPTIONS, DEFAULT_DESIGN, isDesignValue, parseDesign, type DesignSettings } from "@/lib/ui/design";
 import { EMPTY_THEME, isHexColor, type UiOverride, type UiTheme } from "@/lib/ui/resolve";
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
@@ -15,6 +16,9 @@ export type UiControlData = {
   hidden: { role_id: string; item_key: string }[];
   overrides: Record<string, UiOverride>;
   theme: UiTheme;
+  design: DesignSettings;
+  /** False while migration 20261013090000_ui_design is not applied (only the colours can be saved). */
+  designReady: boolean;
 };
 
 async function requireSuperAdmin(): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -49,7 +53,7 @@ export async function loadUiControl(): Promise<ActionResult<UiControlData>> {
     supabase.from("sys_roles").select("id, code, label_fr, label_ar, is_active").order("hierarchy_level", { ascending: false }),
     supabase.from("sys_ui_role_hidden").select("role_id, item_key"),
     supabase.from("sys_ui_item_overrides").select("item_key, sort_order, label_fr, label_ar, group_key"),
-    supabase.from("sys_ui_theme").select("brand_color, sidebar_color, app_name, app_subtitle").eq("id", 1).maybeSingle(),
+    supabase.from("sys_ui_theme").select("*").eq("id", 1).maybeSingle(),
   ]);
   const failed = roles.error ?? hidden.error ?? overrides.error ?? theme.error;
   if (failed) {
@@ -60,6 +64,7 @@ export async function loadUiControl(): Promise<ActionResult<UiControlData>> {
         : failed.message,
     };
   }
+  const themeRow = theme.data as (UiTheme & Record<string, unknown>) | null;
   const map: Record<string, UiOverride> = {};
   for (const row of overrides.data ?? []) {
     map[row.item_key] = { sort_order: row.sort_order, label_fr: row.label_fr, label_ar: row.label_ar, group_key: row.group_key };
@@ -70,7 +75,16 @@ export async function loadUiControl(): Promise<ActionResult<UiControlData>> {
       roles: roles.data ?? [],
       hidden: hidden.data ?? [],
       overrides: map,
-      theme: (theme.data as UiTheme | null) ?? EMPTY_THEME,
+      theme: themeRow
+        ? {
+            brand_color: themeRow.brand_color ?? null,
+            sidebar_color: themeRow.sidebar_color ?? null,
+            app_name: themeRow.app_name ?? null,
+            app_subtitle: themeRow.app_subtitle ?? null,
+          }
+        : EMPTY_THEME,
+      design: parseDesign(themeRow),
+      designReady: themeRow ? "button_style" in themeRow : false,
     },
   };
 }
@@ -152,21 +166,43 @@ export async function resetTabsetLayout(input: { tabset: string }): Promise<Acti
   return { ok: true, data: undefined };
 }
 
-export async function saveUiTheme(input: UiTheme): Promise<ActionResult<UiTheme>> {
+const DESIGN_KEYS = Object.keys(DESIGN_OPTIONS) as (keyof typeof DESIGN_OPTIONS)[];
+
+/**
+ * Colours, names and look. `design: null` brings the look back to the default (every column null);
+ * with `designReady: false` (migration not applied) only the colours and names are written.
+ */
+export async function saveUiDesign(input: {
+  theme: UiTheme;
+  design: DesignSettings | null;
+  designReady: boolean;
+}): Promise<ActionResult<{ theme: UiTheme; design: DesignSettings }>> {
   const gate = await requireSuperAdmin();
   if (!gate.ok) return gate;
-  for (const color of [input.brand_color, input.sidebar_color]) {
+  for (const color of [input.theme.brand_color, input.theme.sidebar_color]) {
     if (color !== null && !isHexColor(color)) return { ok: false, error: "Couleur invalide (format #RRGGBB)." };
   }
   const theme: UiTheme = {
-    brand_color: input.brand_color,
-    sidebar_color: input.sidebar_color,
-    app_name: cleanText(input.app_name, 40),
-    app_subtitle: cleanText(input.app_subtitle, 60),
+    brand_color: input.theme.brand_color,
+    sidebar_color: input.theme.sidebar_color,
+    app_name: cleanText(input.theme.app_name, 40),
+    app_subtitle: cleanText(input.theme.app_subtitle, 60),
   };
+  const row: Record<string, unknown> = { id: 1, ...theme };
+  if (input.designReady) {
+    const design = input.design;
+    if (design) {
+      for (const key of DESIGN_KEYS) {
+        if (!isDesignValue(key, design[key])) return { ok: false, error: `Valeur invalide : ${key}` };
+      }
+      if (typeof design.animations !== "boolean") return { ok: false, error: "Valeur invalide : animations" };
+    }
+    for (const key of DESIGN_KEYS) row[key] = design ? design[key] : null;
+    row.animations = design ? design.animations : null;
+  }
   const supabase = await createClient();
-  const { error } = await supabase.from("sys_ui_theme").upsert({ id: 1, ...theme }, { onConflict: "id" });
+  const { error } = await supabase.from("sys_ui_theme").upsert(row, { onConflict: "id" });
   if (error) return { ok: false, error: error.message };
   done();
-  return { ok: true, data: theme };
+  return { ok: true, data: { theme, design: input.design ?? DEFAULT_DESIGN } };
 }
