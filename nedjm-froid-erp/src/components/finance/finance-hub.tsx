@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
   addCashAdvanceExpense,
   cancelCashAdvance,
@@ -20,6 +21,13 @@ import {
 import { Button } from "@/components/ui/button";
 
 type Tab = "dashboard" | "operations" | "advances" | "reconciliation";
+
+const FINANCE_TABS: { id: Tab; label: string }[] = [
+  { id: "dashboard", label: "Vue d'ensemble" },
+  { id: "operations", label: "Opérations" },
+  { id: "advances", label: "Avances caisse" },
+  { id: "reconciliation", label: "Rapprochement" },
+];
 
 const today = () => new Date().toISOString().slice(0, 10);
 const inputClass =
@@ -42,6 +50,7 @@ export function FinanceHub({
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("dashboard");
+  const tabs = useUiTabs("finance", FINANCE_TABS, tab, setTab);
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(loadError ?? null);
@@ -102,14 +111,7 @@ export function FinanceHub({
       )}
 
       <div className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-surface p-1">
-        {(
-          [
-            ["dashboard", "Vue d'ensemble"],
-            ["operations", "Opérations"],
-            ["advances", "Avances caisse"],
-            ["reconciliation", "Rapprochement"],
-          ] as const
-        ).map(([value, label]) => (
+        {tabs.map(({ id: value, label }) => (
           <button
             key={value}
             className={`whitespace-nowrap rounded-md px-4 py-2 text-sm font-semibold ${

@@ -10,6 +10,8 @@ import {
   payrollSourceLabel,
   periodLabel,
 } from "@/lib/decisions/catalog";
+import { getUiLayout } from "@/lib/ui/layout";
+import { applyTabs } from "@/lib/ui/resolve";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +42,9 @@ export default async function DecisionsPage({
   searchParams: Promise<{ tab?: string; type?: string }>;
 }) {
   const sp = await searchParams;
-  const tab = sp.tab === "closed" ? "closed" : "open";
+  const tabs = applyTabs(await getUiLayout(), "decisions", [...TABS]);
+  const wanted = sp.tab === "closed" ? "closed" : "open";
+  const tab = tabs.some((t) => t.id === wanted) ? wanted : (tabs[0]?.id ?? wanted);
   const type = isDecisionTypeCode(sp.type) ? sp.type : "";
   const res = await listDecisions({ tab, type: type || undefined });
   const rows = res.ok ? res.data : [];
@@ -54,7 +58,7 @@ export default async function DecisionsPage({
         />
         {!res.ok ? <RhAlert tone="danger">{res.error}</RhAlert> : null}
         <div className="flex flex-wrap items-center gap-2">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <Link
               key={t.id}
               href={href(t.id, type)}

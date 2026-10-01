@@ -363,6 +363,7 @@ export function SalaryRubricsManager({
       {info && !error ? <RhAlert tone="success">{info}</RhAlert> : null}
 
       <RhTabs
+        uiKey="salary_rubrics"
         items={[
           { id: "dict", label: bi("Dictionnaire", "القاموس") },
           { id: "values", label: bi("Valeurs", "القيم والمدخلات") },

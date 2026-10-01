@@ -2,51 +2,27 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
-const items = [
-  { href: "/rh", label: "Tableau de bord", exact: true },
-  { href: "/rh/employes", label: "Employés" },
-  { href: "/rh/contrats", label: "Contrats" },
-  { href: "/rh/postes", label: "Postes & grille" },
-  { href: "/rh/presence", label: "Présence", exact: true },
-  { href: "/rh/presence/imports", label: "Imports de présences" },
-  { href: "/rh/conges", label: "Congés" },
-  { href: "/rh/paie/preparation", label: "Préparation du mois" },
-  { href: "/rh/paie", label: "Paie" },
-  { href: "/simulateur", label: "Simulateur" },
-  { href: "/rh/paie/exceptions", label: "Exceptions" },
-  { href: "/rh/paie/avances", label: "Avances" },
-  { href: "/rh/paie/virements", label: "Virements" },
-  { href: "/rh/paie/declarations", label: "Déclarations" },
-  { href: "/rh/paie/operations-externes", label: "Opérations externes" },
-  { href: "/rh/couts", label: "Coûts" },
-  { href: "/rh/interim", label: "Intérim" },
-  { href: "/rh/sorties", label: "Sorties" },
-  { href: "/rh/documents", label: "Documents" },
-  { href: "/rh/attestations", label: "Attestations" },
-  { href: "/rh/legal", label: "Cotisations & impôts", exact: true },
-  { href: "/rh/legal/propositions", label: "Propositions légales" },
-  { href: "/rh/legal/documents", label: "Documents juridiques" },
-  { href: "/rh/legal/extraction-ia", label: "Extraction IA" },
-  { href: "/rh/legal/veille", label: "Veille juridique" },
-  { href: "/rh/qualite-donnees", label: "Qualité des données" },
-  { href: "/rh/parametres", label: "Paramètres" },
-];
+import { useMemo } from "react";
+import { useUiLayout } from "@/components/layout/ui-layout-context";
+import { resolveTabset } from "@/lib/ui/resolve";
 
 export function RhModuleNav() {
   const pathname = usePathname();
+  const layout = useUiLayout();
+  const items = useMemo(() => resolveTabset(layout, "rh"), [layout]);
 
   return (
     <nav className="sticky top-0 z-20 -mx-1 mb-1 overflow-x-auto rounded-2xl border border-border/80 bg-surface px-2 py-2 shadow-[var(--card-shadow)]">
       <ul className="flex min-w-max items-center gap-1">
         {items.map((item) => {
+          const href = item.href ?? "/rh";
           const active = item.exact
-            ? pathname === item.href
-            : pathname === item.href || pathname.startsWith(`${item.href}/`);
+            ? pathname === href
+            : pathname === href || pathname.startsWith(`${href}/`);
           return (
-            <li key={item.href}>
+            <li key={item.key}>
               <Link
-                href={item.href}
+                href={href}
                 className={`inline-flex h-9 items-center rounded-xl px-3.5 text-sm font-semibold transition ${
                   active
                     ? "bg-brand text-white shadow-sm shadow-brand/25"

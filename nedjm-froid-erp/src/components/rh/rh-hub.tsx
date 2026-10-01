@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { HrDashboardStats } from "@/lib/actions/hr-lookups";
+import { useUiLayout } from "@/components/layout/ui-layout-context";
 import { RhAlert, RhPage, bi } from "@/components/rh/rh-ui";
+import { isPathBlocked } from "@/lib/ui/resolve";
 
 function pctChange(current: number, previous: number) {
   if (previous <= 0) return current > 0 ? 100 : 0;
@@ -412,34 +414,44 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
         </section>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          { href: "/rh/employes", label: "Employés" },
-          { href: "/rh/contrats", label: "Contrats" },
-          { href: "/rh/postes", label: "Postes & grille salariale" },
-          { href: "/rh/presence", label: "Présence" },
-          { href: "/rh/conges", label: "Congés & absences" },
-          { href: "/rh/paie", label: "Paie" },
-          { href: "/simulateur", label: "Simulateur" },
-          { href: "/rh/sorties", label: "Sorties & STC" },
-          { href: "/rh/couts", label: "Coûts par chantier / contrat" },
-          { href: "/rh/interim", label: "Intérim (agences)" },
-          { href: "/rh/documents", label: "Documents" },
-          { href: "/rh/attestations", label: "Attestations & courriers" },
-          { href: "/rh/legal", label: "Cotisations" },
-          { href: "/rh/paie/exceptions", label: "Exceptions" },
-          { href: "/rh/paie/avances", label: "Avances & prêts" },
-          { href: "/rh/parametres", label: "Paramètres" },
-        ].map((m) => (
-          <Link
-            key={m.href}
-            href={m.href}
-            className="rounded-2xl border border-border/80 bg-surface px-4 py-4 shadow-[var(--card-shadow)] transition hover:border-brand/40"
-          >
-            <p className="font-display text-lg font-semibold">{m.label}</p>
-          </Link>
-        ))}
-      </div>
+      <RhQuickLinks />
     </RhPage>
+  );
+}
+
+const QUICK_LINKS = [
+  { href: "/rh/employes", label: "Employés" },
+  { href: "/rh/contrats", label: "Contrats" },
+  { href: "/rh/postes", label: "Postes & grille salariale" },
+  { href: "/rh/presence", label: "Présence" },
+  { href: "/rh/conges", label: "Congés & absences" },
+  { href: "/rh/paie", label: "Paie" },
+  { href: "/simulateur", label: "Simulateur" },
+  { href: "/rh/sorties", label: "Sorties & STC" },
+  { href: "/rh/couts", label: "Coûts par chantier / contrat" },
+  { href: "/rh/interim", label: "Intérim (agences)" },
+  { href: "/rh/documents", label: "Documents" },
+  { href: "/rh/attestations", label: "Attestations & courriers" },
+  { href: "/rh/legal", label: "Cotisations" },
+  { href: "/rh/paie/exceptions", label: "Exceptions" },
+  { href: "/rh/paie/avances", label: "Avances & prêts" },
+  { href: "/rh/parametres", label: "Paramètres" },
+];
+
+function RhQuickLinks() {
+  const layout = useUiLayout();
+  const links = QUICK_LINKS.filter((m) => !isPathBlocked(layout, m.href));
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {links.map((m) => (
+        <Link
+          key={m.href}
+          href={m.href}
+          className="rounded-2xl border border-border/80 bg-surface px-4 py-4 shadow-[var(--card-shadow)] transition hover:border-brand/40"
+        >
+          <p className="font-display text-lg font-semibold">{m.label}</p>
+        </Link>
+      ))}
+    </div>
   );
 }

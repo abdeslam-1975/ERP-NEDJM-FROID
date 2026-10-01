@@ -2,6 +2,7 @@
 
 import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
   createOrderFromProforma,
   createProforma,
@@ -17,6 +18,14 @@ import {
 import { Button } from "@/components/ui/button";
 
 type Tab = "dashboard" | "proformas" | "orders" | "receipts" | "invoices" | "suppliers";
+const PURCHASE_TABS: { id: Tab; label: string }[] = [
+  { id: "dashboard", label: "Pilotage" },
+  { id: "proformas", label: "Proformas" },
+  { id: "orders", label: "Bons de commande" },
+  { id: "receipts", label: "Réceptions" },
+  { id: "invoices", label: "Factures & paiements" },
+  { id: "suppliers", label: "Fournisseurs" },
+];
 const today = () => new Date().toISOString().slice(0, 10);
 const inputClass =
   "h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/15";
@@ -50,14 +59,7 @@ export function PurchaseHub({
     });
   }
 
-  const tabs: [Tab, string][] = [
-    ["dashboard", "Pilotage"],
-    ["proformas", "Proformas"],
-    ["orders", "Bons de commande"],
-    ["receipts", "Réceptions"],
-    ["invoices", "Factures & paiements"],
-    ["suppliers", "Fournisseurs"],
-  ];
+  const tabs = useUiTabs("purchases", PURCHASE_TABS, tab, setTab);
 
   return (
     <div className="space-y-5">
@@ -76,7 +78,7 @@ export function PurchaseHub({
       {error && <Notice tone="error">{error}</Notice>}
       {message && <Notice tone="success">{message}</Notice>}
       <div className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1">
-        {tabs.map(([value, label]) => (
+        {tabs.map(({ id: value, label }) => (
           <button
             key={value}
             onClick={() => setTab(value)}

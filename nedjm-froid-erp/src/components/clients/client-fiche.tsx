@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
   upsertClient,
   type ClientContractLink,
@@ -12,6 +13,12 @@ import {
 import { WILAYAS, communesOf } from "@/lib/referentiels/wilayas";
 
 type Tab = "identite" | "contrats" | "penalites" | "correspondances";
+const CLIENT_TABS: { id: Tab; label: string }[] = [
+  { id: "identite", label: "Identité" },
+  { id: "contrats", label: "Contrats" },
+  { id: "penalites", label: "Pénalités" },
+  { id: "correspondances", label: "Correspondances" },
+];
 
 type Draft = {
   code_client: string;
@@ -105,6 +112,7 @@ export function ClientFiche({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [tab, setTab] = useState<Tab>("identite");
+  const tabs = useUiTabs("client_fiche", CLIENT_TABS, tab, setTab);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(client ? fromClient(client) : emptyDraft());
   const [baseline] = useState(() => JSON.stringify(client ? fromClient(client) : emptyDraft()));
@@ -228,21 +236,11 @@ export function ClientFiche({
       </section>
 
       <div className="flex flex-wrap gap-2">
-        <TabButton active={tab === "identite"} onClick={() => setTab("identite")}>
-          Identité
-        </TabButton>
-        <TabButton active={tab === "contrats"} onClick={() => setTab("contrats")}>
-          Contrats
-        </TabButton>
-        <TabButton active={tab === "penalites"} onClick={() => setTab("penalites")}>
-          Pénalités
-        </TabButton>
-        <TabButton
-          active={tab === "correspondances"}
-          onClick={() => setTab("correspondances")}
-        >
-          Correspondances
-        </TabButton>
+        {tabs.map((t) => (
+          <TabButton key={t.id} active={tab === t.id} onClick={() => setTab(t.id)}>
+            {t.label}
+          </TabButton>
+        ))}
       </div>
 
       {tab === "identite" ? (

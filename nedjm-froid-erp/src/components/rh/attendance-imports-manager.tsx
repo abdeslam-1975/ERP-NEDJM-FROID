@@ -171,6 +171,7 @@ export function AttendanceImportsManager({
       {detailError ? <RhAlert tone="danger">{detailError}</RhAlert> : null}
 
       <RhTabs
+        uiKey="att_imports"
         value={view}
         onChange={(id) => go({ vue: id as View, lot: detail?.batch.id ?? null })}
         items={[

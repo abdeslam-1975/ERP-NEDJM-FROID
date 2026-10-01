@@ -168,6 +168,7 @@ export function LegalWatchManager({
       )}
 
       <RhTabs
+        uiKey="legal_watch"
         items={[
           { id: "textes", label: `Textes détectés${toReview ? ` (${toReview})` : ""}` },
           { id: "sources", label: "Sources surveillées" },

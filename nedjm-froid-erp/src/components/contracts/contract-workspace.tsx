@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
   applyPenalty,
   cancelInvoice,
@@ -142,7 +143,7 @@ export function ContractWorkspace({
   const spareHt = sumItemsHt(spares);
   const duration = contractDurationDays(contract.start_date, contract.end_date);
 
-  const tabs: { id: Tab; label: string }[] = [
+  const allTabs: { id: Tab; label: string }[] = [
     { id: "header", label: "En-tête & financier" },
     { id: "contre", label: "Contre-facturation" },
     { id: "labor", label: `Main-d'œuvre (${labor.length})` },
@@ -158,6 +159,7 @@ export function ContractWorkspace({
     { id: "rh", label: "RH / AN" },
     { id: "canva", label: "Canva Excel" },
   ];
+  const tabs = useUiTabs("client_contract", allTabs, tab, setTab);
 
   function run(fn: () => Promise<void>) {
     setError(null);

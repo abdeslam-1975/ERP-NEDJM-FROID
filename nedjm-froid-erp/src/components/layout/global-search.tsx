@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useUiLayout } from "@/components/layout/ui-layout-context";
 import { searchEmployees, type GlobalSearchEmployee } from "@/lib/actions/global-search";
+import { isPathBlocked } from "@/lib/ui/resolve";
 
 type PageEntry = { href: string; fr: string; ar: string; keywords?: string };
 
@@ -72,11 +74,14 @@ export function GlobalSearch() {
   const [active, setActive] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
 
+  const layout = useUiLayout();
   const pages = useMemo(() => {
     const q = fold(query.trim());
     if (!q) return [];
-    return PAGES.filter((p) => fold(`${p.fr} ${p.ar} ${p.keywords ?? ""}`).includes(q)).slice(0, 5);
-  }, [query]);
+    return PAGES.filter(
+      (p) => !isPathBlocked(layout, p.href) && fold(`${p.fr} ${p.ar} ${p.keywords ?? ""}`).includes(q),
+    ).slice(0, 5);
+  }, [query, layout]);
 
   useEffect(() => {
     const q = query.trim();

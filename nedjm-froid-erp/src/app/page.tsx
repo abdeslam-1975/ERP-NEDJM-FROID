@@ -6,9 +6,21 @@ import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+const REDIRECT_NOTICES: Record<string, string> = {
+  hidden:
+    "Cette page n'est pas affichée pour votre rôle (Paramètres → Interface). · هذه الصفحة غير معروضة لدورك.",
+  forbidden: "Accès refusé pour votre rôle. · الوصول مرفوض لدورك.",
+};
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const workspace = await getWorkspaceProfile();
   if (!workspace) redirect("/login");
+  const { error } = await searchParams;
+  const notice = error ? REDIRECT_NOTICES[error] : undefined;
 
   const kpis = [
     {
@@ -53,6 +65,11 @@ export default async function DashboardPage() {
   return (
     <AppShell title="Tableau de Bord">
       <div className="space-y-8">
+        {notice ? (
+          <p className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+            {notice}
+          </p>
+        ) : null}
         <section className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-2xl">
             <p className="text-sm font-medium text-brand">

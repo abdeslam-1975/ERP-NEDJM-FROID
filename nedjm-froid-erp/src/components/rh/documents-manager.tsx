@@ -331,6 +331,7 @@ export function DocumentsManager({
         description="سجل إلكتروني مركزي. كل أمر يحصل على معرّف داخلي فريد ورقم مرجعي لا يُعاد استخدامه. · Registre central : identifiant unique (UUID) et numéro de référence non réutilisable."
       />
       <RhTabs
+        uiKey="hr_documents"
         items={[
           { id: "corr", label: "أوامر المهمة — Ordres de mission" },
           { id: "files", label: "الوثائق الرسمية — Pièces officielles" },

@@ -1,24 +1,45 @@
+import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
+import { RhPageHeader } from "@/components/rh/rh-ui";
+import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
+import { getUiLayout } from "@/lib/ui/layout";
+import { isPathBlocked, resolveTabset } from "@/lib/ui/resolve";
 
-export default function ParametresPage() {
+export const dynamic = "force-dynamic";
+
+export default async function ParametresPage() {
+  const [workspace, layout] = await Promise.all([getWorkspaceProfile(), getUiLayout()]);
+  const cards = resolveTabset(layout, "settings").filter(
+    (card) => card.href && (!card.superAdminOnly || workspace?.isSuperAdmin) && !isPathBlocked(layout, card.href),
+  );
+
   return (
     <AppShell title="Paramètres">
-      <div className="rounded-lg border border-border bg-surface p-8">
-        <p className="text-sm font-medium text-brand">
-          Paramètres · الإعدادات
-        </p>
-        <h2 className="mt-2 font-display text-2xl font-semibold">
-          Paramètres de l&apos;espace de travail
-        </h2>
-        <p className="mt-2 max-w-2xl text-foreground/70">
-          Écran placeholder. Rôles, variables légales, barème IRG et clôture des
-          périodes seront accessibles depuis ce module.
-        </p>
-        <ul className="mt-6 list-disc space-y-2 ps-5 text-sm text-foreground/75">
-          <li>Utilisateurs &amp; invitations (`sys_users`)</li>
-          <li>Rôles &amp; matrice (`sys_roles`, `sys_permissions`)</li>
-          <li>Variables légales (`ref_global_vars`)</li>
-        </ul>
+      <div className="space-y-6">
+        <RhPageHeader
+          eyebrow="Administration · الإدارة"
+          title="Paramètres · الإعدادات"
+          description="Tous les réglages de l'application au même endroit. Chaque écran garde ses propres droits d'accès."
+        />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {cards.map((card) => (
+            <Link
+              key={card.key}
+              href={card.href!}
+              className="group rounded-2xl border border-border/80 bg-surface p-5 shadow-[var(--card-shadow)] transition hover:border-brand/50"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <p className="font-display text-lg font-semibold text-foreground group-hover:text-brand">{card.label}</p>
+                {card.labelArShown ? (
+                  <span className="text-sm text-foreground/55" dir="rtl">
+                    {card.labelArShown}
+                  </span>
+                ) : null}
+              </div>
+              {card.descriptionFr ? <p className="mt-2 text-sm text-foreground/65">{card.descriptionFr}</p> : null}
+            </Link>
+          ))}
+        </div>
       </div>
     </AppShell>
   );

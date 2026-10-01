@@ -63,6 +63,7 @@ export function RhParametres({
       {loadError ? <RhAlert tone="danger">{loadError}</RhAlert> : null}
       <div className="flex flex-wrap items-center gap-2">
         <RhTabs
+          uiKey="rh_settings"
           items={[
             { id: "salary", label: "Rubriques de salaire" },
             { id: "fiche", label: "Modèle de fiche" },

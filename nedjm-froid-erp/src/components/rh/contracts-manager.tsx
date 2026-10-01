@@ -456,6 +456,7 @@ export function ContractsManager({
           onClose={() => setOpen(false)}
           tabs={
             <RhTabs
+              uiKey="hr_contract_form"
               items={[
                 { id: "contrat", label: bi("Contrat de travail", "عقد العمل") },
                 { id: "affectations", label: bi("Affectations", "التعيينات") },

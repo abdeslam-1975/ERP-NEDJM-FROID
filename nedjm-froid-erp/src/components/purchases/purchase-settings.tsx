@@ -2,6 +2,7 @@
 
 import { useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
   updateNumberSequence,
   upsertDocumentProfile,
@@ -16,6 +17,12 @@ import {
 import { Button } from "@/components/ui/button";
 
 type Tab = "profiles" | "situations" | "stamp" | "sequences";
+const SETTINGS_TABS: { id: Tab; label: string }[] = [
+  { id: "profiles", label: "Profils d’impression" },
+  { id: "situations", label: "Types de situation" },
+  { id: "stamp", label: "Timbre légal" },
+  { id: "sequences", label: "Numérotation" },
+];
 const inputClass =
   "h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/15";
 
@@ -28,6 +35,7 @@ export function PurchaseSettings({
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("profiles");
+  const tabs = useUiTabs("purchase_settings", SETTINGS_TABS, tab, setTab);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [message, setMessage] = useState<string | null>(null);
@@ -56,7 +64,7 @@ export function PurchaseSettings({
       {error && <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
       {message && <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">{message}</div>}
       <div className="flex gap-1 rounded-xl border border-border bg-surface p-1">
-        {([["profiles", "Profils d’impression"], ["situations", "Types de situation"], ["stamp", "Timbre légal"], ["sequences", "Numérotation"]] as const).map(([value, label]) => (
+        {tabs.map(({ id: value, label }) => (
           <button key={value} onClick={() => setTab(value)} className={`rounded-lg px-4 py-2 text-sm font-semibold ${tab === value ? "bg-brand text-white" : "hover:bg-surface-muted"}`}>{label}</button>
         ))}
       </div>

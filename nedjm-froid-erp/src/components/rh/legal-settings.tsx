@@ -1293,6 +1293,7 @@ export function LegalSettings({
       {loadError ? <RhAlert tone="danger">{loadError}</RhAlert> : null}
 
       <RhTabs
+        uiKey="rh_legal"
         items={[
           { id: "cnas", label: "CNAS" },
           { id: "cacobatph", label: "CACOBATPH" },

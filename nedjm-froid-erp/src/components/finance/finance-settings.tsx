@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
   deleteFinanceConfig,
   lockFinancePeriod,
@@ -19,6 +20,13 @@ import {
 import { Button } from "@/components/ui/button";
 
 type Tab = "accounts" | "tax" | "methods" | "categories" | "periods";
+const SETTINGS_TABS: { id: Tab; label: string }[] = [
+  { id: "accounts", label: "Comptes" },
+  { id: "tax", label: "TVA" },
+  { id: "methods", label: "Modes de paiement" },
+  { id: "categories", label: "Catégories" },
+  { id: "periods", label: "Clôtures" },
+];
 const today = () => new Date().toISOString().slice(0, 10);
 const inputClass =
   "h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/15";
@@ -32,6 +40,7 @@ export function FinanceSettings({
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("accounts");
+  const tabs = useUiTabs("finance_settings", SETTINGS_TABS, tab, setTab);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [message, setMessage] = useState<string | null>(null);
@@ -67,15 +76,7 @@ export function FinanceSettings({
       {error && <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
       {message && <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">{message}</div>}
       <div className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-surface p-1">
-        {(
-          [
-            ["accounts", "Comptes"],
-            ["tax", "TVA"],
-            ["methods", "Modes de paiement"],
-            ["categories", "Catégories"],
-            ["periods", "Clôtures"],
-          ] as const
-        ).map(([value, label]) => (
+        {tabs.map(({ id: value, label }) => (
           <button
             key={value}
             onClick={() => setTab(value)}

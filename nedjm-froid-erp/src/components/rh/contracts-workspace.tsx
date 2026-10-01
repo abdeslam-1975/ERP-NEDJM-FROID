@@ -73,6 +73,7 @@ export function ContractsWorkspace({
   return (
     <RhPage>
       <RhTabs
+        uiKey="hr_contract_page"
         items={[
           { id: "contrat", label: bi("Contrat de travail", "عقد العمل") },
           { id: "rubriques", label: bi("Rubriques de salaire", "بنود الأجر") },

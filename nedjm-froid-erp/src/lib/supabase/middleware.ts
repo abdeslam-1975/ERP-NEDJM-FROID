@@ -3,8 +3,17 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const PASSWORD_RESET_PATH = "/compte/changer-mot-de-passe";
 
+/** Request path forwarded to server components (AppShell blocks the routes hidden in Paramètres → Interface). */
+export const PATHNAME_HEADER = "x-nf-pathname";
+
+function forward(request: NextRequest) {
+  const headers = new Headers(request.headers);
+  headers.set(PATHNAME_HEADER, request.nextUrl.pathname);
+  return NextResponse.next({ request: { headers } });
+}
+
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+  let supabaseResponse = forward(request);
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -36,7 +45,7 @@ export async function updateSession(request: NextRequest) {
         cookiesToSet.forEach(({ name, value }) =>
           request.cookies.set(name, value),
         );
-        supabaseResponse = NextResponse.next({ request });
+        supabaseResponse = forward(request);
         cookiesToSet.forEach(({ name, value, options }) =>
           supabaseResponse.cookies.set(name, value, options),
         );

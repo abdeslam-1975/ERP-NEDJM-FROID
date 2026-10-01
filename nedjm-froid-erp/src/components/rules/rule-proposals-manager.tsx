@@ -148,6 +148,7 @@ export function RuleProposalsManager({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <RhTabs
+          uiKey="rule_proposals"
           items={[
             { id: "open", label: `En cours (${counts.open})` },
             { id: "submitted", label: `À approuver (${counts.submitted})` },

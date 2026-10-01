@@ -763,6 +763,7 @@ export function AttendanceManager({
           title={`${MONTHS[month - 1]} ${year}`}
           actions={
             <RhTabs
+              uiKey="hr_attendance"
               items={[
                 { id: "site", label: "Par chantier" },
                 { id: "employee", label: "Par employé" },

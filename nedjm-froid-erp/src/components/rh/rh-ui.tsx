@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Fragment } from "react";
+import { useUiTabs } from "@/components/layout/ui-layout-context";
 
 /* —— tokens (Tailwind) —— */
 export const rhInput =
@@ -191,17 +192,21 @@ export function RhTabs({
   items,
   value,
   onChange,
+  uiKey,
 }: {
   items: { id: string; label: string }[];
   value: string;
   onChange: (id: string) => void;
+  /** Tabset of the interface catalogue (src/lib/ui/registry.ts): hidden / ordered / renamed per role. */
+  uiKey?: string;
 }) {
+  const shown = useUiTabs(uiKey, items, value, onChange);
   return (
     <div
       role="tablist"
       className="flex flex-wrap gap-1 rounded-2xl border border-border/60 bg-surface-muted/60 p-1"
     >
-      {items.map((item) => {
+      {shown.map((item) => {
         const active = item.id === value;
         return (
           <button

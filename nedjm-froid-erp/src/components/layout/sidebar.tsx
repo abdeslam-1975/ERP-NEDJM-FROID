@@ -2,79 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useMemo } from "react";
 import { LogoutButton } from "@/components/layout/logout-button";
+import { useUiLayout } from "@/components/layout/ui-layout-context";
+import type { UiIcon } from "@/lib/ui/registry";
+import { resolveNav } from "@/lib/ui/resolve";
 
-type NavItem = {
-  href: string;
-  labelFr: string;
-  labelAr: string;
-  icon: "home" | "users" | "contract" | "calendar" | "pay" | "docs" | "settings" | "site" | "finance" | "cart" | "shield";
-};
-
-type NavGroup = {
-  titleFr: string;
-  titleAr: string;
-  items: NavItem[];
-};
-
-const navGroups: NavGroup[] = [
-  {
-    titleFr: "Pilotage",
-    titleAr: "القيادة",
-    items: [
-      { href: "/", labelFr: "Tableau de Bord", labelAr: "لوحة القيادة", icon: "home" },
-      { href: "/simulateur", labelFr: "Simulateur", labelAr: "المحاكي", icon: "docs" },
-      { href: "/decisions", labelFr: "Centre de décisions", labelAr: "مركز القرارات", icon: "shield" },
-    ],
-  },
-  {
-    titleFr: "Ressources Humaines",
-    titleAr: "الموارد البشرية",
-    items: [
-      {
-        href: "/rh",
-        labelFr: "Ressources Humaines",
-        labelAr: "الموارد البشرية",
-        icon: "users",
-      },
-    ],
-  },
-  {
-    titleFr: "Sites & activités",
-    titleAr: "الورشات",
-    items: [
-      { href: "/referentiels/chantiers", labelFr: "Chantiers", labelAr: "الورشات", icon: "site" },
-      { href: "/referentiels/activites", labelFr: "Codes d'activité", labelAr: "رموز النشاط", icon: "site" },
-    ],
-  },
-  {
-    titleFr: "Commercial",
-    titleAr: "التجاري",
-    items: [
-      { href: "/referentiels/clients", labelFr: "Clients", labelAr: "العملاء", icon: "users" },
-      { href: "/referentiels/contrats", labelFr: "Contrats clients", labelAr: "عقود العملاء", icon: "contract" },
-    ],
-  },
-  {
-    titleFr: "Finance & Achats",
-    titleAr: "المالية والمشتريات",
-    items: [
-      { href: "/finance", labelFr: "Banque & Caisse", labelAr: "البنك والصندوق", icon: "finance" },
-      { href: "/achats", labelFr: "Achats", labelAr: "المشتريات", icon: "cart" },
-    ],
-  },
-  {
-    titleFr: "Administration",
-    titleAr: "الإدارة",
-    items: [
-      { href: "/parametres/utilisateurs", labelFr: "Utilisateurs", labelAr: "المستخدمون", icon: "users" },
-      { href: "/administration/roles", labelFr: "Rôles & droits", labelAr: "الأدوار", icon: "shield" },
-      { href: "/parametres", labelFr: "Paramètres", labelAr: "إعدادات عامة", icon: "settings" },
-    ],
-  },
-];
-
-function NavIcon({ name }: { name: NavItem["icon"] }) {
+export function NavIcon({ name }: { name: UiIcon }) {
   const common = {
     width: 18,
     height: 18,
@@ -170,6 +104,10 @@ function NavIcon({ name }: { name: NavItem["icon"] }) {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const layout = useUiLayout();
+  const navGroups = useMemo(() => resolveNav(layout), [layout]);
+  const appName = layout.theme.app_name ?? "NEDJM FROID";
+  const appSubtitle = layout.theme.app_subtitle ?? "ERP · نجم فرويد";
 
   return (
     <aside className="flex w-[15.5rem] shrink-0 flex-col bg-sidebar text-sidebar-fg">
@@ -186,29 +124,27 @@ export function Sidebar() {
         </div>
         <div>
           <p className="font-display text-[15px] font-bold tracking-tight text-white">
-            NEDJM FROID
+            {appName}
           </p>
-          <p className="text-[11px] text-[color:var(--sidebar-muted)]">ERP · نجم فرويد</p>
+          <p className="text-[11px] text-[color:var(--sidebar-muted)]">{appSubtitle}</p>
         </div>
       </div>
 
       <nav className="mt-4 flex-1 space-y-5 overflow-y-auto px-3 pb-4">
         {navGroups.map((group) => (
-          <div key={group.titleFr}>
+          <div key={group.key}>
             <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-[color:var(--sidebar-muted)]">
               {group.titleFr}
             </p>
             <ul className="space-y-1">
               {group.items.map((item) => {
                 const active =
-                  item.href === "/"
+                  item.activeHref === "/"
                     ? pathname === "/"
-                    : item.href === "/rh"
-                      ? pathname === "/rh" || pathname.startsWith("/rh/")
-                      : pathname === item.href ||
-                        pathname.startsWith(`${item.href}/`);
+                    : pathname === item.activeHref ||
+                      pathname.startsWith(`${item.activeHref}/`);
                 return (
-                  <li key={item.href}>
+                  <li key={item.key}>
                     <Link
                       href={item.href}
                       className={`flex items-center gap-3 rounded-xl px-3 py-2.5 transition ${
@@ -222,7 +158,7 @@ export function Sidebar() {
                       </span>
                       <span className="min-w-0">
                         <span className="block truncate text-[13px] font-semibold leading-tight">
-                          {item.labelFr}
+                          {item.label}
                         </span>
                         <span className="block truncate text-[10px] opacity-70" dir="rtl">
                           {item.labelAr}
