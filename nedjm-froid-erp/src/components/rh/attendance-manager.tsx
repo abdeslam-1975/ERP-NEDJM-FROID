@@ -1,6 +1,15 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { saveAttendanceMonth, type AttendanceCell } from "@/lib/actions/hr-ops";
 import { parseAttendanceImport } from "@/lib/actions/hr-attendance-import";
@@ -29,33 +38,42 @@ import {
   paintAttendanceCells,
 } from "@/lib/hr/attendance-source";
 import { Button } from "@/components/ui/button";
-import {
-  RhAlert,
-  RhModal,
-  RhPageHeader,
-  RhTableWrap,
-  RhTabs,
-  rhInput,
-} from "@/components/rh/rh-ui";
+import { RhAlert, RhTabs } from "@/components/rh/rh-ui";
 
 type SiteOpt = { id: string; name_fr: string };
 type SearchMode = "site" | "employee";
 
 const MONTHS = [
-  "JANVIER",
-  "FEVRIER",
-  "MARS",
-  "AVRIL",
-  "MAI",
-  "JUIN",
-  "JUILLET",
-  "AOUT",
-  "SEPTEMBRE",
-  "OCTOBRE",
-  "NOVEMBRE",
-  "DECEMBRE",
+  "Janvier",
+  "Février",
+  "Mars",
+  "Avril",
+  "Mai",
+  "Juin",
+  "Juillet",
+  "Août",
+  "Septembre",
+  "Octobre",
+  "Novembre",
+  "Décembre",
+];
+const MONTHS_SHORT = [
+  "Janv.",
+  "Févr.",
+  "Mars",
+  "Avr.",
+  "Mai",
+  "Juin",
+  "Juil.",
+  "Août",
+  "Sept.",
+  "Oct.",
+  "Nov.",
+  "Déc.",
 ];
 const WEEK = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
+/** Algerian weekend: Friday and Saturday. */
+const WEEKEND = new Set([5, 6]);
 
 type Person = {
   id: string;
@@ -81,33 +99,133 @@ type MonthCard = {
 
 let cardTimer: number | null = null;
 
-const PROPOSED_STYLE = { background: "#f1f5f9", color: "#94a3b8" } as const;
+const PROPOSED_CLS =
+  "italic bg-slate-100 text-slate-400 dark:bg-slate-800/60 dark:text-slate-500";
+const SELECT_CLS =
+  "h-9 rounded-xl border border-border/80 bg-surface px-3 text-sm text-foreground outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10";
+const GHOST_BTN =
+  "inline-flex h-9 items-center gap-2 rounded-xl border border-border/80 bg-surface px-3 text-sm font-medium text-foreground/80 transition hover:bg-surface-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50";
 
-function ToolbarBtn({
-  className,
-  children,
-  onClick,
-  disabled,
-  href,
-}: {
-  className: string;
-  children: string;
-  onClick?: () => void;
-  disabled?: boolean;
-  href?: string;
-}) {
-  const cls = `inline-flex h-8 items-center rounded px-3 text-[11px] font-bold text-white shadow-sm disabled:opacity-50 ${className}`;
-  if (href) {
-    return (
-      <Link href={href} className={cls}>
-        {children}
-      </Link>
-    );
-  }
+/** Legend colours from the catalogue are saturated; grid cells use a soft tint of them. */
+function softTone(bg?: string | null): CSSProperties | undefined {
+  if (!bg) return undefined;
+  return {
+    background: `color-mix(in oklab, ${bg} 26%, var(--surface))`,
+    color: `color-mix(in oklab, ${bg} 50%, var(--foreground))`,
+  };
+}
+
+function Icon({ d, className = "h-4 w-4" }: { d: string; className?: string }) {
   return (
-    <button type="button" className={cls} onClick={onClick} disabled={disabled}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <path d={d} />
+    </svg>
+  );
+}
+
+const ICONS = {
+  left: "M15 18l-6-6 6-6",
+  right: "M9 18l6-6-6-6",
+  calendar: "M8 3v3m8-3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z",
+  upload: "M12 16V4m0 0-4 4m4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3",
+  download: "M12 4v12m0 0-4-4m4 4 4-4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3",
+  print: "M7 9V4h10v5M7 17H5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2M7 14h10v6H7z",
+  more: "M5 12h.01M12 12h.01M19 12h.01",
+  check: "M5 12.5l4.5 4.5L19 7.5",
+  search: "M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Zm9 2-4-4",
+  swatch: "M12 3a9 9 0 1 0 0 18c1 0 1.5-.7 1.5-1.5 0-1.2-1-1.5-1-2.5s.8-1.5 2-1.5H17a4 4 0 0 0 4-4c0-4.7-4-8.5-9-8.5ZM7.5 12h.01M10 7.5h.01M15 7.5h.01",
+  close: "M6 6l12 12M18 6 6 18",
+  columns: "M4 5h16v14H4zM10 5v14M16 5v14",
+  user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0",
+  file: "M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7l-4-4Zm0 0v4h4",
+  settings: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7.4-3a7.4 7.4 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.5 7.5 0 0 0-2-1.2L14.5 3h-5l-.4 2.6a7.5 7.5 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7.5 7.5 0 0 0 2 1.2l.4 2.6h5l.4-2.6a7.5 7.5 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z",
+  inbox: "M4 13h4l1.5 3h5L16 13h4M5 5h14l1 8v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6l1-8Z",
+} as const;
+
+/** Trigger + floating panel closed by outside click or Escape. */
+function Popover({
+  trigger,
+  title,
+  align = "end",
+  buttonClass = GHOST_BTN,
+  children,
+}: {
+  trigger: ReactNode;
+  title?: string;
+  align?: "start" | "end";
+  buttonClass?: string;
+  children: (close: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        className={buttonClass}
+        title={title}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {trigger}
+      </button>
+      {open ? (
+        <div
+          className={`absolute top-full z-40 mt-2 min-w-[14rem] rounded-2xl border border-border/70 bg-surface p-1.5 shadow-[0_18px_48px_-16px_rgba(15,23,42,0.35)] ring-1 ring-black/5 ${
+            align === "end" ? "right-0" : "left-0"
+          }`}
+        >
+          {children(() => setOpen(false))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const MENU_ITEM =
+  "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-foreground/80 transition hover:bg-surface-muted hover:text-foreground";
+
+function StatusChip({
+  tone,
+  children,
+}: {
+  tone: "neutral" | "warning" | "success" | "info";
+  children: ReactNode;
+}) {
+  const map = {
+    neutral: "bg-surface-muted text-foreground/65",
+    warning: "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200",
+    success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200",
+    info: "bg-sky-50 text-sky-800 dark:bg-sky-950/40 dark:text-sky-200",
+  }[tone];
+  return (
+    <span className={`inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${map}`}>
       {children}
-    </button>
+    </span>
   );
 }
 
@@ -183,6 +301,7 @@ export function AttendanceManager({
   );
   const [year, setYear] = useState(initial.period?.year ?? now.getFullYear());
   const [month, setMonth] = useState(initial.period?.month ?? now.getMonth() + 1);
+  const [pickerYear, setPickerYear] = useState(year);
   const [cells, setCells] = useState<AttendanceCell[]>([]);
   const [loadedAt, setLoadedAt] = useState<string | null>(null);
   const [periodStatus, setPeriodStatus] = useState<PayrollRunStatus | null>(null);
@@ -267,13 +386,40 @@ export function AttendanceManager({
     [legends],
   );
 
+  useEffect(() => {
+    if (!info) return;
+    const t = window.setTimeout(() => setInfo(null), 4500);
+    return () => window.clearTimeout(t);
+  }, [info]);
+
+  const cardOpen = monthCard !== null;
+  useEffect(() => {
+    if (!cardOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMonthCard(null);
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [cardOpen]);
+
   function iso(day: number) {
     return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   }
 
-  function weekday(day: number) {
-    return WEEK[new Date(year, month - 1, day).getDay()];
+  function dayOfWeek(day: number) {
+    return new Date(year, month - 1, day).getDay();
   }
+
+  function weekday(day: number) {
+    return WEEK[dayOfWeek(day)];
+  }
+
+  function isWeekend(day: number) {
+    return WEEKEND.has(dayOfWeek(day));
+  }
+
+  const todayDay =
+    now.getFullYear() === year && now.getMonth() + 1 === month ? now.getDate() : null;
 
   function cellKey(employeeId: string, day: number) {
     return `${employeeId}|${iso(day)}`;
@@ -378,7 +524,7 @@ export function AttendanceManager({
         nextDrafts[`${cell.employee_id}|${cell.work_date}`] = cell.legend_code;
       }
       setDrafts(nextDrafts);
-      setInfo(message ?? `${MONTHS[m - 1]} ${y} · ${sites.find((s) => s.id === sid)?.name_fr ?? ""}`);
+      if (message) setInfo(message);
     });
   }
 
@@ -388,6 +534,14 @@ export function AttendanceManager({
   }, [siteId, year, month]);
 
   const frozenMessage = attendanceFrozenMessage(periodStatus);
+  const hasUnsaved = dirty || rowsDirty;
+
+  function confirmDiscard() {
+    return (
+      !hasUnsaved ||
+      window.confirm("Des modifications non validées seront perdues. Continuer ?")
+    );
+  }
 
   function save() {
     setError(null);
@@ -433,7 +587,7 @@ export function AttendanceManager({
         const payrollNotice = payrollSignalNotice(r.data.payroll);
         if (payrollNotice) messages.push(payrollNotice);
       }
-      loadMonth(year, month, siteId, `${messages.join(" · ")}. · تم اعتماد القيم.`);
+      loadMonth(year, month, siteId, messages.join(" · "));
     });
   }
 
@@ -482,29 +636,38 @@ export function AttendanceManager({
         }
       }
       setInfo(
-        `Import : ${rows} employé(s), ${applied} jour(s)${hoursApplied ? `, ${hoursApplied} valeur(s) d'heures` : ""} — vérifiez puis « Valider les valeurs renseignées ». · راجع ثم اعتمد القيم.`,
+        `Import : ${rows} employé(s), ${applied} jour(s)${hoursApplied ? `, ${hoursApplied} valeur(s) d'heures` : ""}. Vérifiez puis validez.`,
       );
       if (errors.length) setError(`${errors.length} anomalie(s) : ${errors.join(" · ")}`);
     });
   }
 
-  function nextMonth() {
-    const next = month === 12 ? 1 : month + 1;
-    const nextYear = month === 12 ? year + 1 : year;
-    setMonth(next);
-    setYear(nextYear);
+  function goToMonth(y: number, m: number) {
+    if ((y === year && m === month) || !confirmDiscard()) return false;
+    setYear(y);
+    setMonth(m);
     setCells([]);
     setDirty(false);
     setDrafts({});
-    setInfo(`${MONTHS[next - 1]} ${nextYear}`);
+    return true;
+  }
+
+  function shiftMonth(delta: number) {
+    const d = new Date(year, month - 1 + delta, 1);
+    goToMonth(d.getFullYear(), d.getMonth() + 1);
+  }
+
+  function changeSite(id: string) {
+    if (id === siteId || !confirmDiscard()) return;
+    setSiteId(id);
   }
 
   function pickEmployee(person: Person) {
+    if (person.site_id !== siteId && !confirmDiscard()) return;
     setPickedEmployee(person);
     setEmpQuery(`${person.matricule} · ${person.last_name} ${person.first_name}`);
     setSiteId(person.site_id);
     setError(null);
-    setInfo(`${person.last_name} ${person.first_name} · ${person.site_name}`);
   }
 
   function countCode(employeeId: string, code: string) {
@@ -538,6 +701,14 @@ export function AttendanceManager({
   const cardPerson = monthCard
     ? people.find((p) => p.id === monthCard.employeeId)
     : null;
+  const readOnly = Boolean(access) && !canEditDays && editableValues.size === 0;
+  const importDisabled = pending || !siteId || Boolean(frozenMessage) || (!canEditDays && editableValues.size === 0);
+  const saveDisabled =
+    pending ||
+    !siteId ||
+    people.length === 0 ||
+    Boolean(frozenMessage) ||
+    (!canEditDays && !(editableValues.size > 0 && rowsDirty));
 
   const tableColumns = shownColumns.filter(
     (c) => showExtra || (c.kind !== "CODE_COUNTS" && c.kind !== "TOTAL"),
@@ -546,32 +717,49 @@ export function AttendanceManager({
     (n, c) => n + (c.kind === "DAYS" ? days : c.kind === "CODE_COUNTS" ? extraCodes.length : 1),
     0,
   );
-  const STICKY = "sticky left-0 z-10";
+
+  const STICKY = "sticky left-0";
+  const TH =
+    "sticky top-0 z-10 border-b border-border bg-surface-muted py-2 text-[11px] font-semibold text-foreground/55";
+  const TH_WEEKEND = "bg-[color-mix(in_oklab,var(--border)_60%,var(--surface-muted))]";
+  const TD = "border-b border-border/50";
+  const TF =
+    "sticky bottom-0 z-10 border-t border-border bg-surface-muted py-2 text-[11px] font-semibold tabular-nums text-foreground/70";
 
   function renderHeader(col: AttendanceColumn): ReactNode {
     if (col.kind === "DAYS") {
-      return Array.from({ length: days }, (_, i) => (
-        <th
-          key={i}
-          className="min-w-[42px] border border-slate-300 px-0 py-1 text-center leading-tight"
-        >
-          <div>{i + 1}</div>
-          <div className="text-[9px] font-normal uppercase">{weekday(i + 1)}</div>
-        </th>
-      ));
+      return Array.from({ length: days }, (_, i) => {
+        const day = i + 1;
+        const today = day === todayDay;
+        return (
+          <th
+            key={i}
+            className={`${TH} min-w-[38px] px-0.5 text-center ${isWeekend(day) ? TH_WEEKEND : ""}`}
+          >
+            <div
+              className={`mx-auto flex w-8 flex-col items-center rounded-lg py-0.5 leading-tight ${
+                today ? "bg-brand text-white shadow-sm shadow-brand/30" : ""
+              }`}
+            >
+              <span className="text-[12px] font-semibold tabular-nums">{day}</span>
+              <span className="text-[9px] font-medium lowercase opacity-70">{weekday(day)}</span>
+            </div>
+          </th>
+        );
+      });
     }
     if (col.kind === "CODE_COUNTS") {
       return extraCodes.map((code) => (
-        <th key={code} className="min-w-[36px] border border-slate-300 bg-orange-50 px-1 py-1">
+        <th key={code} className={`${TH} min-w-[38px] px-1 text-center`}>
           {code}
         </th>
       ));
     }
-    const sticky = col.source === "LAST_NAME" ? `${STICKY} z-20 bg-slate-100` : "";
-    const tone = col.kind === "TOTAL" ? "min-w-[36px] bg-orange-100 px-1" : "px-2 text-left";
+    const sticky = col.source === "LAST_NAME" ? `${STICKY} z-30` : "";
+    const align = col.kind === "TOTAL" ? "min-w-[42px] px-1 text-center" : "px-3 text-left";
     return (
       <th
-        className={`whitespace-nowrap border border-slate-300 py-1 ${tone} ${sticky}`}
+        className={`${TH} whitespace-nowrap uppercase tracking-[0.06em] ${align} ${sticky}`}
         title={col.label_ar ?? undefined}
       >
         {col.label_fr}
@@ -581,44 +769,41 @@ export function AttendanceManager({
 
   function renderDayCells(p: Person): ReactNode {
     return Array.from({ length: days }, (_, i) => {
-      const key = cellKey(p.id, i + 1);
+      const day = i + 1;
+      const key = cellKey(p.id, day);
       const cell = grid.get(key);
       const stored = cell?.legend_code ?? "";
       const value = drafts[key] ?? stored;
       const legend = value ? legendMap.get(value.toUpperCase()) : undefined;
       const proposed = isAutoProposed(cell) && value === stored;
       const origin = value === stored ? cellOriginLabel(cell) : "";
+      const tone = proposed ? undefined : softTone(legend?.color_bg);
+      const fallback = isWeekend(day) ? "bg-surface-muted/70" : "bg-transparent";
+      const omMark = !proposed && value === stored && cell?.source_code === "OM";
       return (
-        <td key={i} className="border border-slate-200 p-0">
+        <td key={i} className={`${TD} border-r border-r-border/30 p-[2px]`}>
           <input
             readOnly={!canEditDays}
-            className={`h-7 w-full min-w-[42px] border-0 bg-transparent text-center text-[10px] font-bold uppercase outline-none ${
-              proposed ? "italic" : ""
-            } ${canEditDays ? "" : "cursor-default"}`}
+            className={`h-8 w-full min-w-[34px] rounded-md border-0 text-center text-[11px] font-semibold uppercase outline-none transition focus:ring-2 focus:ring-brand ${
+              proposed ? PROPOSED_CLS : tone ? "" : fallback
+            } ${canEditDays ? "cursor-pointer hover:ring-1 hover:ring-brand/40" : "cursor-default"}`}
             style={
-              proposed
-                ? PROPOSED_STYLE
-                : {
-                    background: legend?.color_bg ?? "#ffffff",
-                    color: legend?.color_fg ?? "#111",
-                    boxShadow:
-                      value === stored && cell?.source_code === "OM"
-                        ? "inset 0 -2px 0 rgba(15, 23, 42, 0.45)"
-                        : undefined,
-                  }
+              omMark
+                ? { ...tone, boxShadow: "inset 0 -2px 0 rgba(15, 23, 42, 0.4)" }
+                : tone
             }
             value={value}
             title={
               legend
                 ? `${legend.code} · ${legend.label_fr}${origin ? `\n${origin}` : ""}`
-                : "رمز الحضور"
+                : `${day} ${MONTHS[month - 1]}`
             }
             onClick={() => {
               if (!canEditDays) return;
               const snapshot = {
                 employeeId: p.id,
-                start: i + 1,
-                end: i + 1,
+                start: day,
+                end: day,
                 code: value || totauxCode || activeLegends[0]?.code || "",
                 pick: "start" as const,
               };
@@ -638,7 +823,7 @@ export function AttendanceManager({
               }));
             }}
             onBlur={(e) => {
-              if (canEditDays) applyCellCode(p.id, i + 1, e.target.value);
+              if (canEditDays) applyCellCode(p.id, day, e.target.value);
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -654,10 +839,10 @@ export function AttendanceManager({
   function renderValueInput(col: AttendanceColumn, p: Person, placeholder?: string) {
     const edited = rowDrafts[p.id]?.[col.code] !== undefined;
     return (
-      <td className="border border-slate-200 p-0">
+      <td className={`${TD} p-[2px]`}>
         <input
-          className={`h-7 w-full min-w-[120px] border-0 px-2 text-[11px] outline-none focus:bg-sky-50 ${
-            edited ? "bg-amber-50" : "bg-transparent"
+          className={`h-8 w-full min-w-[120px] rounded-md border-0 px-2 text-[12px] outline-none transition placeholder:text-foreground/30 focus:ring-2 focus:ring-brand ${
+            edited ? "bg-amber-50 dark:bg-amber-950/30" : "bg-transparent hover:bg-surface-muted/60"
           }`}
           type={col.value_type === "number" ? "number" : col.value_type === "date" ? "date" : "text"}
           list={col.catalog_kind === "job_title" ? "attendance-job-titles" : undefined}
@@ -671,20 +856,20 @@ export function AttendanceManager({
   }
 
   function renderCell(col: AttendanceColumn, p: Person, index: number): ReactNode {
-    const td = "whitespace-nowrap border border-slate-200 px-2";
+    const td = `${TD} whitespace-nowrap px-3 text-[12px] text-foreground/75`;
     const editable = Boolean(access?.[col.code]?.edit);
     switch (col.kind) {
       case "DAYS":
         return renderDayCells(p);
       case "CODE_COUNTS":
         return extraCodes.map((code) => (
-          <td key={code} className="border border-slate-200 bg-orange-50/60 px-1 text-center">
+          <td key={code} className={`${TD} px-1 text-center text-[12px] tabular-nums text-foreground/60`}>
             {countCode(p.id, code) || ""}
           </td>
         ));
       case "TOTAL":
         return (
-          <td className="border border-slate-200 bg-orange-50 px-1 text-center">
+          <td className={`${TD} bg-surface-muted/50 px-1 text-center text-[12px] font-semibold tabular-nums`}>
             {col.source === "NJ" ? days : col.source === "COEF" ? coefSum(p.id) || "" : ""}
           </td>
         );
@@ -697,11 +882,21 @@ export function AttendanceManager({
       case "IDENTITY":
         switch (col.source) {
           case "ROW_NO":
-            return <td className="border border-slate-200 px-1 text-center">{index + 1}</td>;
+            return (
+              <td className={`${TD} px-2 text-center text-[11px] tabular-nums text-foreground/40`}>
+                {index + 1}
+              </td>
+            );
           case "MATRICULE":
-            return <td className={`${td} font-mono`}>{p.matricule}</td>;
+            return <td className={`${td} font-mono text-[11px] text-foreground/55`}>{p.matricule}</td>;
           case "LAST_NAME":
-            return <td className={`${td} ${STICKY} bg-white font-semibold`}>{p.last_name}</td>;
+            return (
+              <td
+                className={`${td} ${STICKY} z-20 bg-surface font-semibold text-foreground shadow-[1px_0_0_var(--border)] group-hover:bg-[color-mix(in_oklab,var(--color-brand-muted)_45%,var(--surface))]`}
+              >
+                {p.last_name}
+              </td>
+            );
           case "FIRST_NAME":
             return <td className={td}>{p.first_name}</td>;
           case POSTE_EFFECTIF:
@@ -713,7 +908,7 @@ export function AttendanceManager({
           case "AFFECTATION":
             return <td className={td}>{p.affectation}</td>;
           case "CONTRACT_START":
-            return <td className={td}>{p.start_date}</td>;
+            return <td className={`${td} tabular-nums`}>{p.start_date}</td>;
           default:
             return <td className={td} />;
         }
@@ -725,24 +920,23 @@ export function AttendanceManager({
     tableColumns.find((c) => c.source === "LAST_NAME")?.code ?? tableColumns[0]?.code;
 
   function renderFooter(col: AttendanceColumn, labelHere: boolean): ReactNode {
-    const td = "border border-slate-300";
     if (col.kind === "DAYS") {
       return Array.from({ length: days }, (_, i) => (
-        <td key={i} className={`${td} py-1 text-center`}>
+        <td key={i} className={`${TF} text-center`}>
           {dayTotaux(i + 1) || ""}
         </td>
       ));
     }
     if (col.kind === "CODE_COUNTS") {
       return extraCodes.map((code) => (
-        <td key={code} className={`${td} text-center`}>
+        <td key={code} className={`${TF} text-center`}>
           {people.reduce((n, p) => n + countCode(p.id, code), 0) || ""}
         </td>
       ));
     }
     if (col.kind === "TOTAL") {
       return (
-        <td className={`${td} text-center`}>
+        <td className={`${TF} text-center`}>
           {col.source === "NJ"
             ? days
             : col.source === "COEF"
@@ -751,167 +945,362 @@ export function AttendanceManager({
         </td>
       );
     }
-    const sticky = col.source === "LAST_NAME" ? `${STICKY} bg-yellow-300` : "";
-    return <td className={`${td} px-2 ${sticky}`}>{labelHere ? "TOTAUX" : ""}</td>;
+    const sticky = col.source === "LAST_NAME" ? `${STICKY} z-20 shadow-[1px_0_0_var(--border)]` : "";
+    return (
+      <td className={`${TF} px-3 uppercase tracking-[0.06em] ${sticky}`}>
+        {labelHere ? "Total" : ""}
+      </td>
+    );
   }
+
+  const siteName = sites.find((s) => s.id === siteId)?.name_fr ?? "";
 
   return (
     <div className="-mx-2 space-y-3 sm:-mx-4 print:mx-0">
-      <div className="print:hidden">
-        <RhPageHeader
-          eyebrow="Pointage"
-          title={`${MONTHS[month - 1]} ${year}`}
-          actions={
-            <RhTabs
-              uiKey="hr_attendance"
-              items={[
-                { id: "site", label: "Par chantier" },
-                { id: "employee", label: "Par employé" },
-              ]}
-              value={mode}
-              onChange={(id) => {
-                if (id === "site") {
-                  setMode("site");
-                  setPickedEmployee(null);
-                  setEmpQuery("");
-                } else {
-                  setMode("employee");
-                }
-              }}
-            />
-          }
-        />
+      <div className="hidden print:block">
+        <h2 className="text-lg font-semibold">
+          Pointage · {MONTHS[month - 1]} {year} · {siteName}
+        </h2>
       </div>
 
-      <div className="flex flex-wrap items-end gap-2 print:hidden">
-        <label className="text-xs">
-          Année
-          <input
-            className="mt-1 block h-8 w-24 rounded border border-border px-2 text-sm"
-            type="number"
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-          />
-        </label>
-        <label className="text-xs">
-          Mois
-          <select
-            className="mt-1 block h-8 rounded border border-border bg-white px-2 text-sm"
-            value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/70 bg-surface p-2 shadow-[var(--card-shadow)] print:hidden">
+        <RhTabs
+          uiKey="hr_attendance"
+          items={[
+            { id: "site", label: "Par chantier" },
+            { id: "employee", label: "Par employé" },
+          ]}
+          value={mode}
+          onChange={(id) => {
+            if (id === "site") {
+              setMode("site");
+              setPickedEmployee(null);
+              setEmpQuery("");
+            } else {
+              setMode("employee");
+            }
+          }}
+        />
+
+        <div className="flex items-center rounded-xl border border-border/80 bg-surface">
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-l-xl text-foreground/60 transition hover:bg-surface-muted hover:text-foreground disabled:opacity-40"
+            onClick={() => shiftMonth(-1)}
+            disabled={pending}
+            aria-label="Mois précédent"
           >
-            {MONTHS.map((name, i) => (
-              <option key={name} value={i + 1}>
-                {name}
+            <Icon d={ICONS.left} />
+          </button>
+          <Popover
+            align="start"
+            title="Choisir le mois"
+            buttonClass="inline-flex h-9 min-w-[9.5rem] items-center justify-center gap-2 border-x border-border/80 px-3 text-sm font-semibold text-foreground transition hover:bg-surface-muted"
+            trigger={
+              <span className="inline-flex items-center gap-2" onClick={() => setPickerYear(year)}>
+                <Icon d={ICONS.calendar} className="h-4 w-4 text-brand" />
+                {MONTHS[month - 1]} {year}
+              </span>
+            }
+          >
+            {(close) => (
+              <div className="w-64 p-1.5">
+                <div className="mb-2 flex items-center justify-between">
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-foreground/60 hover:bg-surface-muted"
+                    onClick={() => setPickerYear((y) => y - 1)}
+                    aria-label="Année précédente"
+                  >
+                    <Icon d={ICONS.left} />
+                  </button>
+                  <span className="text-sm font-semibold tabular-nums">{pickerYear}</span>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-foreground/60 hover:bg-surface-muted"
+                    onClick={() => setPickerYear((y) => y + 1)}
+                    aria-label="Année suivante"
+                  >
+                    <Icon d={ICONS.right} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  {MONTHS_SHORT.map((label, i) => {
+                    const active = pickerYear === year && i + 1 === month;
+                    const current = pickerYear === now.getFullYear() && i === now.getMonth();
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        className={`h-9 rounded-lg text-sm transition ${
+                          active
+                            ? "bg-brand font-semibold text-white"
+                            : current
+                              ? "font-semibold text-brand ring-1 ring-brand/40 hover:bg-brand-muted"
+                              : "text-foreground/75 hover:bg-surface-muted"
+                        }`}
+                        onClick={() => {
+                          if (goToMonth(pickerYear, i + 1)) close();
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </Popover>
+          <button
+            type="button"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-r-xl text-foreground/60 transition hover:bg-surface-muted hover:text-foreground disabled:opacity-40"
+            onClick={() => shiftMonth(1)}
+            disabled={pending}
+            aria-label="Mois suivant"
+          >
+            <Icon d={ICONS.right} />
+          </button>
+        </div>
+
+        {mode === "site" ? (
+          <select
+            className={`${SELECT_CLS} min-w-[220px]`}
+            value={siteId}
+            onChange={(e) => changeSite(e.target.value)}
+            aria-label="Chantier"
+          >
+            {sites.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name_fr}
               </option>
             ))}
           </select>
-        </label>
-        {mode === "site" ? (
-          <label className="text-xs">
-            Chantier
-            <select
-              className="mt-1 block h-8 min-w-[200px] rounded border border-border bg-white px-2 text-sm"
-              value={siteId}
-              onChange={(e) => setSiteId(e.target.value)}
-            >
-              {sites.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name_fr}
-                </option>
-              ))}
-            </select>
-          </label>
         ) : (
-          <label className="relative min-w-[280px] flex-1 text-xs">
-            Matricule ou nom / prénom
+          <div className="relative min-w-[280px] flex-1 sm:max-w-md">
+            <Icon
+              d={ICONS.search}
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground/40"
+            />
             <input
-              className="mt-1 block h-8 w-full rounded border border-border px-2 text-sm"
+              className={`${SELECT_CLS} w-full pl-9`}
               value={empQuery}
-              placeholder="09/26 ou NOM PRENOM"
+              placeholder="Matricule ou nom de l'employé"
+              aria-label="Rechercher un employé"
               onChange={(e) => {
                 setEmpQuery(e.target.value);
                 setPickedEmployee(null);
               }}
             />
-            {mode === "employee" && !pickedEmployee && empMatches.length > 0 ? (
-              <div className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded border border-border bg-white shadow">
+            {!pickedEmployee && empMatches.length > 0 ? (
+              <div className="absolute z-40 mt-2 max-h-72 w-full overflow-auto rounded-2xl border border-border/70 bg-surface p-1.5 shadow-[0_18px_48px_-16px_rgba(15,23,42,0.35)]">
                 {empMatches.map((p) => (
                   <button
                     type="button"
                     key={`${p.id}-${p.site_id}`}
-                    className="block w-full px-3 py-2 text-left text-sm hover:bg-brand/10"
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition hover:bg-surface-muted"
                     onClick={() => pickEmployee(p)}
                   >
-                    <span className="font-mono text-brand">{p.matricule}</span>
-                    {" · "}
-                    {p.last_name} {p.first_name}
-                    <span className="block text-[11px] text-foreground/55">
-                      {p.site_name} · {p.poste}
+                    <span className="rounded-md bg-brand-muted px-1.5 py-0.5 font-mono text-[11px] text-brand">
+                      {p.matricule}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">
+                        {p.last_name} {p.first_name}
+                      </span>
+                      <span className="block truncate text-[11px] text-foreground/50">
+                        {[p.site_name, p.poste].filter(Boolean).join(" · ")}
+                      </span>
                     </span>
                   </button>
                 ))}
               </div>
             ) : null}
-          </label>
+          </div>
         )}
-        <ToolbarBtn className="bg-slate-600" href="/rh/parametres">
-          Administration
-        </ToolbarBtn>
-        <ToolbarBtn className="bg-orange-500" href="/rh/employes">
-          Fiche Employé
-        </ToolbarBtn>
-        <ToolbarBtn className="bg-emerald-600" href="/rh/documents?nouveau=om">
-          N° Ordre de Mission
-        </ToolbarBtn>
-        <ToolbarBtn className="bg-green-700" onClick={() => setInfo("Totaux recalculés.")}>
-          Recalculer Totaux
-        </ToolbarBtn>
-        <ToolbarBtn className="bg-sky-600" onClick={nextMonth} disabled={pending}>
-          Mois Suivant
-        </ToolbarBtn>
-        <ToolbarBtn className="bg-violet-600" onClick={() => window.print()}>
-          Archiver Mois
-        </ToolbarBtn>
-        <ToolbarBtn className="bg-slate-800" onClick={() => setShowExtra((v) => !v)}>
-          Totaux & colonnes
-        </ToolbarBtn>
-        {siteId ? (
-          <a
-            className="inline-flex h-8 items-center rounded bg-teal-700 px-3 text-[11px] font-bold text-white shadow-sm"
-            href={`/api/rh/presence/modele?site=${siteId}&year=${year}&month=${month}`}
-            download
+
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {pendingCounts.proposed > 0 ? (
+            <StatusChip tone="neutral">
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+              {pendingCounts.proposed} proposé(s) OM
+            </StatusChip>
+          ) : null}
+          {pendingCounts.edited > 0 ? (
+            <StatusChip tone="warning">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              {pendingCounts.edited} à valider
+            </StatusChip>
+          ) : null}
+          {pendingCounts.imported > 0 ? (
+            <Link href="/rh/presence/imports?vue=validation">
+              <StatusChip tone="info">
+                <Icon d={ICONS.inbox} className="h-3.5 w-3.5" />
+                {pendingCounts.imported} importée(s)
+              </StatusChip>
+            </Link>
+          ) : null}
+          {readOnly ? <StatusChip tone="neutral">Lecture seule</StatusChip> : null}
+          {access &&
+          !readOnly &&
+          !hasUnsaved &&
+          pendingCounts.proposed + pendingCounts.edited + pendingCounts.imported === 0 &&
+          people.length > 0 ? (
+            <StatusChip tone="success">
+              <Icon d={ICONS.check} className="h-3.5 w-3.5" />
+              Tout est validé
+            </StatusChip>
+          ) : null}
+
+          <label
+            className={`${GHOST_BTN} cursor-pointer ${importDisabled ? "pointer-events-none opacity-50" : ""}`}
+            title="Classeur Excel : Matricule + jours 1..31 (+ HS50 / HS75 / HS100)"
           >
-            Modèle Excel
-          </a>
-        ) : null}
-        <label
-          className={`inline-flex h-8 cursor-pointer items-center rounded bg-teal-600 px-3 text-[11px] font-bold text-white shadow-sm ${
-            pending || !siteId || frozenMessage || (!canEditDays && editableValues.size === 0)
-              ? "pointer-events-none opacity-50"
-              : ""
-          }`}
-          title="Classeur : colonne Matricule + jours 1..31 (+ HS50 / HS75 / HS100). · ملف إكسل للأشهر السابقة"
-        >
-          Importer Excel
-          <input
-            type="file"
-            accept=".xlsx"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (file) importExcel(file);
-            }}
-          />
-        </label>
+            <Icon d={ICONS.upload} />
+            Importer
+            <input
+              type="file"
+              accept=".xlsx"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) importExcel(file);
+              }}
+            />
+          </label>
+
+          <Popover
+            title="Légende des codes"
+            buttonClass={`${GHOST_BTN} w-9 justify-center px-0`}
+            trigger={<Icon d={ICONS.swatch} />}
+          >
+            {() => (
+              <div className="max-h-80 w-72 overflow-auto p-1.5">
+                <p className="px-1.5 pb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/45">
+                  Légende
+                </p>
+                <div className="space-y-0.5">
+                  {activeLegends.map((l) => (
+                    <div key={l.id} className="flex items-center gap-2.5 rounded-lg px-1.5 py-1">
+                      <span
+                        className="inline-flex h-6 min-w-[2.25rem] items-center justify-center rounded-md px-1.5 text-[11px] font-semibold"
+                        style={softTone(l.color_bg) ?? undefined}
+                      >
+                        {l.code}
+                      </span>
+                      <span className="truncate text-sm text-foreground/75">{l.label_fr}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-2.5 rounded-lg px-1.5 py-1">
+                    <span
+                      className={`inline-flex h-6 min-w-[2.25rem] items-center justify-center rounded-md px-1.5 text-[11px] font-semibold ${PROPOSED_CLS}`}
+                    >
+                      {totauxCode || "MS"}
+                    </span>
+                    <span className="text-sm text-foreground/75">Proposé par ordre de mission</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Popover>
+
+          <Popover
+            title="Plus d'actions"
+            buttonClass={`${GHOST_BTN} w-9 justify-center px-0`}
+            trigger={<Icon d={ICONS.more} />}
+          >
+            {(close) => (
+              <div className="w-60">
+                {siteId ? (
+                  <a
+                    className={MENU_ITEM}
+                    href={`/api/rh/presence/modele?site=${siteId}&year=${year}&month=${month}`}
+                    download
+                    onClick={close}
+                  >
+                    <Icon d={ICONS.download} className="h-4 w-4 text-foreground/50" />
+                    Modèle Excel
+                  </a>
+                ) : null}
+                <button
+                  type="button"
+                  className={MENU_ITEM}
+                  onClick={() => {
+                    close();
+                    window.print();
+                  }}
+                >
+                  <Icon d={ICONS.print} className="h-4 w-4 text-foreground/50" />
+                  Imprimer / archiver le mois
+                </button>
+                <button
+                  type="button"
+                  className={MENU_ITEM}
+                  onClick={() => setShowExtra((v) => !v)}
+                >
+                  <Icon d={ICONS.columns} className="h-4 w-4 text-foreground/50" />
+                  <span className="flex-1">Totaux par code</span>
+                  <span
+                    className={`relative h-5 w-9 rounded-full transition ${showExtra ? "bg-brand" : "bg-border"}`}
+                  >
+                    <span
+                      className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${
+                        showExtra ? "left-[1.125rem]" : "left-0.5"
+                      }`}
+                    />
+                  </span>
+                </button>
+                <div className="my-1.5 h-px bg-border/70" />
+                <Link className={MENU_ITEM} href="/rh/employes" onClick={close}>
+                  <Icon d={ICONS.user} className="h-4 w-4 text-foreground/50" />
+                  Fiche employé
+                </Link>
+                <Link className={MENU_ITEM} href="/rh/documents?nouveau=om" onClick={close}>
+                  <Icon d={ICONS.file} className="h-4 w-4 text-foreground/50" />
+                  Nouvel ordre de mission
+                </Link>
+                <Link className={MENU_ITEM} href="/rh/presence/imports" onClick={close}>
+                  <Icon d={ICONS.inbox} className="h-4 w-4 text-foreground/50" />
+                  Imports d&apos;archives
+                </Link>
+                <Link className={MENU_ITEM} href="/rh/parametres" onClick={close}>
+                  <Icon d={ICONS.settings} className="h-4 w-4 text-foreground/50" />
+                  Paramètres
+                </Link>
+              </div>
+            )}
+          </Popover>
+
+          <Button
+            className="h-9 gap-2 px-4"
+            disabled={saveDisabled}
+            onClick={save}
+            title="Valider les valeurs renseignées"
+          >
+            <Icon d={ICONS.check} />
+            Valider
+            {hasUnsaved ? <span className="h-2 w-2 rounded-full bg-amber-300" /> : null}
+          </Button>
+        </div>
       </div>
 
-      {(error || info) && (
+      {error ? (
         <div className="print:hidden">
-          <RhAlert tone={error ? "danger" : "success"}>{error || info}</RhAlert>
+          <RhAlert tone="danger">
+            <div className="flex items-start gap-3">
+              <span className="flex-1">{error}</span>
+              <button
+                type="button"
+                className="shrink-0 rounded-md p-0.5 opacity-60 transition hover:opacity-100"
+                onClick={() => setError(null)}
+                aria-label="Fermer"
+              >
+                <Icon d={ICONS.close} />
+              </button>
+            </div>
+          </RhAlert>
         </div>
-      )}
+      ) : null}
 
       {frozenMessage ? (
         <div className="print:hidden">
@@ -919,72 +1308,14 @@ export function AttendanceManager({
         </div>
       ) : null}
 
-      <div className="flex flex-wrap gap-1 print:hidden">
-        {activeLegends.map((l) => (
-          <span
-            key={l.id}
-            className="rounded px-2 py-1 text-[11px] font-bold"
-            style={{
-              background: l.color_bg ?? "#e2e8f0",
-              color: l.color_fg ?? "#111",
-            }}
-            title={l.label_fr}
-          >
-            {l.code}
-          </span>
-        ))}
-        <span
-          className="rounded px-2 py-1 text-[11px] font-bold italic"
-          style={PROPOSED_STYLE}
-          title="Valeur proposée par un ordre de mission, non validée"
-        >
-          MS · proposé par OM (non validé) — مقترح من أمر المهمة
-        </span>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 print:hidden">
-        <p className="text-[12px] text-amber-900">
-          {pendingCounts.proposed > 0 || pendingCounts.edited > 0 || pendingCounts.imported > 0 || dirty || rowsDirty ? (
-            <>
-              <strong>Valeurs non validées — قيم غير معتمدة :</strong>{" "}
-              {pendingCounts.proposed} proposée(s) par ordre de mission
-              {pendingCounts.edited > 0 ? ` · ${pendingCounts.edited} saisie(s) manuelle(s)` : ""}
-              {pendingCounts.imported > 0 ? (
-                <>
-                  {" "}
-                  · {pendingCounts.imported} importée(s), à valider depuis{" "}
-                  <Link href="/rh/presence/imports?vue=validation" className="font-semibold underline">
-                    l&apos;écran des imports
-                  </Link>
-                </>
-              ) : null}
-              {dirty || rowsDirty ? " · modifications en cours" : ""}
-            </>
-          ) : access && !canEditDays && editableValues.size === 0 ? (
-            "Consultation seule pour votre rôle. · اطلاع فقط حسب دورك."
-          ) : (
-            "Toutes les valeurs affichées sont validées. · جميع القيم المعروضة معتمدة."
-          )}
-        </p>
-        <Button
-          className="h-9 px-4 text-[12px] font-bold"
-          disabled={
-            pending ||
-            !siteId ||
-            people.length === 0 ||
-            Boolean(frozenMessage) ||
-            (!canEditDays && !(editableValues.size > 0 && rowsDirty))
-          }
-          onClick={save}
-        >
-          اعتماد القيم المعبأة — Valider les valeurs renseignées
-        </Button>
-      </div>
-
-      <RhTableWrap>
-        <table className="min-w-max border-collapse text-[11px]">
+      <div
+        className={`relative max-h-[calc(100dvh-14rem)] overflow-auto rounded-2xl border border-border/70 bg-surface shadow-[var(--card-shadow)] transition-opacity print:max-h-none print:overflow-visible print:shadow-none ${
+          pending && access ? "opacity-70" : ""
+        }`}
+      >
+        <table className="min-w-max border-separate border-spacing-0 text-[12px]">
           <thead>
-            <tr className="bg-slate-100">
+            <tr>
               {tableColumns.map((col) => (
                 <Fragment key={col.code}>{renderHeader(col)}</Fragment>
               ))}
@@ -993,43 +1324,51 @@ export function AttendanceManager({
           <tbody>
             {!access ? (
               <tr>
-                <td className="px-3 py-6 text-foreground/55" colSpan={Math.max(colCount, 1)}>
-                  Chargement… · جارٍ التحميل…
+                <td className="px-4 py-16 text-center text-sm text-foreground/45" colSpan={Math.max(colCount, 1)}>
+                  <span className="inline-flex items-center gap-2">
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-brand/30 border-t-brand" />
+                    Chargement…
+                  </span>
                 </td>
               </tr>
             ) : tableColumns.length === 0 ? (
               <tr>
-                <td className="px-3 py-6 text-foreground/55">
-                  Aucune colonne autorisée pour votre rôle sur ce chantier. · لا توجد أعمدة مسموحة لدورك.
+                <td className="px-4 py-16 text-center text-sm text-foreground/45">
+                  Aucune colonne autorisée pour votre rôle sur ce chantier.
                 </td>
               </tr>
             ) : people.length === 0 ? (
               <tr>
-                <td className="px-3 py-6 text-foreground/55" colSpan={colCount}>
+                <td className="px-4 py-16 text-center text-sm text-foreground/45" colSpan={colCount}>
                   {mode === "employee"
-                    ? "Recherchez par matricule ou nom / prénom, puis sélectionnez l’employé."
-                    : "Aucun contrat sur ce chantier."}
+                    ? "Recherchez un employé par matricule ou par nom."
+                    : "Aucun contrat sur ce chantier pour ce mois."}
                 </td>
               </tr>
             ) : (
               people.map((p, index) => (
-                <tr key={`${p.id}-${p.site_id}`} className="bg-white">
+                <tr
+                  key={`${p.id}-${p.site_id}`}
+                  className="group transition-colors hover:bg-[color-mix(in_oklab,var(--color-brand-muted)_45%,transparent)]"
+                >
                   {tableColumns.map((col) => (
                     <Fragment key={col.code}>{renderCell(col, p, index)}</Fragment>
                   ))}
                 </tr>
               ))
             )}
-            {access && people.length > 0 && tableColumns.length > 0 ? (
-              <tr className="bg-yellow-300 font-bold">
+          </tbody>
+          {access && people.length > 0 && tableColumns.length > 0 ? (
+            <tfoot>
+              <tr>
                 {tableColumns.map((col) => (
                   <Fragment key={col.code}>
                     {renderFooter(col, col.code === totalsLabelCode)}
                   </Fragment>
                 ))}
               </tr>
-            ) : null}
-          </tbody>
+            </tfoot>
+          ) : null}
         </table>
         {jobTitles.length ? (
           <datalist id="attendance-job-titles">
@@ -1038,169 +1377,203 @@ export function AttendanceManager({
             ))}
           </datalist>
         ) : null}
-      </RhTableWrap>
-      <p className="text-[11px] text-foreground/55 print:hidden">
-        Saisissez le code dans la cellule (codes du référentiel uniquement). Un clic ouvre la fiche du mois pour définir début, fin et code.
-        Les « MS » grisés viennent d&apos;un ordre de mission : modifiables, ils ne comptent qu&apos;après « Valider les valeurs renseignées ».
-      </p>
+      </div>
+
+      {info ? (
+        <div className="pointer-events-none fixed bottom-5 right-5 z-50 print:hidden">
+          <div className="pointer-events-auto flex max-w-md items-start gap-3 rounded-2xl border border-emerald-200/70 bg-surface px-4 py-3 text-sm text-foreground shadow-[0_18px_48px_-16px_rgba(15,23,42,0.35)] dark:border-emerald-900/50">
+            <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+              <Icon d={ICONS.check} className="h-3.5 w-3.5" />
+            </span>
+            <span className="flex-1 leading-relaxed">{info}</span>
+            <button
+              type="button"
+              className="shrink-0 text-foreground/40 transition hover:text-foreground"
+              onClick={() => setInfo(null)}
+              aria-label="Fermer"
+            >
+              <Icon d={ICONS.close} />
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {monthCard && cardPerson ? (
         <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setMonthCard(null);
+          }}
           onMouseUp={() => setCardDrag(null)}
           onMouseLeave={() => setCardDrag(null)}
         >
-          <RhModal
-            title="Fiche du mois"
-            subtitle={`${cardPerson.last_name} ${cardPerson.first_name} · ${MONTHS[month - 1]} ${year}`}
-            onClose={() => setMonthCard(null)}
-            footer={
-              <>
-                <Button variant="ghost" onClick={() => setMonthCard(null)}>
-                  Annuler
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    paintRange(monthCard.employeeId, monthCard.start, monthCard.end, "");
-                    setMonthCard(null);
-                    setInfo("Période effacée.");
-                  }}
-                >
-                  Effacer la période
-                </Button>
-                <Button
-                  onClick={() => {
-                    const code = monthCard.code.trim().toUpperCase();
-                    if (!allowedCodes.has(code)) {
-                      setError("Choisissez un code du référentiel uniquement.");
-                      return;
-                    }
-                    if (
-                      monthCard.start < 1 ||
-                      monthCard.end < 1 ||
-                      monthCard.start > days ||
-                      monthCard.end > days
-                    ) {
-                      setError("Jours invalides.");
-                      return;
-                    }
-                    paintRange(
-                      monthCard.employeeId,
-                      monthCard.start,
-                      monthCard.end,
-                      code,
-                    );
-                    setMonthCard(null);
-                    setInfo(
-                      `${code} du ${Math.min(monthCard.start, monthCard.end)} au ${Math.max(monthCard.start, monthCard.end)}.`,
-                    );
-                  }}
-                >
-                  Appliquer
-                </Button>
-              </>
-            }
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="w-full max-w-md select-none rounded-3xl border border-border/60 bg-surface p-5 shadow-[0_24px_80px_-20px_rgba(15,23,42,0.45)]"
           >
-            <div
-              className="select-none"
-              onMouseUp={() => setCardDrag(null)}
-            >
-              <div className="grid gap-3 sm:grid-cols-3">
-                <label className="text-xs">
-                  Code
-                  <select
-                    className={`${rhInput} mt-1`}
-                    value={monthCard.code}
-                    onChange={(e) =>
-                      setMonthCard({ ...monthCard, code: e.target.value.toUpperCase() })
-                    }
-                  >
-                    {activeLegends.map((l) => (
-                      <option key={l.code} value={l.code}>
-                        {l.code} — {l.label_fr}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="text-xs">
-                  Du jour
-                  <button
-                    type="button"
-                    className={`mt-1 flex h-10 w-full items-center justify-center rounded-xl border px-2 text-sm font-semibold ${
-                      monthCard.pick === "start"
-                        ? "border-brand ring-2 ring-brand/30"
-                        : "border-border"
-                    }`}
-                    onClick={() => setMonthCard({ ...monthCard, pick: "start" })}
-                  >
-                    {monthCard.start}
-                  </button>
-                </label>
-                <label className="text-xs">
-                  Au jour
-                  <button
-                    type="button"
-                    className={`mt-1 flex h-10 w-full items-center justify-center rounded-xl border px-2 text-sm font-semibold ${
-                      monthCard.pick === "end"
-                        ? "border-brand ring-2 ring-brand/30"
-                        : "border-border"
-                    }`}
-                    onClick={() => setMonthCard({ ...monthCard, pick: "end" })}
-                  >
-                    {monthCard.end}
-                  </button>
-                </label>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="truncate font-display text-base font-semibold text-foreground">
+                  {cardPerson.last_name} {cardPerson.first_name}
+                </h3>
+                <p className="text-sm text-foreground/50">
+                  {MONTHS[month - 1]} {year}
+                </p>
               </div>
-              <p className="mt-2 text-[11px] text-foreground/55">
-                {monthCard.pick === "start"
-                  ? "Début actif : cliquez le jour de début puis glissez jusqu’au jour de fin."
-                  : "Fin active : cliquez le jour de fin sur la grille."}
-              </p>
-              <div className="mt-3 grid grid-cols-7 gap-1">
-                {Array.from({ length: days }, (_, i) => {
-                  const day = i + 1;
-                  const from = Math.min(monthCard.start, monthCard.end);
-                  const to = Math.max(monthCard.start, monthCard.end);
-                  const inRange = day >= from && day <= to;
-                  const isStart = day === monthCard.start;
-                  const isEnd = day === monthCard.end;
-                  return (
-                    <button
-                      key={day}
-                      type="button"
-                      className={`h-9 rounded-lg text-[11px] font-semibold ${
-                        isStart || isEnd
-                          ? "bg-brand text-white"
-                          : inRange
-                            ? "bg-brand/25 text-brand"
-                            : "bg-slate-100"
-                      }`}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        setCardDrag(day);
-                        if (monthCard.pick === "end") {
-                          setMonthCard({ ...monthCard, end: day });
-                        } else {
-                          setMonthCard({ ...monthCard, start: day, end: day });
-                        }
-                      }}
-                      onMouseEnter={() => {
-                        if (cardDrag == null) return;
-                        if (monthCard.pick === "end") {
-                          setMonthCard({ ...monthCard, end: day });
-                        } else {
-                          setMonthCard({ ...monthCard, start: cardDrag, end: day });
-                        }
-                      }}
-                    >
-                      {day}
-                      <span className="block text-[8px] font-normal">{weekday(day)}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-xl text-foreground/50 transition hover:bg-surface-muted hover:text-foreground"
+                onClick={() => setMonthCard(null)}
+                aria-label="Fermer"
+              >
+                <Icon d={ICONS.close} />
+              </button>
             </div>
-          </RhModal>
+
+            <div className="mt-4 flex flex-wrap gap-1.5">
+              {activeLegends.map((l) => {
+                const active = monthCard.code === l.code;
+                return (
+                  <button
+                    key={l.code}
+                    type="button"
+                    title={l.label_fr}
+                    className={`h-8 min-w-[2.75rem] rounded-lg px-2 text-xs font-semibold transition ${
+                      active ? "ring-2 ring-brand ring-offset-2 ring-offset-surface" : "opacity-80 hover:opacity-100"
+                    }`}
+                    style={softTone(l.color_bg) ?? { background: "var(--surface-muted)" }}
+                    onClick={() => setMonthCard({ ...monthCard, code: l.code })}
+                  >
+                    {l.code}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-xs text-foreground/50">
+              {legendMap.get(monthCard.code.toUpperCase())?.label_fr ?? ""}
+            </p>
+
+            <div className="mt-4 grid grid-cols-2 gap-1 rounded-xl bg-surface-muted p-1">
+              {(["start", "end"] as const).map((pick) => (
+                <button
+                  key={pick}
+                  type="button"
+                  className={`flex h-9 items-center justify-center gap-2 rounded-lg text-sm transition ${
+                    monthCard.pick === pick
+                      ? "bg-surface font-semibold text-foreground shadow-sm"
+                      : "text-foreground/55 hover:text-foreground"
+                  }`}
+                  onClick={() => setMonthCard({ ...monthCard, pick })}
+                >
+                  {pick === "start" ? "Du" : "Au"}
+                  <span className="tabular-nums text-brand">
+                    {pick === "start" ? monthCard.start : monthCard.end}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-3 grid grid-cols-7 gap-1 text-center">
+              {WEEK.map((w) => (
+                <span key={w} className="py-1 text-[10px] font-medium uppercase text-foreground/40">
+                  {w}
+                </span>
+              ))}
+              {Array.from({ length: dayOfWeek(1) }, (_, i) => (
+                <span key={`pad-${i}`} />
+              ))}
+              {Array.from({ length: days }, (_, i) => {
+                const day = i + 1;
+                const from = Math.min(monthCard.start, monthCard.end);
+                const to = Math.max(monthCard.start, monthCard.end);
+                const inRange = day >= from && day <= to;
+                const isEdge = day === monthCard.start || day === monthCard.end;
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    className={`h-9 rounded-lg text-[13px] tabular-nums transition ${
+                      isEdge
+                        ? "bg-brand font-semibold text-white"
+                        : inRange
+                          ? "bg-brand-muted font-medium text-brand"
+                          : isWeekend(day)
+                            ? "text-foreground/40 hover:bg-surface-muted"
+                            : "text-foreground/80 hover:bg-surface-muted"
+                    }`}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setCardDrag(day);
+                      if (monthCard.pick === "end") {
+                        setMonthCard({ ...monthCard, end: day });
+                      } else {
+                        setMonthCard({ ...monthCard, start: day, end: day });
+                      }
+                    }}
+                    onMouseEnter={() => {
+                      if (cardDrag == null) return;
+                      if (monthCard.pick === "end") {
+                        setMonthCard({ ...monthCard, end: day });
+                      } else {
+                        setMonthCard({ ...monthCard, start: cardDrag, end: day });
+                      }
+                    }}
+                  >
+                    {day}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 flex items-center gap-2">
+              <button
+                type="button"
+                className="mr-auto rounded-xl px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                onClick={() => {
+                  paintRange(monthCard.employeeId, monthCard.start, monthCard.end, "");
+                  setMonthCard(null);
+                  setInfo("Période effacée.");
+                }}
+              >
+                Effacer
+              </button>
+              <Button variant="ghost" className="h-9" onClick={() => setMonthCard(null)}>
+                Annuler
+              </Button>
+              <Button
+                className="h-9"
+                onClick={() => {
+                  const code = monthCard.code.trim().toUpperCase();
+                  if (!allowedCodes.has(code)) {
+                    setError("Choisissez un code du référentiel uniquement.");
+                    return;
+                  }
+                  if (
+                    monthCard.start < 1 ||
+                    monthCard.end < 1 ||
+                    monthCard.start > days ||
+                    monthCard.end > days
+                  ) {
+                    setError("Jours invalides.");
+                    return;
+                  }
+                  paintRange(
+                    monthCard.employeeId,
+                    monthCard.start,
+                    monthCard.end,
+                    code,
+                  );
+                  setMonthCard(null);
+                  setInfo(
+                    `${code} du ${Math.min(monthCard.start, monthCard.end)} au ${Math.max(monthCard.start, monthCard.end)}.`,
+                  );
+                }}
+              >
+                Appliquer
+              </Button>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>
