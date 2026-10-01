@@ -27,6 +27,7 @@ const items = [
   { href: "/rh/legal", label: "Cotisations & impôts", exact: true },
   { href: "/rh/legal/propositions", label: "Propositions légales" },
   { href: "/rh/legal/documents", label: "Documents juridiques" },
+  { href: "/rh/legal/extraction-ia", label: "Extraction IA" },
   { href: "/rh/qualite-donnees", label: "Qualité des données" },
   { href: "/rh/parametres", label: "Paramètres" },
 ];

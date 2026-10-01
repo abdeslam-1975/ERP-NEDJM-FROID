@@ -73,8 +73,8 @@ export function entryPathOf(appliesFrom: string, appliesTo: string | null): Entr
 
 const ENTRY_PATH_LABELS: Record<EntryPath, string> = {
   MANUAL: "Saisie manuelle (application entièrement antérieure à 2026)",
-  AI_ALLOWED: "Saisie manuelle ; extraction IA possible à partir du lot 7 (application à partir de 2026)",
-  D15: "À cheval sur 2025 et 2026 : voie de saisie à décider (D15, lot 7)",
+  AI_ALLOWED: "Saisie manuelle ou extraction IA (textes officiels, application à partir de 2026)",
+  D15: "À cheval sur 2025 et 2026 : voie de saisie à décider (décision D15)",
 };
 
 export const entryPathLabel = (v: string) => ENTRY_PATH_LABELS[v as EntryPath] ?? v;

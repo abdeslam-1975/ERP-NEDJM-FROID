@@ -16,6 +16,7 @@ import {
   parseDecisionOptions,
   parseDeclarationDecisionContext,
   parseImportPolicyContext,
+  parseLegalEntryPathContext,
   parseLegendCoefficientContext,
   parsePayrollChainContext,
   parsePayrollReopenContext,
@@ -27,6 +28,7 @@ import {
   type CodeMappingContext,
   type DecisionOption,
   type ImportPolicyContext,
+  type LegalEntryPathContext,
   type LegendCoefficientContext,
   type UnapprovedRulesContext,
   type DeclarationDecisionContext,
@@ -143,6 +145,7 @@ export type DecisionDetail = DecisionListRow & {
   import_policy: ImportPolicyContext | null;
   unapproved_rules: UnapprovedRulesContext | null;
   legend_coefficient: LegendCoefficientContext | null;
+  legal_entry_path: LegalEntryPathContext | null;
   /** D9 / D10 / D5 line by line: where the decided operation is carried out (once). */
   follow_up: { href: string; label: string } | null;
   /** Options the data no longer allows (code → reason); the database refuses them too. */
@@ -369,6 +372,7 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
   const importPolicy = raw.type_code === "D12" ? parseImportPolicyContext(ctx) : null;
   const unapprovedRules = raw.type_code === "D1" ? parseUnapprovedRulesContext(ctx) : null;
   const legendCoefficient = raw.type_code === "D14" ? parseLegendCoefficientContext(ctx) : null;
+  const legalEntryPath = raw.type_code === "D15" ? parseLegalEntryPathContext(ctx) : null;
   const followUp = decisionFollowUp(raw.type_code, raw.id, raw.chosen_option);
   const ruleContributor =
     ruleApplication && raw.status === "PENDING" && !ws.isSuperAdmin
@@ -415,6 +419,7 @@ export async function getDecision(id: string): Promise<ActionResult<DecisionDeta
       import_policy: importPolicy,
       unapproved_rules: unapprovedRules,
       legend_coefficient: legendCoefficient,
+      legal_entry_path: legalEntryPath,
       follow_up: raw.status === "DECIDED" && chosen?.executes === true ? followUp : null,
       unavailable_options: unavailable,
       decide_blocker: decideBlocker({
@@ -496,6 +501,8 @@ export async function decideDecision(input: unknown): Promise<ActionResult<Decid
       revalidatePath("/referentiels/legendes");
     }
     revalidatePath("/rh/paie/preparation");
+    revalidatePath("/rh/legal/extraction-ia");
+    revalidatePath("/rh/legal/documents");
     return {
       ok: true,
       data: { status: "EXECUTED", applied, executed: null, execute_error: null, invalidated: null, follow_up: null },

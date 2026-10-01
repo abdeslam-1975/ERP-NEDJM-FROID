@@ -311,6 +311,14 @@ function DocumentCard({
           <Button variant="secondary" disabled={opening} onClick={() => onOpen(d.id)}>
             Voir le document
           </Button>
+          {d.status === "ACTIVE" && d.entry_path !== "MANUAL" ? (
+            <Link
+              href={`/rh/legal/extraction-ia?document=${d.id}`}
+              className="inline-flex h-10 items-center rounded-xl border border-border px-4 text-sm font-semibold text-foreground/80 hover:bg-surface-muted"
+            >
+              Extraction IA
+            </Link>
+          ) : null}
           {d.status === "ACTIVE" && access.create ? (
             <Button variant="secondary" onClick={() => onCorrect(d)}>
               Corriger les informations

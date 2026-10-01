@@ -11,6 +11,7 @@ import type {
   CodeMappingContext,
   DeclarationDecisionContext,
   ImportPolicyContext,
+  LegalEntryPathContext,
   LegendCoefficientContext,
   PayrollChainContext,
   PayrollReopenContext,
@@ -23,6 +24,7 @@ import {
   decisionStatusLabel,
   decisionStatusTone,
   declarationRiskNotices,
+  legalEntryPathNotices,
   legendCoefficientNotices,
   proposalStatusLabel,
   ruleFamilyLabel,
@@ -41,6 +43,7 @@ import { declarationKindLabel, declarationReasonLabel, transferReasonLabel } fro
 import { RULE_ACTIONS, RULE_FAMILIES, frMonth, type RuleAction, type RuleFamily } from "@/lib/rules/proposals";
 import { RuleDiff } from "@/components/rules/rule-content";
 import { CitationsList } from "@/components/rules/legal-citations";
+import { applicationPeriodLabel, legalDocLanguageLabel, legalDocTypeLabel } from "@/lib/rules/legal-documents";
 import { conflictLabel, existingValueText, natureLabel, provenanceLabel } from "@/lib/hr/attendance-archive";
 
 const asFamily = (v: string): RuleFamily =>
@@ -224,6 +227,8 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
                     ? `/rh/paie/preparation?mois=${d.period_year}-${String(d.period_month ?? 1).padStart(2, "0")}`
                     : d.type_code === "D14"
                       ? "/referentiels/legendes"
+                      : d.type_code === "D15"
+                        ? `/rh/legal/extraction-ia?document=${d.legal_entry_path?.document_id ?? ""}`
                       : d.type_code === "D13"
                     ? "/rh/qualite-donnees"
                     : d.type_code === "D2"
@@ -240,6 +245,8 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
                   ? "Ouvrir la préparation du mois"
                   : d.type_code === "D14"
                     ? "Ouvrir les codes de présence"
+                    : d.type_code === "D15"
+                      ? "Ouvrir le document (extraction IA)"
                     : d.type_code === "D13"
                   ? "Rapport de qualité des données"
                   : d.type_code === "D2"
@@ -455,6 +462,7 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
       {d.import_policy ? <ImportPolicyPanel c={d.import_policy} /> : null}
       {d.unapproved_rules ? <UnapprovedRulesPanel c={d.unapproved_rules} /> : null}
       {d.legend_coefficient ? <LegendCoefficientPanel c={d.legend_coefficient} /> : null}
+      {d.legal_entry_path ? <LegalEntryPathPanel c={d.legal_entry_path} /> : null}
 
       {d.status === "PENDING" ? (
         <RhPanel>
@@ -1099,6 +1107,27 @@ function LegendCoefficientPanel({ c }: { c: LegendCoefficientContext }) {
         </tbody>
       </table>
       <RiskNotices notices={legendCoefficientNotices(c)} />
+    </RhPanel>
+  );
+}
+
+function LegalEntryPathPanel({ c }: { c: LegalEntryPathContext }) {
+  return (
+    <RhPanel>
+      <h3 className="font-display text-base font-semibold">
+        {legalDocTypeLabel(c.doc_type)} · {c.reference} — {c.title}
+      </h3>
+      <dl className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Fact label="Période d'application">{applicationPeriodLabel(c.applies_from, c.applies_to)}</Fact>
+        <Fact label="Langue">{legalDocLanguageLabel(c.language)}</Fact>
+        <Fact label="Version des informations">{c.version_no}</Fact>
+        <Fact label="Analyses IA déjà faites">{c.extractions}</Fact>
+      </dl>
+      <p className="mt-3 text-sm text-foreground/75">
+        Avant 2026, les valeurs se saisissent à la main ; à partir de 2026, une extraction IA peut préparer des
+        suggestions. Ce document couvre les deux périodes : choisissez la voie de saisie.
+      </p>
+      <RiskNotices notices={legalEntryPathNotices(c)} />
     </RhPanel>
   );
 }

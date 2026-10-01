@@ -57,7 +57,7 @@ describe("entry path by application period", () => {
     expect(entryPathOf("2024-01-01", "2025-12-31")).toBe("MANUAL");
   });
 
-  it("allows AI extraction (lot 7) from 2026", () => {
+  it("allows AI extraction from 2026", () => {
     expect(entryPathOf("2026-01-01", null)).toBe("AI_ALLOWED");
   });
 

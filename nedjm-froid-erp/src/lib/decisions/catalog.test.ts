@@ -28,6 +28,8 @@ import {
   parseCodeMappingContext,
   parseImportPolicyContext,
   legendCoefficientNotices,
+  legalEntryPathNotices,
+  parseLegalEntryPathContext,
   parseLegendCoefficientContext,
   parseUnapprovedRulesContext,
   unapprovedRulesNotices,
@@ -472,5 +474,42 @@ describe("assignmentZoneNotice", () => {
 
   it("does not pretend to know an undetermined zone", () => {
     expect(assignmentZoneNotice({ oldZone: null, newZone: "Z2", draftSlips: 0 })).toMatch(/non déterminée/);
+  });
+});
+
+describe("D15 — entry path of a document across 2025 and 2026", () => {
+  const ctx = {
+    document_id: "d1",
+    root_id: "r1",
+    version_no: 2,
+    doc_type: "LOI_FINANCES",
+    title: "LF 2026",
+    reference: "Loi n° 25-01",
+    applies_from: "2025-07-01T00:00:00",
+    applies_to: null,
+    language: "AR",
+    previous_choice: "MANUAL",
+    citations: "3",
+    extractions: 0,
+  };
+
+  it("is a known decision type with its own source label", () => {
+    expect(isDecisionTypeCode("D15")).toBe(true);
+    expect(payrollSourceLabel("LEGAL_DOCUMENT")).toMatch(/extraction IA/);
+  });
+
+  it("parses the context", () => {
+    const c = parseLegalEntryPathContext(ctx);
+    expect(c).toMatchObject({ document_id: "d1", version_no: 2, applies_from: "2025-07-01", applies_to: null, citations: 3 });
+    expect(parseLegalEntryPathContext(null)).toMatchObject({ document_id: "", version_no: 1, previous_choice: null });
+  });
+
+  it("explains that both paths lead to the same approval circuit", () => {
+    const n = legalEntryPathNotices(parseLegalEntryPathContext(ctx)).join(" ");
+    expect(n).toMatch(/même circuit/);
+    expect(n).toMatch(/arabe seul/);
+    expect(n).toMatch(/Décision précédente : saisie manuelle/);
+    expect(n).toMatch(/3 citation/);
+    expect(legalEntryPathNotices(parseLegalEntryPathContext({ language: "FR" }))).toHaveLength(2);
   });
 });

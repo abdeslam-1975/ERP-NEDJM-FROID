@@ -48,6 +48,7 @@ export const DECISION_TYPES = [
   { code: "D11", label: "D11 · Correspondance des codes d'un import" },
   { code: "D12", label: "D12 · Validation d'un import par son auteur" },
   { code: "D14", label: "D14 · Coefficient d'un code de présence" },
+  { code: "D15", label: "D15 · Voie de saisie d'un document à cheval sur 2025 et 2026" },
 ] as const;
 export type DecisionTypeCode = (typeof DECISION_TYPES)[number]["code"];
 export const DECISION_TYPE_CODES = DECISION_TYPES.map((t) => t.code) as [DecisionTypeCode, ...DecisionTypeCode[]];
@@ -79,7 +80,8 @@ const SOURCE_LABELS: Record<
   | "TRANSFER_PREPARATION"
   | "DECLARATION_EXPORT"
   | "ATTENDANCE_IMPORT"
-  | "IMPORT_POLICY",
+  | "IMPORT_POLICY"
+  | "LEGAL_DOCUMENT",
   string
 > = {
   ATTENDANCE: "Présences",
@@ -104,6 +106,7 @@ const SOURCE_LABELS: Record<
   DECLARATION_EXPORT: "Export d'une déclaration depuis l'écran Paie",
   ATTENDANCE_IMPORT: "Analyse d'un import d'archives de présence",
   IMPORT_POLICY: "Écran des imports de présences",
+  LEGAL_DOCUMENT: "Document juridique du registre (extraction IA)",
 };
 
 export function decisionStatusLabel(status: string): string {
@@ -1028,5 +1031,55 @@ export function legendCoefficientNotices(c: LegendCoefficientContext): string[] 
     out.push(`${c.later_versions} changement(s) déjà programmé(s) après ce mois : ils restent en vigueur à leur date.`);
   }
   if (!c.is_active) out.push("Code de présence désactivé : le coefficient ne sert qu'aux présences déjà saisies.");
+  return out;
+}
+
+/** D15 context (ref_legal_doc_d15_context). */
+export type LegalEntryPathContext = {
+  document_id: string;
+  root_id: string;
+  version_no: number;
+  doc_type: string;
+  title: string;
+  reference: string;
+  applies_from: string;
+  applies_to: string | null;
+  language: string;
+  previous_choice: string | null;
+  citations: number;
+  extractions: number;
+};
+
+export function parseLegalEntryPathContext(raw: unknown): LegalEntryPathContext {
+  const c = obj(raw) ?? {};
+  return {
+    document_id: str(c.document_id) ?? "",
+    root_id: str(c.root_id) ?? "",
+    version_no: numOr0(c.version_no) || 1,
+    doc_type: str(c.doc_type) ?? "",
+    title: str(c.title) ?? "",
+    reference: str(c.reference) ?? "",
+    applies_from: isoDay(c.applies_from) ?? "",
+    applies_to: isoDay(c.applies_to),
+    language: str(c.language) ?? "",
+    previous_choice: str(c.previous_choice),
+    citations: numOr0(c.citations),
+    extractions: numOr0(c.extractions),
+  };
+}
+
+/** Warnings shown before a D15 decision. */
+export function legalEntryPathNotices(c: LegalEntryPathContext): string[] {
+  const out = [
+    "Les deux voies aboutissent au même circuit : chaque valeur devient une proposition qui cite le document, approuvée par une autre personne puis datée par la décision D2. Aucune voie ne modifie la paie par elle-même.",
+    "Extraction IA : le fichier est envoyé au service Gemini pour lecture ; seules des suggestions sont préparées, relues et transformées par un humain.",
+  ];
+  if (c.language === "AR") {
+    out.push("Document en arabe seul : la vérification des wilayas d'une zone IRG compare des noms français et échouera ; préférez la version française du JO pour cette partie.");
+  }
+  if (c.previous_choice) {
+    out.push(`Décision précédente : ${c.previous_choice === "AI" ? "extraction IA possible" : "saisie manuelle"}. La nouvelle décision la remplace pour les analyses à venir ; les propositions déjà créées ne changent pas.`);
+  }
+  if (c.citations > 0) out.push(`${c.citations} citation(s) de ce document existent déjà dans des propositions : elles restent valables.`);
   return out;
 }

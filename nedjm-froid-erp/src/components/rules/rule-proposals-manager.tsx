@@ -28,6 +28,7 @@ import { RuleDiff } from "@/components/rules/rule-content";
 import { QuickDialog } from "@/components/rules/rule-ui";
 import { CitationsList } from "@/components/rules/legal-citations";
 import { earliestOpen, firstOpenFor, isMonthClosed, type PayrollChainState } from "@/lib/hr/payroll-chains";
+import { AI_CONFIDENCE_LABEL, aiConfidenceTone, type AiProposalInfo } from "@/lib/rules/ai-extraction";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhChip, RhField, RhPageHeader, RhPanel, RhTabs, rhInput } from "@/components/rh/rh-ui";
 
@@ -39,6 +40,31 @@ type Dialog =
   | { kind: "withdraw"; p: RuleProposalView }
   | { kind: "apply"; p: RuleProposalView }
   | null;
+
+/** Review signals of a proposal created from an AI suggestion, for the approver. */
+function AiOriginNote({ info }: { info: AiProposalInfo }) {
+  return (
+    <div className="rounded-xl border border-amber-200/70 bg-amber-50/60 px-3 py-2 text-xs dark:border-amber-900/40 dark:bg-amber-950/30">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="font-semibold">Suggestion IA ({info.model})</span>
+        <RhChip tone={aiConfidenceTone(info.confidence)}>{AI_CONFIDENCE_LABEL[info.confidence]}</RhChip>
+        <RhChip tone="success">Valeur présente dans l&apos;extrait cité</RhChip>
+        {info.payload_edited ? <RhChip tone="warning">Valeur corrigée par un humain</RhChip> : null}
+        {info.excerpt_edited ? <RhChip tone="warning">Extrait modifié par un humain</RhChip> : null}
+        <Link href={`/rh/legal/extraction-ia?document=${info.document_id}`} className="text-brand hover:underline">
+          Voir l&apos;analyse
+        </Link>
+      </div>
+      {info.warnings.length ? (
+        <ul className="mt-1 space-y-0.5 text-amber-900 dark:text-amber-200">
+          {info.warnings.map((w, i) => (
+            <li key={i}>⚠ {w}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 function matches(view: View, p: RuleProposalView) {
   if (view === "submitted") return p.status === "SUBMITTED";
@@ -54,12 +80,14 @@ function dateTime(iso: string | null) {
 
 export function RuleProposalsManager({
   proposals,
+  aiInfo = {},
   access,
   focusId,
   initialView,
   showAll,
 }: {
   proposals: RuleProposalView[];
+  aiInfo?: Record<string, AiProposalInfo>;
   access: RuleAccess;
   focusId: string | null;
   initialView: View;
@@ -209,6 +237,8 @@ export function RuleProposalsManager({
               </dl>
 
               <RuleDiff family={p.family} action={p.action} current={p.current} proposed={p.proposed} />
+
+              {aiInfo[p.id] ? <AiOriginNote info={aiInfo[p.id]} /> : null}
 
               <CitationsList citations={p.citations} warnings={p.citation_warnings} />
 
