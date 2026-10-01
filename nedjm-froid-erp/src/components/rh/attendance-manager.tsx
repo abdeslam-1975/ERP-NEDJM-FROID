@@ -697,7 +697,15 @@ export function AttendanceManager({
 
   const visibleIds = new Set(people.map((p) => p.id));
   const pendingCounts = countPending(cells.filter((c) => visibleIds.has(c.employee_id)));
-  const extraCodes = activeLegends.map((l) => l.code);
+  const monthPrefix = iso(1).slice(0, 8);
+  const codeTotals = new Map<string, number>();
+  for (const c of cells) {
+    if (!visibleIds.has(c.employee_id) || !c.work_date.startsWith(monthPrefix)) continue;
+    codeTotals.set(c.legend_code, (codeTotals.get(c.legend_code) ?? 0) + 1);
+  }
+  const extraCodes = activeLegends
+    .map((l) => l.code)
+    .filter((code) => (codeTotals.get(code) ?? 0) > 0);
   const cardPerson = monthCard
     ? people.find((p) => p.id === monthCard.employeeId)
     : null;
@@ -720,11 +728,11 @@ export function AttendanceManager({
 
   const STICKY = "sticky left-0";
   const TH =
-    "sticky top-0 z-10 border-b border-border bg-surface-muted py-2 text-[11px] font-semibold text-foreground/55";
-  const TH_WEEKEND = "bg-[color-mix(in_oklab,var(--border)_60%,var(--surface-muted))]";
-  const TD = "border-b border-border/50";
+    "sticky top-0 z-10 border-b-2 border-[color-mix(in_oklab,var(--border)_70%,var(--foreground))] bg-[color-mix(in_oklab,var(--surface-muted)_80%,var(--border))] py-2.5 text-[12px] font-bold text-foreground";
+  const TH_WEEKEND = "bg-[color-mix(in_oklab,var(--border)_90%,var(--foreground)_10%)]";
+  const TD = "border-b border-border/60";
   const TF =
-    "sticky bottom-0 z-10 border-t border-border bg-surface-muted py-2 text-[11px] font-semibold tabular-nums text-foreground/70";
+    "sticky bottom-0 z-10 border-t-2 border-[color-mix(in_oklab,var(--border)_70%,var(--foreground))] bg-[color-mix(in_oklab,var(--surface-muted)_80%,var(--border))] py-2 text-[12px] font-bold tabular-nums text-foreground";
 
   function renderHeader(col: AttendanceColumn): ReactNode {
     if (col.kind === "DAYS") {
@@ -741,19 +749,29 @@ export function AttendanceManager({
                 today ? "bg-brand text-white shadow-sm shadow-brand/30" : ""
               }`}
             >
-              <span className="text-[12px] font-semibold tabular-nums">{day}</span>
-              <span className="text-[9px] font-medium lowercase opacity-70">{weekday(day)}</span>
+              <span className="text-[13px] font-bold tabular-nums">{day}</span>
+              <span className={`text-[10px] font-semibold ${today ? "text-white/85" : "text-foreground/60"}`}>
+                {weekday(day)}
+              </span>
             </div>
           </th>
         );
       });
     }
     if (col.kind === "CODE_COUNTS") {
-      return extraCodes.map((code) => (
-        <th key={code} className={`${TH} min-w-[38px] px-1 text-center`}>
-          {code}
-        </th>
-      ));
+      return extraCodes.map((code) => {
+        const legend = legendMap.get(code.toUpperCase());
+        return (
+          <th key={code} className={`${TH} min-w-[44px] px-1 text-center`} title={legend?.label_fr}>
+            <span
+              className="inline-flex h-6 min-w-[2rem] items-center justify-center rounded-md px-1.5 text-[11px] font-bold"
+              style={softTone(legend?.color_bg) ?? { background: "var(--surface)" }}
+            >
+              {code}
+            </span>
+          </th>
+        );
+      });
     }
     const sticky = col.source === "LAST_NAME" ? `${STICKY} z-30` : "";
     const align = col.kind === "TOTAL" ? "min-w-[42px] px-1 text-center" : "px-3 text-left";
@@ -856,14 +874,14 @@ export function AttendanceManager({
   }
 
   function renderCell(col: AttendanceColumn, p: Person, index: number): ReactNode {
-    const td = `${TD} whitespace-nowrap px-3 text-[12px] text-foreground/75`;
+    const td = `${TD} whitespace-nowrap px-3 text-[12px] text-foreground/90`;
     const editable = Boolean(access?.[col.code]?.edit);
     switch (col.kind) {
       case "DAYS":
         return renderDayCells(p);
       case "CODE_COUNTS":
         return extraCodes.map((code) => (
-          <td key={code} className={`${TD} px-1 text-center text-[12px] tabular-nums text-foreground/60`}>
+          <td key={code} className={`${TD} px-1 text-center text-[12px] font-medium tabular-nums text-foreground/85`}>
             {countCode(p.id, code) || ""}
           </td>
         ));
@@ -883,12 +901,12 @@ export function AttendanceManager({
         switch (col.source) {
           case "ROW_NO":
             return (
-              <td className={`${TD} px-2 text-center text-[11px] tabular-nums text-foreground/40`}>
+              <td className={`${TD} px-2 text-center text-[11px] tabular-nums text-foreground/60`}>
                 {index + 1}
               </td>
             );
           case "MATRICULE":
-            return <td className={`${td} font-mono text-[11px] text-foreground/55`}>{p.matricule}</td>;
+            return <td className={`${td} font-mono text-[11px] text-foreground/70`}>{p.matricule}</td>;
           case "LAST_NAME":
             return (
               <td
@@ -930,7 +948,7 @@ export function AttendanceManager({
     if (col.kind === "CODE_COUNTS") {
       return extraCodes.map((code) => (
         <td key={code} className={`${TF} text-center`}>
-          {people.reduce((n, p) => n + countCode(p.id, code), 0) || ""}
+          {codeTotals.get(code) || ""}
         </td>
       ));
     }
