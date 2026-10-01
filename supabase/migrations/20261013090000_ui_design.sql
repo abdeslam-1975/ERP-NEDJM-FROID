@@ -1,6 +1,6 @@
 -- Interface design: the super admin chooses the look of the application (preset, corners, buttons, tables,
 -- density, cards, fonts, animations, default light / dark mode) and every user may keep a personal display
--- mode and density. A null column means "use the application default" (src/lib/ui/design.ts).
+-- mode and density. While every look column is null the application keeps its original appearance (src/lib/ui/design.ts).
 
 alter table public.sys_ui_theme
   add column if not exists preset text

@@ -14,9 +14,7 @@ import {
   type SituationType,
   type StampRule,
 } from "@/lib/actions/purchases";
-import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { RhTabs } from "@/components/rh/rh-ui";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 
 const profileCol = dataColumns<DocumentProfile>();
@@ -79,9 +77,13 @@ export function PurchaseSettings({
         </div>
         <Button asChild variant="secondary"><a href="/achats">Retour aux achats</a></Button>
       </header>
-      {error && <Alert tone="danger">{error}</Alert>}
-      {message && <Alert tone="success">{message}</Alert>}
-      <RhTabs items={tabs} value={tab} onChange={(id) => setTab(id as typeof tab)} />
+      {error && <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
+      {message && <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">{message}</div>}
+      <div className="flex gap-1 rounded-xl border border-border bg-surface p-1">
+        {tabs.map(({ id: value, label }) => (
+          <button key={value} onClick={() => setTab(value)} className={`rounded-lg px-4 py-2 text-sm font-semibold ${tab === value ? "bg-brand text-white" : "hover:bg-surface-muted"}`}>{label}</button>
+        ))}
+      </div>
       {tab === "profiles" && <Profiles rows={initialData.documentProfiles} pending={pending} run={run} />}
       {tab === "situations" && <Situations rows={initialData.situations} pending={pending} run={run} />}
       {tab === "stamp" && <StampRules rows={initialData.stampRules} methods={initialData.paymentMethods} pending={pending} run={run} />}

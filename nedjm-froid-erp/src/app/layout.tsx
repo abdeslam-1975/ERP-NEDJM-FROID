@@ -22,12 +22,8 @@ const libreFranklin = Libre_Franklin({
   subsets: ["latin"],
 });
 
-const cairo = Cairo({
-  variable: "--font-cairo",
-  subsets: ["arabic"],
-});
-
 /* Fonts offered in Paramètres › Interface: declared here, downloaded by the browser only once chosen. */
+const cairo = Cairo({ variable: "--font-cairo", subsets: ["arabic"], preload: false });
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"], preload: false });
 const ibmPlex = IBM_Plex_Sans({
   variable: "--font-ibm-plex",

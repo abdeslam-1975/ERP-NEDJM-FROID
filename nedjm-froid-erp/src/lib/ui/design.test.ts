@@ -21,14 +21,20 @@ describe("design settings", () => {
     }
   });
 
+  it("keeps the original appearance while no look was ever chosen", () => {
+    expect(parseDesign(null)).toBeNull();
+    expect(parseDesign({ id: 1, brand_color: "#123456" })).toBeNull();
+    expect(parseDesign({ preset: null, radius: null, button_style: null, animations: null })).toBeNull();
+  });
+
   it("falls back to the preset, then to the default, for missing or unknown values", () => {
-    expect(parseDesign(null)).toEqual(DEFAULT_DESIGN);
     const moderne = DESIGN_PRESETS.find((p) => p.id === "moderne")!.settings;
     expect(parseDesign({ preset: "moderne" })).toEqual(moderne);
+    expect(parseDesign({ table_style: "striped" })).toEqual({ ...DEFAULT_DESIGN, table_style: "striped" });
     const parsed = parseDesign({ preset: "moderne", button_style: "neon;}body{display:none", radius: "sm", animations: "yes" });
-    expect(parsed.button_style).toBe(moderne.button_style);
-    expect(parsed.radius).toBe("sm");
-    expect(parsed.animations).toBe(moderne.animations);
+    expect(parsed?.button_style).toBe(moderne.button_style);
+    expect(parsed?.radius).toBe("sm");
+    expect(parsed?.animations).toBe(moderne.animations);
   });
 
   it("reads only valid personal preferences", () => {
@@ -39,6 +45,38 @@ describe("design settings", () => {
 });
 
 describe("designCss", () => {
+  it("changes nothing of the original appearance when no look is chosen", () => {
+    const css = designCss(null);
+    expect(css).not.toContain(":root");
+    expect(css).not.toContain("--radius");
+    expect(css).not.toContain("--btn-");
+    expect(css).not.toContain("table");
+    expect(css).not.toContain("transition-duration");
+    expect(css).toBe(".animate-in,.animate-out{animation:none!important}");
+  });
+
+  it("applies only the user's own density over the original appearance", () => {
+    expect(designCss(null, { mode: null, density: "compact" })).toBe(
+      ":root{--spacing:0.225rem;}.animate-in,.animate-out{animation:none!important}",
+    );
+  });
+
+  it("previews the original appearance inside an element of a customised application", () => {
+    const css = designCss(null, undefined, ".ui-preview");
+    expect(css).toContain(".ui-preview{--app-font-sans:initial;");
+    expect(css).toContain("--btn-bg:initial;");
+    expect(css).toContain("--radius-xl:0.75rem;");
+    expect(css).toContain("--spacing:0.25rem;");
+    expect(css).not.toContain(":root");
+  });
+
+  it("styles every table once a look is chosen", () => {
+    const css = designCss(DEFAULT_DESIGN);
+    expect(css).toContain("@layer base{table{border-collapse:separate;border-spacing:0}");
+    expect(css).toContain("tbody>tr:nth-child(even)>td{background-color:var(--tbl-stripe)}");
+    expect(designCss(DEFAULT_DESIGN, undefined, ".ui-preview")).toContain(".ui-preview thead tr{");
+  });
+
   it("keeps the Tailwind default radius scale for the classic look", () => {
     const css = designCss(DEFAULT_DESIGN);
     expect(css).toContain("--radius-xl:0.75rem;");
@@ -63,7 +101,7 @@ describe("designCss", () => {
     expect(css).toContain("--btn-radius:9999px;");
     expect(css).toContain("--btn-bg:linear-gradient(");
     expect(css).toMatch(/--tbl-stripe:color-mix/);
-    expect(css).toContain("--card-blur:14px;");
+    expect(css).toContain("--card-bg:color-mix(in oklab,var(--surface) 72%,transparent);");
     expect(css).toContain("--app-font-sans:var(--font-inter),var(--font-tajawal),system-ui,sans-serif;");
     expect(css).toContain(".dark{");
   });
@@ -78,6 +116,7 @@ describe("designCss", () => {
   it("switches transitions off when animations are disabled", () => {
     expect(designCss(DEFAULT_DESIGN)).not.toContain("transition-duration:0s");
     expect(designCss({ ...DEFAULT_DESIGN, animations: false })).toContain("transition-duration:0s!important");
+    expect(designCss(DEFAULT_DESIGN)).not.toContain(".animate-in");
   });
 
   it("can be scoped to a preview element", () => {

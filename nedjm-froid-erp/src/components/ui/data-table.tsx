@@ -192,7 +192,7 @@ export function DataTable<T extends RowData>({
           {columnToggle && hideable.length > 1 ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="secondary" size="md" className="ml-auto">
+                <Button variant="secondary" size="md" className="ml-auto gap-2">
                   <Columns3 aria-hidden />
                   Colonnes
                 </Button>
@@ -216,7 +216,7 @@ export function DataTable<T extends RowData>({
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border border-[var(--card-border)] bg-[var(--card-bg)] shadow-[var(--card-shadow)]">
+      <div className="ui-table-wrap data-table overflow-hidden rounded-2xl border">
         <div className="overflow-auto" style={maxHeight ? { maxHeight } : undefined}>
           <table className="w-full text-sm">
             <thead className={cn(stickyHeader && "sticky top-0 z-10")}>

@@ -87,7 +87,7 @@ export function DisplayMenu() {
         <DropdownMenuLabel>Densité · الكثافة</DropdownMenuLabel>
         <DropdownMenuRadioGroup value={density ?? "default"} onValueChange={chooseDensity}>
           <DropdownMenuRadioItem value="default">
-            <Rows3 aria-hidden /> Par défaut ({DENSITY_LABELS[layout.design.density]})
+            <Rows3 aria-hidden /> Par défaut{layout.design ? ` (${DENSITY_LABELS[layout.design.density]})` : ""}
           </DropdownMenuRadioItem>
           {(Object.keys(DENSITY_LABELS) as Density[]).map((d) => (
             <DropdownMenuRadioItem key={d} value={d}>

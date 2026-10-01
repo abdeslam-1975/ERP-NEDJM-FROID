@@ -2,7 +2,6 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhChip, RhPanel, RhTabs, rhInput } from "@/components/rh/rh-ui";
 import { AppearancePanel } from "@/components/settings/appearance-panel";
@@ -345,21 +344,21 @@ function OrderEditor({
             <div className="flex flex-col">
               <button
                 type="button"
-                className="rounded-md px-1.5 py-0.5 text-foreground/60 hover:bg-surface hover:text-foreground disabled:opacity-30"
+                className="rounded px-2 text-foreground/60 hover:bg-surface disabled:opacity-30"
                 onClick={() => move(index, -1)}
                 disabled={index === 0}
                 aria-label="Monter"
               >
-                <ChevronUp className="size-4" aria-hidden />
+                ▲
               </button>
               <button
                 type="button"
-                className="rounded-md px-1.5 py-0.5 text-foreground/60 hover:bg-surface hover:text-foreground disabled:opacity-30"
+                className="rounded px-2 text-foreground/60 hover:bg-surface disabled:opacity-30"
                 onClick={() => move(index, 1)}
                 disabled={index === rows.length - 1}
                 aria-label="Descendre"
               >
-                <ChevronDown className="size-4" aria-hidden />
+                ▼
               </button>
             </div>
             <span className="w-6 text-center text-xs font-semibold text-foreground/45">{index + 1}</span>

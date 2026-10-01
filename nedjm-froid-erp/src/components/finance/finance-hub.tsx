@@ -18,9 +18,7 @@ import {
   type FinanceHubData,
   type FinanceTransaction,
 } from "@/lib/actions/finance";
-import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { RhTabs } from "@/components/rh/rh-ui";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 
 const txCol = dataColumns<FinanceTransaction>();
@@ -102,10 +100,30 @@ export function FinanceHub({
         </div>
       </div>
 
-      {error && <Alert tone="danger">{error}</Alert>}
-      {message && <Alert tone="success">{message}</Alert>}
+      {error && (
+        <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+          {error}
+        </div>
+      )}
+      {message && (
+        <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-900 dark:bg-green-950/30 dark:text-green-200">
+          {message}
+        </div>
+      )}
 
-      <RhTabs items={tabs} value={tab} onChange={(id) => setTab(id as typeof tab)} />
+      <div className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-surface p-1">
+        {tabs.map(({ id: value, label }) => (
+          <button
+            key={value}
+            className={`whitespace-nowrap rounded-md px-4 py-2 text-sm font-semibold ${
+              tab === value ? "bg-brand text-white" : "text-foreground/65 hover:bg-surface-muted"
+            }`}
+            onClick={() => setTab(value)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       {tab === "dashboard" && (
         <Dashboard
