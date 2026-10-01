@@ -48,7 +48,7 @@ describe("formats", () => {
     expect(formatValue(0.375, "rate")).toBe("0,375");
     expect(formatValue(1333.3333, "rate")).toBe("1333,3333");
     expect(formatValue(22, "days")).toBe("22");
-    expect(formatValue(1.5, "days")).toBe("1,50");
+    expect(formatValue(1.5, "days")).toBe("1,5");
     expect(formatValue(0, "days")).toBe("");
     expect(formatValue(undefined, "days")).toBe("");
   });

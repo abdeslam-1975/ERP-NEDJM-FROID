@@ -1,4 +1,5 @@
 import { HTMLElement, TextNode, parse, type Node } from "node-html-parser";
+import { bindMovementLabels } from "@/lib/doc/movement-labels";
 
 /**
  * Document templates are plain HTML documents whose dynamic parts are declared with attributes, so that
@@ -73,7 +74,7 @@ export function formatValue(value: unknown, format = ""): string {
       return typeof value === "number" && !Number.isFinite(value) ? "" : String(value);
     case "days": {
       const n = Number(value);
-      return Number.isFinite(n) && n !== 0 ? formatDa(n).replace(",00", "") : "";
+      return Number.isFinite(n) && n !== 0 ? formatDa(n).replace(/,00$/, "").replace(/(,\d)0$/, "$1") : "";
     }
     case "date":
     case "date_slash": {
@@ -481,6 +482,7 @@ function renderNode(node: HTMLElement, attrs: RawAttrs, scopes: Scopes, design: 
 export function renderTemplate(html: string, data: DocData, options: RenderOptions = {}) {
   const root = parseTemplate(html);
   sanitizeNode(root);
+  bindMovementLabels(root);
   renderChildren(root, [data], Boolean(options.design));
   return root.toString();
 }
