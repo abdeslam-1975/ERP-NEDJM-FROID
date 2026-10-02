@@ -202,6 +202,7 @@ export function DocumentsManager({
       nom: textPayload(row.payload, "nom") || emp?.last_name || fallbackNom || "",
       prenom: textPayload(row.payload, "prenom") || emp?.first_name || rest.join(" "),
       affectation: textPayload(row.payload, "affectation"),
+      codeAffectation: textPayload(row.payload, "codeAffectation"),
       poste: textPayload(row.payload, "poste") || textPayload(row.payload, "fonction"),
       dest1: textPayload(row.payload, "dest1") || textPayload(row.payload, "destination_1") || textPayload(row.payload, "destination"),
       dest2: textPayload(row.payload, "dest2") || textPayload(row.payload, "destination_2"),
@@ -225,6 +226,7 @@ export function DocumentsManager({
       donneur: textPayload(row.payload, "donneur") || textPayload(row.payload, "issuer_service") || emptyMissionDraft().donneur,
       faitA: textPayload(row.payload, "faitA") || textPayload(row.payload, "done_at") || emptyMissionDraft().faitA,
       dateDoc: textPayload(row.payload, "dateDoc") || textPayload(row.payload, "done_on") || emptyMissionDraft().dateDoc,
+      gabarit: textPayload(row.payload, "gabarit"),
       savedDateDepart: row.start_date ?? "",
       savedDateRetour: row.end_date ?? "",
     };

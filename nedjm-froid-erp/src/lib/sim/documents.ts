@@ -35,6 +35,7 @@ const OM_FIELDS: { key: OmFieldKey; label: string; kind?: SimVarDef["kind"] }[] 
   { key: "nom", label: "Nom" },
   { key: "prenom", label: "Prénom" },
   { key: "affectation", label: "Affectation" },
+  { key: "codeAffectation", label: "Code affectation" },
   { key: "poste", label: "Poste" },
   { key: "dest1", label: "Destination 1" },
   { key: "dest2", label: "Destination 2" },
@@ -53,11 +54,12 @@ const OM_FIELDS: { key: OmFieldKey; label: string; kind?: SimVarDef["kind"] }[] 
   { key: "pieceType", label: "Pièce d'identité · type" },
   { key: "pieceNum", label: "Pièce d'identité · numéro" },
   { key: "pieceDelivre", label: "Pièce d'identité · délivrée le", kind: "date" },
-  { key: "pieceFonction", label: "Fonction (pièce)" },
+  { key: "pieceFonction", label: "Fonction du donneur d'ordre" },
   { key: "pieceLieu", label: "Pièce d'identité · lieu" },
   { key: "donneur", label: "Donneur d'ordre" },
   { key: "faitA", label: "Fait à" },
   { key: "dateDoc", label: "Date du document", kind: "date" },
+  { key: "gabarit", label: "Modèle d'impression (v1 = ancien)" },
 ];
 
 export const OM_FIELD_KEYS = OM_FIELDS.map((f) => f.key);
