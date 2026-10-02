@@ -1,9 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { htmlToPdf } from "@/lib/pdf/html-to-pdf";
+import { archiveFileStem, hrPdfOptions, requestOrigin, uploadHrPdf } from "@/lib/pdf/print-archive";
 import { hrCorrespondenceSchema, hrFileSchema } from "@/lib/validations/hr";
 import {
   missionDateIssue,
@@ -16,7 +16,7 @@ import {
 } from "@/lib/hr/mission-order";
 import { leaveOfCorrespondence, leaveTitleFieldsSchema, leaveTitlePayload } from "@/lib/hr/leave-title";
 import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
-import { HR_DOCS_BUCKET, hrFileDisplayUrl, hrFileHref, isSafeHrFilePath } from "@/lib/hr/hr-file-url";
+import { HR_DOCS_BUCKET, hrFileDisplayUrl, hrFileHref } from "@/lib/hr/hr-file-url";
 import { buildMissionOrderHtml } from "@/components/rh/mission-order-print";
 import { buildLeaveTitleHtml } from "@/components/rh/leave-title-print";
 import { buildOfficialFicheHtml } from "@/components/rh/employee-fiche-print";
@@ -80,23 +80,6 @@ function archiveUrlOf(payload: Record<string, unknown>) {
   return hrFileDisplayUrl(textField(payload, "archive_path"), textField(payload, "archive_url"));
 }
 
-function siteOrigin() {
-  const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (explicit) return explicit.replace(/\/$/, "");
-  const vercel = process.env.VERCEL_URL?.trim();
-  if (vercel) return `https://${vercel.replace(/\/$/, "")}`;
-  return "";
-}
-
-/** Origin the user is browsing, so the archived PDF loads the same fonts and images as the printout. */
-async function requestOrigin() {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  if (!host) return siteOrigin();
-  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  return `${proto.split(",")[0].trim()}://${host}`;
-}
-
 /** Renders a print document to PDF and stores it in the HR bucket under `path`. */
 async function archivePrintPdf(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -104,26 +87,9 @@ async function archivePrintPdf(
   origin: string,
   path: string,
 ): Promise<ActionResult> {
-  const pdf = await htmlToPdf(html, {
-    baseUrl: origin,
-    resolve: async (url) => {
-      if (url.pathname !== "/api/rh/fichier") return null;
-      const filePath = url.searchParams.get("p") ?? "";
-      if (!isSafeHrFilePath(filePath)) return null;
-      const { data } = await supabase.storage.from(HR_DOCS_BUCKET).download(filePath);
-      if (!data) return null;
-      return { body: Buffer.from(await data.arrayBuffer()), contentType: data.type || "application/octet-stream" };
-    },
-  });
-  const { error } = await supabase.storage.from(HR_DOCS_BUCKET).upload(path, pdf, {
-    contentType: "application/pdf",
-    upsert: false,
-  });
-  return error ? { ok: false, error: error.message } : { ok: true, data: undefined };
-}
-
-function archiveFileStem(...parts: string[]) {
-  return parts.map((part) => part.replace(/\//g, "-").replace(/[^\w-]+/g, "_")).join("_");
+  const pdf = await htmlToPdf(html, hrPdfOptions(supabase, origin));
+  const error = await uploadHrPdf(supabase, path, pdf);
+  return error ? { ok: false, error } : { ok: true, data: undefined };
 }
 
 function revalidate() {

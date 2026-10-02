@@ -4,6 +4,7 @@ import { listPayrollRuns, listPayrollSlips, loadPayrollIrgScales } from "@/lib/a
 import { listSites } from "@/lib/actions/sites";
 import { loadPayrollBulletinContext } from "@/lib/actions/hr-bulletin";
 import { resolvePayrollPeriod } from "@/lib/hr/payroll-calc";
+import { listBulletinArchives } from "@/lib/hr/bulletin-archive";
 
 export const dynamic = "force-dynamic";
 
@@ -14,12 +15,13 @@ export default async function PaiePage({
 }) {
   const sp = await searchParams;
   const { year, month } = resolvePayrollPeriod(sp.year, sp.month);
-  const [slips, runs, sites, bulletin, irgScales] = await Promise.all([
+  const [slips, runs, sites, bulletin, irgScales, archives] = await Promise.all([
     listPayrollSlips({ year, month, includeLines: false }),
     listPayrollRuns({ year, month }),
     listSites(),
     loadPayrollBulletinContext(),
     loadPayrollIrgScales({ year, month }),
+    listBulletinArchives(year, month),
   ]);
   return (
     <RhShell title="Paie">
@@ -38,6 +40,7 @@ export default async function PaiePage({
         bulletinTemplate={bulletin.template}
         legalRates={bulletin.legalRates}
         irgScales={irgScales.ok ? irgScales.data : null}
+        bulletinArchives={archives}
         loadError={(!slips.ok && slips.error) || (!runs.ok && runs.error) || (!sites.ok && sites.error) || bulletin.error || (!irgScales.ok ? irgScales.error : undefined)}
       />
     </RhShell>

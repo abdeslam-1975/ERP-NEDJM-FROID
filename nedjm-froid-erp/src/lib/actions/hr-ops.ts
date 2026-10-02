@@ -74,6 +74,7 @@ import { monthAssignmentsByEmployee } from "@/lib/hr/assignments";
 import { loadContractAssignments } from "@/lib/hr/assignments-load";
 import { loadLegendsAt } from "@/lib/hr/legends-at";
 import { simulationWarnings, toSimulationSlip } from "@/lib/hr/payroll-simulation";
+import { archivePayrollBulletins } from "@/lib/hr/bulletin-archive";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -1690,10 +1691,18 @@ export async function listPayrollRuns(input: {
   };
 }
 
+type PayrollTransitionResult = {
+  id: string;
+  status_code: PayrollRunStatus;
+  /** Bulletins archived as PDF by this transition, by employee id. */
+  archives: Record<string, string>;
+  archive_error: string | null;
+};
+
 async function transitionPayrollRun(
   input: unknown,
   action: PayrollRunAction,
-): Promise<ActionResult<{ id: string; status_code: PayrollRunStatus }>> {
+): Promise<ActionResult<PayrollTransitionResult>> {
   const parsed = payrollRunActionSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
@@ -1712,7 +1721,7 @@ async function transitionPayrollRun(
   const supabase = await createClient();
   const { data: run, error } = await supabase
     .from("hr_payroll_runs")
-    .select("id, status_code")
+    .select("id, status_code, period_year, period_month")
     .eq("id", parsed.data.run_id)
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
@@ -1724,6 +1733,12 @@ async function transitionPayrollRun(
     p_action: action,
   });
   if (rpcErr) return { ok: false, error: rpcErr.message };
+  const archive = await archivePayrollBulletins({
+    runId: run.id,
+    year: run.period_year,
+    month: run.period_month,
+    onlyMissing: action === "close",
+  });
   revalidatePath("/rh/paie");
   revalidatePath("/rh/paie/bulletins");
   revalidatePath("/rh/paie/social");
@@ -1731,19 +1746,20 @@ async function transitionPayrollRun(
   revalidatePath("/rh/presence");
   return {
     ok: true,
-    data: { id: run.id, status_code: normalizeRunStatus(typeof status === "string" ? status : plan.to) },
+    data: {
+      id: run.id,
+      status_code: normalizeRunStatus(typeof status === "string" ? status : plan.to),
+      archives: archive.archived,
+      archive_error: archive.error,
+    },
   };
 }
 
-export async function validatePayrollRun(
-  input: unknown,
-): Promise<ActionResult<{ id: string; status_code: PayrollRunStatus }>> {
+export async function validatePayrollRun(input: unknown): Promise<ActionResult<PayrollTransitionResult>> {
   return transitionPayrollRun(input, "validate");
 }
 
-export async function closePayrollRun(
-  input: unknown,
-): Promise<ActionResult<{ id: string; status_code: PayrollRunStatus }>> {
+export async function closePayrollRun(input: unknown): Promise<ActionResult<PayrollTransitionResult>> {
   return transitionPayrollRun(input, "close");
 }
 

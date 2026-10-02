@@ -54,6 +54,7 @@ import {
 type SiteOpt = { id: string; name_fr: string };
 type View = "all" | "social" | "fiscal";
 const SLIP_PAGE = 40;
+const NO_ARCHIVES: Record<string, string> = {};
 
 function printHtml(html: string) {
   const existing = document.getElementById("hr-print-frame");
@@ -204,6 +205,7 @@ export function PayrollManager({
   bulletinTemplate = "",
   legalRates = { ss_pct: null, pat_pct: null, caco_pct: null, intemp_sal_pct: null, intemp_pat_pct: null },
   irgScales = null,
+  bulletinArchives = NO_ARCHIVES,
   loadError,
 }: {
   initialSlips: PayrollSlipRow[];
@@ -220,9 +222,17 @@ export function PayrollManager({
   bulletinTemplate?: string;
   legalRates?: BulletinLegalRates;
   irgScales?: PayrollIrgScales | null;
+  /** Archived bulletin PDFs of the month, by employee id. */
+  bulletinArchives?: Record<string, string>;
   loadError?: string;
 }) {
   const [slips, setSlips] = useState(initialSlips);
+  const [archives, setArchives] = useState(bulletinArchives);
+  const [seenArchives, setSeenArchives] = useState(bulletinArchives);
+  if (seenArchives !== bulletinArchives) {
+    setSeenArchives(bulletinArchives);
+    setArchives(bulletinArchives);
+  }
   const [runs, setRuns] = useState(initialRuns);
   const [siteId, setSiteId] = useState(sites[0]?.id ?? "");
   const [periodYear, setPeriodYear] = useState(year);
@@ -343,10 +353,16 @@ export function PayrollManager({
       setSlips((prev) =>
         prev.map((s) => (s.run_id === runId && s.status_code === from ? { ...s, status_code: next } : s)),
       );
+      setArchives((prev) => ({ ...prev, ...r.data.archives }));
+      const archivedCount = Object.keys(r.data.archives).length;
       setInfo(
-        action === "validate"
-          ? "Paie validée : bulletins et pointage du mois figés (réouverture seulement sur décision D7 du SUPER_ADMIN)."
-          : "Paie clôturée définitivement.",
+        `${
+          action === "validate"
+            ? "Paie validée : bulletins et pointage du mois figés (réouverture seulement sur décision D7 du SUPER_ADMIN)."
+            : "Paie clôturée définitivement."
+        }${archivedCount ? ` ${archivedCount} bulletin${archivedCount > 1 ? "s" : ""} archivé${archivedCount > 1 ? "s" : ""} en PDF.` : ""}${
+          r.data.archive_error ? ` Archive PDF non créée : ${r.data.archive_error}` : ""
+        }`,
       );
     });
   }
@@ -1085,6 +1101,14 @@ export function PayrollManager({
                       >
                         {bi("Imprimer", "طباعة")}
                       </Button>
+                      {s.status_code !== "DRAFT" && archives[s.employee_id] ? (
+                        <Button
+                          variant="ghost"
+                          onClick={() => window.open(archives[s.employee_id], "_blank", "noopener,noreferrer")}
+                        >
+                          {bi("PDF archivé", "PDF المؤرشف")}
+                        </Button>
+                      ) : null}
                       {s.trace ? (
                         <Button variant="ghost" onClick={() => setTraceSlip(s)}>
                           {bi("Traçabilité", "التتبع")}

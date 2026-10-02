@@ -4,6 +4,8 @@ import puppeteer, { type Browser } from "puppeteer-core";
 
 export type PdfAsset = { body: Buffer; contentType: string };
 
+export type PdfOptions = { baseUrl?: string; resolve?: (url: URL) => Promise<PdfAsset | null> };
+
 const LOCAL_BROWSERS = [
   process.env.CHROME_PATH,
   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
@@ -34,18 +36,9 @@ function withBase(html: string, baseUrl: string) {
   return /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (head) => `${head}${tag}`) : `${tag}${html}`;
 }
 
-/**
- * Prints a standalone HTML document to PDF with the browser engine, exactly as « Imprimer » does
- * (the document's @page size and margins, backgrounds, web fonts loaded first).
- * `resolve` serves the assets the headless page cannot fetch itself (private files behind the session).
- */
-export async function htmlToPdf(
-  html: string,
-  options: { baseUrl?: string; resolve?: (url: URL) => Promise<PdfAsset | null> } = {},
-): Promise<Buffer> {
-  const browser = await launch();
+async function renderPdf(browser: Browser, html: string, options: PdfOptions): Promise<Buffer> {
+  const page = await browser.newPage();
   try {
-    const page = await browser.newPage();
     const { resolve } = options;
     if (resolve) {
       await page.setRequestInterception(true);
@@ -64,9 +57,30 @@ export async function htmlToPdf(
     }
     await page.setContent(withBase(html, options.baseUrl ?? ""), { waitUntil: "load", timeout: 30_000 });
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
-    const pdf = await page.pdf({ printBackground: true, preferCSSPageSize: true, format: "A4" });
-    return Buffer.from(pdf);
+    return Buffer.from(await page.pdf({ printBackground: true, preferCSSPageSize: true, format: "A4" }));
+  } finally {
+    await page.close();
+  }
+}
+
+/**
+ * Prints standalone HTML documents to PDF with the browser engine, exactly as « Imprimer » does
+ * (the document's @page size and margins, backgrounds, web fonts loaded first).
+ * `resolve` serves the assets the headless page cannot fetch itself (private files behind the session).
+ * One browser serves every `render` call made inside `work`.
+ */
+export async function withPdfRenderer<T>(
+  options: PdfOptions,
+  work: (render: (html: string) => Promise<Buffer>) => Promise<T>,
+): Promise<T> {
+  const browser = await launch();
+  try {
+    return await work((html) => renderPdf(browser, html, options));
   } finally {
     await browser.close();
   }
+}
+
+export function htmlToPdf(html: string, options: PdfOptions = {}): Promise<Buffer> {
+  return withPdfRenderer(options, (render) => render(html));
 }
