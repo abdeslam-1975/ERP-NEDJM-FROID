@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { SortableStrip } from "@/components/layout/arrange";
 import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
   addCashAdvanceExpense,
@@ -111,7 +112,7 @@ export function FinanceHub({
         </div>
       )}
 
-      <div className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-surface p-1">
+      <SortableStrip tabset="finance" ids={tabs.map((t) => t.id)} className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-surface p-1">
         {tabs.map(({ id: value, label }) => (
           <button
             key={value}
@@ -123,7 +124,7 @@ export function FinanceHub({
             {label}
           </button>
         ))}
-      </div>
+      </SortableStrip>
 
       {tab === "dashboard" && (
         <Dashboard

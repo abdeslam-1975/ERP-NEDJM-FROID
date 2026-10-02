@@ -15,7 +15,8 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
-import { useUiLayout } from "@/components/layout/ui-layout-context";
+import { SortableStrip } from "@/components/layout/arrange";
+import { useArrange, useArrangeableList, useUiLayout } from "@/components/layout/ui-layout-context";
 import { activeItemKey, resolveRhSections, resolveTabset } from "@/lib/ui/resolve";
 import { cn } from "@/lib/utils";
 
@@ -34,10 +35,13 @@ const SPRING = { type: "spring", stiffness: 520, damping: 42 } as const;
 export function RhModuleNav() {
   const pathname = usePathname();
   const layout = useUiLayout();
+  const { active: arranging } = useArrange();
   const sections = useMemo(() => resolveRhSections(layout), [layout]);
-  const activeKey = useMemo(
-    () => activeItemKey(resolveTabset(layout, "rh"), pathname),
-    [layout, pathname],
+  const tabs = useMemo(() => resolveTabset(layout, "rh"), [layout]);
+  const activeKey = useMemo(() => activeItemKey(tabs, pathname), [tabs, pathname]);
+  useArrangeableList(
+    "rh",
+    useMemo(() => tabs.map((t) => ({ id: t.id, label: t.label })), [tabs]),
   );
   const current = sections.find((s) => s.items.some((i) => i.key === activeKey)) ?? null;
   const sectionMarker = useId();
@@ -89,7 +93,25 @@ export function RhModuleNav() {
         })}
       </ul>
 
-      {current && current.items.length > 1 ? (
+      {current && current.items.length > 1 && arranging ? (
+        <SortableStrip
+          tabset="rh"
+          ids={current.items.map((item) => item.id)}
+          className="flex items-center gap-2 overflow-x-auto border-t border-border/60 px-2 py-2 [scrollbar-width:none]"
+        >
+          {current.items.map((item) => (
+            <span
+              key={item.key}
+              className={cn(
+                "inline-flex h-8 items-center px-3 text-[13px] whitespace-nowrap",
+                item.key === activeKey ? "font-semibold text-brand" : "font-medium text-foreground/60",
+              )}
+            >
+              {item.label}
+            </span>
+          ))}
+        </SortableStrip>
+      ) : current && current.items.length > 1 ? (
         <ul className="flex items-center gap-0.5 overflow-x-auto border-t border-border/60 px-2 [scrollbar-width:none]">
           {current.items.map((item) => {
             const active = item.key === activeKey;

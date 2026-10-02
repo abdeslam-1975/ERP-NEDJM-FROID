@@ -21,6 +21,7 @@ import { ReopenRequestDialog, SlipVersionsDialog } from "@/components/rh/payroll
 import { DeclarationExportDialog, type DeclarationExportTarget } from "@/components/rh/declaration-export-dialog";
 import { periodNatureOf, type DeclarationKind } from "@/lib/hr/external-operations";
 import { searchEmployeesForPayroll, type PayrollSearchEmployee } from "@/lib/actions/global-search";
+import { ToolbarSlot, UiToolbar } from "@/components/layout/arrange";
 import { Button } from "@/components/ui/button";
 import {
   RhAlert,
@@ -458,30 +459,31 @@ export function PayrollManager({
           </>
         }
         actions={
-          <div className="flex flex-wrap gap-2">
+          <UiToolbar tabset="btn_rh_payroll_links" className="flex flex-wrap gap-2">
             {(
               [
-                ["/rh/paie", "Fiches"],
-                ["/rh/paie/social", "Social"],
-                ["/rh/paie/fiscal", "Fiscal"],
-                ["/rh/legal", bi("Cotisations & impôts", "الاشتراكات والضرائب")],
-                ["/rh/paie/bulletins", "Bulletins"],
-                ["/simulateur?cible=paie", "Simulateur"],
-                ["/rh/paie/exceptions", bi("Exceptions", "استثناءات")],
-                ["/rh/paie/avances", bi("Avances & prêts", "التسبيقات والقروض")],
-                ["/rh/paie/virements", "Virements"],
-                ["/rh/parametres", "Rubriques"],
+                ["fiches", "/rh/paie", "Fiches"],
+                ["social", "/rh/paie/social", "Social"],
+                ["fiscal", "/rh/paie/fiscal", "Fiscal"],
+                ["legal", "/rh/legal", bi("Cotisations & impôts", "الاشتراكات والضرائب")],
+                ["bulletins", "/rh/paie/bulletins", "Bulletins"],
+                ["simulator", "/simulateur?cible=paie", "Simulateur"],
+                ["exceptions", "/rh/paie/exceptions", bi("Exceptions", "استثناءات")],
+                ["advances", "/rh/paie/avances", bi("Avances & prêts", "التسبيقات والقروض")],
+                ["transfers", "/rh/paie/virements", "Virements"],
+                ["rubrics", "/rh/parametres", "Rubriques"],
               ] as const
-            ).map(([href, label]) => (
-              <Link
-                key={href}
-                href={href}
-                className="inline-flex items-center rounded-xl border border-border/70 bg-surface px-3 py-1.5 text-xs font-semibold text-foreground/75 transition hover:border-brand/40 hover:bg-brand-muted hover:text-brand"
-              >
-                {label}
-              </Link>
+            ).map(([id, href, label]) => (
+              <ToolbarSlot key={id} id={id}>
+                <Link
+                  href={href}
+                  className="inline-flex items-center rounded-xl border border-border/70 bg-surface px-3 py-1.5 text-xs font-semibold text-foreground/75 transition hover:border-brand/40 hover:bg-brand-muted hover:text-brand"
+                >
+                  {label}
+                </Link>
+              </ToolbarSlot>
             ))}
-          </div>
+          </UiToolbar>
         }
       />
       {error ? (
@@ -640,41 +642,51 @@ export function PayrollManager({
                 </RhChip>
               </Link>
             ) : null}
-            <div className="ml-auto flex flex-wrap gap-2">
+            <UiToolbar tabset="btn_rh_payroll_run" className="ml-auto flex flex-wrap gap-2">
               {currentRun.version_count > 0 ? (
-                <Button variant="ghost" disabled={pending} onClick={() => setRunDialog("versions")}>
-                  {bi(`Historique (${currentRun.version_count})`, "السجل")}
-                </Button>
+                <ToolbarSlot id="history">
+                  <Button variant="ghost" disabled={pending} onClick={() => setRunDialog("versions")}>
+                    {bi(`Historique (${currentRun.version_count})`, "السجل")}
+                  </Button>
+                </ToolbarSlot>
               ) : null}
               {currentStatus === "DRAFT" && canValidate && currentRun.chain_required && !chainDecisionId ? (
-                <Button
-                  variant="secondary"
-                  disabled={pending || currentRun.slip_count === 0 || currentRun.pending_changes > 0}
-                  onClick={requestChainDecision}
-                >
-                  Demander la décision D6
-                </Button>
+                <ToolbarSlot id="request_d6">
+                  <Button
+                    variant="secondary"
+                    disabled={pending || currentRun.slip_count === 0 || currentRun.pending_changes > 0}
+                    onClick={requestChainDecision}
+                  >
+                    Demander la décision D6
+                  </Button>
+                </ToolbarSlot>
               ) : null}
               {currentStatus === "DRAFT" && canValidate && !currentRun.chain_required ? (
-                <Button
-                  variant="secondary"
-                  disabled={pending || currentRun.slip_count === 0 || currentRun.pending_changes > 0}
-                  onClick={() => transitionRun("validate")}
-                >
-                  Valider la paie
-                </Button>
+                <ToolbarSlot id="validate">
+                  <Button
+                    variant="secondary"
+                    disabled={pending || currentRun.slip_count === 0 || currentRun.pending_changes > 0}
+                    onClick={() => transitionRun("validate")}
+                  >
+                    Valider la paie
+                  </Button>
+                </ToolbarSlot>
               ) : null}
               {canRequestReopen(currentStatus) && canValidate && !currentRun.reopen_decision_id ? (
-                <Button variant="ghost" disabled={pending} onClick={() => setRunDialog("reopen")}>
-                  Demander la réouverture (D7)
-                </Button>
+                <ToolbarSlot id="request_reopen">
+                  <Button variant="ghost" disabled={pending} onClick={() => setRunDialog("reopen")}>
+                    Demander la réouverture (D7)
+                  </Button>
+                </ToolbarSlot>
               ) : null}
               {currentStatus === "VALIDATED" && canClose ? (
-                <Button disabled={pending} onClick={() => transitionRun("close")}>
-                  Clôturer le mois
-                </Button>
+                <ToolbarSlot id="close">
+                  <Button disabled={pending} onClick={() => transitionRun("close")}>
+                    Clôturer le mois
+                  </Button>
+                </ToolbarSlot>
               ) : null}
-            </div>
+            </UiToolbar>
           </>
         ) : (
           <>
@@ -697,43 +709,59 @@ export function PayrollManager({
           ) : (
             <RhChip tone="success">{bi("Paie validée", "الأجور معتمدة")}</RhChip>
           )}
-          <div className="ml-auto flex flex-wrap gap-2">
-            <Button disabled={exporting} onClick={() => openDeclaration("monthly")}>
-              {bi("CNAS · G50 · CACOBATPH · Virements (Excel)", "تصدير الشهر")}
-            </Button>
-            {siteId ? (
-              <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("monthly", siteId)}>
-                {bi("Ce chantier seulement", "هذه الورشة فقط")}
+          <UiToolbar tabset="btn_rh_payroll_declarations" className="ml-auto flex flex-wrap gap-2">
+            <ToolbarSlot id="export_monthly">
+              <Button disabled={exporting} onClick={() => openDeclaration("monthly")}>
+                {bi("CNAS · G50 · CACOBATPH · Virements (Excel)", "تصدير الشهر")}
               </Button>
+            </ToolbarSlot>
+            {siteId ? (
+              <ToolbarSlot id="export_site">
+                <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("monthly", siteId)}>
+                  {bi("Ce chantier seulement", "هذه الورشة فقط")}
+                </Button>
+              </ToolbarSlot>
             ) : null}
-            <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("das")}>
-              {bi(`DAS annuelle ${year}`, `التصريح السنوي ${year}`)}
-            </Button>
-            <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("cnas_file")}>
-              Fichier CNAS (CSV)
-            </Button>
-            <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("das_file")}>
-              Fichier DAS (CSV)
-            </Button>
-            <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("g50")}>
-              État G50 (imprimer)
-            </Button>
-            <Link
-              href={`/rh/paie/declarations?year=${year}`}
-              className="inline-flex items-center rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted"
-            >
-              Registre des déclarations
-            </Link>
-            <Link
-              href={`/rh/paie/virements?year=${year}&month=${month}`}
-              className="inline-flex items-center rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted"
-            >
-              Virements CCP / banque
-            </Link>
-          </div>
+            <ToolbarSlot id="das">
+              <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("das")}>
+                {bi(`DAS annuelle ${year}`, `التصريح السنوي ${year}`)}
+              </Button>
+            </ToolbarSlot>
+            <ToolbarSlot id="cnas_file">
+              <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("cnas_file")}>
+                Fichier CNAS (CSV)
+              </Button>
+            </ToolbarSlot>
+            <ToolbarSlot id="das_file">
+              <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("das_file")}>
+                Fichier DAS (CSV)
+              </Button>
+            </ToolbarSlot>
+            <ToolbarSlot id="g50">
+              <Button variant="secondary" disabled={exporting} onClick={() => openDeclaration("g50")}>
+                État G50 (imprimer)
+              </Button>
+            </ToolbarSlot>
+            <ToolbarSlot id="declarations_register">
+              <Link
+                href={`/rh/paie/declarations?year=${year}`}
+                className="inline-flex items-center rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted"
+              >
+                Registre des déclarations
+              </Link>
+            </ToolbarSlot>
+            <ToolbarSlot id="transfers">
+              <Link
+                href={`/rh/paie/virements?year=${year}&month=${month}`}
+                className="inline-flex items-center rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted"
+              >
+                Virements CCP / banque
+              </Link>
+            </ToolbarSlot>
+          </UiToolbar>
         </div>
       ) : null}
-      <RhToolbar>
+      <RhToolbar tabset="btn_rh_payroll_period">
         <RhField label={bi("Chantier", "الورشة")}>
           <select
             className={rhInput}
@@ -765,43 +793,51 @@ export function PayrollManager({
             onChange={(e) => setPeriodMonth(Number(e.target.value))}
           />
         </RhField>
-        <Button
-          variant="secondary"
-          disabled={
-            pending ||
-            (periodYear === year && periodMonth === month) ||
-            !(periodMonth >= 1 && periodMonth <= 12) ||
-            !(periodYear >= 2000 && periodYear <= 2100)
-          }
-          onClick={() => {
-            const qs = new URLSearchParams({ year: String(periodYear), month: String(periodMonth) });
-            if (query.trim()) qs.set("q", query.trim());
-            router.push(`${pathname}?${qs.toString()}`);
-          }}
-        >
-          {bi("Voir ce mois", "عرض الشهر")}
-        </Button>
-        <Button
-          disabled={
-            pending ||
-            !siteId ||
-            (periodYear === year && periodMonth === month && currentStatus !== "DRAFT")
-          }
-          onClick={() => generate(siteId, periodYear, periodMonth)}
-          title="Ouvre la décision de génération (D4) ou de recalcul (D3) au Centre de décisions."
-        >
-          {periodYear === year && periodMonth === month && currentRun
-            ? bi("Demander un recalcul", "طلب إعادة الحساب")
-            : bi("Demander la génération", "طلب التوليد")}
-        </Button>
+        <ToolbarSlot id="view_month">
+          <Button
+            variant="secondary"
+            disabled={
+              pending ||
+              (periodYear === year && periodMonth === month) ||
+              !(periodMonth >= 1 && periodMonth <= 12) ||
+              !(periodYear >= 2000 && periodYear <= 2100)
+            }
+            onClick={() => {
+              const qs = new URLSearchParams({ year: String(periodYear), month: String(periodMonth) });
+              if (query.trim()) qs.set("q", query.trim());
+              router.push(`${pathname}?${qs.toString()}`);
+            }}
+          >
+            {bi("Voir ce mois", "عرض الشهر")}
+          </Button>
+        </ToolbarSlot>
+        <ToolbarSlot id="generate">
+          <Button
+            disabled={
+              pending ||
+              !siteId ||
+              (periodYear === year && periodMonth === month && currentStatus !== "DRAFT")
+            }
+            onClick={() => generate(siteId, periodYear, periodMonth)}
+            title="Ouvre la décision de génération (D4) ou de recalcul (D3) au Centre de décisions."
+          >
+            {periodYear === year && periodMonth === month && currentRun
+              ? bi("Demander un recalcul", "طلب إعادة الحساب")
+              : bi("Demander la génération", "طلب التوليد")}
+          </Button>
+        </ToolbarSlot>
         {pageSlips.length > 0 ? (
           <>
-            <Button variant="secondary" disabled={pending} onClick={() => openBulletin(pageSlips)}>
-              {bi("Afficher Bulletin de Paie", "إظهار كشف الأجر")}
-            </Button>
-            <Button variant="secondary" disabled={pending} onClick={() => printRows(pageSlips)}>
-              {bi("Imprimer les bulletins", "طباعة الكشوف")}
-            </Button>
+            <ToolbarSlot id="show_bulletin">
+              <Button variant="secondary" disabled={pending} onClick={() => openBulletin(pageSlips)}>
+                {bi("Afficher Bulletin de Paie", "إظهار كشف الأجر")}
+              </Button>
+            </ToolbarSlot>
+            <ToolbarSlot id="print">
+              <Button variant="secondary" disabled={pending} onClick={() => printRows(pageSlips)}>
+                {bi("Imprimer les bulletins", "طباعة الكشوف")}
+              </Button>
+            </ToolbarSlot>
           </>
         ) : null}
       </RhToolbar>

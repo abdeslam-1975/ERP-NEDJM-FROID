@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { SortableStrip } from "@/components/layout/arrange";
 import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
   deleteFinanceConfig,
@@ -82,7 +83,7 @@ export function FinanceSettings({
       </div>
       {error && <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
       {message && <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">{message}</div>}
-      <div className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-surface p-1">
+      <SortableStrip tabset="finance_settings" ids={tabs.map((t) => t.id)} className="flex gap-1 overflow-x-auto rounded-lg border border-border bg-surface p-1">
         {tabs.map(({ id: value, label }) => (
           <button
             key={value}
@@ -92,7 +93,7 @@ export function FinanceSettings({
             {label}
           </button>
         ))}
-      </div>
+      </SortableStrip>
       {tab === "accounts" && <AccountsEditor data={initialData} pending={pending} run={run} />}
       {tab === "tax" && <TaxEditor rows={initialData.taxRates} pending={pending} run={run} />}
       {tab === "methods" && <MethodsEditor rows={initialData.methods} pending={pending} run={run} />}

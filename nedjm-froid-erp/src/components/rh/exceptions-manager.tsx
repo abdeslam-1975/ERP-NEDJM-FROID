@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { ToolbarSlot } from "@/components/layout/arrange";
 import {
   deleteSalaryException,
   setSalaryExceptionStatus,
@@ -348,13 +349,18 @@ export function ExceptionsManager({
           "Hors contrat permanent. Motif et période obligatoires. Saisie en brouillon puis approbation par une autre personne (Gérant / Super admin peuvent approuver leurs propres saisies). Seules les lignes approuvées alimentent le bulletin ; un mois validé ou clôturé ne peut plus être modifié.",
           "خارج العقد الدائم. السبب والفترة إلزاميان. المعتمد فقط يدخل الكشف.",
         )}
+        actionsTabset="btn_rh_exceptions"
         actions={
           <>
-            <Button asChild variant="secondary">
-              <Link href="/rh/paie">{bi("Paie", "الأجور")}</Link>
-            </Button>
+            <ToolbarSlot id="payroll">
+              <Button asChild variant="secondary">
+                <Link href="/rh/paie">{bi("Paie", "الأجور")}</Link>
+              </Button>
+            </ToolbarSlot>
             {canEdit ? (
-              <Button onClick={openNew}>{bi("Nouvelle exception", "استثناء جديد")}</Button>
+              <ToolbarSlot id="new">
+                <Button onClick={openNew}>{bi("Nouvelle exception", "استثناء جديد")}</Button>
+              </ToolbarSlot>
             ) : null}
           </>
         }

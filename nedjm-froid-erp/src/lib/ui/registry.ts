@@ -3,10 +3,11 @@
  * (Paramètres → Interface). The database only stores the choices (sys_ui_role_hidden,
  * sys_ui_item_overrides, sys_ui_theme), keyed by `itemKey(tabset, id)`.
  *
- * Levels: A = side menu, B = HR module tabs, C = tabs of the other modules, D = tabs inside a record.
+ * Levels: A = side menu, B = HR module tabs, C = tabs of the other modules, D = tabs inside a record,
+ * E = action buttons at the top of a page (order and visibility only: a button keeps its own text).
  */
 
-export type UiLevel = "A" | "B" | "C" | "D";
+export type UiLevel = "A" | "B" | "C" | "D" | "E";
 
 export type UiIcon =
   | "home"
@@ -50,6 +51,8 @@ export type UiTabsetDef = {
   titleAr: string;
   /** Where the tabs appear, shown in the settings screen. */
   whereFr: string;
+  /** Buttons of a page header (level E): no renaming. */
+  kind?: "toolbar";
   items: UiItemDef[];
 };
 
@@ -60,6 +63,7 @@ export const UI_LEVELS: { level: UiLevel; titleFr: string; titleAr: string }[] =
   { level: "B", titleFr: "Onglets Ressources humaines", titleAr: "تبويبات الموارد البشرية" },
   { level: "C", titleFr: "Onglets des autres modules", titleAr: "تبويبات الوحدات الأخرى" },
   { level: "D", titleFr: "Onglets internes des fiches", titleAr: "التبويبات الداخلية" },
+  { level: "E", titleFr: "Boutons d'action des pages", titleAr: "أزرار الصفحات" },
 ];
 
 export const UI_NAV_GROUPS: UiGroupDef[] = [
@@ -390,7 +394,89 @@ export const UI_TABSETS: UiTabsetDef[] = [
       { id: "employee", labelFr: "Par employé" },
     ],
   },
+  toolbar("btn_rh_employees", "Employés", "الموظفون", "RH → Employés", [
+    ["columns", "Colonnes"],
+    ["new", "Nouvel employé"],
+  ]),
+  toolbar("btn_rh_attendance_imports", "Imports de présence", "استيراد الحضور", "RH → Présence → Imports", [
+    ["template", "Modèle"],
+    ["deposit", "Déposer un fichier"],
+  ]),
+  toolbar("btn_rh_exceptions", "Exceptions de paie", "استثناءات الأجور", "RH → Paie → Exceptions", [
+    ["payroll", "Paie"],
+    ["new", "Nouvelle exception"],
+  ]),
+  toolbar("btn_rh_transfers", "Virements", "التحويلات", "RH → Paie → Virements", [
+    ["external_ops", "Opérations externes"],
+    ["bulletins", "Bulletins"],
+  ]),
+  toolbar("btn_rh_contracts", "Contrats de travail", "عقود العمل", "RH → Contrats", [
+    ["exceptions", "Exceptions"],
+    ["new", "Nouveau contrat"],
+  ]),
+  toolbar("btn_rh_payroll_links", "Raccourcis de la paie", "اختصارات الأجور", "RH → Paie (en-tête)", [
+    ["fiches", "Fiches"],
+    ["social", "Social"],
+    ["fiscal", "Fiscal"],
+    ["legal", "Cotisations & impôts"],
+    ["bulletins", "Bulletins"],
+    ["simulator", "Simulateur"],
+    ["exceptions", "Exceptions"],
+    ["advances", "Avances & prêts"],
+    ["transfers", "Virements"],
+    ["rubrics", "Rubriques"],
+  ]),
+  toolbar("btn_rh_payroll_run", "Actions du mois de paie", "إجراءات شهر الأجور", "RH → Paie (barre d'état)", [
+    ["history", "Historique"],
+    ["request_d6", "Demander la décision D6"],
+    ["validate", "Valider la paie"],
+    ["request_reopen", "Demander la réouverture"],
+    ["close", "Clôturer le mois"],
+  ]),
+  toolbar("btn_rh_payroll_declarations", "Déclarations de la paie", "تصريحات الأجور", "RH → Paie (déclarations)", [
+    ["export_monthly", "Export mensuel (Excel)"],
+    ["export_site", "Ce chantier seulement"],
+    ["das", "DAS annuelle"],
+    ["cnas_file", "Fichier CNAS"],
+    ["das_file", "Fichier DAS"],
+    ["g50", "État G50"],
+    ["declarations_register", "Registre des déclarations"],
+    ["transfers", "Virements CCP / banque"],
+  ]),
+  toolbar("btn_rh_payroll_period", "Période de paie", "فترة الأجور", "RH → Paie (période)", [
+    ["view_month", "Voir ce mois"],
+    ["generate", "Générer / recalculer"],
+    ["show_bulletin", "Afficher Bulletin de Paie"],
+    ["print", "Imprimer les bulletins"],
+  ]),
+  toolbar("btn_rh_postes", "Postes", "المناصب", "RH → Postes", [
+    ["import", "Importer depuis les contrats"],
+    ["new", "Nouveau poste"],
+  ]),
+  toolbar("btn_rh_costs", "Coûts", "التكاليف", "RH → Coûts", [
+    ["export_allocation", "Répartition (CSV)"],
+    ["export_journal", "Écritures comptables (CSV)"],
+    ["accounts", "Plan de comptes"],
+  ]),
+  toolbar("btn_sim_workspace", "Simulateur", "المحاكي", "Simulateur", [
+    ["edit_layout", "Éditer la mise en page"],
+    ["freeze_reference", "Figer comme référence"],
+    ["reset_all", "Tout rétablir"],
+  ]),
 ];
+
+/** Action buttons at the top of a page: they can be reordered, never hidden nor renamed. */
+function toolbar(key: string, titleFr: string, titleAr: string, whereFr: string, items: [string, string][]): UiTabsetDef {
+  return {
+    key,
+    level: "E",
+    titleFr,
+    titleAr,
+    whereFr,
+    kind: "toolbar",
+    items: items.map(([id, labelFr]) => ({ id, labelFr, locked: true })),
+  };
+}
 
 /** Pseudo tabset of the settings screen: the side menu groups (order and titles). */
 export const NAV_GROUPS_TABSET = "nav_groups";
@@ -414,6 +500,13 @@ export function findItem(key: string) {
 
 export function isGroupKey(key: string): boolean {
   return UI_NAV_GROUPS.some((g) => g.key === key);
+}
+
+/** Keys a list is made of (the side menu groups for NAV_GROUPS_TABSET); null for an unknown list. */
+export function keysOfTabset(tabset: string): string[] | null {
+  if (tabset === NAV_GROUPS_TABSET) return UI_NAV_GROUPS.map((g) => g.key);
+  const def = findTabset(tabset);
+  return def ? def.items.map((i) => itemKey(def.key, i.id)) : null;
 }
 
 export function isLockedKey(key: string): boolean {

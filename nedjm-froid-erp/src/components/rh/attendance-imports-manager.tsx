@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
+import { ToolbarSlot } from "@/components/layout/arrange";
 import {
   analyzeArchiveBatch,
   cancelArchiveBatch,
@@ -145,12 +146,19 @@ export function AttendanceImportsManager({
       <RhPageHeader
         title="Imports d'archives de présence"
         description="Reprise des présences tenues hors de l'application (registres, logiciels, fichiers transmis). Chaque fichier devient un lot contrôlé : rien n'est enregistré avant votre confirmation, rien n'est remplacé sans décision, et les présences importées restent proposées jusqu'à leur validation."
+        actionsTabset="btn_rh_attendance_imports"
         actions={
           <>
-            <a href="/api/rh/presence/imports/modele" className="text-sm font-semibold text-brand hover:underline">
-              Modèle « une ligne par jour »
-            </a>
-            {access.create ? <Button onClick={() => setDialog({ kind: "deposit" })}>Déposer un fichier</Button> : null}
+            <ToolbarSlot id="template">
+              <a href="/api/rh/presence/imports/modele" className="text-sm font-semibold text-brand hover:underline">
+                Modèle « une ligne par jour »
+              </a>
+            </ToolbarSlot>
+            {access.create ? (
+              <ToolbarSlot id="deposit">
+                <Button onClick={() => setDialog({ kind: "deposit" })}>Déposer un fichier</Button>
+              </ToolbarSlot>
+            ) : null}
           </>
         }
       />

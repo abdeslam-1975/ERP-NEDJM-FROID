@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { SortableStrip } from "@/components/layout/arrange";
 import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
   applyPenalty,
@@ -321,7 +322,7 @@ export function ContractWorkspace({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
+      <SortableStrip tabset="client_contract" ids={tabs.map((t) => t.id)} className="flex flex-wrap gap-2 border-b border-border pb-2">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -340,7 +341,7 @@ export function ContractWorkspace({
             {t.label}
           </button>
         ))}
-      </div>
+      </SortableStrip>
 
       {tab === "header" && (
         <HeaderTab

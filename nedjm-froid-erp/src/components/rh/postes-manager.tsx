@@ -12,6 +12,7 @@ import {
   type PosteRow,
 } from "@/lib/actions/hr-postes";
 import { slashDateIso } from "@/lib/hr/hr-letters";
+import { ToolbarSlot, UiToolbar } from "@/components/layout/arrange";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhChip, RhField, RhModal, bi, rhInput } from "@/components/rh/rh-ui";
 
@@ -151,22 +152,26 @@ export function PostesManager({
           onChange={(e) => setSearch(e.target.value)}
         />
         {canEdit ? (
-          <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              disabled={pending}
-              onClick={() =>
-                run(async () => {
-                  const r = await importPostesFromContracts();
-                  if (r.ok) setNotice(`${r.data.created} poste(s) créé(s), ${r.data.linked} contrat(s) rattaché(s).`);
-                  return r;
-                })
-              }
-            >
-              {bi("Importer depuis les contrats", "استيراد من العقود")}
-            </Button>
-            <Button onClick={() => setDraft(emptyPoste())}>{bi("Nouveau poste", "منصب جديد")}</Button>
-          </div>
+          <UiToolbar tabset="btn_rh_postes" className="flex gap-2">
+            <ToolbarSlot id="import">
+              <Button
+                variant="secondary"
+                disabled={pending}
+                onClick={() =>
+                  run(async () => {
+                    const r = await importPostesFromContracts();
+                    if (r.ok) setNotice(`${r.data.created} poste(s) créé(s), ${r.data.linked} contrat(s) rattaché(s).`);
+                    return r;
+                  })
+                }
+              >
+                {bi("Importer depuis les contrats", "استيراد من العقود")}
+              </Button>
+            </ToolbarSlot>
+            <ToolbarSlot id="new">
+              <Button onClick={() => setDraft(emptyPoste())}>{bi("Nouveau poste", "منصب جديد")}</Button>
+            </ToolbarSlot>
+          </UiToolbar>
         ) : null}
       </div>
 

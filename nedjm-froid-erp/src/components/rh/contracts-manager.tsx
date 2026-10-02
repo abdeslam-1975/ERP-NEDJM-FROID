@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { ToolbarSlot } from "@/components/layout/arrange";
 import {
   upsertHrContract,
   type HrContractRow,
@@ -425,18 +426,23 @@ export function ContractsManager({
           "Le chantier porte l'activité et le CACOBATPH. Les quatre classes de rubriques se règlent dans la fiche contrat. Un contrat brouillon entre aussi dans la paie.",
           "الورشة تحمل النشاط وCACOBATPH. الأصناف الأربعة تُضبط داخل بطاقة العقد. العقد المسودة يدخل أيضاً في كشف الأجر.",
         )}
+        actionsTabset="btn_rh_contracts"
         actions={
           <>
-            <Button asChild variant="secondary">
-              <Link href="/rh/paie/exceptions">{bi("Exceptions", "استثناءات")}</Link>
-            </Button>
-            <Button
-              onClick={() => {
-                openModal(emptyForm(), defaultContractLines());
-              }}
-            >
-              {bi("Nouveau contrat", "عقد جديد")}
-            </Button>
+            <ToolbarSlot id="exceptions">
+              <Button asChild variant="secondary">
+                <Link href="/rh/paie/exceptions">{bi("Exceptions", "استثناءات")}</Link>
+              </Button>
+            </ToolbarSlot>
+            <ToolbarSlot id="new">
+              <Button
+                onClick={() => {
+                  openModal(emptyForm(), defaultContractLines());
+                }}
+              >
+                {bi("Nouveau contrat", "عقد جديد")}
+              </Button>
+            </ToolbarSlot>
           </>
         }
       />

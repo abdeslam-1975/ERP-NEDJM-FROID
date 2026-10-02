@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AppProviders, PageTransition } from "@/components/layout/app-providers";
+import { ArrangeBar } from "@/components/layout/arrange";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { UiLayoutProvider } from "@/components/layout/ui-layout-context";
@@ -53,6 +54,7 @@ export async function AppShell({
             </main>
           </div>
         </div>
+        <ArrangeBar />
       </AppProviders>
     </UiLayoutProvider>
   );

@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
+import { ToolbarSlot } from "@/components/layout/arrange";
 import {
   deleteHrEmployeeField,
   getHrEmployeeFiche,
@@ -458,14 +459,19 @@ export function EmployeesManager({
       <RhPageHeader
         title="Employés"
         description="Toutes les données de l'employé apparaissent ici. Ajoutez ou masquez une colonne depuis cet écran."
+        actionsTabset="btn_rh_employees"
         actions={
           <>
-            <Button type="button" variant="secondary" onClick={() => setColumnsOpen(true)}>
-              Colonnes
-            </Button>
-            <Button type="button" disabled={pending} onClick={openCreate}>
-              Nouvel employé
-            </Button>
+            <ToolbarSlot id="columns">
+              <Button type="button" variant="secondary" onClick={() => setColumnsOpen(true)}>
+                Colonnes
+              </Button>
+            </ToolbarSlot>
+            <ToolbarSlot id="new">
+              <Button type="button" disabled={pending} onClick={openCreate}>
+                Nouvel employé
+              </Button>
+            </ToolbarSlot>
           </>
         }
       />

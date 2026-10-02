@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Fragment } from "react";
+import { UiToolbar } from "@/components/layout/arrange";
 export { RhModal, RhTabs } from "@/components/rh/rh-ui-client";
 
 /* —— tokens (Tailwind) —— */
@@ -134,11 +135,14 @@ export function RhPageHeader({
   title,
   description,
   actions,
+  actionsTabset,
 }: {
   eyebrow?: string;
   title: string;
   description?: ReactNode;
   actions?: ReactNode;
+  /** Level E list of the interface catalogue: the ToolbarSlot buttons of `actions` follow its order. */
+  actionsTabset?: string;
 }) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -155,7 +159,13 @@ export function RhPageHeader({
           <div className="max-w-2xl text-sm leading-relaxed text-foreground/60">{description}</div>
         ) : null}
       </div>
-      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+      {actions && actionsTabset ? (
+        <UiToolbar tabset={actionsTabset} className="flex flex-wrap items-center gap-2">
+          {actions}
+        </UiToolbar>
+      ) : actions ? (
+        <div className="flex flex-wrap items-center gap-2">{actions}</div>
+      ) : null}
     </div>
   );
 }
@@ -178,11 +188,15 @@ export function RhPanel({
   );
 }
 
-export function RhToolbar({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/60 bg-surface/80 p-2.5 backdrop-blur-sm">
+export function RhToolbar({ children, tabset }: { children: ReactNode; tabset?: string }) {
+  const className =
+    "flex flex-wrap items-center gap-2 rounded-2xl border border-border/60 bg-surface/80 p-2.5 backdrop-blur-sm";
+  return tabset ? (
+    <UiToolbar tabset={tabset} className={className}>
       {children}
-    </div>
+    </UiToolbar>
+  ) : (
+    <div className={className}>{children}</div>
   );
 }
 

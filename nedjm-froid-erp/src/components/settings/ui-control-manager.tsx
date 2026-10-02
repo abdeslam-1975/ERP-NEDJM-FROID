@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { DragHandle, SortableRows } from "@/components/layout/arrange";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhChip, RhPanel, RhTabs, rhInput } from "@/components/rh/rh-ui";
 import { AppearancePanel } from "@/components/settings/appearance-panel";
@@ -11,7 +12,7 @@ import {
   setRoleItemsHidden,
   type UiControlData,
 } from "@/lib/actions/ui-control";
-import { NAV_GROUPS_TABSET, UI_LEVELS, UI_NAV_GROUPS, UI_TABSETS, findItem } from "@/lib/ui/registry";
+import { NAV_GROUPS_TABSET, UI_LEVELS, UI_NAV_GROUPS, UI_TABSETS, findItem, findTabset } from "@/lib/ui/registry";
 import { DEFAULT_LAYOUT, resolveTabset, type UiLayoutData, type UiOverride } from "@/lib/ui/resolve";
 
 type Panel = "visibility" | "order" | "appearance";
@@ -113,7 +114,7 @@ function VisibilityPanel({
       </RhPanel>
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
 
-      {UI_LEVELS.map((level) => (
+      {UI_LEVELS.filter((l) => l.level !== "E").map((level) => (
         <section key={level.level} className="space-y-3">
           <h3 className="font-display text-lg font-semibold">
             {level.level}. {level.titleFr}
@@ -276,17 +277,15 @@ function OrderEditor({
   const [message, setMessage] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
   const isNav = tabset === "nav";
+  const fixedLabels = findTabset(tabset)?.kind === "toolbar";
 
-  function move(index: number, delta: number) {
-    const target = index + delta;
-    if (target < 0 || target >= rows.length) return;
-    const next = [...rows];
-    [next[index], next[target]] = [next[target], next[index]];
-    setRows(next);
+  function reorder(keys: string[]) {
+    const byKey = new Map(rows.map((row) => [row.key, row]));
+    setRows(keys.map((key) => byKey.get(key)!));
   }
 
-  function patch(index: number, change: Partial<DraftRow>) {
-    setRows(rows.map((row, i) => (i === index ? { ...row, ...change } : row)));
+  function patch(key: string, change: Partial<DraftRow>) {
+    setRows(rows.map((row) => (row.key === key ? { ...row, ...change } : row)));
   }
 
   function save() {
@@ -338,67 +337,66 @@ function OrderEditor({
   return (
     <RhPanel className="space-y-3">
       {message ? <RhAlert tone={message.tone}>{message.text}</RhAlert> : null}
-      <ul className="space-y-2">
-        {rows.map((row, index) => (
-          <li key={row.key} className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-surface-muted/40 p-2">
-            <div className="flex flex-col">
-              <button
-                type="button"
-                className="rounded px-2 text-foreground/60 hover:bg-surface disabled:opacity-30"
-                onClick={() => move(index, -1)}
-                disabled={index === 0}
-                aria-label="Monter"
-              >
-                ▲
-              </button>
-              <button
-                type="button"
-                className="rounded px-2 text-foreground/60 hover:bg-surface disabled:opacity-30"
-                onClick={() => move(index, 1)}
-                disabled={index === rows.length - 1}
-                aria-label="Descendre"
-              >
-                ▼
-              </button>
+      <SortableRows ids={rows.map((row) => row.key)} onReorder={reorder} className="space-y-2">
+        {(key, handle, dragging) => {
+          const index = rows.findIndex((row) => row.key === key);
+          const row = rows[index];
+          return (
+            <div
+              className={`flex flex-wrap items-center gap-2 rounded-xl border border-border/70 p-2 ${
+                dragging ? "bg-surface shadow-lg" : "bg-surface-muted/40"
+              }`}
+            >
+              <DragHandle label={row.defaultFr} {...handle} />
+              <span className="w-6 text-center text-xs font-semibold text-foreground/45">{index + 1}</span>
+              {fixedLabels ? (
+                <span className="min-w-48 flex-1 text-sm font-medium">{row.defaultFr}</span>
+              ) : (
+                <>
+                  <input
+                    className={`${rhInput} mt-0 min-w-48 flex-1`}
+                    value={row.label_fr}
+                    placeholder={row.defaultFr}
+                    maxLength={80}
+                    onChange={(e) => patch(key, { label_fr: e.target.value })}
+                    aria-label={`Libellé français de ${row.defaultFr}`}
+                  />
+                  <input
+                    className={`${rhInput} mt-0 min-w-40 flex-1`}
+                    dir="rtl"
+                    value={row.label_ar}
+                    placeholder={row.defaultAr || "الاسم بالعربية"}
+                    maxLength={80}
+                    onChange={(e) => patch(key, { label_ar: e.target.value })}
+                    aria-label={`Libellé arabe de ${row.defaultFr}`}
+                  />
+                </>
+              )}
+              {isNav ? (
+                <select
+                  className={`${rhInput} mt-0 w-52`}
+                  value={row.group_key}
+                  onChange={(e) => patch(key, { group_key: e.target.value })}
+                  aria-label={`Groupe de ${row.defaultFr}`}
+                >
+                  {UI_NAV_GROUPS.map((g) => (
+                    <option key={g.key} value={g.key}>
+                      {overrides[g.key]?.label_fr ?? g.titleFr}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
             </div>
-            <span className="w-6 text-center text-xs font-semibold text-foreground/45">{index + 1}</span>
-            <input
-              className={`${rhInput} mt-0 min-w-48 flex-1`}
-              value={row.label_fr}
-              placeholder={row.defaultFr}
-              maxLength={80}
-              onChange={(e) => patch(index, { label_fr: e.target.value })}
-              aria-label={`Libellé français de ${row.defaultFr}`}
-            />
-            <input
-              className={`${rhInput} mt-0 min-w-40 flex-1`}
-              dir="rtl"
-              value={row.label_ar}
-              placeholder={row.defaultAr || "الاسم بالعربية"}
-              maxLength={80}
-              onChange={(e) => patch(index, { label_ar: e.target.value })}
-              aria-label={`Libellé arabe de ${row.defaultFr}`}
-            />
-            {isNav ? (
-              <select
-                className={`${rhInput} mt-0 w-52`}
-                value={row.group_key}
-                onChange={(e) => patch(index, { group_key: e.target.value })}
-                aria-label={`Groupe de ${row.defaultFr}`}
-              >
-                {UI_NAV_GROUPS.map((g) => (
-                  <option key={g.key} value={g.key}>
-                    {overrides[g.key]?.label_fr ?? g.titleFr}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-          </li>
-        ))}
-      </ul>
+          );
+        }}
+      </SortableRows>
       <p className="text-xs text-foreground/55">
-        Laissez un libellé vide pour garder le nom d&apos;origine (affiché en gris). Les compteurs entre parenthèses restent
-        affichés après un nouveau nom.
+        Faites glisser une ligne par sa poignée pour changer l&apos;ordre (clavier : Espace, flèches, Espace).{" "}
+        {fixedLabels
+          ? "Les boutons gardent leur nom ; seul leur ordre change."
+          : "Laissez un libellé vide pour garder le nom d'origine (affiché en gris). Les compteurs entre parenthèses restent affichés après un nouveau nom."}{" "}
+        Cet ordre s&apos;applique à tout le monde ; chaque utilisateur peut ensuite le changer pour lui-même avec
+        « Réorganiser la page ».
       </p>
       <div className="flex flex-wrap gap-2">
         <Button onClick={save} disabled={pending}>
