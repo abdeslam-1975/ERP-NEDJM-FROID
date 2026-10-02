@@ -83,8 +83,23 @@ export const RH_SECTIONS: UiGroupDef[] = [
   { key: "payroll", titleFr: "Paie", titleAr: "الأجور" },
   { key: "documents", titleFr: "Documents", titleAr: "الوثائق" },
   { key: "legal", titleFr: "Juridique", titleAr: "القانوني" },
+  { key: "others", titleFr: "Autres", titleAr: "أخرى" },
   { key: "settings", titleFr: "Paramètres", titleAr: "الإعدادات" },
 ];
+
+/** Section of the HR bar where tabs that are rarely used can be put away. */
+export const RH_OTHERS_SECTION = "others";
+
+/** Section a HR tab is moved to, stored in group_key as "group.rh_<section>" (plain section keys still read). */
+export function rhSectionGroupKey(section: string): string {
+  return `group.rh_${section}`;
+}
+
+export function rhSectionFromGroup(groupKey: string | null | undefined): string | null {
+  if (!groupKey) return null;
+  const key = groupKey.startsWith("group.rh_") ? groupKey.slice("group.rh_".length) : groupKey;
+  return RH_SECTIONS.some((s) => s.key === key) ? key : null;
+}
 
 export const UI_TABSETS: UiTabsetDef[] = [
   {

@@ -139,7 +139,8 @@ export async function saveTabsetLayout(input: {
       sort_order: (index + 1) * 10,
       label_fr: fixedLabels ? null : cleanText(item.label_fr, 80),
       label_ar: fixedLabels ? null : cleanText(item.label_ar, 80),
-      group_key: group && group !== defaultGroup ? group : null,
+      // HR tabs keep the section they were moved to with « Réorganiser ».
+      ...(input.tabset === "rh" ? {} : { group_key: group && group !== defaultGroup ? group : null }),
     });
   }
   const supabase = await createClient();

@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 import {
   ArrowUpRight,
   CalendarClock,
+  Ellipsis,
   FileText,
   LayoutDashboard,
   Scale,
@@ -15,7 +16,7 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
-import { SortableStrip } from "@/components/layout/arrange";
+import { RhArrange } from "@/components/layout/arrange";
 import { useArrange, useArrangeableList, useUiLayout } from "@/components/layout/ui-layout-context";
 import { RH_SECTIONS_TABSET } from "@/lib/ui/registry";
 import { activeItemKey, resolveRhSections, resolveTabset } from "@/lib/ui/resolve";
@@ -28,6 +29,7 @@ export const RH_SECTION_ICONS: Record<string, LucideIcon> = {
   payroll: Wallet,
   documents: FileText,
   legal: Scale,
+  others: Ellipsis,
   settings: Settings2,
 };
 
@@ -58,27 +60,7 @@ export function RhModuleNav() {
       className="sticky top-0 z-20 -mx-1 mb-1 rounded-2xl border border-border/70 bg-surface/95 shadow-[var(--card-shadow)] backdrop-blur-md supports-[backdrop-filter]:bg-surface/85"
     >
       {arranging ? (
-        <SortableStrip
-          tabset={RH_SECTIONS_TABSET}
-          ids={sections.map((s) => s.key)}
-          className="flex items-center gap-2 overflow-x-auto p-2 [scrollbar-width:none]"
-        >
-          {sections.map((section) => {
-            const Icon = RH_SECTION_ICONS[section.key] ?? LayoutDashboard;
-            return (
-              <span
-                key={section.key}
-                className={cn(
-                  "inline-flex h-9 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold whitespace-nowrap",
-                  section.key === current?.key ? "bg-brand text-white" : "text-foreground/65",
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                {section.titleFr}
-              </span>
-            );
-          })}
-        </SortableStrip>
+        <RhArrange />
       ) : (
         <ul className="flex items-center gap-1 overflow-x-auto p-1.5 [scrollbar-width:none]">
           {sections.map((section) => {
@@ -122,25 +104,7 @@ export function RhModuleNav() {
         </ul>
       )}
 
-      {current && current.items.length > 1 && arranging ? (
-        <SortableStrip
-          tabset="rh"
-          ids={current.items.map((item) => item.id)}
-          className="flex items-center gap-2 overflow-x-auto border-t border-border/60 px-2 py-2 [scrollbar-width:none]"
-        >
-          {current.items.map((item) => (
-            <span
-              key={item.key}
-              className={cn(
-                "inline-flex h-8 items-center px-3 text-[13px] whitespace-nowrap",
-                item.key === activeKey ? "font-semibold text-brand" : "font-medium text-foreground/60",
-              )}
-            >
-              {item.label}
-            </span>
-          ))}
-        </SortableStrip>
-      ) : current && current.items.length > 1 ? (
+      {current && current.items.length > 1 && !arranging ? (
         <ul className="flex items-center gap-0.5 overflow-x-auto border-t border-border/60 px-2 [scrollbar-width:none]">
           {current.items.map((item) => {
             const active = item.key === activeKey;
