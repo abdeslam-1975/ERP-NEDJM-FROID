@@ -13,6 +13,19 @@ import {
   type UiTheme,
 } from "@/lib/ui/resolve";
 
+type PersonalRow = { item_key: string; sort_order: number; group_key: string | null; label_fr?: string | null };
+
+/** The user's own order; without the label_fr column (migration 20261015090000 not applied) the names are left out. */
+async function readPersonalOrder(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+  const withLabels = await supabase
+    .from("sys_ui_user_order")
+    .select("item_key, sort_order, group_key, label_fr")
+    .eq("user_id", userId);
+  if (!withLabels.error) return { data: (withLabels.data ?? []) as PersonalRow[], error: null };
+  const plain = await supabase.from("sys_ui_user_order").select("item_key, sort_order, group_key").eq("user_id", userId);
+  return { data: (plain.data ?? []) as PersonalRow[], error: plain.error };
+}
+
 /**
  * Interface choices for the signed-in user, read once per request. Any read failure (for example the
  * sys_ui_* tables not migrated yet) falls back to the default interface: everything visible, default look.
@@ -31,7 +44,7 @@ export const getUiLayout = cache(async function getUiLayout(): Promise<UiLayoutD
       // "*" so that a database without the design columns still returns the colours.
       supabase.from("sys_ui_theme").select("*").eq("id", 1).maybeSingle(),
       supabase.from("sys_ui_user_prefs").select("mode, density").eq("user_id", workspace.id).maybeSingle(),
-      supabase.from("sys_ui_user_order").select("item_key, sort_order, group_key").eq("user_id", workspace.id),
+      readPersonalOrder(supabase, workspace.id),
     ]);
     const overrides: Record<string, UiOverride> = {};
     if (!overridesRes.error) {
@@ -47,7 +60,7 @@ export const getUiLayout = cache(async function getUiLayout(): Promise<UiLayoutD
     const personal: Record<string, UiPersonalOrder> = {};
     if (!personalRes.error) {
       for (const row of personalRes.data ?? []) {
-        personal[row.item_key] = { sort_order: row.sort_order, group_key: row.group_key };
+        personal[row.item_key] = { sort_order: row.sort_order, group_key: row.group_key, label_fr: row.label_fr ?? null };
       }
     }
     const raw = themeRes.error ? null : (themeRes.data as (UiTheme & Record<string, unknown>) | null);

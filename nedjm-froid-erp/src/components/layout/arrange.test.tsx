@@ -103,16 +103,18 @@ describe("UiToolbar", () => {
 });
 
 describe("RhArrange", () => {
-  it("sends a whole HR section to « Autres » and saves each tab with its new section", async () => {
-    const { saveArrangement } = await import("@/lib/actions/ui-arrange");
-    function Start() {
-      const { start, active } = useArrange();
-      return active ? <RhArrange /> : (
-        <button type="button" id="start" onClick={start}>
-          start
-        </button>
-      );
-    }
+  function Start() {
+    const { start, active } = useArrange();
+    return active ? (
+      <RhArrange />
+    ) : (
+      <button type="button" id="start" onClick={start}>
+        start
+      </button>
+    );
+  }
+
+  function open() {
     act(() =>
       root.render(
         <UiLayoutProvider value={DEFAULT_LAYOUT}>
@@ -122,18 +124,75 @@ describe("RhArrange", () => {
       ),
     );
     act(() => (container.querySelector("#start") as HTMLButtonElement).click());
-    const column = (title: string) =>
-      [...container.querySelectorAll("li")].find((li) => li.querySelector("span.truncate")?.textContent === title)!;
-    act(() => column("Documents").querySelector<HTMLButtonElement>('button[type="button"]')!.click());
-    expect(column("Autres").textContent).toContain("Attestations");
-    expect(column("Documents").textContent).not.toContain("Attestations");
+  }
 
-    const save = [...container.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Enregistrer"))!;
-    await act(async () => save.click());
-    const lists = vi.mocked(saveArrangement).mock.calls.at(-1)![0].lists;
+  const titles = () => [...container.querySelectorAll("li > div span.truncate")].map((s) => s.textContent);
+  const column = (title: string) =>
+    [...container.querySelectorAll("li")].find((li) => li.querySelector("span.truncate")?.textContent === title);
+  const button = (label: string) => container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+  const buttonWithText = (text: string) => [...container.querySelectorAll("button")].find((b) => b.textContent?.startsWith(text))!;
+
+  function typeName(value: string) {
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Nom de l\'onglet"]')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+  }
+
+  async function saved() {
+    const { saveArrangement } = await import("@/lib/actions/ui-arrange");
+    await act(async () => buttonWithText("Enregistrer").click());
+    return vi.mocked(saveArrangement).mock.calls.at(-1)![0];
+  }
+
+  it("removes a catalogue section: its tabs go to « Autres », saved with their new section", async () => {
+    open();
+    act(() => button("Supprimer « Documents »").click());
+    expect(column("Autres")?.textContent).toContain("Attestations");
+    expect(column("Documents")?.textContent).not.toContain("Attestations");
+    expect(button("Supprimer « Autres »")).toBeNull();
+
+    const { lists, removedSections } = await saved();
     const rh = lists.find((l) => l.tabset === "rh")!;
     expect(rh.items.find((i) => i.key === "rh.attestations")?.group_key).toBe("group.rh_others");
     expect(rh.items.find((i) => i.key === "rh.paie")?.group_key).toBe("group.rh_payroll");
-    expect(lists.some((l) => l.tabset === "rh_sections")).toBe(true);
+    expect(removedSections).toEqual([]);
+  });
+
+  it("adds a named section before « Autres » and renames it", async () => {
+    open();
+    act(() => buttonWithText("Nouvel onglet").click());
+    typeName("Rarement");
+    expect(titles().filter((t) => t === "Rarement")).toHaveLength(1);
+    expect(titles().indexOf("Rarement")).toBe(titles().indexOf("Autres") - 1);
+
+    act(() => button("Renommer « Rarement »").click());
+    typeName("Peu utilisés");
+    expect(titles()).toContain("Peu utilisés");
+    expect(titles()).not.toContain("Rarement");
+
+    const { lists } = await saved();
+    const sections = lists.find((l) => l.tabset === "rh_sections")!.items;
+    const created = sections.find((i) => /^rh_sections\.x[a-z0-9]{6}$/.test(i.key));
+    expect(created?.label_fr).toBe("Peu utilisés");
+    expect(sections.find((i) => i.key === "rh_sections.payroll")?.label_fr).toBeNull();
+  });
+
+  it("deletes a created section for good", async () => {
+    open();
+    act(() => buttonWithText("Nouvel onglet").click());
+    typeName("Temporaire");
+    act(() => button("Supprimer « Temporaire »").click());
+    expect(titles()).not.toContain("Temporaire");
+
+    const { lists, removedSections } = await saved();
+    expect(removedSections).toHaveLength(1);
+    expect(removedSections![0]).toMatch(/^x[a-z0-9]{6}$/);
+    expect(lists.find((l) => l.tabset === "rh_sections")!.items.some((i) => i.key.endsWith(removedSections![0]))).toBe(false);
   });
 });
+

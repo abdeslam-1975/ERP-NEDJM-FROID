@@ -6,6 +6,7 @@ import {
   findItem,
   findTabset,
   isGroupKey,
+  isRhCustomSection,
   itemKey,
   rhSectionFromGroup,
   type UiIcon,
@@ -25,8 +26,11 @@ export type UiOverride = {
   group_key: string | null;
 };
 
-/** Position chosen by the user for themselves (sys_ui_user_order), over the super admin's order. */
-export type UiPersonalOrder = { sort_order: number; group_key: string | null };
+/**
+ * Position chosen by the user for themselves (sys_ui_user_order), over the super admin's order. `label_fr`: name
+ * of a HR bar section (one the user created, or renamed for themselves).
+ */
+export type UiPersonalOrder = { sort_order: number; group_key: string | null; label_fr?: string | null };
 
 export type UiTheme = {
   brand_color: string | null;
@@ -167,16 +171,54 @@ export function activeItemKey(items: ResolvedItem[], pathname: string): string |
   return best?.key ?? null;
 }
 
-export type ResolvedSection = { key: string; titleFr: string; titleAr: string; items: ResolvedItem[] };
+export type RhSectionDef = {
+  key: string;
+  titleFr: string;
+  titleAr: string;
+  /** Created by a user (not in the catalogue). */
+  custom: boolean;
+  /** Defined by the super admin for everyone (a catalogue section, or one created with « Pour tout le monde »). */
+  shared: boolean;
+};
+
+export type ResolvedSection = RhSectionDef & { items: ResolvedItem[] };
+
+const sectionLabel = (data: UiLayoutData, key: string) =>
+  cleanLabel(data.personal[key]?.label_fr) ?? cleanLabel(data.overrides[key]?.label_fr);
+
+/** Sections of the HR bar: the catalogue ones (renamed when chosen), then those created by the super admin or the user. */
+export function rhSectionDefs(data: UiLayoutData): RhSectionDef[] {
+  const defs: RhSectionDef[] = RH_SECTIONS.map((s) => {
+    const label = sectionLabel(data, itemKey(RH_SECTIONS_TABSET, s.key));
+    return { key: s.key, titleFr: label ?? s.titleFr, titleAr: label ?? s.titleAr, custom: false, shared: true };
+  });
+  const prefix = `${RH_SECTIONS_TABSET}.`;
+  const created = new Set(
+    [...Object.keys(data.overrides), ...Object.keys(data.personal)].filter(
+      (key) => key.startsWith(prefix) && isRhCustomSection(key.slice(prefix.length)),
+    ),
+  );
+  for (const key of [...created].sort()) {
+    const label = sectionLabel(data, key);
+    if (!label) continue;
+    const shared = Boolean(cleanLabel(data.overrides[key]?.label_fr));
+    defs.push({ key: key.slice(prefix.length), titleFr: label, titleAr: label, custom: true, shared });
+  }
+  return defs;
+}
 
 /** Section of a HR tab: the user's choice, then the super admin's, then the catalogue (last section otherwise). */
-export function rhSectionOf(data: UiLayoutData, item: UiItemDef & { key: string }): string {
-  return (
-    rhSectionFromGroup(data.personal[item.key]?.group_key) ??
-    rhSectionFromGroup(data.overrides[item.key]?.group_key) ??
-    rhSectionFromGroup(item.section) ??
-    RH_SECTIONS[RH_SECTIONS.length - 1].key
-  );
+export function rhSectionOf(
+  data: UiLayoutData,
+  item: UiItemDef & { key: string },
+  known: Set<string> = new Set(rhSectionDefs(data).map((s) => s.key)),
+): string {
+  const candidates = [data.personal[item.key]?.group_key, data.overrides[item.key]?.group_key, item.section];
+  for (const candidate of candidates) {
+    const section = rhSectionFromGroup(candidate);
+    if (section && known.has(section)) return section;
+  }
+  return RH_SECTIONS[RH_SECTIONS.length - 1].key;
 }
 
 /**
@@ -185,13 +227,13 @@ export function rhSectionOf(data: UiLayoutData, item: UiItemDef & { key: string 
  */
 export function resolveRhSections(data: UiLayoutData, opts: { includeEmpty?: boolean } = {}): ResolvedSection[] {
   const items = resolveTabset(data, "rh");
-  return RH_SECTIONS.map((section, index) => ({
-    section: {
-      ...section,
-      items: items.filter((item) => rhSectionOf(data, item) === section.key),
-    },
-    sort: sortValue(data, itemKey(RH_SECTIONS_TABSET, section.key), index),
-  }))
+  const defs = rhSectionDefs(data);
+  const known = new Set(defs.map((s) => s.key));
+  return defs
+    .map((section, index) => ({
+      section: { ...section, items: items.filter((item) => rhSectionOf(data, item, known) === section.key) },
+      sort: sortValue(data, itemKey(RH_SECTIONS_TABSET, section.key), index),
+    }))
     .sort((a, b) => a.sort - b.sort)
     .map(({ section }) => section)
     .filter((section) => opts.includeEmpty || section.items.length > 0);

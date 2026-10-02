@@ -9,6 +9,7 @@ import {
   CalendarClock,
   Ellipsis,
   FileText,
+  FolderOpen,
   LayoutDashboard,
   Scale,
   Settings2,
@@ -18,7 +19,7 @@ import {
 } from "lucide-react";
 import { RhArrange } from "@/components/layout/arrange";
 import { useArrange, useArrangeableList, useUiLayout } from "@/components/layout/ui-layout-context";
-import { RH_SECTIONS_TABSET } from "@/lib/ui/registry";
+import { RH_OTHERS_SECTION, RH_SECTIONS_TABSET } from "@/lib/ui/registry";
 import { activeItemKey, resolveRhSections, resolveTabset } from "@/lib/ui/resolve";
 import { cn } from "@/lib/utils";
 
@@ -38,8 +39,12 @@ const SPRING = { type: "spring", stiffness: 520, damping: 42 } as const;
 export function RhModuleNav() {
   const pathname = usePathname();
   const layout = useUiLayout();
-  const { active: arranging } = useArrange();
-  const sections = useMemo(() => resolveRhSections(layout), [layout]);
+  const { active: arranging, start } = useArrange();
+  // « Autres » stays in sight even when empty: it is where tabs are put away.
+  const sections = useMemo(
+    () => resolveRhSections(layout, { includeEmpty: true }).filter((s) => s.items.length || s.key === RH_OTHERS_SECTION),
+    [layout],
+  );
   const tabs = useMemo(() => resolveTabset(layout, "rh"), [layout]);
   const activeKey = useMemo(() => activeItemKey(tabs, pathname), [tabs, pathname]);
   useArrangeableList(
@@ -64,9 +69,24 @@ export function RhModuleNav() {
       ) : (
         <ul className="flex items-center gap-1 overflow-x-auto p-1.5 [scrollbar-width:none]">
           {sections.map((section) => {
-            const Icon = RH_SECTION_ICONS[section.key] ?? LayoutDashboard;
+            const Icon = RH_SECTION_ICONS[section.key] ?? (section.custom ? FolderOpen : LayoutDashboard);
             const active = section.key === current?.key;
             const first = section.items[0];
+            if (!first) {
+              return (
+                <li key={section.key}>
+                  <button
+                    type="button"
+                    onClick={start}
+                    title="Vide : cliquez pour y ranger des onglets (Réorganiser) · فارغ، اضغط لنقل تبويبات إليه"
+                    className="inline-flex h-9 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold whitespace-nowrap text-foreground/45 transition-colors outline-none hover:bg-surface-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand/50"
+                  >
+                    <Icon className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                    {section.titleFr}
+                  </button>
+                </li>
+              );
+            }
             return (
               <li key={section.key} className={section.key === "settings" ? "ml-auto" : undefined}>
                 <Link
