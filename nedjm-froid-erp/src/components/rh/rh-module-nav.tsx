@@ -62,7 +62,7 @@ export function RhModuleNav() {
   return (
     <nav
       aria-label="Ressources humaines"
-      className="sticky top-0 z-20 -mx-1 mb-1 rounded-2xl border border-border/70 bg-surface/95 shadow-[var(--card-shadow)] backdrop-blur-md supports-[backdrop-filter]:bg-surface/85"
+      className="ui-glass sticky top-3 z-20 -mx-1 mb-2 rounded-2xl print:hidden"
     >
       {arranging ? (
         <RhArrange />
@@ -94,18 +94,22 @@ export function RhModuleNav() {
                   title={section.titleAr}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "relative inline-flex h-9 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand/50",
-                    active ? "text-white" : "text-foreground/65 hover:bg-surface-muted hover:text-foreground",
+                    "group relative inline-flex h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand/50",
+                    active ? "text-white" : "text-foreground/60 hover:bg-surface-muted/80 hover:text-foreground",
                   )}
                 >
                   {active ? (
                     <motion.span
                       layoutId={sectionMarker}
-                      className="absolute inset-0 rounded-xl bg-brand shadow-sm shadow-brand/30"
+                      className="absolute inset-0 rounded-xl bg-brand shadow-[0_8px_20px_-8px_var(--color-brand),inset_0_1px_0_rgba(255,255,255,0.25)]"
                       transition={SPRING}
                     />
                   ) : null}
-                  <Icon className="relative h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                  <Icon
+                    className="relative h-4 w-4 shrink-0 transition-transform duration-300 group-hover:scale-110"
+                    strokeWidth={2}
+                    aria-hidden
+                  />
                   <span className="relative">{section.titleFr}</span>
                   {section.items.length > 1 ? (
                     <span

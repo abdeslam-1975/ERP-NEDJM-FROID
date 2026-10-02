@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { Fragment } from "react";
+import { Inbox, type LucideIcon } from "lucide-react";
 import { UiToolbar } from "@/components/layout/arrange";
 export { RhModal, RhTabs } from "@/components/rh/rh-ui-client";
 
@@ -146,13 +147,9 @@ export function RhPageHeader({
 }) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-      <div className="min-w-0 space-y-1.5">
-        {eyebrow ? (
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand">
-            {eyebrow}
-          </p>
-        ) : null}
-        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground sm:text-[1.7rem]">
+      <div className="min-w-0 space-y-1">
+        {eyebrow ? <p className="text-sm font-medium text-foreground/50">{eyebrow}</p> : null}
+        <h2 className="font-display text-[1.65rem] leading-tight font-semibold tracking-tight text-foreground sm:text-[1.9rem]">
           {title}
         </h2>
         {description ? (
@@ -181,7 +178,7 @@ export function RhPanel({
 }) {
   return (
     <div
-      className={`ui-panel overflow-hidden rounded-2xl border ${padded ? "p-4 sm:p-5" : ""} ${className}`}
+      className={`ui-panel overflow-hidden rounded-[calc(var(--radius-2xl)+0.5rem)] border ${padded ? "p-4 sm:p-6" : ""} ${className}`}
     >
       {children}
     </div>
@@ -189,8 +186,7 @@ export function RhPanel({
 }
 
 export function RhToolbar({ children, tabset }: { children: ReactNode; tabset?: string }) {
-  const className =
-    "flex flex-wrap items-center gap-2 rounded-2xl border border-border/60 bg-surface/80 p-2.5 backdrop-blur-sm";
+  const className = "ui-glass flex flex-wrap items-center gap-2 rounded-2xl p-2.5";
   return tabset ? (
     <UiToolbar tabset={tabset} className={className}>
       {children}
@@ -223,15 +219,8 @@ export function RhAlert({
 export function RhEmpty({ title, body }: { title: string; body?: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 px-6 py-14 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-muted text-brand">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
-          <path
-            d="M7 8h10M7 12h7M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-          />
-        </svg>
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-muted text-brand ring-8 ring-brand-muted/40">
+        <Inbox className="h-6 w-6" strokeWidth={1.7} aria-hidden />
       </div>
       <p className="font-display text-base font-semibold text-foreground">{title}</p>
       {body ? <p className="max-w-sm text-sm text-foreground/55">{body}</p> : null}
@@ -241,18 +230,18 @@ export function RhEmpty({ title, body }: { title: string; body?: string }) {
 
 export function RhTableWrap({ children }: { children: ReactNode }) {
   return (
-    <div className="ui-table-wrap overflow-x-auto rounded-2xl border">
+    <div className="ui-table-wrap overflow-x-auto rounded-[calc(var(--radius-2xl)+0.5rem)] border shadow-[var(--card-shadow)]">
       {children}
     </div>
   );
 }
 
 export function rhTh() {
-  return "px-3.5 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/45";
+  return "px-4 py-3.5 text-left text-xs font-medium text-foreground/50";
 }
 
 export function rhTd() {
-  return "px-3.5 py-3 align-middle text-sm text-foreground/85";
+  return "px-4 py-3.5 align-middle text-sm text-foreground/85";
 }
 
 export function RhChip({
@@ -265,12 +254,12 @@ export function RhChip({
   const map = {
     neutral: "bg-surface-muted text-foreground/70",
     brand: "bg-brand-muted text-brand",
-    success: "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200",
-    warning: "bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-100",
-    danger: "bg-red-50 text-red-800 dark:bg-red-950/50 dark:text-red-100",
+    success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300",
+    warning: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+    danger: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300",
   }[tone];
   return (
-    <span className={`inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-semibold ${map}`}>
+    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${map}`}>
       {children}
     </span>
   );
@@ -301,16 +290,23 @@ export function RhSectionTitle({ children }: { children: ReactNode }) {
 export function RhStat({
   label,
   value,
+  icon: Icon,
 }: {
   label: string;
   value: ReactNode;
+  icon?: LucideIcon;
 }) {
   return (
-    <div className="ui-stat rounded-2xl border px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-foreground/45">
-        {label}
-      </p>
-      <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-foreground">{value}</p>
+    <div className="ui-stat ui-lift flex items-center gap-3.5 rounded-[calc(var(--radius-2xl)+0.25rem)] border px-4 py-3.5">
+      {Icon ? (
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-muted text-brand">
+          <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} aria-hidden />
+        </span>
+      ) : null}
+      <div className="min-w-0">
+        <p className="truncate text-xs font-medium text-foreground/50">{label}</p>
+        <p className="mt-0.5 font-display text-2xl font-semibold tracking-tight tabular-nums text-foreground">{value}</p>
+      </div>
     </div>
   );
 }

@@ -10,6 +10,10 @@ import type { DisplayMode } from "@/lib/ui/design";
 
 const AnimationsContext = createContext(false);
 
+export function useAnimationsEnabled() {
+  return useContext(AnimationsContext);
+}
+
 /** Applies the user's saved display mode, or the application default on a device that never chose one. */
 function ThemeSync({ userMode, defaultMode }: { userMode: DisplayMode | null; defaultMode: DisplayMode | null }) {
   const { setTheme } = useTheme();
@@ -33,7 +37,7 @@ function ThemeSync({ userMode, defaultMode }: { userMode: DisplayMode | null; de
   return null;
 }
 
-/** `animations`: only when the chosen look turns them on; the original appearance has none. */
+/** `animations`: on by default; a chosen look can turn them off. The OS "reduce motion" setting is always honoured. */
 export function AppProviders({
   animations,
   userMode,

@@ -37,11 +37,12 @@ export async function AppShell({
     <UiLayoutProvider value={layout}>
       <style>{css}</style>
       <AppProviders
-        animations={layout.design?.animations ?? false}
+        animations={layout.design?.animations ?? true}
         userMode={layout.prefs.mode}
         defaultMode={layout.design?.default_mode ?? null}
       >
-        <div className="flex min-h-screen bg-background text-foreground">
+        <div className="relative isolate flex min-h-screen bg-background text-foreground">
+          <div aria-hidden className="ui-app-glow pointer-events-none fixed inset-0 -z-10 print:hidden" />
           <Sidebar />
           <div className="flex min-w-0 flex-1 flex-col">
             <Topbar

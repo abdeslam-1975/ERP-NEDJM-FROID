@@ -11,15 +11,21 @@
   --color-alert-critical: #ef4444;
   --color-alert-warning: #f59e0b;
   --color-alert-success: #22c55e;
-  --background: #f3f4f8;
-  --foreground: #1f2937;
+  --background: #f5f6fa;
+  --foreground: #1e293b;
   --surface: #ffffff;
-  --surface-muted: #f0f2f7;
-  --border: #e5e7ef;
+  --surface-muted: #f2f4f9;
+  --border: #e6e8f0;
   --sidebar: #1a2f8a;
   --sidebar-fg: #eef2ff;
   --sidebar-muted: #8fa0d9;
-  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 28px -18px rgba(15, 23, 42, 0.18);
+  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 14px 34px -22px rgba(15, 23, 42, 0.2);
+  --card-shadow-hover: 0 1px 2px rgba(15, 23, 42, 0.04), 0 22px 44px -22px color-mix(in srgb, var(--color-brand) 38%, transparent);
+  --app-glow:
+    radial-gradient(640px 420px at 88% -8%, color-mix(in srgb, var(--color-brand) 15%, transparent), transparent 70%),
+    radial-gradient(520px 380px at 108% 34%, rgba(139, 92, 246, 0.09), transparent 70%),
+    radial-gradient(520px 380px at 30% 110%, rgba(20, 184, 166, 0.06), transparent 70%);
+  --ease-out-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .dark {
@@ -38,6 +44,10 @@
   --sidebar-fg: #eef2ff;
   --sidebar-muted: #8fa0d9;
   --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.25), 0 12px 32px -16px rgba(0, 0, 0, 0.55);
+  --card-shadow-hover: 0 1px 2px rgba(0, 0, 0, 0.25), 0 22px 44px -20px rgba(0, 0, 0, 0.7);
+  --app-glow:
+    radial-gradient(640px 420px at 88% -8%, color-mix(in srgb, var(--color-brand) 12%, transparent), transparent 70%),
+    radial-gradient(520px 380px at 108% 34%, rgba(139, 92, 246, 0.07), transparent 70%);
 }
 
 @theme inline {
@@ -189,5 +199,106 @@ body {
 @media print {
   .data-table tbody > tr:hover > td {
     background-color: transparent;
+  }
+}
+
+/* —— 2026 surfaces: floating glass sidebar and bars, lifting cards, staggered entrances —— */
+@layer components {
+  .ui-app-glow {
+    background-image: var(--app-glow);
+  }
+
+  .ui-sidebar {
+    background:
+      linear-gradient(180deg, color-mix(in srgb, white 7%, var(--sidebar)) 0%, color-mix(in srgb, black 22%, var(--sidebar)) 100%);
+    box-shadow:
+      0 24px 60px -24px color-mix(in srgb, var(--sidebar) 70%, transparent),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  }
+
+  .ui-glass {
+    background: color-mix(in oklab, var(--surface) 74%, transparent);
+    border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+    box-shadow: 0 8px 30px -18px rgba(15, 23, 42, 0.22);
+    backdrop-filter: blur(18px) saturate(170%);
+  }
+
+  .ui-lift {
+    transition:
+      transform 300ms var(--ease-out-soft),
+      box-shadow 300ms var(--ease-out-soft),
+      border-color 300ms ease;
+  }
+
+  .ui-lift:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(in oklab, var(--color-brand) 24%, var(--border));
+    box-shadow: var(--card-shadow-hover);
+  }
+
+  .ui-stagger > * {
+    animation: ui-rise 550ms var(--ease-out-soft) both;
+  }
+
+  .ui-stagger > *:nth-child(2) { animation-delay: 50ms; }
+  .ui-stagger > *:nth-child(3) { animation-delay: 100ms; }
+  .ui-stagger > *:nth-child(4) { animation-delay: 150ms; }
+  .ui-stagger > *:nth-child(5) { animation-delay: 200ms; }
+  .ui-stagger > *:nth-child(6) { animation-delay: 250ms; }
+  .ui-stagger > *:nth-child(7) { animation-delay: 300ms; }
+  .ui-stagger > *:nth-child(8) { animation-delay: 350ms; }
+  .ui-stagger > *:nth-child(n + 9) { animation-delay: 400ms; }
+
+  .ui-draw {
+    stroke-dasharray: 1;
+    animation: ui-draw 1.6s var(--ease-out-soft) both;
+  }
+
+  .ui-fade {
+    animation: ui-fade 800ms var(--ease-out-soft) both 300ms;
+  }
+
+  .ui-ring {
+    animation: ui-ring 1.2s var(--ease-out-soft) both 200ms;
+  }
+
+  .ui-grow-x {
+    transform-origin: left;
+    animation: ui-grow-x 1s var(--ease-out-soft) both 300ms;
+  }
+}
+
+@keyframes ui-rise {
+  from { opacity: 0; transform: translateY(10px); }
+}
+
+@keyframes ui-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes ui-fade {
+  from { opacity: 0; }
+}
+
+@keyframes ui-ring {
+  from { stroke-dashoffset: var(--ring-length); }
+}
+
+@keyframes ui-grow-x {
+  from { transform: scaleX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-stagger > *,
+  .ui-draw,
+  .ui-fade,
+  .ui-ring,
+  .ui-grow-x {
+    animation: none;
+  }
+
+  .ui-lift:hover {
+    transform: none;
   }
 }
