@@ -459,9 +459,10 @@ async function archiveMissionOrderSnapshot(input: {
 }): Promise<ActionResult<{ archive_url: string; archive_path: string }>> {
   try {
     const settings = await getHrFicheSettings();
+    const origin = siteOrigin();
     const letterhead = companyLetterheadUrl(
       settings.ok ? settings.data.letterhead_url : null,
-      siteOrigin(),
+      origin,
     );
     const checked = missionOrderFieldsSchema.safeParse(input.fields);
     if (!checked.success) {
@@ -473,6 +474,7 @@ async function archiveMissionOrderSnapshot(input: {
     const html = buildMissionOrderHtml(
       { ...checked.data, numero: input.number },
       letterhead,
+      origin,
     );
     const safeMat = (checked.data.matricule || "NA").replace(/[^\w/-]+/g, "_");
     const safeNom = (checked.data.nom || "OM").replace(/[^\w/-]+/g, "_");

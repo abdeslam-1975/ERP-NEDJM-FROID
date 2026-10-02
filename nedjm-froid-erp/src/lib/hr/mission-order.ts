@@ -18,6 +18,9 @@ export const OM_LIEU_DEPART = "Hassi Messaoud";
 export const OM_DONNEUR = "Service RH";
 export const OM_FAIT_A = "HMD";
 export const OM_ENTREPRISE = "E.U.R.L. NEDJM FROID";
+export const OM_MOYEN_TOUS = "Tous moyens de transport";
+export const OM_MOYEN_SERVICE = "Véhicule de service";
+export const OM_MOYENS = [OM_MOYEN_TOUS, OM_MOYEN_SERVICE] as const;
 /** Print layout kept for orders that must still use the legacy boxed sheet. */
 export const OM_GABARIT_ANCIEN = "v1";
 

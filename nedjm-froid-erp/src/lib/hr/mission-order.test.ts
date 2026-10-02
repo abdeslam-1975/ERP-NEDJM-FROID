@@ -78,11 +78,33 @@ describe("mission order print", () => {
     expect(html).toContain("V. SIGNATURE DU MISSIONNAIRE");
     expect(html).toContain("TAHRI CHAHINAZ");
     expect(html).toContain("ADM-01");
-    expect(html).toContain("Autres : Taxi");
+    expect(html).toContain('om-check">✓</span><span>Tous moyens de transport');
+    expect(html).toContain('om-check"></span><span>Véhicule de service');
+    expect(html).not.toContain("Autres");
     expect(html).toContain("11/09/2026");
     expect(html).toContain("IBM Plex Sans");
     expect(html).toContain('class="om-letterhead"');
     expect(html).not.toContain("Times New Roman");
+  });
+
+  it("ticks the service vehicle box", () => {
+    const parsed = missionOrderFieldsSchema.safeParse({ ...sample, moyen: "Véhicule de service" });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const html = buildMissionOrderHtml(parsed.data, "/hr-letterhead.png");
+    expect(html).toContain('om-check">✓</span><span>Véhicule de service');
+    expect(html).toContain('om-check"></span><span>Tous moyens de transport');
+  });
+
+  it("loads its fonts from the app, not Google Fonts", () => {
+    const parsed = missionOrderFieldsSchema.safeParse(sample);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    for (const gabarit of [null, "v1"] as const) {
+      const html = buildMissionOrderHtml({ ...parsed.data, gabarit }, "/hr-letterhead.png", "https://erp.test");
+      expect(html).not.toContain("fonts.googleapis.com");
+      expect(html).toContain('url("https://erp.test/fonts/om/');
+    }
   });
 
   it("keeps the reference readable for unusual numbers", () => {

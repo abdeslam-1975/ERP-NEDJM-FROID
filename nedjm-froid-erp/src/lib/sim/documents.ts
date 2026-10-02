@@ -88,6 +88,7 @@ export function omOutput(d: OmSimData, ctx: SimContext, env: SimEnv): SimOutput 
   const html = buildMissionOrderHtml(
     { ...fields, matricule: raw.matricule, nom: raw.nom, numero: ctx.str("om.numero", d.numero) },
     companyLetterheadUrl(d.letterhead_url, env.origin),
+    env.origin,
   );
   const duration =
     fields.dateDepart && fields.dateRetour

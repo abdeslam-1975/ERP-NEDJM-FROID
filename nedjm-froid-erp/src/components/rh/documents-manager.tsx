@@ -246,6 +246,7 @@ export function DocumentsManager({
       buildMissionOrderHtml(
         { ...checked.data, numero: draft.numero },
         companyLetterheadUrl(letterheadUrl, window.location.origin),
+        window.location.origin,
       ),
     );
   }
