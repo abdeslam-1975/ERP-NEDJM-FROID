@@ -12,6 +12,7 @@ import {
   type MissionContractHint,
   type MissionOrderFields,
 } from "@/lib/hr/mission-order";
+import { leaveTitleFieldsSchema, leaveTitlePayload } from "@/lib/hr/leave-title";
 import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
 import { HR_DOCS_BUCKET, hrFileDisplayUrl, hrFileHref } from "@/lib/hr/hr-file-url";
 import { buildMissionOrderHtml } from "@/components/rh/mission-order-print";
@@ -532,6 +533,42 @@ async function missionSiteOf(
     .select("employee_id, site_id, poste_fr, poste_ar, affectation_principale, status, start_date")
     .eq("employee_id", employeeId);
   return pickMissionContract((data ?? []) as MissionContractHint[], employeeId)?.site_id ?? null;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Saves the print fields of a titre de congé on its LEAVE correspondence (leave dates and legend untouched). */
+export async function saveLeaveTitle(input: {
+  id: string;
+  fields: unknown;
+}): Promise<ActionResult<{ titre: Record<string, string | null> }>> {
+  if (!UUID.test(input.id ?? "")) return { ok: false, error: "Titre de congé invalide." };
+  const checked = leaveTitleFieldsSchema.safeParse(input.fields);
+  if (!checked.success) {
+    return { ok: false, error: checked.error.issues[0]?.message ?? "Données invalides" };
+  }
+  const supabase = await createClient();
+  const { data: current, error: readErr } = await supabase
+    .from("hr_correspondences")
+    .select("payload, status_code")
+    .eq("id", input.id)
+    .eq("type_code", "LEAVE")
+    .maybeSingle();
+  if (readErr) return { ok: false, error: readErr.message };
+  if (!current) return { ok: false, error: "Titre de congé introuvable. · سند الإجازة غير موجود." };
+  if (current.status_code === "CANCELLED") {
+    return { ok: false, error: "Ce congé a été annulé. · هذه الإجازة ملغاة." };
+  }
+  const titre = leaveTitlePayload(checked.data);
+  const { data: saved, error } = await supabase
+    .from("hr_correspondences")
+    .update({ payload: { ...((current.payload ?? {}) as Record<string, unknown>), titre } })
+    .eq("id", input.id)
+    .select("id");
+  if (error) return { ok: false, error: error.message };
+  if (!saved?.length) return { ok: false, error: "Enregistrement refusé (droits)." };
+  revalidatePath("/rh/documents");
+  return { ok: true, data: { titre } };
 }
 
 const UNIQUE_VIOLATION = "23505";

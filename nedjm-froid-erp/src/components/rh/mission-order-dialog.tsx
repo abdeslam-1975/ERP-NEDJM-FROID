@@ -103,7 +103,7 @@ export const emptyMissionDraft = (): MissionDraft => ({
 
 type SiteOpt = { id: string; name_fr: string };
 
-function withCurrent(options: string[], current: string) {
+export function withCurrent(options: string[], current: string) {
   const values = options.filter(Boolean);
   if (current && !values.includes(current)) values.unshift(current);
   return values;
@@ -250,7 +250,7 @@ export function MissionOrderDialog({
 
   return (
     <RhModal
-      size="xl"
+      size="lg"
       title="Ordre de Mission"
       subtitle={value.numero || "Nouveau"}
       onClose={onClose}

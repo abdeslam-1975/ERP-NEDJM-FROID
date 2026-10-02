@@ -421,6 +421,7 @@ export const UI_TABSETS: UiTabsetDef[] = [
     whereFr: "RH → Documents",
     items: [
       { id: "corr", labelFr: "أوامر المهمة — Ordres de mission" },
+      { id: "conges", labelFr: "سندات الإجازات — Titres de congé" },
       { id: "files", labelFr: "الوثائق الرسمية — Pièces officielles" },
     ],
   },
