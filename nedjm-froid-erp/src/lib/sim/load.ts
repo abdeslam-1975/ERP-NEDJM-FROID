@@ -282,7 +282,6 @@ async function loadMission(
         pieceType: idType?.label_fr || emp.id_type_code || "",
         pieceNum: emp.id_number || "",
         pieceDelivre: (emp.id_issued_on || "").slice(0, 10),
-        pieceFonction: poste,
         pieceLieu: emp.id_issued_by || "",
         donneur: OM_DONNEUR,
         faitA: OM_FAIT_A,

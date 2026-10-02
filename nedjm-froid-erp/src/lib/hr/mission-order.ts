@@ -18,6 +18,8 @@ export const OM_LIEU_DEPART = "Hassi Messaoud";
 export const OM_DONNEUR = "Service RH";
 export const OM_FAIT_A = "HMD";
 export const OM_ENTREPRISE = "E.U.R.L. NEDJM FROID";
+/** Print layout kept for orders that must still use the legacy boxed sheet. */
+export const OM_GABARIT_ANCIEN = "v1";
 
 export const missionOrderFieldsSchema = z
   .object({
@@ -25,6 +27,7 @@ export const missionOrderFieldsSchema = z
     nom: z.string().trim().min(1, { message: "Le matricule et le nom sont obligatoires." }).max(80),
     prenom: optText(80),
     affectation: optText(160),
+    codeAffectation: optText(40),
     poste: optText(160),
     dest1: optText(200),
     dest2: optText(200),
@@ -48,6 +51,12 @@ export const missionOrderFieldsSchema = z
     donneur: optText(80),
     faitA: optText(40),
     dateDoc: optDate,
+    gabarit: z
+      .string()
+      .trim()
+      .optional()
+      .nullable()
+      .transform((v) => (v === OM_GABARIT_ANCIEN ? OM_GABARIT_ANCIEN : null)),
   })
   .superRefine((v, ctx) => {
     if (v.dateDepart && v.dateRetour && v.dateRetour < v.dateDepart) {
@@ -92,6 +101,7 @@ export function missionPayload(fields: MissionOrderFields): Record<string, strin
     nom: fields.nom,
     prenom: fields.prenom,
     affectation: fields.affectation,
+    codeAffectation: fields.codeAffectation,
     poste: fields.poste,
     dest1: fields.dest1,
     dest2: fields.dest2,
@@ -115,6 +125,7 @@ export function missionPayload(fields: MissionOrderFields): Record<string, strin
     donneur: fields.donneur ?? OM_DONNEUR,
     faitA: fields.faitA ?? OM_FAIT_A,
     dateDoc: fields.dateDoc,
+    gabarit: fields.gabarit,
   };
 }
 

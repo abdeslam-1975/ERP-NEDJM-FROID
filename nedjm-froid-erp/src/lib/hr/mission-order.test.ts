@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMissionOrderHtml } from "@/components/rh/mission-order-print";
+import { buildMissionOrderHtml, missionReference } from "@/components/rh/mission-order-print";
 import {
   addDaysIso,
   missionDateBounds,
@@ -64,8 +64,39 @@ describe("mission order fields", () => {
 });
 
 describe("mission order print", () => {
-  it("keeps the legacy bilingual sheet", () => {
-    const parsed = missionOrderFieldsSchema.safeParse(sample);
+  it("prints the sectioned sheet by default", () => {
+    const parsed = missionOrderFieldsSchema.safeParse({ ...sample, codeAffectation: "ADM-01" });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.gabarit).toBeNull();
+    const html = buildMissionOrderHtml(
+      { ...parsed.data, numero: "000004/26" },
+      "/hr-letterhead.png",
+    );
+    expect(html).toContain("NF/OM/0004/26");
+    expect(html).toContain("I. IDENTIFICATION DU MISSIONNAIRE");
+    expect(html).toContain("V. SIGNATURE DU MISSIONNAIRE");
+    expect(html).toContain("TAHRI CHAHINAZ");
+    expect(html).toContain("ADM-01");
+    expect(html).toContain("Autres : Taxi");
+    expect(html).toContain("11/09/2026");
+    expect(html).toContain("IBM Plex Sans");
+    expect(html).toContain('class="om-letterhead"');
+    expect(html).not.toContain("Times New Roman");
+  });
+
+  it("keeps the reference readable for unusual numbers", () => {
+    expect(missionReference("000123/26")).toBe("NF/OM/0123/26");
+    expect(missionReference("012345/26")).toBe("NF/OM/12345/26");
+    expect(missionReference("")).toBe("");
+    expect(missionReference("BROUILLON")).toBe("NF/OM/BROUILLON");
+  });
+
+  it("keeps the legacy bilingual sheet on request", () => {
+    const parsed = missionOrderFieldsSchema.safeParse({ ...sample, gabarit: "v1" });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(missionPayload(parsed.data).gabarit).toBe("v1");
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
     const html = buildMissionOrderHtml(

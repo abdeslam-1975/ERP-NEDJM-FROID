@@ -7,6 +7,7 @@ import type { HrEmployeeRow } from "@/lib/actions/hr-employees";
 import {
   OM_DONNEUR,
   OM_FAIT_A,
+  OM_GABARIT_ANCIEN,
   OM_LIEU_DEPART,
   missionDateBounds,
   missionDateIssue,
@@ -27,6 +28,7 @@ export type MissionDraft = {
   nom: string;
   prenom: string;
   affectation: string;
+  codeAffectation: string;
   poste: string;
   dest1: string;
   dest2: string;
@@ -50,6 +52,7 @@ export type MissionDraft = {
   donneur: string;
   faitA: string;
   dateDoc: string;
+  gabarit: string;
   savedDateDepart?: string;
   savedDateRetour?: string;
 };
@@ -70,6 +73,7 @@ export const emptyMissionDraft = (): MissionDraft => ({
   nom: "",
   prenom: "",
   affectation: "",
+  codeAffectation: "",
   poste: "",
   dest1: "",
   dest2: "",
@@ -93,6 +97,7 @@ export const emptyMissionDraft = (): MissionDraft => ({
   donneur: OM_DONNEUR,
   faitA: OM_FAIT_A,
   dateDoc: todayIsoAlgiers(),
+  gabarit: "",
 });
 
 type SiteOpt = { id: string; name_fr: string };
@@ -173,7 +178,6 @@ export function MissionOrderDialog({
       pieceType: type?.label_fr || emp.id_type_code || "",
       pieceNum: emp.id_number || "",
       pieceDelivre: (emp.id_issued_on || "").slice(0, 10),
-      pieceFonction: poste,
       pieceLieu: emp.id_issued_by || "",
     });
     setMatches([]);
@@ -486,7 +490,7 @@ export function MissionOrderDialog({
             <RhField label="Délivré le">
               <input type="date" className={rhInput} value={value.pieceDelivre} onChange={(e) => set({ pieceDelivre: e.target.value })} />
             </RhField>
-            <RhField label="Fonction (émetteur pièce)">
+            <RhField label="Fonction du donneur de l'OM">
               <input className={rhInput} value={value.pieceFonction} onChange={(e) => set({ pieceFonction: e.target.value })} />
             </RhField>
             <RhField label="À (lieu)">
@@ -500,6 +504,12 @@ export function MissionOrderDialog({
             </RhField>
             <RhField label="Date du document">
               <input type="date" className={rhInput} value={value.dateDoc} onChange={(e) => set({ dateDoc: e.target.value })} />
+            </RhField>
+            <RhField label="Modèle d'impression — نموذج الطباعة">
+              <select className={rhInput} value={value.gabarit} onChange={(e) => set({ gabarit: e.target.value })}>
+                <option value="">Nouveau modèle</option>
+                <option value={OM_GABARIT_ANCIEN}>Ancien modèle</option>
+              </select>
             </RhField>
           </div>
         </section>
