@@ -12,11 +12,12 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { resetArrangement, saveArrangement, type ArrangeList, type ArrangeTarget } from "@/lib/actions/ui-arrange";
-import { NAV_GROUPS_TABSET, findTabset, itemKey } from "@/lib/ui/registry";
+import { NAV_GROUPS_TABSET, RH_SECTIONS_TABSET, findTabset, itemKey, keysOfTabset } from "@/lib/ui/registry";
 import {
   DEFAULT_LAYOUT,
   applyTabs,
   resolveNav,
+  resolveRhSections,
   resolveTabset,
   type UiLayoutData,
   type UiPersonalOrder,
@@ -155,6 +156,8 @@ export function UiLayoutProvider({ value, children }: { value: UiLayoutData; chi
         payload.push({ tabset, items: nav.map((g) => ({ key: g.key })) });
       } else if (tabset === "nav") {
         payload.push({ tabset, items: nav.flatMap((g) => g.items.map((i) => ({ key: i.key, group_key: g.key }))) });
+      } else if (tabset === RH_SECTIONS_TABSET) {
+        payload.push({ tabset, items: resolveRhSections(layout).map((s) => ({ key: itemKey(tabset, s.key) })) });
       } else if (findTabset(tabset)) {
         payload.push({ tabset, items: resolveTabset(layout, tabset).map((i) => ({ key: i.key })) });
       }
@@ -235,7 +238,7 @@ export function useArrangeableList(tabset: string | undefined, items: { id: stri
   const { register } = useArrange();
   const signature = JSON.stringify(items.map((i) => ({ id: i.id, label: i.label })));
   useEffect(() => {
-    if (!tabset || !findTabset(tabset)) return;
+    if (!tabset || !keysOfTabset(tabset)) return;
     return register({ tabset, items: JSON.parse(signature) as ArrangeableList["items"] });
   }, [tabset, signature, register]);
 }

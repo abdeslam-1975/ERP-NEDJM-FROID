@@ -1,3 +1,4 @@
+import { ArrangeButton } from "@/components/layout/arrange";
 import { DisplayMenu } from "@/components/layout/display-menu";
 import { SiteSwitcher } from "@/components/layout/site-switcher";
 import { GlobalSearch } from "@/components/layout/global-search";
@@ -53,6 +54,7 @@ export function Topbar({
           sites={workspace.accessibleSites}
           activeSiteId={workspace.activeSite?.id ?? null}
         />
+        <ArrangeButton />
         <DisplayMenu />
         <NotificationBell initial={notifications} />
 

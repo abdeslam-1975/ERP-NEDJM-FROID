@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { SortableStrip } from "@/components/layout/arrange";
 import { useArrange, useArrangeableList, useUiLayout } from "@/components/layout/ui-layout-context";
+import { RH_SECTIONS_TABSET } from "@/lib/ui/registry";
 import { activeItemKey, resolveRhSections, resolveTabset } from "@/lib/ui/resolve";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +44,10 @@ export function RhModuleNav() {
     "rh",
     useMemo(() => tabs.map((t) => ({ id: t.id, label: t.label })), [tabs]),
   );
+  useArrangeableList(
+    RH_SECTIONS_TABSET,
+    useMemo(() => sections.map((s) => ({ id: s.key, label: s.titleFr })), [sections]),
+  );
   const current = sections.find((s) => s.items.some((i) => i.key === activeKey)) ?? null;
   const sectionMarker = useId();
   const tabMarker = useId();
@@ -52,46 +57,70 @@ export function RhModuleNav() {
       aria-label="Ressources humaines"
       className="sticky top-0 z-20 -mx-1 mb-1 rounded-2xl border border-border/70 bg-surface/95 shadow-[var(--card-shadow)] backdrop-blur-md supports-[backdrop-filter]:bg-surface/85"
     >
-      <ul className="flex items-center gap-1 overflow-x-auto p-1.5 [scrollbar-width:none]">
-        {sections.map((section) => {
-          const Icon = RH_SECTION_ICONS[section.key] ?? LayoutDashboard;
-          const active = section.key === current?.key;
-          const first = section.items[0];
-          return (
-            <li key={section.key} className={section.key === "settings" ? "ml-auto" : undefined}>
-              <Link
-                href={first.href ?? "/rh"}
-                title={section.titleAr}
-                aria-current={active ? "page" : undefined}
+      {arranging ? (
+        <SortableStrip
+          tabset={RH_SECTIONS_TABSET}
+          ids={sections.map((s) => s.key)}
+          className="flex items-center gap-2 overflow-x-auto p-2 [scrollbar-width:none]"
+        >
+          {sections.map((section) => {
+            const Icon = RH_SECTION_ICONS[section.key] ?? LayoutDashboard;
+            return (
+              <span
+                key={section.key}
                 className={cn(
-                  "relative inline-flex h-9 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand/50",
-                  active ? "text-white" : "text-foreground/65 hover:bg-surface-muted hover:text-foreground",
+                  "inline-flex h-9 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold whitespace-nowrap",
+                  section.key === current?.key ? "bg-brand text-white" : "text-foreground/65",
                 )}
               >
-                {active ? (
-                  <motion.span
-                    layoutId={sectionMarker}
-                    className="absolute inset-0 rounded-xl bg-brand shadow-sm shadow-brand/30"
-                    transition={SPRING}
-                  />
-                ) : null}
-                <Icon className="relative h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                <span className="relative">{section.titleFr}</span>
-                {section.items.length > 1 ? (
-                  <span
-                    className={cn(
-                      "relative rounded-md px-1.5 text-[10px] font-bold tabular-nums",
-                      active ? "bg-white/20 text-white" : "bg-surface-muted text-foreground/45",
-                    )}
-                  >
-                    {section.items.length}
-                  </span>
-                ) : null}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
+                <Icon className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                {section.titleFr}
+              </span>
+            );
+          })}
+        </SortableStrip>
+      ) : (
+        <ul className="flex items-center gap-1 overflow-x-auto p-1.5 [scrollbar-width:none]">
+          {sections.map((section) => {
+            const Icon = RH_SECTION_ICONS[section.key] ?? LayoutDashboard;
+            const active = section.key === current?.key;
+            const first = section.items[0];
+            return (
+              <li key={section.key} className={section.key === "settings" ? "ml-auto" : undefined}>
+                <Link
+                  href={first.href ?? "/rh"}
+                  title={section.titleAr}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "relative inline-flex h-9 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold whitespace-nowrap transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand/50",
+                    active ? "text-white" : "text-foreground/65 hover:bg-surface-muted hover:text-foreground",
+                  )}
+                >
+                  {active ? (
+                    <motion.span
+                      layoutId={sectionMarker}
+                      className="absolute inset-0 rounded-xl bg-brand shadow-sm shadow-brand/30"
+                      transition={SPRING}
+                    />
+                  ) : null}
+                  <Icon className="relative h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                  <span className="relative">{section.titleFr}</span>
+                  {section.items.length > 1 ? (
+                    <span
+                      className={cn(
+                        "relative rounded-md px-1.5 text-[10px] font-bold tabular-nums",
+                        active ? "bg-white/20 text-white" : "bg-surface-muted text-foreground/45",
+                      )}
+                    >
+                      {section.items.length}
+                    </span>
+                  ) : null}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       {current && current.items.length > 1 && arranging ? (
         <SortableStrip
