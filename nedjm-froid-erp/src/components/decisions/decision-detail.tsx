@@ -490,7 +490,7 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
                         ? `/rh/presence/imports?lot=${d.attendance_conflict?.batch_id ?? d.code_mapping?.batch_id ?? ""}`
                         : d.type_code === "D12"
                           ? "/rh/presence/imports?vue=politique"
-                          : "/rh/contrats"
+                          : "/rh/documents?onglet=contrats"
                 }
                 className="font-semibold text-brand hover:underline"
               >

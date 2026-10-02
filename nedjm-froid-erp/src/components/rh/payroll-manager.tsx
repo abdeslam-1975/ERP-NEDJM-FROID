@@ -256,7 +256,8 @@ export function PayrollManager({
   const [pending, start] = useTransition();
   const router = useRouter();
   const pathname = usePathname();
-  const urlQuery = useSearchParams().get("q") ?? "";
+  const searchParams = useSearchParams();
+  const urlQuery = searchParams.get("q") ?? "";
   const [query, setQuery] = useState(urlQuery);
   const [seenUrlQuery, setSeenUrlQuery] = useState(urlQuery);
   if (urlQuery !== seenUrlQuery) {
@@ -818,8 +819,11 @@ export function PayrollManager({
               !(periodYear >= 2000 && periodYear <= 2100)
             }
             onClick={() => {
-              const qs = new URLSearchParams({ year: String(periodYear), month: String(periodMonth) });
+              const qs = new URLSearchParams(searchParams.toString());
+              qs.set("year", String(periodYear));
+              qs.set("month", String(periodMonth));
               if (query.trim()) qs.set("q", query.trim());
+              else qs.delete("q");
               router.push(`${pathname}?${qs.toString()}`);
             }}
           >
@@ -907,7 +911,7 @@ export function PayrollManager({
                       "Aucun contrat principal : créez son contrat de travail d'abord.",
                       "لا يوجد عقد رئيسي: أنشئ عقد العمل أولاً.",
                     )}{" "}
-                    <Link href="/rh/contrats" className="font-semibold text-brand underline">
+                    <Link href="/rh/documents?onglet=contrats" className="font-semibold text-brand underline">
                       {bi("Contrats", "العقود")}
                     </Link>
                   </span>

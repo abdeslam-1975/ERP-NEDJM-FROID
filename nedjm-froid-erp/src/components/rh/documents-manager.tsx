@@ -14,6 +14,7 @@ import {
   Plane,
   Plus,
   Printer,
+  Loader2,
   Receipt,
   Users,
   type LucideIcon,
@@ -205,7 +206,12 @@ function printHtml(html: string) {
   }
 }
 
-export type DocumentsTab = "missions" | "conges" | "fiches";
+export type DocumentsTab = "fiches" | "contrats" | "missions" | "conges" | "bulletins";
+
+/** Registers rendered by the page (server data), not by this component. */
+function isPageRegister(tab: DocumentsTab) {
+  return tab === "contrats" || tab === "bulletins";
+}
 
 function countLabel(count: number | null, singular: string, plural: string) {
   if (count === null) return "—";
@@ -227,6 +233,7 @@ export function DocumentsManager({
   ficheSettings,
   openMission = false,
   initialTab = "missions",
+  register = null,
   openTitleId,
   loadError,
 }: {
@@ -244,6 +251,8 @@ export function DocumentsManager({
   ficheSettings: HrFicheSettings;
   openMission?: boolean;
   initialTab?: DocumentsTab;
+  /** Contracts or payslips register of `initialTab`, rendered by the page. */
+  register?: ReactNode;
   /** LEAVE correspondence whose titre de congé opens on arrival. */
   openTitleId?: string;
   loadError?: string;
@@ -267,6 +276,15 @@ export function DocumentsManager({
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [info, setInfo] = useState<string | null>(null);
   const [pointageHref, setPointageHref] = useState<string | null>(null);
+  const [, startNavigation] = useTransition();
+
+  function selectTab(next: DocumentsTab) {
+    if (next === tab) return;
+    setTab(next);
+    if (isPageRegister(next) || isPageRegister(initialTab)) {
+      startNavigation(() => router.push(`/rh/documents?onglet=${next}`, { scroll: false }));
+    }
+  }
 
   function closeMission() {
     setMissionOpen(false);
@@ -748,7 +766,7 @@ export function DocumentsManager({
             color: "#6366f1",
             summary: countLabel(employees.length, "fiche", "fiches"),
             selected: tab === "fiches",
-            onSelect: () => setTab("fiches"),
+            onSelect: () => selectTab("fiches"),
           },
           {
             key: "contrat",
@@ -756,7 +774,8 @@ export function DocumentsManager({
             icon: FilePenLine,
             color: "#14b8a6",
             summary: countLabel(contractCount, "contrat", "contrats"),
-            href: "/rh/contrats",
+            selected: tab === "contrats",
+            onSelect: () => selectTab("contrats"),
           },
           {
             key: "missions",
@@ -765,7 +784,7 @@ export function DocumentsManager({
             color: "#0ea5e9",
             summary: countLabel(omRows.length, "ordre", "ordres"),
             selected: tab === "missions",
-            onSelect: () => setTab("missions"),
+            onSelect: () => selectTab("missions"),
           },
           {
             key: "conges",
@@ -774,7 +793,7 @@ export function DocumentsManager({
             color: "#22a06b",
             summary: countLabel(leaveRows.length, "titre", "titres"),
             selected: tab === "conges",
-            onSelect: () => setTab("conges"),
+            onSelect: () => selectTab("conges"),
           },
           {
             key: "bulletin",
@@ -782,7 +801,8 @@ export function DocumentsManager({
             icon: Receipt,
             color: "#f59e0b",
             summary: "Par période de paie",
-            href: "/rh/paie/bulletins",
+            selected: tab === "bulletins",
+            onSelect: () => selectTab("bulletins"),
           },
         ]}
       />
@@ -801,7 +821,19 @@ export function DocumentsManager({
         </RhAlert>
       ) : null}
 
-      {tab === "missions" ? (
+      {isPageRegister(tab) ? (
+        tab === initialTab && register ? (
+          register
+        ) : (
+          <div
+            role="status"
+            className="flex items-center justify-center gap-2 rounded-2xl border border-border/60 bg-surface px-4 py-16 text-sm text-foreground/55"
+          >
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+            Chargement du registre…
+          </div>
+        )
+      ) : tab === "missions" ? (
         <RegisterSection
           icon={Plane}
           color="#0ea5e9"

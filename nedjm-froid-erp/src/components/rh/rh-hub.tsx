@@ -386,9 +386,9 @@ function ContractDonut({ parts }: { parts: { label: string; count: number; color
 }
 
 const ALERT_META: Record<ContractAlert["key"], { icon: LucideIcon; color: string; title: string; href: string }> = {
-  ending: { icon: FileClock, color: "#f59e0b", title: "Fin de contrat", href: "/rh/contrats" },
-  draft: { icon: FilePenLine, color: "#3b6ef5", title: "Contrats à finaliser", href: "/rh/contrats" },
-  uncovered: { icon: UserX, color: "#ef4444", title: "Employés sans contrat", href: "/rh/contrats" },
+  ending: { icon: FileClock, color: "#f59e0b", title: "Fin de contrat", href: "/rh/documents?onglet=contrats" },
+  draft: { icon: FilePenLine, color: "#3b6ef5", title: "Contrats à finaliser", href: "/rh/documents?onglet=contrats" },
+  uncovered: { icon: UserX, color: "#ef4444", title: "Employés sans contrat", href: "/rh/documents?onglet=contrats" },
 };
 
 const QUICK_ACTIONS: { icon: LucideIcon; label: string; href: string }[] = [
