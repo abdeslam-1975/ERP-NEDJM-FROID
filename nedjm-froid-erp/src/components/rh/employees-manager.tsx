@@ -2,11 +2,12 @@
 
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import { Columns3, UserPlus } from "lucide-react";
+import { Columns3, DatabaseZap, UserPlus } from "lucide-react";
 import { ToolbarSlot } from "@/components/layout/arrange";
 import {
   deleteHrEmployeeField,
   getHrEmployeeFiche,
+  listHrEmployeeFiches,
   nextHrMatricule,
   setHrEmployeeFieldActive,
   setHrEmployeeStatus,
@@ -16,7 +17,8 @@ import {
   type HrEmployeeField,
 } from "@/lib/actions/hr-employees";
 import { archiveEmployeeFicheRenseignements } from "@/lib/actions/hr-documents";
-import { maritalAllowsChildren, missingRequiredFields } from "@/lib/hr/employee-field-utils";
+import { missingRequiredFields } from "@/lib/hr/employee-field-utils";
+import { employeePayloadFromValues } from "@/lib/hr/employee-payload";
 import {
   normalizeFicheValues,
   validateFicheConstraints,
@@ -46,6 +48,8 @@ import {
   type EmployeeView,
 } from "@/components/rh/employees-list";
 import { EmployeeAdminDossierDialog } from "@/components/rh/employee-admin-dossier";
+import { EmployeeCardPreview } from "@/components/rh/employee-card-preview";
+import { EmployeeImportDialog } from "@/components/rh/employee-import-dialog";
 import { DEFAULT_FICHE_SETTINGS, type HrFicheSettings } from "@/lib/hr/fiche-settings";
 import { mergeAffectationCatalog } from "@/lib/hr/affectation-options";
 
@@ -136,6 +140,8 @@ export function EmployeesManager({
   const [view, setView] = useState<EmployeeView>("list");
   const [open, setOpen] = useState(startNew);
   const [dossierEmployee, setDossierEmployee] = useState<HrEmployeeFiche | null>(null);
+  const [preview, setPreview] = useState<HrEmployeeFiche | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>(() =>
     startNew ? emptyValues(initialFields.filter((f) => f.is_active)) : {},
@@ -281,32 +287,7 @@ export function EmployeesManager({
           }
         }
       }
-      const attrs: Record<string, unknown> = {};
-      const payload: Record<string, unknown> = {
-        id: normalized.id || undefined,
-        irg_category: normalized.irg_category || "STANDARD",
-        status: normalized.status || "ACTIVE",
-      };
-      for (const field of activeFields) {
-        const v = normalized[field.code] ?? "";
-        if (field.storage_group === "extra") {
-          attrs[field.code] = v === "" ? null : v;
-        } else if (field.code === "experience_years" || field.code === "children_count") {
-          if (field.code === "children_count" && !maritalAllowsChildren(normalized.marital_code)) {
-            payload.children_count = null;
-          } else {
-            payload[field.code] = v === "" ? null : Number(v);
-          }
-        } else if (field.code === "irg_category") {
-          payload.irg_category = v || "STANDARD";
-        } else if (field.code === "status") {
-          payload.status = v || "ACTIVE";
-        } else {
-          payload[field.code] = v;
-        }
-      }
-      payload.attrs = attrs;
-      const result = await upsertHrEmployee(payload);
+      const result = await upsertHrEmployee(employeePayloadFromValues(normalized, activeFields));
       if (!result.ok) {
         setFormError(result.error);
         return;
@@ -357,6 +338,15 @@ export function EmployeesManager({
           ),
         );
       }
+    });
+  }
+
+  const existingIds = useMemo(() => rows.map((r) => ({ matricule: r.matricule, nin: r.nin })), [rows]);
+
+  function refreshRows() {
+    startTransition(async () => {
+      const result = await listHrEmployeeFiches();
+      if (result.ok) setRows(result.data);
     });
   }
 
@@ -416,8 +406,11 @@ export function EmployeesManager({
       meta: { className: "sticky right-0 bg-surface", headerClassName: "sticky right-0 bg-surface-muted" },
       cell: ({ row }) => (
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" disabled={pending} onClick={() => openEdit(row.original)}>
+          <Button type="button" variant="secondary" disabled={pending} onClick={() => setPreview(row.original)}>
             Ouvrir
+          </Button>
+          <Button type="button" variant="secondary" disabled={pending} onClick={() => openEdit(row.original)}>
+            Modifier
           </Button>
           <Button type="button" variant="secondary" disabled={pending} onClick={() => setDossierEmployee(row.original)}>
             Dossier
@@ -532,7 +525,11 @@ export function EmployeesManager({
 
       {view === "table" ? (
         <>
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between gap-3">
+            <Button type="button" variant="secondary" disabled={pending} onClick={() => setImportOpen(true)}>
+              <DatabaseZap aria-hidden />
+              Importer l&apos;ancienne base
+            </Button>
             <EmployeeViewSwitch value={view} onChange={setView} />
           </div>
           <DataTable
@@ -558,7 +555,8 @@ export function EmployeesManager({
           view={view}
           onViewChange={setView}
           pending={pending}
-          onOpen={openEdit}
+          onOpen={setPreview}
+          onEdit={openEdit}
           onDossier={setDossierEmployee}
           onToggle={toggleActive}
         />
@@ -706,6 +704,31 @@ export function EmployeesManager({
           catalogs={ficheCatalogs}
           onClose={() => setDossierEmployee(null)}
           onOpenFiche={() => openEdit(dossierEmployee)}
+        />
+      ) : null}
+
+      {preview ? (
+        <EmployeeCardPreview
+          employee={rows.find((r) => r.id === preview.id) ?? preview}
+          fields={fields}
+          catalogs={ficheCatalogs}
+          fiche={fiche}
+          onClose={() => setPreview(null)}
+          onEdit={() => {
+            const row = preview;
+            setPreview(null);
+            openEdit(row);
+          }}
+        />
+      ) : null}
+
+      {importOpen ? (
+        <EmployeeImportDialog
+          fields={fields}
+          catalogs={ficheCatalogs}
+          existing={existingIds}
+          onClose={() => setImportOpen(false)}
+          onImported={refreshRows}
         />
       ) : null}
 

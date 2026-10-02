@@ -8,6 +8,7 @@ import {
   LayoutGrid,
   List,
   MapPin,
+  Pencil,
   Power,
   Search,
   SearchX,
@@ -88,6 +89,7 @@ export function EmployeesList({
   onViewChange,
   pending,
   onOpen,
+  onEdit,
   onDossier,
   onToggle,
 }: {
@@ -99,7 +101,9 @@ export function EmployeesList({
   view: Exclude<EmployeeView, "table">;
   onViewChange: (v: EmployeeView) => void;
   pending: boolean;
+  /** Shows the printable card. */
   onOpen: (row: HrEmployeeFiche) => void;
+  onEdit: (row: HrEmployeeFiche) => void;
   onDossier: (row: HrEmployeeFiche) => void;
   onToggle: (row: HrEmployeeFiche) => void;
 }) {
@@ -148,6 +152,16 @@ export function EmployeesList({
 
   const actions = (row: HrEmployeeFiche) => (
     <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        title="Modifier la fiche"
+        aria-label="Modifier la fiche"
+        disabled={pending}
+        onClick={() => onEdit(row)}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-foreground/45 transition hover:bg-brand/[0.08] hover:text-brand disabled:opacity-50"
+      >
+        <Pencil className="h-4 w-4" aria-hidden />
+      </button>
       <button
         type="button"
         title="Dossier administratif"
