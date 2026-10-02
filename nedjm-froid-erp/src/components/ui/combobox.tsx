@@ -6,7 +6,7 @@ import { Check, ChevronsUpDown, Search } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-export type ComboboxOption = { value: string; label: string; hint?: string };
+export type ComboboxOption = { value: string; label: string; hint?: string; keywords?: string };
 
 /**
  * Searchable list for long choices (employees, clients, sites). Same contract as a native select:
@@ -88,7 +88,7 @@ export function Combobox({
             {options.map((o) => (
               <Command.Item
                 key={o.value}
-                value={`${o.label} ${o.hint ?? ""} ${o.value}`}
+                value={`${o.label} ${o.hint ?? ""} ${o.keywords ?? ""} ${o.value}`}
                 onSelect={() => choose(o.value)}
                 className="flex cursor-default items-center gap-2 rounded-lg px-2.5 py-2 text-sm data-[selected=true]:bg-brand-muted"
               >

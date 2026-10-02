@@ -53,7 +53,7 @@ import {
   rhTh,
 } from "@/components/rh/rh-ui";
 
-type Section = "cnas" | "cacobatph" | "irg" | "other";
+export type Section = "cnas" | "cacobatph" | "irg" | "other";
 
 /** Fraction → percent with up to 4 decimals (0.00375 → 0.375). */
 function toPct(n: number) {

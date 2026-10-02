@@ -492,6 +492,7 @@ export async function decideDecision(input: unknown): Promise<ActionResult<Decid
       revalidatePath("/rh/contrats");
       revalidatePath("/rh/qualite-donnees");
       revalidatePath("/rh/legal");
+      revalidatePath("/rh/parametres");
       revalidatePath("/rh/legal/propositions");
       revalidatePath("/referentiels/irg");
       revalidatePath("/rh/paie/irg");

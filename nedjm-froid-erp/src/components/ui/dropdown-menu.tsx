@@ -2,13 +2,14 @@
 
 import type { ComponentProps } from "react";
 import { DropdownMenu as MenuPrimitive } from "radix-ui";
-import { Check } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const DropdownMenu = MenuPrimitive.Root;
 export const DropdownMenuTrigger = MenuPrimitive.Trigger;
 export const DropdownMenuGroup = MenuPrimitive.Group;
 export const DropdownMenuRadioGroup = MenuPrimitive.RadioGroup;
+export const DropdownMenuSub = MenuPrimitive.Sub;
 
 export function DropdownMenuContent({ className, sideOffset = 6, ...props }: ComponentProps<typeof MenuPrimitive.Content>) {
   return (
@@ -38,6 +39,29 @@ export function DropdownMenuItem({
       className={cn(itemClass, tone === "danger" && "text-alert-critical data-[highlighted]:bg-red-50 dark:data-[highlighted]:bg-red-950/40", className)}
       {...props}
     />
+  );
+}
+
+export function DropdownMenuSubTrigger({ className, children, ...props }: ComponentProps<typeof MenuPrimitive.SubTrigger>) {
+  return (
+    <MenuPrimitive.SubTrigger className={cn(itemClass, "data-[state=open]:bg-brand-muted", className)} {...props}>
+      {children}
+      <ChevronRight className="ml-auto text-foreground/40" />
+    </MenuPrimitive.SubTrigger>
+  );
+}
+
+export function DropdownMenuSubContent({ className, ...props }: ComponentProps<typeof MenuPrimitive.SubContent>) {
+  return (
+    <MenuPrimitive.Portal>
+      <MenuPrimitive.SubContent
+        className={cn(
+          "z-50 min-w-56 overflow-hidden rounded-xl border border-border/70 bg-surface p-1 text-foreground shadow-xl data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+          className,
+        )}
+        {...props}
+      />
+    </MenuPrimitive.Portal>
   );
 }
 

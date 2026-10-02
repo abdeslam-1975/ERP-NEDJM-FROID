@@ -73,6 +73,48 @@ async function loadContract(supabase: Supabase, contractId: string) {
     .maybeSingle();
 }
 
+export type ContractComplianceOptions = {
+  /** Percentages in force this month (9 = 9 %), legal rate when the regime has none. */
+  regimes: { code: string; label_fr: string; employee_pct: number; employer_pct: number; fos_pct: number }[];
+  zones: { code: string; label_fr: string }[];
+  /** Activities subject to CACOBATPH (BTPH). */
+  cacobatph_activity_ids: string[];
+};
+
+/** Choices of the contract form, before the contract exists. */
+export async function listContractComplianceOptions(): Promise<ActionResult<ContractComplianceOptions>> {
+  const supabase = await createClient();
+  const asOf = new Date().toISOString().slice(0, 10);
+  let loaded;
+  try {
+    loaded = await Promise.all([
+      loadComplianceContext(supabase, { contractIds: [], siteIds: [], employeeIds: [], asOf }),
+      legalVarsAsOf(supabase, asOf),
+      supabase.from("ref_activity_codes").select("id").eq("applies_cacobatph", true),
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  const [ctx, vars, activities] = loaded;
+  if (!ctx.ok) return ctx;
+  if (activities.error) return { ok: false, error: activities.error.message };
+  const legalPct = (key: string) => Math.round((Number(vars[key] ?? 0) || 0) * 10000) / 100;
+  return {
+    ok: true,
+    data: {
+      regimes: ctx.data.regimes.map((r) => ({
+        code: r.code,
+        label_fr: r.label_fr,
+        employee_pct: r.employee_pct ?? legalPct("CNAS_EMPLOYEE"),
+        employer_pct: r.employer_pct ?? legalPct("CNAS_EMPLOYER_BASE"),
+        fos_pct: r.fos_pct ?? legalPct("CNAS_FOS"),
+      })),
+      zones: ctx.data.zones.map((z) => ({ code: z.code, label_fr: z.label_fr })),
+      cacobatph_activity_ids: (activities.data ?? []).map((a) => a.id),
+    },
+  };
+}
+
 export async function getContractCompliance(
   contractId: string,
 ): Promise<ActionResult<ContractCompliance>> {

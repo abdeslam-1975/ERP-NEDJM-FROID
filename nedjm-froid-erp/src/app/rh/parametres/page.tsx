@@ -11,11 +11,42 @@ import { listSalaryAssignments, listSalaryRubriques } from "@/lib/actions/hr-sal
 import { getHrFicheSettings } from "@/lib/actions/hr-fiche";
 import { loadPayrollBulletinContext } from "@/lib/actions/hr-bulletin";
 import { loadAttendanceColumnsAdmin } from "@/lib/actions/hr-attendance-sheet";
+import { getLegalPeriod, listCnasRegimes, listLegalVars } from "@/lib/actions/hr-legal-vars";
+import { listIrgCatalog } from "@/lib/actions/hr-irg";
+import { listPostes } from "@/lib/actions/hr-postes";
+import { listZoneScopes } from "@/lib/actions/rule-proposals";
+import { getComplianceAccess } from "@/lib/auth/compliance-access";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { HR_SALARY_VALUE_ROLES, workspaceHasRole } from "@/lib/auth/require-roles";
 import { DEFAULT_FICHE_SETTINGS } from "@/lib/hr/fiche-settings";
 
 export const dynamic = "force-dynamic";
+
+async function loadLegal() {
+  const access = await getComplianceAccess();
+  if (!access.canRead) return null;
+  const [vars, irg, regimes, period, zones] = await Promise.all([
+    listLegalVars(),
+    listIrgCatalog(),
+    listCnasRegimes(),
+    getLegalPeriod(),
+    listZoneScopes(),
+  ]);
+  return {
+    vars: vars.ok ? vars.data : [],
+    regimes: regimes.ok ? regimes.data : [],
+    period,
+    irgCatalog: irg.ok ? irg.data : { versions: [], brackets: [], ruleSets: [], rules: [] },
+    zoneScopes: zones.ok ? zones.data : null,
+    canEdit: access.canWrite,
+    loadError:
+      (!vars.ok && vars.error) ||
+      (!irg.ok && irg.error) ||
+      (!regimes.ok && regimes.error) ||
+      (!zones.ok && zones.error) ||
+      undefined,
+  };
+}
 
 export default async function RhParametresPage() {
   const now = new Date();
@@ -32,6 +63,8 @@ export default async function RhParametresPage() {
     bulletin,
     attendanceAdmin,
     irg,
+    postes,
+    legal,
   ] = await Promise.all([
     loadHrLookups(),
     listHrEmployeeFields(),
@@ -45,6 +78,8 @@ export default async function RhParametresPage() {
     loadPayrollBulletinContext(),
     loadAttendanceColumnsAdmin(),
     loadPayrollIrgScales({ year: now.getFullYear(), month: now.getMonth() + 1 }),
+    listPostes(),
+    loadLegal(),
   ]);
   const salaryError =
     (!rubriques.ok && rubriques.error) ||
@@ -92,6 +127,8 @@ export default async function RhParametresPage() {
             c.poste_fr ? ` · ${c.poste_fr}` : ""
           }`,
         }))}
+        postes={(postes.ok ? postes.data : []).map((p) => ({ id: p.id, label: `${p.code} · ${p.label_fr}` }))}
+        legal={legal}
         bulletin={bulletin.bulletin}
         bulletinTemplate={bulletin.template}
         legalRates={bulletin.legalRates}

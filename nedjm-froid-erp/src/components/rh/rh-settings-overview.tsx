@@ -75,14 +75,14 @@ export function RhSettingsOverview({
   const links: { icon: LucideIcon; title: string; detail: string; href: string }[] = [
     { icon: HardHat, title: "Chantiers", detail: `${counts.sites} site${counts.sites > 1 ? "s" : ""}`, href: "/referentiels/chantiers" },
     { icon: BriefcaseBusiness, title: "Postes & grille", detail: "Postes et salaires", href: "/rh/postes" },
-    { icon: Scale, title: "Cotisations & impôts", detail: "CNAS, IRG, régimes", href: "/rh/legal" },
+    { icon: Scale, title: "Cotisations & impôts", detail: "CNAS, IRG, régimes", href: "/rh/parametres?tab=legal" },
     { icon: ShieldCheck, title: "Qualité des données", detail: "Fiches à compléter", href: "/rh/qualite-donnees" },
   ];
 
   return (
     <div className="ui-stagger grid grid-cols-12 gap-5">
       <section className={cn(RH_CARD, "col-span-12 p-6 md:col-span-6 xl:col-span-4")}>
-        <Head icon={Percent} title="Cotisations sociales" href="/rh/legal" />
+        <Head icon={Percent} title="Cotisations sociales" href="/rh/parametres?tab=legal&section=cnas" />
         {contributions.length ? (
           contributions.map((c) => (
             <div key={c.label} className="flex items-center justify-between border-b border-border/60 py-3 last:border-0">
@@ -96,7 +96,7 @@ export function RhSettingsOverview({
       </section>
 
       <section className={cn(RH_CARD, "col-span-12 p-6 md:col-span-6 xl:col-span-4")}>
-        <Head icon={Landmark} title="Barème IRG mensuel" href="/rh/legal" />
+        <Head icon={Landmark} title="Barème IRG mensuel" href="/rh/parametres?tab=legal&section=irg" />
         {brackets.length ? (
           brackets.map((b, i) => (
             <div key={b.min_annual} className="flex items-center gap-3 py-2">

@@ -216,6 +216,80 @@ export async function deleteCatalogItem(
   return { ok: true, data: { id } };
 }
 
+const SUPER_ADMIN_ONLY = "Réservé à SUPER_ADMIN. · محصور في SUPER_ADMIN.";
+
+function catalogCode(label: string) {
+  return label
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
+}
+
+export async function addWorkRegime(input: {
+  label_fr: string;
+}): Promise<ActionResult<CatalogItem>> {
+  const workspace = await getWorkspaceProfile();
+  if (!workspace?.isSuperAdmin) return { ok: false, error: SUPER_ADMIN_ONLY };
+  const label = input.label_fr.trim().slice(0, 160);
+  const base = catalogCode(label);
+  if (!label || !base) return { ok: false, error: "Libellé du régime obligatoire." };
+  const supabase = await createClient();
+  const { data: existing, error: readErr } = await supabase
+    .from("hr_catalogs")
+    .select("code, label_fr, sort_order")
+    .eq("kind", "work_regime");
+  if (readErr) return { ok: false, error: readErr.message };
+  const rows = existing ?? [];
+  if (rows.some((r) => r.label_fr.trim().toLowerCase() === label.toLowerCase())) {
+    return { ok: false, error: "Ce régime existe déjà." };
+  }
+  const codes = new Set(rows.map((r) => r.code));
+  let code = base;
+  for (let n = 2; codes.has(code); n += 1) code = `${base.slice(0, 36)}_${n}`;
+  const sort_order = rows.reduce((max, r) => Math.max(max, r.sort_order ?? 0), 0) + 10;
+  const { data, error } = await supabase
+    .from("hr_catalogs")
+    .insert({ kind: "work_regime", code, label_fr: label, label_ar: label, extra: {}, sort_order, is_active: true })
+    .select("id, kind, code, label_ar, label_fr, extra, color_bg, color_fg, sort_order, is_active")
+    .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: "Enregistrement refusé (droits)." };
+  revalidateHr();
+  return { ok: true, data: { ...data, extra: (data.extra ?? {}) as Record<string, unknown> } };
+}
+
+/** A regime still named on a contract is archived instead of deleted, so the contract keeps its label. */
+export async function removeWorkRegime(
+  id: string,
+): Promise<ActionResult<{ id: string; archived: boolean }>> {
+  const workspace = await getWorkspaceProfile();
+  if (!workspace?.isSuperAdmin) return { ok: false, error: SUPER_ADMIN_ONLY };
+  const supabase = await createClient();
+  const { data: row, error: readErr } = await supabase
+    .from("hr_catalogs")
+    .select("id, kind, code")
+    .eq("id", id)
+    .maybeSingle();
+  if (readErr) return { ok: false, error: readErr.message };
+  if (!row || row.kind !== "work_regime") return { ok: false, error: "Régime introuvable." };
+  const { count, error: usedErr } = await supabase
+    .from("hr_contracts")
+    .select("id", { count: "exact", head: true })
+    .eq("work_regime_code", row.code);
+  if (usedErr) return { ok: false, error: usedErr.message };
+  const q = count
+    ? supabase.from("hr_catalogs").update({ is_active: false }).eq("id", id)
+    : supabase.from("hr_catalogs").delete().eq("id", id);
+  const { data, error } = await q.select("id");
+  if (error) return { ok: false, error: error.message };
+  if (!data?.length) return { ok: false, error: "Suppression refusée." };
+  revalidateHr();
+  return { ok: true, data: { id, archived: Boolean(count) } };
+}
+
 export async function listLegends(): Promise<ActionResult<LegendRow[]>> {
   const supabase = await createClient();
   const [{ data, error }, versions] = await Promise.all([

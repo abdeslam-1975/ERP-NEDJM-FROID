@@ -59,6 +59,7 @@ const monthStart = z
 
 function revalidateRules() {
   revalidatePath("/rh/legal");
+  revalidatePath("/rh/parametres");
   revalidatePath("/rh/legal/propositions");
   revalidatePath("/referentiels/irg");
   revalidatePath("/rh/paie/irg");

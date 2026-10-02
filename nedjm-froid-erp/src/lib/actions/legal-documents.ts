@@ -39,6 +39,7 @@ function revalidateDocuments() {
   revalidatePath("/rh/legal/documents");
   revalidatePath("/rh/legal/propositions");
   revalidatePath("/rh/legal");
+  revalidatePath("/rh/parametres");
   revalidatePath("/decisions");
 }
 

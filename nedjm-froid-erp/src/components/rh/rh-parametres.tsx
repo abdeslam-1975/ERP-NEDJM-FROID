@@ -1,8 +1,9 @@
 "use client";
 
-import Link from "next/link";
-import { useState } from "react";
+import type { ComponentProps } from "react";
+import { useSearchParams } from "next/navigation";
 import { CatalogsManager } from "@/components/rh/catalogs-manager";
+import { LegalSettings, type Section as LegalSection } from "@/components/rh/legal-settings";
 import { FicheSettingsManager } from "@/components/rh/fiche-settings-manager";
 import {
   SalaryRubricsManager,
@@ -18,6 +19,10 @@ import { AttendanceColumnsManager } from "@/components/rh/attendance-columns-man
 import type { AttendanceColumnsAdmin } from "@/lib/actions/hr-attendance-sheet";
 import { RhAlert, RhPage, RhTabs } from "@/components/rh/rh-ui";
 
+type RhSettingsTab = "salary" | "legal" | "fiche" | "catalogs" | "bulletin" | "attendance";
+
+const LEGAL_SECTIONS: LegalSection[] = ["cnas", "cacobatph", "irg", "other"];
+
 export function RhParametres({
   kinds,
   items,
@@ -31,6 +36,8 @@ export function RhParametres({
   employees,
   sites,
   contracts,
+  postes = [],
+  legal = null,
   bulletin,
   bulletinTemplate = "",
   legalRates,
@@ -49,40 +56,40 @@ export function RhParametres({
   employees: SalaryTarget[];
   sites: SalaryTarget[];
   contracts: SalaryTarget[];
+  postes?: SalaryTarget[];
+  /** null when the user may not read the legal settings. */
+  legal?: ComponentProps<typeof LegalSettings> | null;
   bulletin: HrBulletinSettings;
   bulletinTemplate?: string;
   legalRates?: BulletinLegalRates;
   attendanceAdmin?: AttendanceColumnsAdmin | null;
   loadError?: string;
 }) {
-  const [tab, setTab] = useState<"fiche" | "salary" | "catalogs" | "bulletin" | "attendance">(
-    "salary",
-  );
+  const searchParams = useSearchParams();
+  const tabs: { id: RhSettingsTab; label: string }[] = [
+    { id: "salary", label: "Rubriques de salaire" },
+    ...(legal ? [{ id: "legal" as const, label: "Cotisations & impôts" }] : []),
+    { id: "fiche", label: "Modèle de fiche" },
+    { id: "catalogs", label: "Listes et codes" },
+    { id: "bulletin", label: "Modèle de bulletin" },
+    ...(isSuperAdmin && attendanceAdmin
+      ? [{ id: "attendance" as const, label: "Feuille de présence" }]
+      : []),
+  ];
+  const tab = tabs.find((t) => t.id === searchParams.get("tab"))?.id ?? "salary";
+  const legalSection = LEGAL_SECTIONS.find((s) => s === searchParams.get("section"));
+
+  function selectTab(id: string) {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("tab", id);
+    next.delete("section");
+    window.history.replaceState(null, "", `?${next}`);
+  }
+
   return (
     <RhPage>
       {loadError ? <RhAlert tone="danger">{loadError}</RhAlert> : null}
-      <div className="flex flex-wrap items-center gap-2">
-        <RhTabs
-          uiKey="rh_settings"
-          items={[
-            { id: "salary", label: "Rubriques de salaire" },
-            { id: "fiche", label: "Modèle de fiche" },
-            { id: "catalogs", label: "Listes et codes" },
-            { id: "bulletin", label: "Modèle de bulletin" },
-            ...(isSuperAdmin && attendanceAdmin
-              ? [{ id: "attendance", label: "Feuille de présence" }]
-              : []),
-          ]}
-          value={tab}
-          onChange={(id) => setTab(id as typeof tab)}
-        />
-        <Link
-          href="/rh/legal"
-          className="rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted hover:text-foreground"
-        >
-          Cotisations & impôts
-        </Link>
-      </div>
+      <RhTabs uiKey="rh_settings" items={tabs} value={tab} onChange={selectTab} />
       {tab === "salary" ? (
         <SalaryRubricsManager
           isSuperAdmin={isSuperAdmin}
@@ -92,7 +99,10 @@ export function RhParametres({
           employees={employees}
           sites={sites}
           contracts={contracts}
+          postes={postes}
         />
+      ) : tab === "legal" && legal ? (
+        <LegalSettings key={legalSection ?? "cnas"} {...legal} initialSection={legalSection} />
       ) : tab === "fiche" ? (
         <FicheSettingsManager
           initial={fiche}

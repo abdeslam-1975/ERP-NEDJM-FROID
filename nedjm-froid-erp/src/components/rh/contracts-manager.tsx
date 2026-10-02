@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { ToolbarSlot } from "@/components/layout/arrange";
 import {
@@ -8,13 +8,14 @@ import {
   type HrContractRow,
 } from "@/lib/actions/hr-contracts";
 import type { CatalogItem } from "@/lib/actions/hr-catalogs";
+import { getContractCompliance, type ContractComplianceOptions } from "@/lib/actions/hr-compliance";
 import type { HrEmployeeRow } from "@/lib/actions/hr-employees";
 import type { SalaryAssignment, SalaryRubrique } from "@/lib/actions/hr-salary";
-import type { CnasRegimeRow, LegalPeriod, LegalVarRow } from "@/lib/actions/hr-legal-vars";
-import type { IrgCatalog } from "@/lib/actions/hr-irg";
 import type { PosteRow } from "@/lib/actions/hr-postes";
+import { contractTypeAllowsFixedIrg } from "@/lib/hr/compliance";
 import { gridAsOf } from "@/lib/hr/payroll-calc";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 import {
   CatalogSelect,
@@ -22,21 +23,26 @@ import {
   RhField,
   RhModal,
   RhPageHeader,
-  RhTabs,
   bi,
   catalogOptions,
   rhInput,
 } from "@/components/rh/rh-ui";
-import { ContractSalaryFields, type SelectedSalaryLine } from "@/components/rh/contract-salary-fields";
-import { LegalSettings } from "@/components/rh/legal-settings";
-import { ContractComplianceCards } from "@/components/rh/contract-compliance-cards";
-import { ContractSalaryHistory } from "@/components/rh/contract-salary-history";
-import { ContractAssignments } from "@/components/rh/contract-assignments";
 import { ContractPrintDialog } from "@/components/rh/contract-print-dialog";
+import { WorkRegimeField } from "@/components/rh/work-regime-field";
+import { ContractRubriquesField } from "@/components/rh/contract-rubriques-field";
+import type { SelectedSalaryLine } from "@/components/rh/contract-salary-fields";
 import {
-  SalaryRubricsManager,
-  type SalaryTarget,
-} from "@/components/rh/salary-rubrics-manager";
+  ContractLegalFields,
+  emptyLegalChoice,
+  legalChoiceFromCompliance,
+  saveLegalChoice,
+  type LegalChoice,
+  type LegalOverrides,
+} from "@/components/rh/contract-legal-fields";
+
+function firstOfMonth() {
+  return `${new Date().toISOString().slice(0, 7)}-01`;
+}
 
 type SiteOpt = {
   id: string;
@@ -100,22 +106,15 @@ export function ContractsManager({
   employees,
   sites,
   activities,
-  catalogs,
+  catalogs: initialCatalogs,
   rubriques,
   assignments,
-  salaryEmployees = [],
-  salarySites = [],
-  salaryContracts = [],
-  legalVars = [],
-  cnasRegimes = [],
-  legalPeriod,
-  irgCatalog = { versions: [], brackets: [], ruleSets: [], rules: [] },
+  complianceOptions,
   isSuperAdmin = false,
   canEditSalaryValues = false,
   canEditCompliance = false,
   postes = [],
   agencies = [],
-  legalError,
   loadError,
 }: {
   postes?: PosteRow[];
@@ -127,32 +126,36 @@ export function ContractsManager({
   catalogs: CatalogItem[];
   rubriques: SalaryRubrique[];
   assignments: SalaryAssignment[];
-  salaryEmployees?: SalaryTarget[];
-  salarySites?: SalaryTarget[];
-  salaryContracts?: SalaryTarget[];
-  legalVars?: LegalVarRow[];
-  cnasRegimes?: CnasRegimeRow[];
-  legalPeriod?: LegalPeriod;
-  irgCatalog?: IrgCatalog;
+  complianceOptions: ContractComplianceOptions;
   isSuperAdmin?: boolean;
   canEditSalaryValues?: boolean;
   canEditCompliance?: boolean;
-  legalError?: string;
   loadError?: string;
 }) {
   const [rows, setRows] = useState(initialContracts);
   const [asgRows, setAsgRows] = useState(assignments);
+  const [catalogs, setCatalogs] = useState(initialCatalogs);
   const [open, setOpen] = useState(false);
-  const [modalTab, setModalTab] = useState<"contrat" | "affectations" | "avenants" | "rubriques" | "legal">(
-    "contrat",
-  );
   const [form, setForm] = useState<FormState>(emptyForm());
   const [selectedLines, setSelectedLines] = useState<Record<string, SelectedSalaryLine>>({});
+  const [legal, setLegal] = useState<LegalChoice>(emptyLegalChoice());
+  /** What the contract had when the form opened; null while it loads. */
+  const [legalBase, setLegalBase] = useState<{ choice: LegalChoice; overrides: LegalOverrides } | null>(null);
+  const openedId = useRef<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [info, setInfo] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [printId, setPrintId] = useState<string | null>(null);
   const jobs = useMemo(() => catalogOptions(catalogs, "job_title"), [catalogs]);
+  const employeeOptions = useMemo(
+    () =>
+      employees.map((e) => ({
+        value: e.id,
+        label: `${e.matricule} · ${e.last_name} ${e.first_name}`,
+        keywords: `${e.first_name} ${e.last_name}`,
+      })),
+    [employees],
+  );
   const gridSuggestion = useMemo(() => {
     const p = postes.find((x) => x.id === form.poste_id);
     if (!p) return null;
@@ -167,9 +170,46 @@ export function ContractsManager({
   function openModal(next: FormState, lines: Record<string, SelectedSalaryLine>) {
     setForm(next);
     setSelectedLines(lines);
+    setLegal(emptyLegalChoice());
+    setLegalBase(next.id ? null : { choice: emptyLegalChoice(), overrides: { IRG: null, CACOBATPH: null } });
     setError(null);
-    setModalTab("contrat");
     setOpen(true);
+    openedId.current = next.id;
+    if (next.id) {
+      const contractId = next.id;
+      getContractCompliance(contractId).then((r) => {
+        if (openedId.current !== contractId) return;
+        if (!r.ok) {
+          setError(r.error);
+          return;
+        }
+        const base = legalChoiceFromCompliance(r.data);
+        setLegal(base.choice);
+        setLegalBase(base);
+      });
+    }
+  }
+
+  function defaultContractLines() {
+    const next: Record<string, SelectedSalaryLine> = {};
+    for (const r of rubriques) {
+      if (r.is_active && r.apply_scope !== "site" && r.default_amount > 0) {
+        next[r.id] = { amount: String(r.default_amount), unit: r.unit };
+      }
+    }
+    return next;
+  }
+
+  function linesForContract(contractId: string, employeeId: string) {
+    const next: Record<string, SelectedSalaryLine> = {};
+    for (const a of asgRows) {
+      if (!a.is_active) continue;
+      if (a.contract_id === contractId || a.employee_id === employeeId) {
+        const rub = rubriques.find((r) => r.id === a.rubrique_id);
+        next[a.rubrique_id] = { amount: String(a.amount), unit: a.unit ?? rub?.unit ?? "month" };
+      }
+    }
+    return next;
   }
 
   function openRow(row: HrContractRow) {
@@ -209,30 +249,7 @@ export function ContractsManager({
         ) ?? null
       : null;
 
-  function defaultContractLines() {
-    const next: Record<string, SelectedSalaryLine> = {};
-    for (const r of rubriques) {
-      if (r.is_active && r.apply_scope !== "site" && r.default_amount > 0) {
-        next[r.id] = { amount: String(r.default_amount), unit: r.unit };
-      }
-    }
-    return next;
-  }
-
-  function linesForContract(contractId: string, employeeId: string) {
-    const next: Record<string, SelectedSalaryLine> = {};
-    for (const a of asgRows) {
-      if (!a.is_active) continue;
-      if (a.contract_id === contractId || a.employee_id === employeeId) {
-        const rub = rubriques.find((r) => r.id === a.rubrique_id);
-        next[a.rubrique_id] = {
-          amount: String(a.amount),
-          unit: a.unit ?? rub?.unit ?? "month",
-        };
-      }
-    }
-    return next;
-  }
+  const showCacobatph = complianceOptions.cacobatph_activity_ids.includes(form.activity_code_id);
 
   function submit() {
     setError(null);
@@ -241,7 +258,7 @@ export function ContractsManager({
       return;
     }
     if (!form.site_id) {
-      setError(bi("Choisissez le chantier.", "اختر الورشة."));
+      setError(bi("Choisissez l'affectation.", "اختر التعيين."));
       return;
     }
     if (!form.activity_code_id) {
@@ -255,6 +272,10 @@ export function ContractsManager({
     }
     if (!form.start_date) {
       setError(bi("Date de début obligatoire.", "أدخل تاريخ بداية العقد."));
+      return;
+    }
+    if (form.id && !legalBase) {
+      setError("Chargement des choix IRG / CACOBATPH en cours, réessayez dans un instant.");
       return;
     }
     start(async () => {
@@ -342,9 +363,7 @@ export function ContractsManager({
         return;
       }
       setAsgRows((prev) => {
-        const kept = prev.filter(
-          (a) => a.contract_id !== next.id && a.employee_id !== form.employee_id,
-        );
+        const kept = prev.filter((a) => a.contract_id !== next.id && a.employee_id !== form.employee_id);
         const added = salary_lines.flatMap((line) => {
           const rub = rubriques.find((r) => r.id === line.rubrique_id);
           if (!rub || rub.apply_scope === "site") return [];
@@ -364,6 +383,25 @@ export function ContractsManager({
         });
         return [...kept, ...added];
       });
+      if (canEditCompliance && legalBase) {
+        const thisMonth = firstOfMonth();
+        const legalErrors = await saveLegalChoice({
+          contractId: done.id,
+          effectiveFrom: !form.id || form.start_date > thisMonth ? form.start_date : thisMonth,
+          initial: legalBase.choice,
+          next: legal,
+          overrides: legalBase.overrides,
+          includeCacobatph: showCacobatph,
+        });
+        if (legalErrors.length) {
+          setForm((f) => ({ ...f, id: done.id }));
+          openedId.current = done.id;
+          const fresh = await getContractCompliance(done.id);
+          if (fresh.ok) setLegalBase(legalChoiceFromCompliance(fresh.data));
+          setError(`Contrat enregistré, mais IRG / CACOBATPH non appliqué : ${legalErrors.join(" · ")}`);
+          return;
+        }
+      }
       setOpen(false);
       const saved = done.closed_previous
         ? bi(
@@ -392,7 +430,7 @@ export function ContractsManager({
         </>
       ),
     }),
-    col.accessor("site_name", { header: bi("Chantier", "الورشة") }),
+    col.accessor("site_name", { header: bi("Affectation", "التعيين") }),
     col.accessor((r) => r.contract_type_code ?? "", {
       id: "type",
       header: bi("Type", "النوع"),
@@ -452,7 +490,7 @@ export function ContractsManager({
         data={rows}
         columns={columns}
         getRowId={(r) => r.id}
-        searchPlaceholder="Employé, matricule, chantier…"
+        searchPlaceholder="Employé, matricule, affectation…"
         searchText={(r) =>
           [r.matricule, r.employee_name, r.site_name, r.contract_type_code, r.status].filter(Boolean).join(" ")
         }
@@ -464,20 +502,6 @@ export function ContractsManager({
           wide
           title={bi("Contrat de travail", "عقد عمل")}
           onClose={() => setOpen(false)}
-          tabs={
-            <RhTabs
-              uiKey="hr_contract_form"
-              items={[
-                { id: "contrat", label: bi("Contrat de travail", "عقد العمل") },
-                { id: "affectations", label: bi("Affectations", "التعيينات") },
-                { id: "avenants", label: bi("Avenants salaire", "ملاحق الأجر") },
-                { id: "rubriques", label: bi("Rubriques de salaire", "بنود الأجر") },
-                { id: "legal", label: bi("Cotisations & impôts", "الاشتراكات والضرائب") },
-              ]}
-              value={modalTab}
-              onChange={(id) => setModalTab(id as typeof modalTab)}
-            />
-          }
           footer={
             <>
               {form.id ? (
@@ -505,21 +529,16 @@ export function ContractsManager({
             </div>
           ) : null}
 
-          {modalTab === "contrat" ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <RhField label={bi("Employé", "العامل")}>
-                <select
-                  className={rhInput}
+                <Combobox
+                  options={employeeOptions}
                   value={form.employee_id}
-                  onChange={(e) => setForm({ ...form, employee_id: e.target.value })}
-                >
-                  <option value="">—</option>
-                  {employees.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.matricule} · {e.last_name} {e.first_name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setForm({ ...form, employee_id: v })}
+                  placeholder="Choisir l'employé…"
+                  searchPlaceholder="Matricule, nom ou prénom…"
+                  emptyText="Aucun employé trouvé"
+                />
                 {openPrincipal ? (
                   <span className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-amber-700">
                     {bi(
@@ -536,16 +555,14 @@ export function ContractsManager({
                   </span>
                 ) : null}
               </RhField>
-              <RhField label={bi("Chantier", "الورشة")}>
+              <RhField
+                label={bi("Affectation", "التعيين")}
+                hint={form.id ? "Affectation en vigueur : elle ne se modifie pas depuis le contrat." : undefined}
+              >
                 <select
                   className={rhInput}
                   value={form.site_id}
                   disabled={Boolean(form.id)}
-                  title={
-                    form.id
-                      ? bi("Chantier en vigueur : il se modifie dans l'onglet Affectations.", "يُعدَّل من تبويب التعيينات.")
-                      : undefined
-                  }
                   onChange={(e) => {
                     const nextSite = sites.find((s) => s.id === e.target.value);
                     setForm({
@@ -563,15 +580,6 @@ export function ContractsManager({
                     </option>
                   ))}
                 </select>
-                {form.id ? (
-                  <button
-                    type="button"
-                    className="mt-1 text-[11px] font-semibold text-brand underline"
-                    onClick={() => setModalTab("affectations")}
-                  >
-                    {bi("Changer ou corriger l'affectation", "تغيير أو تصحيح التعيين")}
-                  </button>
-                ) : null}
               </RhField>
               <RhField label={bi("Activité *", "النشاط *")}>
                 <select
@@ -631,28 +639,13 @@ export function ContractsManager({
                   </RhField>
                 </>
               ) : null}
-              <RhField label={bi("Régime", "نظام العمل")}>
-                <CatalogSelect
-                  items={catalogs}
-                  kind="work_regime"
-                  value={form.work_regime_code}
-                  onChange={(v) => setForm({ ...form, work_regime_code: v })}
-                />
-              </RhField>
-              <RhField
-                label={bi("Régime CNAS", "نظام الضمان الاجتماعي CNAS")}
-                hint={bi(
-                  "Vide = profil social de la fiche employé (sinon Standard)",
-                  "فارغ = ملف الاشتراك في ملف العامل (وإلا عادي)",
-                )}
-              >
-                <CatalogSelect
-                  items={catalogs}
-                  kind="social_profile"
-                  value={form.cnas_regime_code}
-                  onChange={(v) => setForm({ ...form, cnas_regime_code: v })}
-                />
-              </RhField>
+              <WorkRegimeField
+                catalogs={catalogs}
+                value={form.work_regime_code}
+                onChange={(v) => setForm((f) => ({ ...f, work_regime_code: v }))}
+                onCatalogsChange={setCatalogs}
+                canManage={isSuperAdmin}
+              />
               <RhField label={bi("Poste (liste)", "المنصب (قائمة)")}>
                 <select
                   className={rhInput}
@@ -826,103 +819,25 @@ export function ContractsManager({
                 />
                 {bi("Affectation principale", "التعيين الرئيسي")}
               </label>
-            </div>
-          ) : null}
-
-          {modalTab === "affectations" ? (
-            form.id ? (
-              <ContractAssignments
-                contractId={form.id}
-                sites={sites}
-                canEdit
-                onCurrentSite={(siteId) => setForm((prev) => ({ ...prev, site_id: siteId }))}
-              />
-            ) : (
-              <RhAlert tone="info">
-                {bi(
-                  "Le chantier choisi sur le contrat est l'affectation initiale. Les changements datés se saisissent ici une fois le contrat enregistré.",
-                  "الورشة المختارة هي التعيين الأولي. تُدخل التغييرات المؤرخة هنا بعد حفظ العقد.",
-                )}
-              </RhAlert>
-            )
-          ) : null}
-
-          {modalTab === "avenants" ? (
-            form.id ? (
-              <ContractSalaryHistory
-                contractId={form.id}
-                canEdit={canEditSalaryValues}
-                onCurrentSalary={({ base, net }) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    salaire_base_monthly: String(base),
-                    salaire_net_ref_monthly: String(net),
-                  }))
-                }
-              />
-            ) : (
-              <RhAlert tone="info">
-                {bi(
-                  "Enregistrez d'abord le contrat : les avenants (augmentations datées) se saisissent ensuite ici.",
-                  "احفظ العقد أولاً ثم أدخل الملاحق هنا.",
-                )}
-              </RhAlert>
-            )
-          ) : null}
-
-          {modalTab === "rubriques" ? (
-            <div className="space-y-6">
-              <ContractSalaryFields
-                rubriques={rubriques}
-                assignments={asgRows}
-                siteId={form.site_id}
-                selected={selectedLines}
-                onToggle={(id, line, checked) => {
-                  setSelectedLines((prev) => {
-                    const next = { ...prev };
-                    if (checked) next[id] = line;
-                    else delete next[id];
-                    return next;
-                  });
-                }}
-                onChange={(id, line) => {
-                  setSelectedLines((prev) => ({ ...prev, [id]: line }));
-                }}
-              />
-              <SalaryRubricsManager
-                isSuperAdmin={isSuperAdmin}
-                canEditValues={canEditSalaryValues}
-                rubriques={rubriques}
-                assignments={asgRows}
-                employees={salaryEmployees}
-                sites={salarySites}
-                contracts={salaryContracts}
-              />
-            </div>
-          ) : null}
-
-          {modalTab === "legal" ? (
-            <div className="space-y-6">
-              {form.id ? (
-                <ContractComplianceCards contractId={form.id} canEdit={canEditCompliance} />
-              ) : (
-                <RhAlert tone="info">
-                  {bi(
-                    "Enregistrez d'abord le contrat : le régime IRG / CNAS / CACOBATPH se règle ensuite ici.",
-                    "احفظ العقد أولاً، ثم اضبط نظام IRG / CNAS / CACOBATPH هنا.",
-                  )}
-                </RhAlert>
-              )}
-              <LegalSettings
-                vars={legalVars}
-                regimes={cnasRegimes}
-                period={legalPeriod}
-                irgCatalog={irgCatalog}
+              <div className="mt-2 flex items-center gap-2 border-t border-border/60 pt-4 text-sm font-semibold sm:col-span-2">
+                <span className="h-4 w-1 rounded-full bg-brand" />
+                Cotisations, impôts et rubriques
+              </div>
+              <ContractLegalFields
+                options={complianceOptions}
+                cnasCode={form.cnas_regime_code}
+                onCnasChange={(v) => setForm((f) => ({ ...f, cnas_regime_code: v }))}
+                choice={legal}
+                onChoiceChange={setLegal}
+                showCacobatph={showCacobatph}
+                allowsFixedIrg={contractTypeAllowsFixedIrg(catalogs, form.contract_type_code)}
                 canEdit={canEditCompliance}
-                loadError={legalError}
+                loading={!legalBase}
               />
+              <div className="sm:col-span-2">
+                <ContractRubriquesField rubriques={rubriques} selected={selectedLines} onChange={setSelectedLines} />
+              </div>
             </div>
-          ) : null}
         </RhModal>
       ) : null}
       {printId ? (
