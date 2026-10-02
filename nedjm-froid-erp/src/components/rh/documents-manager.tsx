@@ -506,12 +506,23 @@ export function DocumentsManager({
         setTitleError(r.error);
         return;
       }
+      const { titre, archive_url, archive_path, archive_error } = r.data;
       setCorrRows((prev) =>
-        prev.map((row) => (row.id === draft.id ? { ...row, payload: { ...row.payload, titre: r.data.titre } } : row)),
+        prev.map((row) =>
+          row.id !== draft.id
+            ? row
+            : archive_url
+              ? { ...row, archive_url, payload: { ...row.payload, titre, archive_url, archive_path } }
+              : { ...row, payload: { ...row.payload, titre } },
+        ),
       );
       setPointageHref(null);
       setError(null);
-      setInfo(`Titre de congé ${leaveTitleReference(draft.numero)} enregistré.`);
+      setInfo(
+        `Titre de congé ${leaveTitleReference(draft.numero)} enregistré${archive_url ? " et archivé en PDF" : ""}.${
+          archive_error ? ` Archive non créée : ${archive_error}` : ""
+        }`,
+      );
       setTitleForm(null);
     });
   }
@@ -628,6 +639,13 @@ export function DocumentsManager({
       cell: ({ row: { original: r } }) =>
         r.status_code === "CANCELLED" ? null : (
           <div className="flex justify-end gap-0.5">
+            {r.archive_url ? (
+              <RowAction
+                label="Ouvrir le PDF archivé"
+                icon={ExternalLink}
+                onClick={() => window.open(r.archive_url ?? "", "_blank", "noopener,noreferrer")}
+              />
+            ) : null}
             <RowAction label="Ouvrir le titre" icon={Pencil} onClick={() => openTitle(r)} />
             <RowAction label="Imprimer" icon={Printer} onClick={() => printTitle(titleDraftFromRow(r))} />
           </div>

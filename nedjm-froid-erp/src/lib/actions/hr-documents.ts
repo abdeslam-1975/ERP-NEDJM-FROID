@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { htmlToPdf } from "@/lib/pdf/html-to-pdf";
 import { hrCorrespondenceSchema, hrFileSchema } from "@/lib/validations/hr";
 import {
   missionDateIssue,
@@ -12,12 +14,16 @@ import {
   type MissionContractHint,
   type MissionOrderFields,
 } from "@/lib/hr/mission-order";
-import { leaveTitleFieldsSchema, leaveTitlePayload } from "@/lib/hr/leave-title";
+import { leaveOfCorrespondence, leaveTitleFieldsSchema, leaveTitlePayload } from "@/lib/hr/leave-title";
 import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
-import { HR_DOCS_BUCKET, hrFileDisplayUrl, hrFileHref } from "@/lib/hr/hr-file-url";
+import { HR_DOCS_BUCKET, hrFileDisplayUrl, hrFileHref, isSafeHrFilePath } from "@/lib/hr/hr-file-url";
 import { buildMissionOrderHtml } from "@/components/rh/mission-order-print";
+import { buildLeaveTitleHtml } from "@/components/rh/leave-title-print";
+import { buildOfficialFicheHtml } from "@/components/rh/employee-fiche-print";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { listCatalogItems } from "@/lib/actions/hr-catalogs";
+import { listSites } from "@/lib/actions/sites";
+import { mergeAffectationCatalog } from "@/lib/hr/affectation-options";
 import {
   getHrEmployeeFiche,
   listHrEmployeeFields,
@@ -25,10 +31,7 @@ import {
 import { getHrFicheSettings } from "@/lib/actions/hr-fiche";
 import { DEFAULT_FICHE_SETTINGS } from "@/lib/hr/fiche-settings";
 import { valuesFromFicheRecord } from "@/lib/hr/employee-field-utils";
-import {
-  buildFicheRenseignementsFileName,
-  buildFicheRenseignementsPdfBytes,
-} from "@/lib/hr/fiche-renseignements-pdf";
+import { buildFicheRenseignementsFileName } from "@/lib/hr/fiche-renseignements-pdf";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -83,6 +86,44 @@ function siteOrigin() {
   const vercel = process.env.VERCEL_URL?.trim();
   if (vercel) return `https://${vercel.replace(/\/$/, "")}`;
   return "";
+}
+
+/** Origin the user is browsing, so the archived PDF loads the same fonts and images as the printout. */
+async function requestOrigin() {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host");
+  if (!host) return siteOrigin();
+  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  return `${proto.split(",")[0].trim()}://${host}`;
+}
+
+/** Renders a print document to PDF and stores it in the HR bucket under `path`. */
+async function archivePrintPdf(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  html: string,
+  origin: string,
+  path: string,
+): Promise<ActionResult> {
+  const pdf = await htmlToPdf(html, {
+    baseUrl: origin,
+    resolve: async (url) => {
+      if (url.pathname !== "/api/rh/fichier") return null;
+      const filePath = url.searchParams.get("p") ?? "";
+      if (!isSafeHrFilePath(filePath)) return null;
+      const { data } = await supabase.storage.from(HR_DOCS_BUCKET).download(filePath);
+      if (!data) return null;
+      return { body: Buffer.from(await data.arrayBuffer()), contentType: data.type || "application/octet-stream" };
+    },
+  });
+  const { error } = await supabase.storage.from(HR_DOCS_BUCKET).upload(path, pdf, {
+    contentType: "application/pdf",
+    upsert: false,
+  });
+  return error ? { ok: false, error: error.message } : { ok: true, data: undefined };
+}
+
+function archiveFileStem(...parts: string[]) {
+  return parts.map((part) => part.replace(/\//g, "-").replace(/[^\w-]+/g, "_")).join("_");
 }
 
 function revalidate() {
@@ -343,11 +384,13 @@ export async function archiveEmployeeFicheRenseignements(
     if (!employeeId) {
       return { ok: false, error: "Employé requis." };
     }
-    const [fiche, fields, catalogs, settings] = await Promise.all([
+    const [fiche, fields, catalogs, sites, settings, origin] = await Promise.all([
       getHrEmployeeFiche(employeeId),
       listHrEmployeeFields(),
       listCatalogItems(),
+      listSites(),
       getHrFicheSettings(),
+      requestOrigin(),
     ]);
     if (!fiche.ok) return { ok: false, error: fiche.error };
     if (!fields.ok) return { ok: false, error: fields.error };
@@ -359,21 +402,18 @@ export async function archiveEmployeeFicheRenseignements(
       last_name: values.last_name,
       first_name: values.first_name,
     });
-    const bytes = await buildFicheRenseignementsPdfBytes({
+    const html = buildOfficialFicheHtml(
       values,
-      fields: fields.data,
-      catalogs: catalogs.data,
-      settings: settings.ok ? settings.data : DEFAULT_FICHE_SETTINGS,
-    });
+      mergeAffectationCatalog(catalogs.data, sites.ok ? sites.data.filter((s) => s.is_active) : []),
+      fields.data,
+      settings.ok ? settings.data : DEFAULT_FICHE_SETTINGS,
+      origin,
+    );
 
     const path = `${employeeId.replace(/[^a-zA-Z0-9-]/g, "")}/FICHE_RENSEIGNEMENTS-${crypto.randomUUID()}.pdf`;
     const supabase = await createClient();
-    const body = Buffer.from(bytes);
-    const { error: upErr } = await supabase.storage.from(HR_DOCS_BUCKET).upload(path, body, {
-      contentType: "application/pdf",
-      upsert: false,
-    });
-    if (upErr) return { ok: false, error: upErr.message };
+    const stored = await archivePrintPdf(supabase, html, origin, path);
+    if (!stored.ok) return stored;
     const fileUrl = hrFileHref(path);
     const saved = await upsertHrFile({
       employee_id: employeeId,
@@ -459,8 +499,7 @@ async function archiveMissionOrderSnapshot(input: {
   fields: ReturnType<typeof missionPayload>;
 }): Promise<ActionResult<{ archive_url: string; archive_path: string }>> {
   try {
-    const settings = await getHrFicheSettings();
-    const origin = siteOrigin();
+    const [settings, origin] = await Promise.all([getHrFicheSettings(), requestOrigin()]);
     const letterhead = companyLetterheadUrl(
       settings.ok ? settings.data.letterhead_url : null,
       origin,
@@ -477,18 +516,12 @@ async function archiveMissionOrderSnapshot(input: {
       letterhead,
       origin,
     );
-    const safeMat = (checked.data.matricule || "NA").replace(/[^\w/-]+/g, "_");
-    const safeNom = (checked.data.nom || "OM").replace(/[^\w/-]+/g, "_");
     const safeNum = input.number.replace(/\//g, "-");
-    const fileName = `OM_${safeNum}_${safeMat}_${safeNom}.html`;
-    const path = `${input.employeeId.replace(/[^a-zA-Z0-9-]/g, "")}/OM_ARCHIVE-${safeNum}-${crypto.randomUUID()}.html`;
+    const fileName = `OM_${archiveFileStem(safeNum, checked.data.matricule || "NA", checked.data.nom || "OM")}.pdf`;
+    const path = `${input.employeeId.replace(/[^a-zA-Z0-9-]/g, "")}/OM_ARCHIVE-${safeNum}-${crypto.randomUUID()}.pdf`;
     const supabase = await createClient();
-    const body = Buffer.from(html, "utf8");
-    const { error: upErr } = await supabase.storage.from(HR_DOCS_BUCKET).upload(path, body, {
-      contentType: "text/html; charset=utf-8",
-      upsert: false,
-    });
-    if (upErr) return { ok: false, error: upErr.message };
+    const stored = await archivePrintPdf(supabase, html, origin, path);
+    if (!stored.ok) return stored;
     const archiveUrl = hrFileHref(path);
     const filed = await upsertHrFile({
       employee_id: input.employeeId,
@@ -541,7 +574,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function saveLeaveTitle(input: {
   id: string;
   fields: unknown;
-}): Promise<ActionResult<{ titre: Record<string, string | null> }>> {
+}): Promise<
+  ActionResult<{
+    titre: Record<string, string | null>;
+    archive_url: string | null;
+    archive_path: string | null;
+    archive_error: string | null;
+  }>
+> {
   if (!UUID.test(input.id ?? "")) return { ok: false, error: "Titre de congé invalide." };
   const checked = leaveTitleFieldsSchema.safeParse(input.fields);
   if (!checked.success) {
@@ -550,7 +590,7 @@ export async function saveLeaveTitle(input: {
   const supabase = await createClient();
   const { data: current, error: readErr } = await supabase
     .from("hr_correspondences")
-    .select("payload, status_code")
+    .select("payload, status_code, employee_id, number, start_date, end_date")
     .eq("id", input.id)
     .eq("type_code", "LEAVE")
     .maybeSingle();
@@ -560,15 +600,89 @@ export async function saveLeaveTitle(input: {
     return { ok: false, error: "Ce congé a été annulé. · هذه الإجازة ملغاة." };
   }
   const titre = leaveTitlePayload(checked.data);
+  const payload = (current.payload ?? {}) as Record<string, unknown>;
   const { data: saved, error } = await supabase
     .from("hr_correspondences")
-    .update({ payload: { ...((current.payload ?? {}) as Record<string, unknown>), titre } })
+    .update({ payload: { ...payload, titre } })
     .eq("id", input.id)
     .select("id");
   if (error) return { ok: false, error: error.message };
   if (!saved?.length) return { ok: false, error: "Enregistrement refusé (droits)." };
+
+  const archived = await archiveLeaveTitle({
+    id: input.id,
+    employeeId: current.employee_id,
+    number: current.number,
+    fields: checked.data,
+    leave: leaveOfCorrespondence({ start_date: current.start_date, end_date: current.end_date, payload }),
+  });
   revalidatePath("/rh/documents");
-  return { ok: true, data: { titre } };
+  return {
+    ok: true,
+    data: {
+      titre,
+      archive_url: archived.ok ? archived.data.archive_url : null,
+      archive_path: archived.ok ? archived.data.archive_path : null,
+      archive_error: archived.ok ? null : archived.error,
+    },
+  };
+}
+
+async function archiveLeaveTitle(input: {
+  id: string;
+  employeeId: string;
+  number: string;
+  fields: ReturnType<typeof leaveTitleFieldsSchema.parse>;
+  leave: ReturnType<typeof leaveOfCorrespondence>;
+}): Promise<ActionResult<{ archive_url: string; archive_path: string }>> {
+  try {
+    const [settings, origin] = await Promise.all([getHrFicheSettings(), requestOrigin()]);
+    const html = buildLeaveTitleHtml(
+      { ...input.fields, matricule: input.fields.matricule || "—", nom: input.fields.nom || "—" },
+      input.leave,
+      input.number,
+      companyLetterheadUrl(settings.ok ? settings.data.letterhead_url : null, origin),
+      origin,
+    );
+    const safeNum = input.number.replace(/\//g, "-");
+    const fileName = `TC_${archiveFileStem(safeNum, input.fields.matricule || "NA", input.fields.nom || "TC")}.pdf`;
+    const path = `${input.employeeId.replace(/[^a-zA-Z0-9-]/g, "")}/LEAVE_ARCHIVE-${safeNum}-${crypto.randomUUID()}.pdf`;
+    const supabase = await createClient();
+    const stored = await archivePrintPdf(supabase, html, origin, path);
+    if (!stored.ok) return stored;
+    const archiveUrl = hrFileHref(path);
+    const filed = await upsertHrFile({
+      employee_id: input.employeeId,
+      doc_type_code: "LEAVE_ARCHIVE",
+      file_url: archiveUrl,
+      file_name: fileName,
+      storage_path: path,
+      notes: `Titre de congé ${input.number} · سند عطلة`,
+    });
+    if (!filed.ok) return { ok: false, error: filed.error };
+    const { data: current } = await supabase
+      .from("hr_correspondences")
+      .select("payload")
+      .eq("id", input.id)
+      .maybeSingle();
+    const { error } = await supabase
+      .from("hr_correspondences")
+      .update({
+        payload: {
+          ...((current?.payload ?? {}) as Record<string, unknown>),
+          archive_url: archiveUrl,
+          archive_path: path,
+        },
+      })
+      .eq("id", input.id);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, data: { archive_url: archiveUrl, archive_path: path } };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Échec archivage du titre de congé.",
+    };
+  }
 }
 
 const UNIQUE_VIOLATION = "23505";
