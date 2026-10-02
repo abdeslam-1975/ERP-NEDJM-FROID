@@ -6,9 +6,11 @@ import {
   listHrFiles,
 } from "@/lib/actions/hr-documents";
 import { listHrContracts } from "@/lib/actions/hr-contracts";
-import { listHrEmployeeRows } from "@/lib/actions/hr-employees";
+import { listHrEmployeeFields, listHrEmployeeRows } from "@/lib/actions/hr-employees";
 import { loadHrLookups } from "@/lib/actions/hr-lookups";
 import { getHrFicheSettings } from "@/lib/actions/hr-fiche";
+import { mergeAffectationCatalog } from "@/lib/hr/affectation-options";
+import { DEFAULT_FICHE_SETTINGS } from "@/lib/hr/fiche-settings";
 import type { MissionContractHint } from "@/lib/hr/mission-order";
 
 export const dynamic = "force-dynamic";
@@ -21,13 +23,14 @@ export default async function DocumentsPage({
   const sp = await searchParams;
   const tabs: DocumentsTab[] = ["missions", "conges", "fiches"];
   const initialTab = tabs.find((tab) => tab === sp.onglet);
-  const [files, corr, employees, lookups, contracts, fiche] = await Promise.all([
+  const [files, corr, employees, lookups, contracts, fiche, fields] = await Promise.all([
     listHrFiles(),
     listHrCorrespondences(),
     listHrEmployeeRows(),
     loadHrLookups(),
     listHrContracts(),
     getHrFicheSettings(),
+    listHrEmployeeFields(),
   ]);
   const missionContracts: MissionContractHint[] = contracts.ok
     ? contracts.data.map((row) => ({
@@ -60,6 +63,9 @@ export default async function DocumentsPage({
           contracts={missionContracts}
           contractCount={contracts.ok ? contracts.data.length : null}
           letterheadUrl={fiche.ok ? fiche.data.letterhead_url : null}
+          employeeFields={fields.ok ? fields.data : []}
+          ficheCatalogs={mergeAffectationCatalog(lookups.catalogs, lookups.sites)}
+          ficheSettings={fiche.ok ? fiche.data : DEFAULT_FICHE_SETTINGS}
           openMission={sp.nouveau === "om"}
           loadError={
             (!files.ok && files.error) ||

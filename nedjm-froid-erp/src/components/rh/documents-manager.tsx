@@ -25,7 +25,18 @@ import {
   type HrFileRow,
 } from "@/lib/actions/hr-documents";
 import type { CatalogItem } from "@/lib/actions/hr-catalogs";
-import type { HrEmployeeRow } from "@/lib/actions/hr-employees";
+import {
+  getHrEmployeeFiche,
+  type HrEmployeeFiche,
+  type HrEmployeeField,
+  type HrEmployeeRow,
+} from "@/lib/actions/hr-employees";
+import { valuesFromFicheRecord } from "@/lib/hr/employee-field-utils";
+import type { HrFicheSettings } from "@/lib/hr/fiche-settings";
+import { buildOfficialFicheHtml } from "@/components/rh/employee-fiche-print";
+import { EmployeeCardPreview } from "@/components/rh/employee-card-preview";
+import { EmployeeFicheWindow, ficheWindowValues } from "@/components/rh/employee-fiche-window";
+import { printHtml as printFrame } from "@/components/rh/print-frame";
 import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
 import {
   OM_DONNEUR,
@@ -62,7 +73,7 @@ import { RhAlert, RhChip, RhPanel, catalogOptions } from "@/components/rh/rh-ui"
 type SiteOpt = { id: string; name_fr: string };
 
 const corrCol = dataColumns<HrCorrespondenceRow>();
-const fileCol = dataColumns<HrFileRow>();
+const empCol = dataColumns<HrEmployeeRow>();
 
 function ReferenceCell({ reference, sub }: { reference: string; sub?: string }) {
   return (
@@ -211,6 +222,9 @@ export function DocumentsManager({
   contracts,
   contractCount,
   letterheadUrl = null,
+  employeeFields,
+  ficheCatalogs,
+  ficheSettings,
   openMission = false,
   initialTab = "missions",
   openTitleId,
@@ -224,6 +238,10 @@ export function DocumentsManager({
   contracts: MissionContractHint[];
   contractCount: number | null;
   letterheadUrl?: string | null;
+  employeeFields: HrEmployeeField[];
+  /** Catalogues of the employee card (sites merged into the affectations). */
+  ficheCatalogs: CatalogItem[];
+  ficheSettings: HrFicheSettings;
   openMission?: boolean;
   initialTab?: DocumentsTab;
   /** LEAVE correspondence whose titre de congé opens on arrival. */
@@ -244,6 +262,8 @@ export function DocumentsManager({
   const [titleError, setTitleError] = useState<string | null>(null);
   const [corrRows, setCorrRows] = useState(correspondences);
   const [pending, start] = useTransition();
+  const [cardPreview, setCardPreview] = useState<HrEmployeeFiche | null>(null);
+  const [ficheWindow, setFicheWindow] = useState<Record<string, string> | null>(null);
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [info, setInfo] = useState<string | null>(null);
   const [pointageHref, setPointageHref] = useState<string | null>(null);
@@ -498,7 +518,9 @@ export function DocumentsManager({
 
   const omRows = corrRows.filter((row) => row.type_code === "OM");
   const leaveRows = corrRows.filter((row) => row.type_code === "LEAVE");
-  const ficheRows = files.filter((row) => row.doc_type_code === "FICHE_RENSEIGNEMENTS");
+  const archiveOf = new Map(
+    files.filter((row) => row.doc_type_code === "FICHE_RENSEIGNEMENTS").map((row) => [row.employee_id, row]),
+  );
 
   const employeeColumn = corrCol.accessor((r) => `${r.last_name} ${r.first_name}`.trim() || r.employee_name, {
     id: "employee",
@@ -614,34 +636,82 @@ export function DocumentsManager({
   ];
 
   const ficheColumns = [
-    fileCol.accessor((r) => r.employee_name, {
+    empCol.accessor((r) => `${r.last_name} ${r.first_name}`.trim(), {
       id: "employee",
       header: "Employé",
       cell: (info) => <PersonCell name={info.getValue()} matricule={info.row.original.matricule} />,
     }),
-    fileCol.accessor((r) => r.file_name ?? "", {
-      id: "file",
-      header: "Fichier",
-      cell: (info) => <span className="block truncate text-foreground/75">{info.getValue() || "—"}</span>,
+    empCol.accessor((r) => (archiveOf.get(r.id)?.file_url ? 1 : 0), {
+      id: "archive",
+      header: "PDF archivé",
+      cell: ({ row: { original: r } }) => {
+        const archive = archiveOf.get(r.id);
+        return archive?.file_url ? (
+          <a
+            href={archive.file_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:underline"
+          >
+            <ExternalLink className="size-3.5" aria-hidden />
+            Ouvrir le PDF
+          </a>
+        ) : (
+          <span className="text-sm text-foreground/40">Pas encore archivée</span>
+        );
+      },
     }),
-    fileCol.display({
+    empCol.display({
       id: "actions",
       header: "",
       enableSorting: false,
       enableHiding: false,
       meta: { align: "right" },
-      cell: ({ row: { original: r } }) =>
-        r.file_url ? (
-          <div className="flex justify-end">
-            <RowAction
-              label="Ouvrir le fichier"
-              icon={ExternalLink}
-              onClick={() => window.open(r.file_url ?? "", "_blank", "noopener,noreferrer")}
-            />
-          </div>
-        ) : null,
+      cell: ({ row: { original: r } }) => (
+        <div className="flex justify-end gap-0.5">
+          <RowAction label="Afficher la fiche" icon={Eye} onClick={() => showCard(r.id)} />
+          <RowAction label="Imprimer la fiche" icon={Printer} onClick={() => printCard(r.id)} />
+          <RowAction label="Modifier la fiche" icon={Pencil} onClick={() => openFicheWindow(r.id)} />
+        </div>
+      ),
     }),
   ];
+
+  function loadCard(employeeId: string, then: (card: HrEmployeeFiche) => void) {
+    start(async () => {
+      const result = await getHrEmployeeFiche(employeeId);
+      if (result.ok) then(result.data);
+      else setError(result.error);
+    });
+  }
+
+  function showCard(employeeId: string) {
+    loadCard(employeeId, setCardPreview);
+  }
+
+  function printCard(employeeId: string) {
+    loadCard(employeeId, (card) =>
+      printFrame(
+        buildOfficialFicheHtml(
+          valuesFromFicheRecord(card, employeeFields),
+          ficheCatalogs,
+          employeeFields,
+          ficheSettings,
+          window.location.origin,
+        ),
+        "hr-fiche-print-frame",
+      ),
+    );
+  }
+
+  function openFicheWindow(employeeId: string | null) {
+    setCardPreview(null);
+    start(async () => {
+      const result = await ficheWindowValues(employeeId, employeeFields);
+      if (result.ok) setFicheWindow(result.values);
+      else setError(result.error);
+    });
+  }
 
   function newMission() {
     setMissionError(null);
@@ -658,7 +728,7 @@ export function DocumentsManager({
             title: "Fiche de renseignements",
             icon: ClipboardList,
             color: "#6366f1",
-            summary: countLabel(ficheRows.length, "fiche archivée", "fiches archivées"),
+            summary: countLabel(employees.length, "fiche", "fiches"),
             selected: tab === "fiches",
             onSelect: () => setTab("fiches"),
           },
@@ -772,25 +842,56 @@ export function DocumentsManager({
           icon={ClipboardList}
           color="#6366f1"
           title="Fiches de renseignements"
-          description="Archivées en PDF à chaque enregistrement de la fiche d'un employé."
+          description="Une fiche par employé : affichez-la, imprimez-la ou complétez-la."
           action={
-            <Button variant="secondary" onClick={() => router.push("/rh/employes")}>
+            <Button disabled={pending} onClick={() => openFicheWindow(null)}>
               <Users aria-hidden />
-              Employés
+              Fiche employé
             </Button>
           }
         >
           <DataTable
-            data={ficheRows}
+            data={employees}
             columns={ficheColumns}
             getRowId={(r) => r.id}
-            searchPlaceholder="Matricule, nom…"
-            searchText={(r) => [r.matricule, r.employee_name, r.file_name].filter(Boolean).join(" ")}
-            emptyTitle="Aucune fiche archivée"
-            emptyBody="La fiche est archivée dès que la fiche d'un employé est enregistrée."
+            searchPlaceholder="Matricule, nom, NSS, NIN…"
+            searchText={(r) =>
+              [r.matricule, r.last_name, r.first_name, r.last_name_ar, r.first_name_ar, r.nss, r.nin]
+                .filter(Boolean)
+                .join(" ")
+            }
+            emptyTitle="Aucun employé"
+            emptyBody="Créez la première fiche avec « Fiche employé »."
           />
         </RegisterSection>
       )}
+
+      {cardPreview ? (
+        <EmployeeCardPreview
+          employee={cardPreview}
+          fields={employeeFields}
+          catalogs={ficheCatalogs}
+          fiche={ficheSettings}
+          onClose={() => setCardPreview(null)}
+          onEdit={() => openFicheWindow(cardPreview.id)}
+        />
+      ) : null}
+      {ficheWindow ? (
+        <EmployeeFicheWindow
+          employees={employees}
+          initialValues={ficheWindow}
+          fields={employeeFields}
+          catalogs={ficheCatalogs}
+          fiche={ficheSettings}
+          onClose={() => setFicheWindow(null)}
+          onSaved={(_, message) => {
+            setPointageHref(null);
+            setError(null);
+            setInfo(message);
+            router.refresh();
+          }}
+        />
+      ) : null}
 
       {missionOpen ? (
         <MissionOrderDialog

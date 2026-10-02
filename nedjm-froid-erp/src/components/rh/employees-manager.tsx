@@ -11,20 +11,16 @@ import {
   nextHrMatricule,
   setHrEmployeeFieldActive,
   setHrEmployeeStatus,
-  upsertHrEmployee,
   upsertHrEmployeeField,
   type HrEmployeeFiche,
   type HrEmployeeField,
 } from "@/lib/actions/hr-employees";
-import { archiveEmployeeFicheRenseignements } from "@/lib/actions/hr-documents";
-import { missingRequiredFields } from "@/lib/hr/employee-field-utils";
-import { employeePayloadFromValues } from "@/lib/hr/employee-payload";
 import {
-  normalizeFicheValues,
-  validateFicheConstraints,
-} from "@/lib/hr/employee-fiche-constraints";
-import { missingRequiredDocuments } from "@/lib/hr/required-documents";
-import { listHrFilesForEmployee } from "@/lib/actions/hr-documents";
+  checkFicheValues,
+  emptyFicheValues as emptyValues,
+  saveEmployeeFiche,
+  valuesFromFiche,
+} from "@/components/rh/employee-fiche-save";
 import type { CatalogItem, CatalogKind } from "@/lib/actions/hr-catalogs";
 import type { SiteRow } from "@/lib/actions/sites";
 import { Button } from "@/components/ui/button";
@@ -36,7 +32,6 @@ import {
   RhModal,
   RhPage,
   RhPageHeader,
-  bi,
   catalogOptionLabel,
   rhInput,
 } from "@/components/rh/rh-ui";
@@ -82,35 +77,6 @@ function slugify(label: string) {
     .replace(/^_|_$/g, "")
     .slice(0, 40);
   return slug || `col_${Date.now().toString().slice(-6)}`;
-}
-
-function valuesFromFiche(
-  row: HrEmployeeFiche,
-  fields: HrEmployeeField[],
-): Record<string, string> {
-  const values: Record<string, string> = { id: row.id };
-  for (const field of fields) {
-    values[field.code] = asText(rawValue(row, field));
-    if (field.code === "irg_category" && !values[field.code]) {
-      values[field.code] = "STANDARD";
-    }
-  }
-  return values;
-}
-
-function emptyValues(activeFields: HrEmployeeField[]) {
-  const empty: Record<string, string> = {};
-  for (const field of activeFields) {
-    empty[field.code] =
-      field.code === "status"
-        ? "ACTIVE"
-        : field.code === "irg_category"
-          ? "STANDARD"
-          : field.code === "nationality"
-            ? "Algérienne"
-            : "";
-  }
-  return empty;
 }
 
 export function EmployeesManager({
@@ -251,52 +217,23 @@ export function EmployeesManager({
   function submit() {
     setFormError(null);
     setInfo(null);
-    const normalized = normalizeFicheValues(values) as Record<string, string>;
+    const { normalized, error } = checkFicheValues(values, activeFields);
     setValues(normalized);
-    const missing = missingRequiredFields(normalized, activeFields);
-    if (missing.length) {
-      setFormError(
-        `Champs obligatoires manquants : ${missing
-          .slice(0, 6)
-          .map((f) => f.label_fr || f.label_ar || f.code)
-          .join(", ")}`,
-      );
-      return;
-    }
-    const constraintIssues = validateFicheConstraints(normalized);
-    if (constraintIssues.length) {
-      setFormError(constraintIssues.map((i) => i.message).join(" "));
+    if (error) {
+      setFormError(error);
       return;
     }
     startTransition(async () => {
-      if (normalized.id) {
-        const files = await listHrFilesForEmployee(normalized.id);
-        if (files.ok) {
-          const missingDocs = missingRequiredDocuments(
-            ficheCatalogs,
-            files.data.map((f) => f.doc_type_code),
-          );
-          if (missingDocs.length) {
-            setFormError(
-              `Documents obligatoires manquants : ${missingDocs
-                .slice(0, 6)
-                .map((d) => d.label_fr || d.code)
-                .join(", ")}. Onglet Documents.`,
-            );
-            return;
-          }
-        }
-      }
-      const result = await upsertHrEmployee(employeePayloadFromValues(normalized, activeFields));
+      const result = await saveEmployeeFiche(normalized, activeFields, ficheCatalogs);
       if (!result.ok) {
         setFormError(result.error);
         return;
       }
-      const fiche = await getHrEmployeeFiche(result.data.id);
-      if (fiche.ok) {
+      const saved = result.fiche;
+      if (saved) {
         setRows((prev) => {
-          const without = prev.filter((r) => r.id !== fiche.data.id);
-          return [...without, fiche.data].sort((a, b) => {
+          const without = prev.filter((r) => r.id !== saved.id);
+          return [...without, saved].sort((a, b) => {
             const aOk = a.import_seq != null;
             const bOk = b.import_seq != null;
             if (aOk && bOk && a.import_seq !== b.import_seq) {
@@ -307,37 +244,9 @@ export function EmployeesManager({
             return a.matricule.localeCompare(b.matricule, "fr", { numeric: true });
           });
         });
-        setValues(valuesFromFiche(fiche.data, fields));
+        setValues(valuesFromFiche(saved, fields));
       }
-
-      setInfo(bi("Fiche enregistrée.", "تم حفظ البطاقة."));
-
-      // PDF archive must never break the save UI
-      try {
-        const archived = await archiveEmployeeFicheRenseignements(result.data.id);
-        if (archived.ok) {
-          setInfo(
-            bi(
-              `Fiche enregistrée. PDF : ${archived.data.file_name}`,
-              `تم الحفظ. PDF: ${archived.data.file_name}`,
-            ),
-          );
-        } else {
-          setInfo(
-            bi(
-              `Fiche enregistrée. PDF plus tard : ${archived.error}`,
-              `تم الحفظ. PDF لاحقاً: ${archived.error}`,
-            ),
-          );
-        }
-      } catch {
-        setInfo(
-          bi(
-            "Fiche enregistrée. Génération PDF reportée.",
-            "تم الحفظ. تأجيل إنشاء PDF.",
-          ),
-        );
-      }
+      setInfo(result.info);
     });
   }
 
