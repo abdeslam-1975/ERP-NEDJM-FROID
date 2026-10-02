@@ -51,7 +51,18 @@ export default async function ContratsPage() {
           rubriques={rubriques.ok ? rubriques.data : []}
           assignments={assignments.ok ? assignments.data : []}
           complianceOptions={
-            complianceOptions.ok ? complianceOptions.data : { regimes: [], zones: [], cacobatph_activity_ids: [] }
+            complianceOptions.ok
+              ? complianceOptions.data
+              : {
+                  regimes: [],
+                  zones: [],
+                  bareme_pcts: [],
+                  lissage_max: {},
+                  cacobatph: { conges_employer_pct: 0, intemperies_employee_pct: 0, intemperies_employer_pct: 0 },
+                  activity_cacobatph: {},
+                  site_zone: {},
+                  employee_social_profile: {},
+                }
           }
           canEditCompliance={compliance.canWrite}
           postes={postes.ok ? postes.data : []}

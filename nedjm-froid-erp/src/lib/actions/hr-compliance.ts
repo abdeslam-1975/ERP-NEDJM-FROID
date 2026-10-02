@@ -8,6 +8,7 @@ import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
 import { payrollSignalNotice } from "@/lib/decisions/catalog";
 import { legalVarsAsOf } from "@/lib/hr/legal-vars-as-of";
 import { loadComplianceContext, mapOverrideRow } from "@/lib/hr/compliance-load";
+import { loadIrgEngine } from "@/lib/hr/irg-engine-load";
 import {
   COMPLIANCE_DOMAINS,
   contractTypeAllowsFixedIrg,
@@ -73,32 +74,61 @@ async function loadContract(supabase: Supabase, contractId: string) {
     .maybeSingle();
 }
 
+/** All percentages are in force this month (9 = 9 %). */
 export type ContractComplianceOptions = {
-  /** Percentages in force this month (9 = 9 %), legal rate when the regime has none. */
+  /** Legal rate when the regime has none. */
   regimes: { code: string; label_fr: string; employee_pct: number; employer_pct: number; fos_pct: number }[];
-  zones: { code: string; label_fr: string }[];
-  /** Activities subject to CACOBATPH (BTPH). */
-  cacobatph_activity_ids: string[];
+  zones: { code: string; label_fr: string; rate_pct: number; applies_to: "TAX" | "BASE" }[];
+  /** Rates of the general IRG scale, ascending. */
+  bareme_pcts: number[];
+  /** Upper monthly base of the IRG smoothing, by employee category (STANDARD, DISABLED_OR_RETIREE). */
+  lissage_max: Record<string, number>;
+  cacobatph: { conges_employer_pct: number; intemperies_employee_pct: number; intemperies_employer_pct: number };
+  /** CACOBATPH applied automatically, by activity (only activities subject to it). */
+  activity_cacobatph: Record<string, { conges: boolean; intemperies: boolean }>;
+  site_zone: Record<string, string>;
+  employee_social_profile: Record<string, string>;
 };
 
 /** Choices of the contract form, before the contract exists. */
 export async function listContractComplianceOptions(): Promise<ActionResult<ContractComplianceOptions>> {
   const supabase = await createClient();
   const asOf = new Date().toISOString().slice(0, 10);
+  const { data: sites, error: sitesErr } = await supabase.from("ref_sites").select("id").eq("is_active", true);
+  if (sitesErr) return { ok: false, error: sitesErr.message };
   let loaded;
   try {
     loaded = await Promise.all([
-      loadComplianceContext(supabase, { contractIds: [], siteIds: [], employeeIds: [], asOf }),
+      loadComplianceContext(supabase, {
+        contractIds: [],
+        siteIds: (sites ?? []).map((s) => s.id),
+        employeeIds: [],
+        asOf,
+      }),
       legalVarsAsOf(supabase, asOf),
-      supabase.from("ref_activity_codes").select("id").eq("applies_cacobatph", true),
+      supabase
+        .from("ref_activity_codes")
+        .select("id, applies_cacobatph, applies_intemperies")
+        .or("applies_cacobatph.eq.true,applies_intemperies.eq.true"),
+      loadIrgEngine(supabase, `${asOf.slice(0, 7)}-01`),
+      supabase.from("hr_employee_social").select("employee_id, social_profile_code"),
     ]);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
-  const [ctx, vars, activities] = loaded;
+  const [ctx, vars, activities, irg, social] = loaded;
   if (!ctx.ok) return ctx;
-  if (activities.error) return { ok: false, error: activities.error.message };
-  const legalPct = (key: string) => Math.round((Number(vars[key] ?? 0) || 0) * 10000) / 100;
+  if (!irg.ok) return irg;
+  const failed = [activities, social].find((r) => r.error);
+  if (failed?.error) return { ok: false, error: failed.error.message };
+  const pct = (fraction: unknown) => Math.round((Number(fraction ?? 0) || 0) * 1000000) / 10000;
+  const legalPct = (key: string) => pct(vars[key]);
+  const lissage_max: Record<string, number> = {};
+  for (const [category, rules] of Object.entries(irg.data.rulesByCategory)) {
+    const max = Number(rules.find((r) => r.kind === "LISSAGE")?.params.monthly_max);
+    if (Number.isFinite(max) && max > 0) lissage_max[category] = max;
+  }
+  const intemperies = Number(vars.CACOBATPH_INTEMPERIES ?? 0) || 0;
   return {
     ok: true,
     data: {
@@ -109,8 +139,33 @@ export async function listContractComplianceOptions(): Promise<ActionResult<Cont
         employer_pct: r.employer_pct ?? legalPct("CNAS_EMPLOYER_BASE"),
         fos_pct: r.fos_pct ?? legalPct("CNAS_FOS"),
       })),
-      zones: ctx.data.zones.map((z) => ({ code: z.code, label_fr: z.label_fr })),
-      cacobatph_activity_ids: (activities.data ?? []).map((a) => a.id),
+      zones: ctx.data.zones.map((z) => ({
+        code: z.code,
+        label_fr: z.label_fr,
+        rate_pct: z.rate_var_key ? legalPct(z.rate_var_key) : 0,
+        applies_to: z.applies_to,
+      })),
+      bareme_pcts: [...new Set(irg.data.brackets.map((b) => pct(b.rate)))].sort((a, b) => a - b),
+      lissage_max,
+      cacobatph: {
+        conges_employer_pct: legalPct("CACOBATPH_CONGES"),
+        intemperies_employee_pct:
+          vars.CACOBATPH_INTEMPERIES_SAL != null ? legalPct("CACOBATPH_INTEMPERIES_SAL") : pct(intemperies / 2),
+        intemperies_employer_pct:
+          vars.CACOBATPH_INTEMPERIES_EMP != null ? legalPct("CACOBATPH_INTEMPERIES_EMP") : pct(intemperies / 2),
+      },
+      activity_cacobatph: Object.fromEntries(
+        (activities.data ?? []).map((a) => [
+          a.id,
+          { conges: Boolean(a.applies_cacobatph), intemperies: Boolean(a.applies_intemperies) },
+        ]),
+      ),
+      site_zone: Object.fromEntries([...ctx.data.siteZone].map(([id, zone]) => [id, zone.code])),
+      employee_social_profile: Object.fromEntries(
+        (social.data ?? [])
+          .filter((s) => s.social_profile_code)
+          .map((s) => [s.employee_id, s.social_profile_code as string]),
+      ),
     },
   };
 }

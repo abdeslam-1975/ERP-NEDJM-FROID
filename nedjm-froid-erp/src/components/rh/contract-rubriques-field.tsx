@@ -42,13 +42,12 @@ export function ContractRubriquesField({
   }
 
   return (
-    <div className="space-y-2">
-      <span className="text-xs font-medium text-foreground/75">Rubriques</span>
+    <div className="space-y-3">
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="mt-1.5 flex h-10 w-full items-center justify-between gap-2 rounded-xl border border-border/80 bg-surface px-3.5 text-left text-sm outline-none transition focus-visible:border-brand focus-visible:ring-4 focus-visible:ring-brand/10"
+            className="flex h-10 w-full items-center justify-between gap-2 rounded-xl border border-border/80 bg-surface px-3.5 text-left text-sm outline-none transition focus-visible:border-brand focus-visible:ring-4 focus-visible:ring-brand/10"
           >
             <span className={lines.length ? "" : "text-foreground/40"}>
               {lines.length ? `${lines.length} rubrique${lines.length > 1 ? "s" : ""} choisie${lines.length > 1 ? "s" : ""}` : "Choisir les rubriques…"}
@@ -94,14 +93,19 @@ export function ContractRubriquesField({
         </DropdownMenuContent>
       </DropdownMenu>
 
+      {!lines.length ? (
+        <p className="rounded-xl border border-dashed border-border/80 px-4 py-5 text-center text-xs text-foreground/45">
+          Aucune rubrique choisie. Ouvrez la liste et cochez les rubriques par classe.
+        </p>
+      ) : null}
       {lines.length ? (
-        <div className="divide-y divide-border/60 rounded-xl border border-border/70">
+        <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/70 bg-surface">
           {lines.map((r) => {
             const line = selected[r.id];
             return (
-              <div key={r.id} className="grid items-center gap-2 px-3 py-2 sm:grid-cols-[1fr_9rem_8rem_auto]">
+              <div key={r.id} className="grid items-center gap-2 px-3.5 py-2.5 transition-colors hover:bg-surface-muted/40 sm:grid-cols-[1fr_9rem_8rem_auto]">
                 <span className="min-w-0 text-sm">
-                  <span className="mr-1.5 rounded-md bg-surface-muted px-1.5 py-0.5 text-[11px] font-semibold text-foreground/60">
+                  <span className="mr-1.5 rounded-md bg-brand-muted px-1.5 py-0.5 text-[11px] font-semibold text-brand">
                     C{r.category}
                   </span>
                   <span className="font-mono text-xs text-foreground/55">{r.code}</span> {r.label_fr}

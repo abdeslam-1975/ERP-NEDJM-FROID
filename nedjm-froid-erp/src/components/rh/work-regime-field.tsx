@@ -61,7 +61,7 @@ export function WorkRegimeField({
   }
 
   return (
-    <RhField label="Régime">
+    <RhField label="Régime de travail">
       <div className="flex gap-2">
         <CatalogSelect items={catalogs} kind="work_regime" value={value} onChange={onChange} />
         {canManage ? (
