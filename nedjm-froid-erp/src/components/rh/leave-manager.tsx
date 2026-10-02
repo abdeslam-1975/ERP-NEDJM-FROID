@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   createLeaveAdjustment,
   createLeaveRequest,
@@ -74,6 +75,7 @@ export function LeaveManager({
   canRequest: boolean;
   loadError?: string;
 }) {
+  const router = useRouter();
   const [tab, setTab] = useState<"requests" | "balances" | "adjustments">("requests");
   const [requests, setRequests] = useState(initialRequests);
   const [balances, setBalances] = useState(initialBalances);
@@ -251,8 +253,15 @@ export function LeaveManager({
       cell: ({ row: { original: row } }) => (
         <>
           {row.status === "APPROVED" ? (
-            <Button variant="secondary" onClick={() => setPrintRow(row)}>
-              {bi("Titre de congé", "سند العطلة")}
+            <Button
+              variant="secondary"
+              onClick={() =>
+                row.correspondence_id
+                  ? router.push(`/rh/documents?onglet=conges&titre=${row.correspondence_id}#registre`)
+                  : setPrintRow(row)
+              }
+            >
+              {bi("Titre de congé", "سند الإجازة")}
             </Button>
           ) : null}
           {canDecide && row.status === "SUBMITTED" ? (

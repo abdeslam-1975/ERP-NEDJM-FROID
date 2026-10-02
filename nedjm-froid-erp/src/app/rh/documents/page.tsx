@@ -1,6 +1,6 @@
-import { Award, FileBadge, FilePenLine, Mail, Plane, Receipt } from "lucide-react";
+import { Award, CalendarCheck, FileBadge, FilePenLine, Mail, Plane, Receipt } from "lucide-react";
 import { RhShell } from "@/components/rh/rh-shell";
-import { DocumentsManager } from "@/components/rh/documents-manager";
+import { DocumentsManager, type DocumentsTab } from "@/components/rh/documents-manager";
 import { DocumentTypeCards, type DocumentTypeCard } from "@/components/rh/document-type-cards";
 import { RhPage, RhPageHeader } from "@/components/rh/rh-ui";
 import {
@@ -18,9 +18,11 @@ export const dynamic = "force-dynamic";
 export default async function DocumentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ nouveau?: string }>;
+  searchParams: Promise<{ nouveau?: string; onglet?: string; titre?: string }>;
 }) {
   const sp = await searchParams;
+  const tabs: DocumentsTab[] = ["corr", "conges", "files"];
+  const initialTab = tabs.find((tab) => tab === sp.onglet);
   const [files, corr, employees, lookups, contracts, fiche] = await Promise.all([
     listHrFiles(),
     listHrCorrespondences(),
@@ -70,6 +72,15 @@ export default async function DocumentsPage({
       generate: "/rh/documents?nouveau=om",
     },
     {
+      key: "leave",
+      title: "Titre de congé",
+      icon: CalendarCheck,
+      color: "#22a06b",
+      count: countOf("LEAVE"),
+      open: { href: "/rh/documents?onglet=conges#registre", label: "Registre", down: true },
+      generate: "/rh/conges",
+    },
+    {
       key: "contract",
       title: "Contrat de travail",
       icon: FilePenLine,
@@ -103,6 +114,9 @@ export default async function DocumentsPage({
       </RhPage>
       <div id="registre" className="mt-8 scroll-mt-32">
       <DocumentsManager
+        key={`${initialTab ?? ""}:${sp.titre ?? ""}`}
+        initialTab={initialTab}
+        openTitleId={sp.titre}
         files={files.ok ? files.data : []}
         correspondences={corr.ok ? corr.data : []}
         employees={employees.ok ? employees.data : []}

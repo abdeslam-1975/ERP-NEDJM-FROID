@@ -128,6 +128,8 @@ function printHtml(html: string) {
   }
 }
 
+export type DocumentsTab = "files" | "corr" | "conges";
+
 export function DocumentsManager({
   files,
   correspondences,
@@ -137,6 +139,8 @@ export function DocumentsManager({
   contracts,
   letterheadUrl = null,
   openMission = false,
+  initialTab = "corr",
+  openTitleId,
   loadError,
 }: {
   files: HrFileRow[];
@@ -147,14 +151,22 @@ export function DocumentsManager({
   contracts: MissionContractHint[];
   letterheadUrl?: string | null;
   openMission?: boolean;
+  initialTab?: DocumentsTab;
+  /** LEAVE correspondence whose titre de congé opens on arrival. */
+  openTitleId?: string;
   loadError?: string;
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"files" | "corr" | "conges">("corr");
+  const titleOnArrival = openTitleId
+    ? correspondences.find((row) => row.id === openTitleId && row.type_code === "LEAVE")
+    : undefined;
+  const [tab, setTab] = useState<DocumentsTab>(titleOnArrival ? "conges" : initialTab);
   const [missionOpen, setMissionOpen] = useState(openMission);
   const [missionForm, setMissionForm] = useState<MissionDraft>(emptyMissionDraft);
   const [missionError, setMissionError] = useState<string | null>(null);
-  const [titleForm, setTitleForm] = useState<LeaveTitleDraft | null>(null);
+  const [titleForm, setTitleForm] = useState<LeaveTitleDraft | null>(() =>
+    titleOnArrival ? titleDraftFromRow(titleOnArrival) : null,
+  );
   const [titleError, setTitleError] = useState<string | null>(null);
   const [fileRows, setFileRows] = useState(files);
   const [corrRows, setCorrRows] = useState(correspondences);
