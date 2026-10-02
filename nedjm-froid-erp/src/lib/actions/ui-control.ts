@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { createClient } from "@/lib/supabase/server";
-import { NAV_GROUPS_TABSET, UI_NAV_GROUPS, findItem, findTabset, isGroupKey, itemKey } from "@/lib/ui/registry";
+import { findItem, findTabset, isGroupKey, keysOfTabset } from "@/lib/ui/registry";
 import { DESIGN_OPTIONS, isDesignValue, parseDesign, type DesignSettings } from "@/lib/ui/design";
 import { EMPTY_THEME, isHexColor, type UiOverride, type UiTheme } from "@/lib/ui/resolve";
 
@@ -30,12 +30,6 @@ async function requireSuperAdmin(): Promise<{ ok: true } | { ok: false; error: s
 
 function done() {
   revalidatePath("/", "layout");
-}
-
-function keysOfTabset(tabset: string): string[] | null {
-  if (tabset === NAV_GROUPS_TABSET) return UI_NAV_GROUPS.map((g) => g.key);
-  const def = findTabset(tabset);
-  return def ? def.items.map((i) => itemKey(def.key, i.id)) : null;
 }
 
 function cleanText(value: unknown, max: number): string | null {
@@ -131,6 +125,7 @@ export async function saveTabsetLayout(input: {
   if (!gate.ok) return gate;
   const allowed = keysOfTabset(input.tabset);
   if (!allowed) return { ok: false, error: "Liste d'onglets inconnue." };
+  const fixedLabels = findTabset(input.tabset)?.kind === "toolbar";
   const seen = new Set<string>();
   const rows = [];
   for (const [index, item] of input.items.entries()) {
@@ -142,8 +137,8 @@ export async function saveTabsetLayout(input: {
     rows.push({
       item_key: item.key,
       sort_order: (index + 1) * 10,
-      label_fr: cleanText(item.label_fr, 80),
-      label_ar: cleanText(item.label_ar, 80),
+      label_fr: fixedLabels ? null : cleanText(item.label_fr, 80),
+      label_ar: fixedLabels ? null : cleanText(item.label_ar, 80),
       group_key: group && group !== defaultGroup ? group : null,
     });
   }

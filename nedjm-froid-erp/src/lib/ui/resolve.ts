@@ -4,6 +4,7 @@ import {
   UI_TABSETS,
   findItem,
   findTabset,
+  isGroupKey,
   itemKey,
   type UiIcon,
   type UiItemDef,
@@ -22,6 +23,9 @@ export type UiOverride = {
   group_key: string | null;
 };
 
+/** Position chosen by the user for themselves (sys_ui_user_order), over the super admin's order. */
+export type UiPersonalOrder = { sort_order: number; group_key: string | null };
+
 export type UiTheme = {
   brand_color: string | null;
   sidebar_color: string | null;
@@ -34,6 +38,7 @@ export type UiLayoutData = {
   unrestricted: boolean;
   hidden: string[];
   overrides: Record<string, UiOverride>;
+  personal: Record<string, UiPersonalOrder>;
   theme: UiTheme;
   /** null: no look chosen yet, the original appearance stays. */
   design: DesignSettings | null;
@@ -46,6 +51,7 @@ export const DEFAULT_LAYOUT: UiLayoutData = {
   unrestricted: true,
   hidden: [],
   overrides: {},
+  personal: {},
   theme: EMPTY_THEME,
   design: null,
   prefs: EMPTY_USER_PREFS,
@@ -77,7 +83,7 @@ export function isKeyHidden(data: UiLayoutData, key: string): boolean {
 }
 
 function sortValue(data: UiLayoutData, key: string, fallbackIndex: number): number {
-  const order = data.overrides[key]?.sort_order;
+  const order = data.personal[key]?.sort_order ?? data.overrides[key]?.sort_order;
   return typeof order === "number" ? order : (fallbackIndex + 1) * 10;
 }
 
@@ -195,6 +201,13 @@ export function isPathBlocked(data: UiLayoutData, pathname: string): boolean {
   return false;
 }
 
+/** Side menu group of a module: the user's choice, then the super admin's (default group when neither). */
+export function navGroupOf(data: UiLayoutData, key: string): string | null {
+  const mine = data.personal[key]?.group_key;
+  if (mine && isGroupKey(mine)) return mine;
+  return data.overrides[key]?.group_key ?? null;
+}
+
 export type ResolvedNavItem = {
   key: string;
   href: string;
@@ -207,7 +220,8 @@ export type ResolvedNavItem = {
 
 export type ResolvedNavGroup = { key: string; titleFr: string; titleAr: string; items: ResolvedNavItem[] };
 
-export function resolveNav(data: UiLayoutData): ResolvedNavGroup[] {
+/** `includeEmpty`: also the groups left without a module (to drop one into them while rearranging). */
+export function resolveNav(data: UiLayoutData, opts: { includeEmpty?: boolean } = {}): ResolvedNavGroup[] {
   const items = resolveTabset(data, "nav");
   const groups = UI_NAV_GROUPS.map((g, index) => {
     const o = data.overrides[g.key];
@@ -221,7 +235,7 @@ export function resolveNav(data: UiLayoutData): ResolvedNavGroup[] {
   }).sort((a, b) => a.sort - b.sort);
 
   for (const item of items) {
-    const wanted = data.overrides[item.key]?.group_key ?? item.group;
+    const wanted = navGroupOf(data, item.key) ?? item.group;
     const group = groups.find((g) => g.key === wanted) ?? groups.find((g) => g.key === item.group) ?? groups[0];
     let href = item.href ?? "/";
     if (item.childTabset && isPathBlocked(data, href)) {
@@ -238,7 +252,7 @@ export function resolveNav(data: UiLayoutData): ResolvedNavGroup[] {
       icon: item.icon ?? "docs",
     });
   }
-  return groups.filter((g) => g.items.length).map(({ sort, ...g }) => {
+  return groups.filter((g) => opts.includeEmpty || g.items.length).map(({ sort, ...g }) => {
     void sort;
     return g;
   });

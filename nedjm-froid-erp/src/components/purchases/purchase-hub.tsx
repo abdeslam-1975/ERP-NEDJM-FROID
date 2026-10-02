@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { SortableStrip } from "@/components/layout/arrange";
 import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
   createOrderFromProforma,
@@ -151,7 +152,7 @@ export function PurchaseHub({
       </header>
       {error && <Notice tone="error">{error}</Notice>}
       {message && <Notice tone="success">{message}</Notice>}
-      <div className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1">
+      <SortableStrip tabset="purchases" ids={tabs.map((t) => t.id)} className="flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1">
         {tabs.map(({ id: value, label }) => (
           <button
             key={value}
@@ -163,7 +164,7 @@ export function PurchaseHub({
             {label}
           </button>
         ))}
-      </div>
+      </SortableStrip>
       {tab === "dashboard" && <Dashboard data={initialData} />}
       {tab === "proformas" && <Proformas data={initialData} pending={pending} run={run} />}
       {tab === "orders" && <Orders data={initialData} pending={pending} run={run} />}

@@ -2,6 +2,7 @@
 
 import { useCallback, useDeferredValue, useMemo, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
+import { ToolbarSlot, UiToolbar } from "@/components/layout/arrange";
 import { Button } from "@/components/ui/button";
 import { formatDa } from "@/components/rh/bulletin-print";
 import { RhAlert } from "@/components/rh/rh-ui";
@@ -626,31 +627,37 @@ function Workspace({
         ) : (
           <FiguresStrip figures={output.figures} reference={reference[0] ?? {}} />
         )}
-        <div className="flex gap-2">
+        <UiToolbar tabset="btn_sim_workspace" className="flex gap-2">
           {output.doc && !editing ? (
-            <Button variant="secondary" className="h-8 px-3 text-xs" onClick={() => setEditing(true)}>
-              Éditer la mise en page
-            </Button>
+            <ToolbarSlot id="edit_layout">
+              <Button variant="secondary" className="h-8 px-3 text-xs" onClick={() => setEditing(true)}>
+                Éditer la mise en page
+              </Button>
+            </ToolbarSlot>
           ) : null}
-          <Button
-            variant="secondary"
-            className="h-8 px-3 text-xs"
-            onClick={() => setReference(runs.map((r) => figureRecord(r.output.figures)))}
-          >
-            Figer comme référence
-          </Button>
-          <Button
-            variant="ghost"
-            className="h-8 px-3 text-xs"
-            disabled={!changedIds.length}
-            onClick={() => {
-              setOverrides({});
-              setReference(initialFigures);
-            }}
-          >
-            Tout rétablir
-          </Button>
-        </div>
+          <ToolbarSlot id="freeze_reference">
+            <Button
+              variant="secondary"
+              className="h-8 px-3 text-xs"
+              onClick={() => setReference(runs.map((r) => figureRecord(r.output.figures)))}
+            >
+              Figer comme référence
+            </Button>
+          </ToolbarSlot>
+          <ToolbarSlot id="reset_all">
+            <Button
+              variant="ghost"
+              className="h-8 px-3 text-xs"
+              disabled={!changedIds.length}
+              onClick={() => {
+                setOverrides({});
+                setReference(initialFigures);
+              }}
+            >
+              Tout rétablir
+            </Button>
+          </ToolbarSlot>
+        </UiToolbar>
       </div>
 
       {unofficial ? (

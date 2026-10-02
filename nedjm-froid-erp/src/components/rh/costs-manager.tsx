@@ -9,6 +9,7 @@ import {
   type JournalLine,
   type SiteCost,
 } from "@/lib/hr/cost-allocation";
+import { ToolbarSlot } from "@/components/layout/arrange";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 import {
@@ -169,7 +170,7 @@ export function CostsManager({
       />
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
       {info && !error ? <RhAlert tone="success">{info}</RhAlert> : null}
-      <RhToolbar>
+      <RhToolbar tabset="btn_rh_costs">
         <RhField label="Année">
           <input className={rhInput} type="number" defaultValue={year} onBlur={(e) => Number(e.target.value) !== year && go(Number(e.target.value), month)} />
         </RhField>
@@ -182,16 +183,22 @@ export function CostsManager({
             ))}
           </select>
         </RhField>
-        <Button variant="secondary" disabled={!report?.slips} onClick={() => download("allocation")}>
-          Répartition (CSV)
-        </Button>
-        <Button disabled={!report?.slips || !report.journal.balanced} onClick={() => download("journal")}>
-          Écritures comptables (CSV)
-        </Button>
-        {canEditAccounts && report ? (
-          <Button variant="ghost" onClick={() => setSettings({ journal_code: report.journalCode, accounts: report.accounts })}>
-            Plan de comptes
+        <ToolbarSlot id="export_allocation">
+          <Button variant="secondary" disabled={!report?.slips} onClick={() => download("allocation")}>
+            Répartition (CSV)
           </Button>
+        </ToolbarSlot>
+        <ToolbarSlot id="export_journal">
+          <Button disabled={!report?.slips || !report.journal.balanced} onClick={() => download("journal")}>
+            Écritures comptables (CSV)
+          </Button>
+        </ToolbarSlot>
+        {canEditAccounts && report ? (
+          <ToolbarSlot id="accounts">
+            <Button variant="ghost" onClick={() => setSettings({ journal_code: report.journalCode, accounts: report.accounts })}>
+              Plan de comptes
+            </Button>
+          </ToolbarSlot>
         ) : null}
       </RhToolbar>
 

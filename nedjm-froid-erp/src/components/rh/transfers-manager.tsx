@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { ToolbarSlot } from "@/components/layout/arrange";
 import {
   createTransferBatch,
   listTransferLines,
@@ -384,20 +385,25 @@ export function TransfersManager({
           "Fichiers CCP / banque générés depuis les bulletins validés ou clôturés, avec journal de dépôt (référence, date, exécution). Un bulletin ne peut figurer que dans un seul lot actif. Format générique : faites valider la structure du fichier par votre banque / Algérie Poste avant le premier dépôt.",
           "",
         )}
+        actionsTabset="btn_rh_transfers"
         actions={
           <>
-            <Link
-              className="rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted"
-              href="/rh/paie/operations-externes"
-            >
-              {bi("Opérations externes", "العمليات الخارجية")}
-            </Link>
-            <Link
-              className="rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted"
-              href={`/rh/paie/bulletins?year=${year}&month=${month}`}
-            >
-              {bi("Bulletins", "الكشوف")}
-            </Link>
+            <ToolbarSlot id="external_ops">
+              <Link
+                className="rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted"
+                href="/rh/paie/operations-externes"
+              >
+                {bi("Opérations externes", "العمليات الخارجية")}
+              </Link>
+            </ToolbarSlot>
+            <ToolbarSlot id="bulletins">
+              <Link
+                className="rounded-xl border border-border/70 bg-surface px-3.5 py-2 text-sm font-semibold text-foreground/75 transition hover:bg-surface-muted"
+                href={`/rh/paie/bulletins?year=${year}&month=${month}`}
+              >
+                {bi("Bulletins", "الكشوف")}
+              </Link>
+            </ToolbarSlot>
           </>
         }
       />

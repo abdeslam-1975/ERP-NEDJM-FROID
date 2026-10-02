@@ -3,7 +3,8 @@
 import { useId, type ReactNode } from "react";
 import { Dialog as DialogPrimitive, Tabs as TabsPrimitive } from "radix-ui";
 import { motion } from "motion/react";
-import { useUiTabs } from "@/components/layout/ui-layout-context";
+import { SortableStrip } from "@/components/layout/arrange";
+import { useArrange, useUiTabs } from "@/components/layout/ui-layout-context";
 import { cn } from "@/lib/utils";
 
 /**
@@ -100,6 +101,28 @@ export function RhTabs({
 }) {
   const shown = useUiTabs(uiKey, items, value, onChange);
   const markerId = useId();
+  const { active: arranging } = useArrange();
+  if (arranging && uiKey && shown.length > 1) {
+    return (
+      <SortableStrip
+        tabset={uiKey}
+        ids={shown.map((item) => item.id)}
+        className="flex flex-wrap gap-2 rounded-2xl border border-border/60 bg-surface-muted/60 p-1.5"
+      >
+        {shown.map((item) => (
+          <span
+            key={item.id}
+            className={cn(
+              "inline-flex rounded-xl px-3.5 py-2 text-sm font-semibold",
+              item.id === value ? "bg-brand text-white" : "text-foreground/65",
+            )}
+          >
+            {item.label}
+          </span>
+        ))}
+      </SortableStrip>
+    );
+  }
   return (
     <TabsPrimitive.Root value={value} onValueChange={onChange} activationMode="manual">
       <TabsPrimitive.List className="flex flex-wrap gap-1 rounded-2xl border border-border/60 bg-surface-muted/60 p-1">

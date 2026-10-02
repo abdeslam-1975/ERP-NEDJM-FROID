@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { RH_SECTIONS, UI_TABSETS, findTabset, itemKey } from "@/lib/ui/registry";
+import { NAV_GROUPS_TABSET, RH_SECTIONS, UI_NAV_GROUPS, UI_TABSETS, findTabset, itemKey, keysOfTabset } from "@/lib/ui/registry";
 import {
   DEFAULT_LAYOUT,
   activeItemKey,
   applyTabs,
   hiddenKeysForRoles,
   isPathBlocked,
+  navGroupOf,
   relabel,
   resolveNav,
   resolveRhSections,
@@ -25,6 +26,38 @@ describe("registry", () => {
     const keys = UI_TABSETS.flatMap((t) => t.items.map((i) => itemKey(t.key, i.id)));
     expect(new Set(keys).size).toBe(keys.length);
     for (const key of keys) expect(key).toMatch(KEY_PATTERN);
+  });
+
+  it("keeps page buttons reorderable only: never hidden, never renamed", () => {
+    const toolbars = UI_TABSETS.filter((t) => t.kind === "toolbar");
+    expect(toolbars.length).toBeGreaterThan(0);
+    for (const t of toolbars) {
+      expect(t.level).toBe("E");
+      expect(t.items.length).toBeGreaterThan(1);
+      for (const item of t.items) expect(item.locked).toBe(true);
+    }
+    expect(keysOfTabset("btn_rh_employees")).toEqual(["btn_rh_employees.columns", "btn_rh_employees.new"]);
+    expect(keysOfTabset(NAV_GROUPS_TABSET)).toEqual(UI_NAV_GROUPS.map((g) => g.key));
+    expect(keysOfTabset("unknown")).toBeNull();
+  });
+});
+
+describe("personal order", () => {
+  it("wins over the super admin's order, which wins over the catalogue", () => {
+    const data = layout({
+      overrides: { "rh.paie": { sort_order: 1, label_fr: "Salaires", label_ar: null, group_key: null } },
+      personal: { "rh.conges": { sort_order: 0, group_key: null } },
+    });
+    const keys = resolveTabset(data, "rh").map((i) => i.key);
+    expect(keys.slice(0, 2)).toEqual(["rh.conges", "rh.paie"]);
+    expect(resolveTabset(data, "rh")[1].label).toBe("Salaires");
+    const shown = applyTabs(data, "btn_rh_employees", [
+      { id: "new", label: "Nouvel employé" },
+      { id: "columns", label: "Colonnes" },
+    ]);
+    expect(shown.map((i) => i.id)).toEqual(["columns", "new"]);
+    const mine = applyTabs(layout({ personal: { "btn_rh_employees.new": { sort_order: 1, group_key: null } } }), "btn_rh_employees", shown);
+    expect(mine.map((i) => i.id)).toEqual(["new", "columns"]);
   });
 });
 
@@ -129,6 +162,34 @@ describe("resolveNav", () => {
     expect(nav[0]).toMatchObject({ key: "group.admin", titleFr: "Système" });
     expect(nav.some((g) => g.key === "group.sites")).toBe(false);
     expect(nav.find((g) => g.key === "group.commercial")?.items.map((i) => i.key)).toContain("nav.achats");
+  });
+
+  it("applies the user's own order and groups over the super admin's", () => {
+    const data = layout({
+      overrides: {
+        "nav.finance": { sort_order: 5, label_fr: null, label_ar: null, group_key: "group.commercial" },
+        "nav.achats": { sort_order: 1, label_fr: null, label_ar: null, group_key: null },
+      },
+      personal: {
+        "nav.finance": { sort_order: 1, group_key: "group.admin" },
+        "nav.achats": { sort_order: 2, group_key: "nope" },
+        "group.admin": { sort_order: 0, group_key: null },
+      },
+    });
+    expect(navGroupOf(data, "nav.finance")).toBe("group.admin");
+    expect(navGroupOf(data, "nav.achats")).toBeNull();
+    const nav = resolveNav(data);
+    expect(nav[0].key).toBe("group.admin");
+    expect(nav[0].items[0].key).toBe("nav.finance");
+    expect(nav.find((g) => g.key === "group.commercial")?.items.map((i) => i.key) ?? []).not.toContain("nav.finance");
+  });
+
+  it("keeps empty groups only on request", () => {
+    const ids = findTabset("nav")!.items.map((i) => i.id);
+    const personal = Object.fromEntries(ids.map((id, i) => [itemKey("nav", id), { sort_order: i, group_key: "group.pilotage" }]));
+    const data = layout({ personal });
+    expect(resolveNav(data).map((g) => g.key)).toEqual(["group.pilotage"]);
+    expect(resolveNav(data, { includeEmpty: true }).length).toBe(UI_NAV_GROUPS.length);
   });
 
   it("sends the RH entry to the first visible RH page when the dashboard is hidden", () => {

@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { SortableStrip } from "@/components/layout/arrange";
 import { useUiTabs } from "@/components/layout/ui-layout-context";
 import {
   updateNumberSequence,
@@ -79,11 +80,11 @@ export function PurchaseSettings({
       </header>
       {error && <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
       {message && <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">{message}</div>}
-      <div className="flex gap-1 rounded-xl border border-border bg-surface p-1">
+      <SortableStrip tabset="purchase_settings" ids={tabs.map((t) => t.id)} className="flex gap-1 rounded-xl border border-border bg-surface p-1">
         {tabs.map(({ id: value, label }) => (
           <button key={value} onClick={() => setTab(value)} className={`rounded-lg px-4 py-2 text-sm font-semibold ${tab === value ? "bg-brand text-white" : "hover:bg-surface-muted"}`}>{label}</button>
         ))}
-      </div>
+      </SortableStrip>
       {tab === "profiles" && <Profiles rows={initialData.documentProfiles} pending={pending} run={run} />}
       {tab === "situations" && <Situations rows={initialData.situations} pending={pending} run={run} />}
       {tab === "stamp" && <StampRules rows={initialData.stampRules} methods={initialData.paymentMethods} pending={pending} run={run} />}

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { SortableStrip } from "@/components/layout/arrange";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { useUiTabs } from "@/components/layout/ui-layout-context";
@@ -260,13 +261,13 @@ export function ClientFiche({
         ) : null}
       </section>
 
-      <div className="flex flex-wrap gap-2">
+      <SortableStrip tabset="client_fiche" ids={tabs.map((t) => t.id)} className="flex flex-wrap gap-2">
         {tabs.map((t) => (
           <TabButton key={t.id} active={tab === t.id} onClick={() => setTab(t.id)}>
             {t.label}
           </TabButton>
         ))}
-      </div>
+      </SortableStrip>
 
       {tab === "identite" ? (
         <div className="grid gap-4 rounded-lg border border-border bg-surface p-4 md:grid-cols-2">
