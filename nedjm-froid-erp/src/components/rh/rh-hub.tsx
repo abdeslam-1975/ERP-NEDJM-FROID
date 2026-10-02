@@ -4,42 +4,50 @@ import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Activity,
+  Banknote,
+  BellRing,
   CalendarClock,
   CalendarPlus,
   ChartPie,
   ChevronRight,
+  CircleCheck,
+  Clock,
   FileBadge,
+  FileClock,
   FilePenLine,
-  FileText,
   HandCoins,
-  LayoutDashboard,
-  MapPin,
+  Plane,
   Receipt,
   TrendingDown,
   TrendingUp,
   UserPlus,
-  UserRound,
+  UserRoundPlus,
+  UserX,
   Users,
   Zap,
   type LucideIcon,
 } from "lucide-react";
 import type { HrDashboardStats } from "@/lib/actions/hr-lookups";
+import type { ContractAlert } from "@/lib/hr/dashboard-stats";
 import { useAnimationsEnabled } from "@/components/layout/app-providers";
 import { useUiLayout } from "@/components/layout/ui-layout-context";
-import { RhAlert, RhPage, bi } from "@/components/rh/rh-ui";
-import { RH_SECTION_ICONS } from "@/components/rh/rh-module-nav";
-import { resolveRhSections } from "@/lib/ui/resolve";
+import { RH_CARD, RhAlert, RhPage } from "@/components/rh/rh-ui";
+import { isPathBlocked } from "@/lib/ui/resolve";
 import { cn } from "@/lib/utils";
-
-const CARD =
-  "rounded-[calc(var(--radius-2xl)+0.5rem)] border border-border/70 bg-[var(--card-bg,var(--surface))] shadow-[var(--card-shadow)]";
 
 function pctChange(current: number, previous: number) {
   if (previous <= 0) return current > 0 ? 100 : 0;
   return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 
-function useCountUp(target: number, duration = 1000) {
+export function formatDa(value: number) {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} M DA`;
+  }
+  return `${Math.round(value).toLocaleString("fr-FR")} DA`;
+}
+
+export function useCountUp(target: number, duration = 1000) {
   const animate = useAnimationsEnabled();
   const [value, setValue] = useState(animate ? 0 : target);
   useEffect(() => {
@@ -70,7 +78,7 @@ function useElementWidth<T extends HTMLElement>() {
   return [ref, width] as const;
 }
 
-/** Monotone cubic curve through the points (never overshoots, so a zero month stays on the baseline). */
+/** Monotone cubic curve through the points (never overshoots, so a flat stretch stays flat). */
 function smoothPath(points: [number, number][]) {
   const n = points.length;
   if (!n) return "";
@@ -93,15 +101,18 @@ function smoothPath(points: [number, number][]) {
   return d;
 }
 
-function IconTile({ icon: Icon, className }: { icon: LucideIcon; className?: string }) {
+export function IconTile({ icon: Icon, className, style }: { icon: LucideIcon; className?: string; style?: CSSProperties }) {
   return (
-    <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-[0.8rem] bg-brand-muted text-brand", className)}>
+    <span
+      className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-[0.8rem] bg-brand-muted text-brand", className)}
+      style={style}
+    >
       <Icon className="h-5 w-5" strokeWidth={1.8} aria-hidden />
     </span>
   );
 }
 
-function CardTitle({ icon, title, right }: { icon: LucideIcon; title: string; right?: ReactNode }) {
+export function CardTitle({ icon, title, right }: { icon: LucideIcon; title: string; right?: ReactNode }) {
   return (
     <div className="mb-5 flex items-center justify-between gap-3">
       <div className="flex items-center gap-3">
@@ -143,7 +154,9 @@ function Sparkline({ values }: { values: number[] }) {
   const min = Math.min(...values);
   const max = Math.max(...values);
   const span = max - min || 1;
-  const points = values.map((v, i) => [(i * w) / (values.length - 1), h - 6 - ((v - min) / span) * (h - 12)] as [number, number]);
+  const points = values.map(
+    (v, i) => [(i * w) / (values.length - 1), max === min ? h / 2 : h - 6 - ((v - min) / span) * (h - 12)] as [number, number],
+  );
   const line = smoothPath(points);
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="h-[70px] w-[180px] shrink-0 sm:w-[200px]" aria-hidden>
@@ -159,7 +172,7 @@ function Sparkline({ values }: { values: number[] }) {
   );
 }
 
-function Ring({ pct, size = 92, stroke = 9 }: { pct: number; size?: number; stroke?: number }) {
+export function Ring({ pct, size = 92, stroke = 9 }: { pct: number; size?: number; stroke?: number }) {
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   return (
@@ -182,35 +195,69 @@ function Ring({ pct, size = 92, stroke = 9 }: { pct: number; size?: number; stro
   );
 }
 
-function HiringChart({ points }: { points: { label: string; count: number }[] }) {
+export function Segmented<T extends string | number>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: { value: T; label: ReactNode; title?: string }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-xl bg-surface-muted p-1">
+      {options.map((o) => (
+        <button
+          key={String(o.value)}
+          type="button"
+          title={o.title}
+          aria-pressed={o.value === value}
+          onClick={() => onChange(o.value)}
+          className={cn(
+            "inline-flex h-8 items-center gap-1.5 rounded-[0.6rem] px-3.5 text-[13px] font-medium transition",
+            o.value === value
+              ? "bg-surface text-foreground shadow-[0_2px_8px_-3px_rgba(15,23,42,0.2)]"
+              : "text-foreground/55 hover:text-foreground",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function HeadcountChart({ points }: { points: { key: string; label: string; count: number }[] }) {
   const [ref, width] = useElementWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   const gradientId = useId();
   const w = Math.max(320, width || 640);
-  const h = 240;
-  const padX = 36;
-  const top = 20;
+  const h = 250;
+  const padX = 40;
+  const top = 18;
   const bottom = 34;
-  const maxCount = Math.max(4, ...points.map((p) => p.count));
-  const max = Math.ceil(maxCount / 4) * 4;
-  const y = (v: number) => top + (1 - v / max) * (h - top - bottom);
+  const values = points.map((p) => p.count);
+  const lo = Math.max(0, Math.floor((Math.min(...values) - 2) / 4) * 4);
+  const hi = Math.max(lo + 4, Math.ceil((Math.max(...values) + 1) / 4) * 4);
+  const y = (v: number) => top + (1 - (v - lo) / (hi - lo)) * (h - top - bottom);
   const step = points.length > 1 ? (w - padX - 16) / (points.length - 1) : 0;
   const coords = points.map((p, i) => [padX + i * step, y(p.count)] as [number, number]);
   const line = smoothPath(coords);
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => Math.round(t * max));
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => Math.round(lo + t * (hi - lo)));
   const active = hover !== null ? coords[hover] : null;
+  const diff = hover !== null && hover > 0 ? points[hover].count - points[hover - 1].count : 0;
 
   return (
     <div ref={ref} className="relative" onMouseLeave={() => setHover(null)}>
       {points.length > 1 ? (
-        <svg viewBox={`0 0 ${w} ${h}`} className="block h-auto w-full" role="img" aria-label="Embauches par mois">
+        <svg viewBox={`0 0 ${w} ${h}`} className="block h-auto w-full" role="img" aria-label="Évolution des effectifs">
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--color-brand)" stopOpacity="0.28" />
               <stop offset="100%" stopColor="var(--color-brand)" stopOpacity="0" />
             </linearGradient>
           </defs>
-          {ticks.map((t) => (
+          {[...new Set(ticks)].map((t) => (
             <g key={t} className="text-foreground/30">
               <line x1={padX} x2={w - 16} y1={y(t)} y2={y(t)} stroke="currentColor" strokeOpacity="0.35" strokeDasharray="3 5" />
               <text x={padX - 10} y={y(t) + 4} textAnchor="end" fontSize="11" fill="currentColor">
@@ -219,13 +266,23 @@ function HiringChart({ points }: { points: { label: string; count: number }[] })
             </g>
           ))}
           <path
+            key={`area-${points.length}`}
             d={`${line} L${coords.at(-1)![0]},${h - bottom} L${coords[0][0]},${h - bottom} Z`}
             fill={`url(#${gradientId})`}
             className="ui-fade"
           />
-          <path d={line} pathLength={1} fill="none" stroke="var(--color-brand)" strokeWidth="3" strokeLinecap="round" className="ui-draw" />
+          <path
+            key={`line-${points.length}`}
+            d={line}
+            pathLength={1}
+            fill="none"
+            stroke="var(--color-brand)"
+            strokeWidth="3"
+            strokeLinecap="round"
+            className="ui-draw"
+          />
           {points.map((p, i) => (
-            <text key={p.label + i} x={coords[i][0]} y={h - 10} textAnchor="middle" fontSize="11" className="fill-foreground/45 capitalize">
+            <text key={p.key} x={coords[i][0]} y={h - 10} textAnchor="middle" fontSize="11" className="fill-foreground/45 capitalize">
               {p.label}
             </text>
           ))}
@@ -242,12 +299,20 @@ function HiringChart({ points }: { points: { label: string; count: number }[] })
       ) : null}
       {active && hover !== null ? (
         <div
-          className="pointer-events-none absolute -translate-x-1/2 -translate-y-[130%] whitespace-nowrap rounded-xl bg-slate-900 px-3 py-2 text-xs text-white shadow-lg"
+          className="pointer-events-none absolute -translate-x-1/2 -translate-y-[130%] rounded-xl bg-slate-900 px-3 py-2 text-xs whitespace-nowrap text-white shadow-lg"
           style={{ left: `${(active[0] / w) * 100}%`, top: `${(active[1] / h) * 100}%` }}
         >
-          <div className="capitalize text-white/60">{points[hover].label}</div>
+          <div className="text-white/60 capitalize">
+            {points[hover].label} {points[hover].key.slice(0, 4)}
+          </div>
           <div className="text-sm font-semibold">
-            {points[hover].count} {points[hover].count > 1 ? "embauches" : "embauche"}
+            {points[hover].count} {points[hover].count > 1 ? "employés" : "employé"}{" "}
+            {hover > 0 ? (
+              <span className={cn("font-medium", diff >= 0 ? "text-emerald-300" : "text-rose-300")}>
+                {diff >= 0 ? "+" : ""}
+                {diff}
+              </span>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -255,23 +320,26 @@ function HiringChart({ points }: { points: { label: string; count: number }[] })
   );
 }
 
-function StatusDonut({ parts, total }: { parts: { label: string; value: number; color: string }[]; total: number }) {
+function ContractDonut({ parts }: { parts: { label: string; count: number; color: string }[] }) {
   const [hover, setHover] = useState<number | null>(null);
-  const sum = parts.reduce((s, p) => s + p.value, 0) || 1;
+  const total = parts.reduce((s, p) => s + p.count, 0);
+  const shown = total ? parts : [{ label: "Aucun contrat", count: 1, color: "#e2e8f0" }];
+  const sum = shown.reduce((s, p) => s + p.count, 0);
   const r = 70;
   const c = 2 * Math.PI * r;
-  const arcs = parts.reduce<{ len: number; offset: number }[]>((acc, p) => {
+  const arcs = shown.reduce<{ len: number; offset: number }[]>((acc, p) => {
     const prev = acc.at(-1);
-    acc.push({ len: (p.value / sum) * c, offset: prev ? prev.offset + prev.len : 0 });
+    acc.push({ len: (p.count / sum) * c, offset: prev ? prev.offset + prev.len : 0 });
     return acc;
   }, []);
-  const current = hover !== null ? parts[hover] : null;
+  const current = hover !== null && total ? shown[hover] : null;
+  const pct = (n: number) => Math.round((n / sum) * 100);
 
   return (
     <div className="flex flex-col items-center gap-5" onMouseLeave={() => setHover(null)}>
       <div className="ui-fade relative">
         <svg width="180" height="180" viewBox="0 0 180 180" aria-hidden>
-          {parts.map((p, i) => (
+          {shown.map((p, i) => (
             <circle
               key={p.label}
               cx="90"
@@ -280,258 +348,300 @@ function StatusDonut({ parts, total }: { parts: { label: string; value: number; 
               fill="none"
               stroke={p.color}
               strokeWidth={hover === i ? 28 : 22}
-              strokeDasharray={`${Math.max(0, arcs[i].len - (parts.length > 1 ? 3 : 0))} ${c}`}
+              strokeDasharray={`${Math.max(0, arcs[i].len - (shown.length > 1 ? 3 : 0))} ${c}`}
               strokeDashoffset={-arcs[i].offset}
               transform="rotate(-90 90 90)"
               className="cursor-pointer transition-[stroke-width,opacity] duration-300"
-              opacity={hover === null || hover === i ? 1 : 0.4}
+              opacity={hover === null || hover === i ? 1 : 0.45}
               onMouseEnter={() => setHover(i)}
             />
           ))}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="font-display text-3xl font-semibold text-foreground">
-            {current ? `${Math.round((current.value / sum) * 100)}%` : total}
-          </span>
-          <span className="text-xs text-foreground/50">{current ? current.label : "employés"}</span>
+          <span className="text-3xl font-semibold text-foreground">{current ? `${pct(current.count)}%` : total}</span>
+          <span className="text-xs text-foreground/50">{current ? current.label : total > 1 ? "contrats" : "contrat"}</span>
         </div>
       </div>
-      <ul className="grid w-full grid-cols-2 gap-2">
-        {parts.map((p, i) => (
-          <li
-            key={p.label}
-            onMouseEnter={() => setHover(i)}
-            className={cn(
-              "flex items-center justify-between gap-2 rounded-xl bg-surface-muted px-3 py-2 text-sm ring-1 ring-transparent transition",
-              hover === i && "ring-brand/35",
-            )}
-          >
-            <span className="flex min-w-0 items-center gap-2 text-foreground/65">
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.color }} />
-              <span className="truncate">{p.label}</span>
-            </span>
-            <span className="font-semibold tabular-nums text-foreground">{p.value}</span>
-          </li>
-        ))}
-      </ul>
+      {total ? (
+        <ul className="grid w-full grid-cols-2 gap-2">
+          {shown.map((p, i) => (
+            <li
+              key={p.label}
+              onMouseEnter={() => setHover(i)}
+              className={cn(
+                "flex items-center justify-between gap-2 rounded-xl bg-surface-muted px-3 py-2 text-sm ring-1 ring-transparent transition",
+                hover === i && "ring-brand/35",
+              )}
+            >
+              <span className="flex min-w-0 items-center gap-2 text-foreground/65">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: p.color }} />
+                <span className="truncate">{p.label}</span>
+              </span>
+              <span className="font-semibold tabular-nums text-foreground">{pct(p.count)}%</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
 
-const STATUS_LABEL: Record<string, { label: string; dot: string }> = {
-  ACTIVE: { label: "Actif", dot: "bg-alert-success" },
-  INVITED: { label: "Invité", dot: "bg-alert-warning" },
-  SUSPENDED: { label: "Suspendu", dot: "bg-alert-critical" },
-  DISABLED: { label: "Désactivé", dot: "bg-alert-critical" },
-  INACTIVE: { label: "Inactif", dot: "bg-foreground/30" },
+const ALERT_META: Record<ContractAlert["key"], { icon: LucideIcon; color: string; title: string; href: string }> = {
+  ending: { icon: FileClock, color: "#f59e0b", title: "Fin de contrat", href: "/rh/contrats" },
+  draft: { icon: FilePenLine, color: "#3b6ef5", title: "Contrats à finaliser", href: "/rh/contrats" },
+  uncovered: { icon: UserX, color: "#ef4444", title: "Employés sans contrat", href: "/rh/contrats" },
 };
 
 const QUICK_ACTIONS: { icon: LucideIcon; label: string; href: string }[] = [
-  { icon: UserPlus, label: "Employés", href: "/rh/employes" },
-  { icon: FileBadge, label: "Attestations", href: "/rh/attestations" },
-  { icon: CalendarPlus, label: "Congés", href: "/rh/conges" },
-  { icon: CalendarClock, label: "Présence", href: "/rh/presence" },
-  { icon: HandCoins, label: "Avances", href: "/rh/paie/avances" },
+  { icon: UserPlus, label: "Nouvel employé", href: "/rh/employes?nouveau=1" },
+  { icon: FileBadge, label: "Attestation", href: "/rh/attestations" },
+  { icon: Plane, label: "Ordre de mission", href: "/rh/documents?nouveau=om" },
+  { icon: CalendarPlus, label: "Congé", href: "/rh/conges" },
+  { icon: HandCoins, label: "Avance", href: "/rh/paie/avances" },
   { icon: Receipt, label: "Bulletins", href: "/rh/paie/bulletins" },
 ];
 
-const SELECT =
-  "h-11 w-full rounded-xl border border-border bg-surface px-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10";
+export function initialsOf(name: string) {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((p) => p[0])
+      .join("")
+      .toUpperCase() || "E"
+  );
+}
+
+const AVATAR_COLORS = ["#3b6ef5", "#ec4899", "#f59e0b", "#8b5cf6", "#ef4444", "#14b8a6", "#22c55e", "#6366f1", "#0ea5e9", "#d946ef"];
+
+/** Initials on a soft tint picked from the name, or the photo when there is one. */
+export function Avatar({ name, photo, size = 40 }: { name: string; photo?: string | null; size?: number }) {
+  if (photo) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={photo} alt="" className="shrink-0 rounded-full object-cover" style={{ width: size, height: size }} />;
+  }
+  let hash = 0;
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  const color = AVATAR_COLORS[hash % AVATAR_COLORS.length];
+  return (
+    <span
+      className="inline-flex shrink-0 items-center justify-center rounded-full font-semibold"
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.34), background: `${color}1c`, color }}
+    >
+      {initialsOf(name)}
+    </span>
+  );
+}
 
 export function RhHub({ stats }: { stats: HrDashboardStats }) {
-  const [siteId, setSiteId] = useState("");
-  const [period, setPeriod] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  });
-
+  const layout = useUiLayout();
+  const [range, setRange] = useState<6 | 12>(12);
   const activeCount = useCountUp(stats.employeesActive);
-  const contractCount = useCountUp(stats.contractsActive);
-  const documentCount = useCountUp(stats.documentsTotal);
+  const payroll = useCountUp(stats.payrollBase, 1100);
+  const att = stats.attendance;
+  const marked = att.present + att.absent + att.leave + att.mission;
+  const presenceRate = marked ? Math.round(((att.present + att.mission) / marked) * 100) : 0;
+  const presence = useCountUp(presenceRate);
   const empChange = pctChange(stats.employeesActive, stats.employeesActivePrev);
-  const contractChange = pctChange(stats.contractsActive, stats.contractsActivePrev);
-  const coverage = stats.employeesActive ? Math.min(100, Math.round((stats.contractsActive / stats.employeesActive) * 100)) : 0;
-  const hires = stats.hiringByMonth.reduce((s, m) => s + m.count, 0);
+  const headcount = useMemo(() => stats.headcount.slice(-range), [stats.headcount, range]);
+  const quickActions = useMemo(() => QUICK_ACTIONS.filter((a) => !isPathBlocked(layout, a.href.split("?")[0])), [layout]);
+  const today = new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const attDay = att.date
+    ? new Date(`${att.date}T00:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
+    : null;
 
-  const donutParts = useMemo(
-    () =>
-      stats.statusBreakdown.length
-        ? stats.statusBreakdown.map((s) => ({ label: s.labelFr, value: s.count, color: s.color }))
-        : [{ label: "Aucun", value: 1, color: "#e2e8f0" }],
-    [stats.statusBreakdown],
-  );
-
-  const [periodYear, periodMonth] = period.split("-");
-  const presenceHref = siteId ? `/rh/presence?site=${siteId}&mois=${period}` : `/rh/presence?mois=${period}`;
-  const paieHref = `/rh/paie?year=${periodYear}&month=${Number(periodMonth)}`;
   return (
     <RhPage>
       {stats.error ? <RhAlert tone="danger">{stats.error}</RhAlert> : null}
 
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <h2 className="font-display text-[1.9rem] leading-tight font-semibold tracking-tight text-foreground">
-          {bi("Vue d’ensemble", "نظرة عامة")}
-        </h2>
-        <Link
-          href="/rh/employes"
-          className="ui-btn ui-btn-primary inline-flex h-10 items-center gap-2 px-4 text-sm font-semibold transition hover:-translate-y-px"
-        >
-          <UserPlus className="h-4 w-4" aria-hidden />
-          {bi("Gérer le personnel", "إدارة العمال")}
-        </Link>
+        <div>
+          <p className="mb-1 text-sm text-foreground/50 first-letter:uppercase" suppressHydrationWarning>
+            {today}
+          </p>
+          <h2 className="text-[1.9rem] leading-tight font-semibold tracking-tight text-foreground">Ressources humaines</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/rh/presence"
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-border/80 bg-surface px-4 text-sm font-medium text-foreground/75 transition hover:border-brand/35 hover:text-brand"
+          >
+            <CalendarClock className="h-4 w-4" aria-hidden />
+            Pointage
+          </Link>
+          <Link
+            href="/rh/employes?nouveau=1"
+            className="ui-btn ui-btn-primary inline-flex h-10 items-center gap-2 px-4 text-sm font-medium transition hover:-translate-y-px"
+          >
+            <UserPlus className="h-4 w-4" aria-hidden />
+            Nouvel employé
+          </Link>
+        </div>
       </div>
 
       <div className="ui-stagger grid grid-cols-12 gap-5">
-        <section className={cn(CARD, "ui-lift col-span-12 p-6 xl:col-span-5")}>
+        <section className={cn(RH_CARD, "ui-lift col-span-12 p-6 xl:col-span-5")}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <IconTile icon={Users} />
-              <span className="font-medium text-foreground">{bi("Effectif actif", "العمال النشطون")}</span>
+              <span className="font-medium text-foreground">Effectif actif</span>
             </div>
             <DeltaChip change={empChange} />
           </div>
           <div className="mt-6 flex items-end justify-between gap-4">
             <div>
-              <p className="font-display text-[3.75rem] leading-none font-semibold tracking-tighter tabular-nums text-foreground">{activeCount}</p>
+              <p className="text-[4rem] leading-none font-semibold tracking-tighter tabular-nums text-foreground">{activeCount}</p>
               <p className="mt-3 text-sm text-foreground/50">
-                {stats.employeesTotal} {bi("enregistrés", "مسجّل")} · {stats.employeesActivePrev} {bi("le mois dernier", "الشهر الماضي")}
+                {stats.employeesTotal} inscrits · {stats.contractsOpen} contrat{stats.contractsOpen > 1 ? "s" : ""} ouvert
+                {stats.contractsOpen > 1 ? "s" : ""}
               </p>
             </div>
-            <Sparkline values={stats.hiringByMonth.map((m) => m.count)} />
+            <Sparkline values={stats.headcount.map((m) => m.count)} />
           </div>
         </section>
 
-        <section className={cn(CARD, "ui-lift col-span-12 flex flex-col p-6 sm:col-span-6 xl:col-span-4")}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <IconTile icon={FilePenLine} />
-              <span className="font-medium text-foreground">{bi("Contrats ouverts", "العقود المفتوحة")}</span>
-            </div>
-            <DeltaChip change={contractChange} />
-          </div>
-          <div className="mt-4 flex items-center justify-between gap-3">
-            <p className="font-display text-[2.6rem] leading-none font-semibold tracking-tight tabular-nums text-foreground">{contractCount}</p>
-            <div className="relative">
-              <Ring pct={coverage} size={84} stroke={8} />
-              <span className="absolute inset-0 flex items-center justify-center text-sm font-semibold text-foreground">{coverage}%</span>
-            </div>
-          </div>
-          <p className="mt-auto pt-3 text-sm text-foreground/50">{bi("Couverture contractuelle de l’effectif", "تغطية العقود")}</p>
-        </section>
-
-        <Link href="/rh/documents" className={cn(CARD, "ui-lift group col-span-12 flex flex-col p-6 sm:col-span-6 xl:col-span-3")}>
+        <section className={cn(RH_CARD, "ui-lift col-span-12 flex flex-col p-6 sm:col-span-6 xl:col-span-4")}>
           <div className="flex items-center gap-3">
-            <IconTile icon={FileText} />
-            <span className="font-medium text-foreground">{bi("Documents RH", "وثائق الموارد")}</span>
+            <IconTile icon={Banknote} />
+            <span className="font-medium text-foreground">Masse salariale</span>
           </div>
-          <p className="mt-6 font-display text-[2.6rem] leading-none font-semibold tracking-tight tabular-nums text-foreground">{documentCount}</p>
-          <span className="mt-auto inline-flex items-center gap-1 pt-4 text-sm font-medium text-brand">
-            {bi("Ouvrir", "فتح")}
-            <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
-          </span>
+          <p className="mt-6 text-[2.5rem] leading-none font-semibold tracking-tight tabular-nums text-foreground">{formatDa(payroll)}</p>
+          <div className="mt-auto pt-6">
+            <div className="mb-2 flex justify-between text-xs text-foreground/50">
+              <span>Couverture contractuelle</span>
+              <span className="font-medium text-foreground">{stats.coverage} %</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
+              <div className="ui-grow-x h-full rounded-full bg-brand" style={{ width: `${stats.coverage}%` }} />
+            </div>
+            <p className="mt-2 text-xs text-foreground/45">
+              Salaires de base mensuels · moyenne {formatDa(stats.averageBase)}
+            </p>
+          </div>
+        </section>
+
+        <Link href="/rh/presence" className={cn(RH_CARD, "ui-lift group col-span-12 flex flex-col p-6 sm:col-span-6 xl:col-span-3")}>
+          <div className="flex items-center gap-3">
+            <IconTile icon={Clock} />
+            <span className="font-medium text-foreground">Présence</span>
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-2">
+            <p className="text-[2.5rem] leading-none font-semibold tracking-tight tabular-nums text-foreground">
+              {marked ? `${presence}%` : "—"}
+            </p>
+            <Ring pct={presenceRate} />
+          </div>
+          <p className="mt-auto pt-2 text-sm text-foreground/50">
+            {attDay ? `${att.present + att.mission} présents · ${attDay}` : "Aucun pointage ce mois-ci"}
+          </p>
         </Link>
 
-        <section className={cn(CARD, "col-span-12 p-6 xl:col-span-8")}>
+        <section className={cn(RH_CARD, "col-span-12 p-6 xl:col-span-8")}>
           <CardTitle
             icon={Activity}
-            title={bi("Résumé des embauches", "ملخص التوظيف")}
+            title="Évolution des effectifs"
             right={
-              <span className="rounded-full bg-surface-muted px-3 py-1 text-xs font-semibold text-foreground/60">
-                {hires} {bi("sur 6 mois", "خلال 6 أشهر")}
-              </span>
+              <Segmented
+                value={range}
+                onChange={setRange}
+                options={[
+                  { value: 6, label: "6 mois" },
+                  { value: 12, label: "12 mois" },
+                ]}
+              />
             }
           />
-          <HiringChart points={stats.hiringByMonth} />
+          <HeadcountChart points={headcount} />
         </section>
 
-        <section className={cn(CARD, "col-span-12 p-6 xl:col-span-4")}>
-          <CardTitle icon={ChartPie} title={bi("Répartition de l’effectif", "توزيع العمال")} />
-          <StatusDonut parts={donutParts} total={stats.employeesTotal} />
+        <section className={cn(RH_CARD, "col-span-12 p-6 xl:col-span-4")}>
+          <CardTitle icon={ChartPie} title="Répartition des contrats" />
+          <ContractDonut parts={stats.contractMix} />
         </section>
 
-        <section className={cn(CARD, "col-span-12 p-6 lg:col-span-4")}>
-          <CardTitle icon={MapPin} title={bi("Disponibilité chantier", "جاهزية الورشة")} />
-          <div className="space-y-3">
-            <select className={SELECT} value={siteId} onChange={(e) => setSiteId(e.target.value)}>
-              <option value="">{bi("Tous les chantiers", "كل الورشات")}</option>
-              {stats.sites.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-            <input type="month" className={SELECT} value={period} onChange={(e) => setPeriod(e.target.value)} />
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <Link href={presenceHref} className="ui-btn ui-btn-primary inline-flex h-11 items-center justify-center gap-2 text-sm font-semibold">
-                <CalendarClock className="h-4 w-4" aria-hidden />
-                {bi("Présence", "حضور")}
-              </Link>
-              <Link
-                href={paieHref}
-                className="ui-btn inline-flex h-11 items-center justify-center gap-2 border border-border bg-surface text-sm font-semibold transition hover:border-brand/40 hover:text-brand"
-              >
-                <Receipt className="h-4 w-4" aria-hidden />
-                {bi("Paie", "أجر")}
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        <section className={cn(CARD, "col-span-12 p-6 lg:col-span-4")}>
+        <section className={cn(RH_CARD, "col-span-12 p-6 lg:col-span-4")}>
           <CardTitle
-            icon={UserRound}
-            title={bi("Activité récente", "آخر النشاطات")}
+            icon={BellRing}
+            title="Alertes"
             right={
-              <Link href="/rh/employes" className="text-sm font-medium text-brand hover:underline">
-                {bi("Voir tout", "عرض الكل")}
-              </Link>
+              stats.alerts.length ? (
+                <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-600 dark:bg-rose-500/10 dark:text-rose-300">
+                  {stats.alerts.reduce((s, a) => s + a.count, 0)}
+                </span>
+              ) : null
             }
           />
-          {stats.recentEmployees.length ? (
-            <ul className="-mx-2 space-y-0.5">
-              {stats.recentEmployees.slice(0, 5).map((e) => {
-                const status = STATUS_LABEL[e.status] ?? { label: e.status, dot: "bg-brand" };
+          {stats.alerts.length ? (
+            <ul className="-mx-1 space-y-1">
+              {stats.alerts.map((a) => {
+                const meta = ALERT_META[a.key];
                 return (
-                  <li key={e.id}>
-                    <Link
-                      href={`/rh/employes?q=${encodeURIComponent(e.matricule)}`}
-                      className="flex items-center gap-3 rounded-2xl p-2 transition hover:bg-surface-muted"
-                    >
-                      {e.photo_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={e.photo_url} alt="" className="h-10 w-10 rounded-full object-cover" />
-                      ) : (
-                        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-muted text-sm font-semibold text-brand">
-                          {e.name
-                            .split(/\s+/)
-                            .slice(0, 2)
-                            .map((p) => p[0])
-                            .join("")
-                            .toUpperCase() || "E"}
-                        </span>
-                      )}
+                  <li key={a.key}>
+                    <Link href={meta.href} className="group flex items-center gap-3 rounded-2xl p-3 transition hover:bg-surface-muted">
+                      <IconTile icon={meta.icon} className="rounded-xl" style={{ background: `${meta.color}17`, color: meta.color }} />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-foreground">{e.name}</span>
-                        <span className="block font-mono text-xs text-foreground/45">{e.matricule}</span>
+                        <span className="block text-sm font-medium text-foreground">{meta.title}</span>
+                        <span className="block truncate text-xs text-foreground/50">{a.detail}</span>
                       </span>
-                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/60">
-                        <span className={cn("h-2 w-2 rounded-full", status.dot)} />
-                        {status.label}
-                      </span>
+                      <span className="text-xs whitespace-nowrap text-foreground/40">{a.when}</span>
+                      <ChevronRight className="h-4 w-4 text-foreground/30 transition group-hover:translate-x-0.5" aria-hidden />
                     </Link>
                   </li>
                 );
               })}
             </ul>
           ) : (
-            <p className="py-8 text-center text-sm text-foreground/50">{bi("Aucun employé", "لا يوجد عمال")}</p>
+            <div className="flex flex-col items-center py-8 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10">
+                <CircleCheck className="h-6 w-6" aria-hidden />
+              </span>
+              <p className="mt-3 text-sm font-medium text-foreground">Tout est à jour</p>
+            </div>
           )}
         </section>
 
-        <section className={cn(CARD, "col-span-12 p-6 lg:col-span-4")}>
-          <CardTitle icon={Zap} title={bi("Accès rapide", "وصول سريع")} />
+        <section className={cn(RH_CARD, "col-span-12 p-6 lg:col-span-4")}>
+          <CardTitle
+            icon={UserRoundPlus}
+            title="Derniers recrutements"
+            right={
+              <Link href="/rh/employes" className="text-sm font-medium text-brand hover:underline">
+                Voir tout
+              </Link>
+            }
+          />
+          {stats.recentHires.length ? (
+            <ul className="-mx-1 space-y-0.5">
+              {stats.recentHires.map((e) => (
+                <li key={e.id}>
+                  <Link
+                    href={`/rh/employes?q=${encodeURIComponent(e.matricule)}`}
+                    className="flex items-center gap-3 rounded-2xl p-2.5 transition hover:bg-surface-muted"
+                  >
+                    <Avatar name={e.name} photo={e.photo_url} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-foreground">{e.name}</span>
+                      <span className="block truncate text-xs text-foreground/50">{e.poste ?? e.matricule}</span>
+                    </span>
+                    {e.hired_at ? (
+                      <span className="text-xs text-foreground/40 tabular-nums">
+                        {new Date(e.hired_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}
+                      </span>
+                    ) : null}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="py-8 text-center text-sm text-foreground/50">Aucun employé</p>
+          )}
+        </section>
+
+        <section className={cn(RH_CARD, "col-span-12 p-6 lg:col-span-4")}>
+          <CardTitle icon={Zap} title="Actions rapides" />
           <div className="grid grid-cols-3 gap-2.5">
-            {QUICK_ACTIONS.map(({ icon: Icon, label, href }) => (
+            {quickActions.map(({ icon: Icon, label, href }) => (
               <Link
                 key={href}
                 href={href}
@@ -544,50 +654,6 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
           </div>
         </section>
       </div>
-
-      <RhQuickLinks />
     </RhPage>
-  );
-}
-
-function RhQuickLinks() {
-  const layout = useUiLayout();
-  const sections = useMemo(
-    () =>
-      resolveRhSections(layout)
-        .map((s) => ({ ...s, items: s.items.filter((i) => i.href && i.href !== "/rh") }))
-        .filter((s) => s.items.length > 0),
-    [layout],
-  );
-  return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {sections.map((section) => {
-        const Icon = RH_SECTION_ICONS[section.key] ?? LayoutDashboard;
-        return (
-          <div key={section.key} className={cn(CARD, "ui-lift p-5")}>
-            <div className="mb-3 flex items-center gap-3">
-              <IconTile icon={Icon} className="h-9 w-9 rounded-xl [&_svg]:h-[17px] [&_svg]:w-[17px]" />
-              <p className="font-display text-sm font-semibold text-foreground">{section.titleFr}</p>
-            </div>
-            <ul className="space-y-0.5">
-              {section.items.map((item) => (
-                <li key={item.key}>
-                  <Link
-                    href={item.href!}
-                    className="group flex items-center justify-between rounded-xl px-2.5 py-2 text-sm text-foreground/75 transition hover:bg-surface-muted hover:text-foreground"
-                  >
-                    {item.label}
-                    <ChevronRight
-                      className="h-3.5 w-3.5 text-foreground/30 transition group-hover:translate-x-0.5 group-hover:text-brand"
-                      aria-hidden
-                    />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        );
-      })}
-    </div>
   );
 }

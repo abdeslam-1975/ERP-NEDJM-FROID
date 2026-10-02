@@ -1,7 +1,8 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { Columns3, UserPlus } from "lucide-react";
 import { ToolbarSlot } from "@/components/layout/arrange";
 import {
   deleteHrEmployeeField,
@@ -38,6 +39,12 @@ import {
   rhInput,
 } from "@/components/rh/rh-ui";
 import { EmployeeFicheDialog } from "@/components/rh/employee-fiche";
+import {
+  EmployeesList,
+  EmployeeViewSwitch,
+  type EmployeeAssignment,
+  type EmployeeView,
+} from "@/components/rh/employees-list";
 import { EmployeeAdminDossierDialog } from "@/components/rh/employee-admin-dossier";
 import { DEFAULT_FICHE_SETTINGS, type HrFicheSettings } from "@/lib/hr/fiche-settings";
 import { mergeAffectationCatalog } from "@/lib/hr/affectation-options";
@@ -87,12 +94,28 @@ function valuesFromFiche(
   return values;
 }
 
+function emptyValues(activeFields: HrEmployeeField[]) {
+  const empty: Record<string, string> = {};
+  for (const field of activeFields) {
+    empty[field.code] =
+      field.code === "status"
+        ? "ACTIVE"
+        : field.code === "irg_category"
+          ? "STANDARD"
+          : field.code === "nationality"
+            ? "Algérienne"
+            : "";
+  }
+  return empty;
+}
+
 export function EmployeesManager({
   initialEmployees,
   fields: initialFields,
   catalogs,
   kinds,
   sites = [],
+  assignments = [],
   fiche = DEFAULT_FICHE_SETTINGS,
   loadError,
 }: {
@@ -101,16 +124,22 @@ export function EmployeesManager({
   catalogs: CatalogItem[];
   kinds: CatalogKind[];
   sites?: Pick<SiteRow, "id" | "name_fr" | "name_ar">[];
+  assignments?: EmployeeAssignment[];
   fiche?: HrFicheSettings;
   loadError?: string;
 }) {
   const [rows, setRows] = useState(initialEmployees);
   const [fields, setFields] = useState(initialFields);
-  const urlQuery = useSearchParams().get("q") ?? "";
-  const [open, setOpen] = useState(false);
+  const searchParams = useSearchParams();
+  const urlQuery = searchParams.get("q") ?? "";
+  const [startNew] = useState(() => searchParams.get("nouveau") === "1");
+  const [view, setView] = useState<EmployeeView>("list");
+  const [open, setOpen] = useState(startNew);
   const [dossierEmployee, setDossierEmployee] = useState<HrEmployeeFiche | null>(null);
   const [columnsOpen, setColumnsOpen] = useState(false);
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    startNew ? emptyValues(initialFields.filter((f) => f.is_active)) : {},
+  );
   const [formError, setFormError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -161,19 +190,35 @@ export function EmployeesManager({
     return String(raw);
   }
 
+  useEffect(() => {
+    if (!startNew) return;
+    let cancelled = false;
+    void nextHrMatricule().then((next) => {
+      if (!cancelled && next.ok && next.data.matricule) {
+        setValues((v) => ({ ...v, matricule: v.matricule || next.data.matricule }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [startNew]);
+
+  const fallbackText = useCallback(
+    (row: HrEmployeeFiche, code: "fiche_affectation" | "fiche_poste") => {
+      const raw = row[code];
+      if (!raw) return "";
+      const field = fields.find((f) => f.code === code);
+      if (field?.value_type === "catalog" && field.catalog_kind) {
+        const opt = ficheCatalogs.find((c) => c.kind === field.catalog_kind && c.code === raw);
+        if (opt) return opt.label_fr || opt.label_ar || raw;
+      }
+      return raw;
+    },
+    [fields, ficheCatalogs],
+  );
+
   function openCreate() {
-    const empty: Record<string, string> = {};
-    for (const field of activeFields) {
-      empty[field.code] =
-        field.code === "status"
-          ? "ACTIVE"
-          : field.code === "irg_category"
-            ? "STANDARD"
-            : field.code === "nationality"
-              ? "Algérienne"
-              : "";
-    }
-    setValues(empty);
+    setValues(emptyValues(activeFields));
     setFormError(null);
     setOpen(true);
     startTransition(async () => {
@@ -457,18 +502,20 @@ export function EmployeesManager({
   return (
     <RhPage>
       <RhPageHeader
-        title="Employés"
-        description="Toutes les données de l'employé apparaissent ici. Ajoutez ou masquez une colonne depuis cet écran."
+        eyebrow={`${rows.length} employé${rows.length > 1 ? "s" : ""} inscrit${rows.length > 1 ? "s" : ""}`}
+        title="Personnel"
         actionsTabset="btn_rh_employees"
         actions={
           <>
             <ToolbarSlot id="columns">
               <Button type="button" variant="secondary" onClick={() => setColumnsOpen(true)}>
+                <Columns3 aria-hidden />
                 Colonnes
               </Button>
             </ToolbarSlot>
             <ToolbarSlot id="new">
               <Button type="button" disabled={pending} onClick={openCreate}>
+                <UserPlus aria-hidden />
                 Nouvel employé
               </Button>
             </ToolbarSlot>
@@ -483,18 +530,39 @@ export function EmployeesManager({
         <RhAlert tone="success">{info}</RhAlert>
       ) : null}
 
-      <DataTable
-        key={urlQuery}
-        data={rows}
-        columns={columns}
-        getRowId={(r) => r.id}
-        searchPlaceholder="Rechercher dans toutes les colonnes"
-        searchText={(row) => activeFields.map((field) => asText(rawValue(row, field))).join(" ")}
-        initialSearch={urlQuery}
-        columnToggle={false}
-        maxHeight="70vh"
-        emptyTitle="Aucun employé"
-      />
+      {view === "table" ? (
+        <>
+          <div className="flex justify-end">
+            <EmployeeViewSwitch value={view} onChange={setView} />
+          </div>
+          <DataTable
+            key={urlQuery}
+            data={rows}
+            columns={columns}
+            getRowId={(r) => r.id}
+            searchPlaceholder="Rechercher dans toutes les colonnes"
+            searchText={(row) => activeFields.map((field) => asText(rawValue(row, field))).join(" ")}
+            initialSearch={urlQuery}
+            columnToggle={false}
+            maxHeight="70vh"
+            emptyTitle="Aucun employé"
+          />
+        </>
+      ) : (
+        <EmployeesList
+          key={urlQuery}
+          rows={rows}
+          assignments={assignments}
+          fallback={fallbackText}
+          initialQuery={urlQuery}
+          view={view}
+          onViewChange={setView}
+          pending={pending}
+          onOpen={openEdit}
+          onDossier={setDossierEmployee}
+          onToggle={toggleActive}
+        />
+      )}
 
       {columnsOpen ? (
         <RhModal

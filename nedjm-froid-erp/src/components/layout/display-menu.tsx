@@ -66,7 +66,7 @@ export function DisplayMenu() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface text-foreground/75 shadow-[var(--card-shadow)] transition hover:bg-brand-muted hover:text-foreground"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-foreground/60 transition hover:bg-brand/[0.08] hover:text-brand"
           aria-label="Affichage : mode clair / sombre, densité et réorganisation"
         >
           <Icon className="size-4" aria-hidden />

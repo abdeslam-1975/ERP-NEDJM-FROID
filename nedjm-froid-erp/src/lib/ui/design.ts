@@ -12,7 +12,7 @@ export const DESIGN_OPTIONS = {
   table_style: ["lines", "striped", "bordered", "minimal"],
   density: ["compact", "normal", "comfortable"],
   card_style: ["shadow", "border", "flat", "glass"],
-  font_latin: ["source_sans", "inter", "ibm_plex", "system"],
+  font_latin: ["geist", "source_sans", "inter", "ibm_plex", "system"],
   font_arabic: ["cairo", "tajawal", "ibm_plex_arabic", "noto_kufi"],
   default_mode: ["light", "dark", "system"],
 } as const;
@@ -55,7 +55,7 @@ export const DESIGN_PRESETS: DesignPreset[] = [
     id: "classique",
     labelFr: "Classique",
     labelAr: "كلاسيكي",
-    descriptionFr: "Proche de l'origine (bleu royal, coins arrondis), avec animations, police arabe Cairo et tableaux à lignes.",
+    descriptionFr: "Proche de l'origine (bleu royal, coins arrondis), avec animations, police Geist, arabe Cairo et tableaux à lignes.",
     brand_color: "#3b6ef5",
     sidebar_color: "#1a2f8a",
     settings: {
@@ -66,7 +66,7 @@ export const DESIGN_PRESETS: DesignPreset[] = [
       table_style: "lines",
       density: "normal",
       card_style: "shadow",
-      font_latin: "source_sans",
+      font_latin: "geist",
       font_arabic: "cairo",
       animations: true,
       default_mode: "system",
@@ -187,6 +187,7 @@ const RADIUS_BASE: Record<DesignSettings["radius"], number> = { none: 0, sm: 0.2
 const SPACING: Record<Density, string> = { compact: "0.225rem", normal: "0.25rem", comfortable: "0.275rem" };
 
 const FONT_LATIN: Record<DesignSettings["font_latin"], string> = {
+  geist: "var(--font-geist)",
   source_sans: "var(--font-source-sans)",
   inter: "var(--font-inter)",
   ibm_plex: "var(--font-ibm-plex)",

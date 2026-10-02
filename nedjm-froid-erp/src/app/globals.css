@@ -64,8 +64,8 @@
   --color-border: var(--border);
   --color-sidebar: var(--sidebar);
   --color-sidebar-fg: var(--sidebar-fg);
-  --font-sans: var(--app-font-sans, var(--font-source-sans));
-  --font-display: var(--font-libre-franklin);
+  --font-sans: var(--app-font-sans, var(--font-geist));
+  --font-display: var(--app-font-sans, var(--font-geist));
 
   /* shadcn/ui token names, mapped onto the application palette. */
   --color-card: var(--surface);
@@ -88,7 +88,7 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--app-font-sans, var(--font-source-sans), system-ui, sans-serif);
+  font-family: var(--app-font-sans, var(--font-geist), system-ui, sans-serif);
 }
 
 .rh-scope table {

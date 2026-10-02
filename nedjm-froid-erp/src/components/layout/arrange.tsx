@@ -632,15 +632,13 @@ export function ArrangeButton() {
       disabled={active}
       aria-pressed={active}
       title="Réorganiser la page : déplacer les onglets, le menu et les boutons · إعادة الترتيب"
+      aria-label="Réorganiser"
       className={cn(
-        "inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-sm font-semibold shadow-[var(--card-shadow)] transition",
-        active
-          ? "border-brand bg-brand text-white"
-          : "border-border bg-surface text-foreground/75 hover:bg-brand-muted hover:text-foreground",
+        "inline-flex h-10 w-10 items-center justify-center rounded-xl transition",
+        active ? "bg-brand text-white" : "text-foreground/60 hover:bg-brand/[0.08] hover:text-brand",
       )}
     >
-      <Move className="size-4" aria-hidden />
-      <span className="hidden md:inline">Réorganiser</span>
+      <Move className="size-[18px]" aria-hidden />
     </button>
   );
 }

@@ -6,8 +6,23 @@ import { logoutAction } from "@/lib/actions/auth";
 export function LogoutButton({
   variant = "default",
 }: {
-  variant?: "default" | "sidebar";
+  variant?: "default" | "sidebar" | "icon";
 }) {
+  if (variant === "icon") {
+    return (
+      <form action={logoutAction}>
+        <button
+          type="submit"
+          title="Déconnexion"
+          aria-label="Déconnexion"
+          className="flex h-9 w-9 items-center justify-center rounded-xl text-white/60 transition hover:bg-white/[0.12] hover:text-white"
+        >
+          <LogOut className="h-4 w-4" strokeWidth={1.8} aria-hidden />
+        </button>
+      </form>
+    );
+  }
+
   if (variant === "sidebar") {
     return (
       <form action={logoutAction}>

@@ -61,6 +61,7 @@ const CARD_STYLE: Choice<DesignSettings["card_style"]>[] = [
   { value: "glass", label: "Verre" },
 ];
 const FONT_LATIN: Choice<DesignSettings["font_latin"]>[] = [
+  { value: "geist", label: "Geist", style: { fontFamily: "var(--font-geist)" }, sample: "Aa 123" },
   { value: "source_sans", label: "Source Sans", style: { fontFamily: "var(--font-source-sans)" }, sample: "Aa 123" },
   { value: "inter", label: "Inter", style: { fontFamily: "var(--font-inter)" }, sample: "Aa 123" },
   { value: "ibm_plex", label: "IBM Plex", style: { fontFamily: "var(--font-ibm-plex)" }, sample: "Aa 123" },
