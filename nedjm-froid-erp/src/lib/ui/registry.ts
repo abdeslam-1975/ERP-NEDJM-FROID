@@ -90,15 +90,41 @@ export const RH_SECTIONS: UiGroupDef[] = [
 /** Section of the HR bar where tabs that are rarely used can be put away. */
 export const RH_OTHERS_SECTION = "others";
 
+/**
+ * Sections created by the users ("x" + 6 characters): defined by a row "rh_sections.<key>" carrying a label, in
+ * sys_ui_item_overrides (everyone) or sys_ui_user_order (one user).
+ */
+const RH_CUSTOM_SECTION = /^x[a-z0-9]{6}$/;
+export const RH_CUSTOM_SECTIONS_MAX = 12;
+
+export function isRhCustomSection(key: string): boolean {
+  return RH_CUSTOM_SECTION.test(key);
+}
+
+export function newRhSectionKey(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let key = "x";
+  for (let i = 0; i < 6; i++) key += chars[Math.floor(Math.random() * chars.length)];
+  return key;
+}
+
 /** Section a HR tab is moved to, stored in group_key as "group.rh_<section>" (plain section keys still read). */
 export function rhSectionGroupKey(section: string): string {
   return `group.rh_${section}`;
 }
 
+/** Section named by a group key: a catalogue section or the key of a section created by a user. */
 export function rhSectionFromGroup(groupKey: string | null | undefined): string | null {
   if (!groupKey) return null;
   const key = groupKey.startsWith("group.rh_") ? groupKey.slice("group.rh_".length) : groupKey;
-  return RH_SECTIONS.some((s) => s.key === key) ? key : null;
+  return RH_SECTIONS.some((s) => s.key === key) || isRhCustomSection(key) ? key : null;
+}
+
+/** "rh_sections.<key>" for a catalogue section or a section created by a user. */
+export function isRhSectionKey(key: string): boolean {
+  if (!key.startsWith(`${RH_SECTIONS_TABSET}.`)) return false;
+  const section = key.slice(RH_SECTIONS_TABSET.length + 1);
+  return RH_SECTIONS.some((s) => s.key === section) || isRhCustomSection(section);
 }
 
 export const UI_TABSETS: UiTabsetDef[] = [

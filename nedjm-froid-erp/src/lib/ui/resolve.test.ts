@@ -257,6 +257,34 @@ describe("resolveRhSections / activeItemKey", () => {
     expect(byKey.get("payroll")).not.toContain("rh.paie");
   });
 
+  it("adds the sections created by the super admin or the user, and renames catalogue ones", () => {
+    const data = layout({
+      overrides: {
+        "rh_sections.xshared": { sort_order: 1, label_fr: "Partagé", label_ar: null, group_key: null },
+        "rh_sections.xnoname": { sort_order: 2, label_fr: null, label_ar: null, group_key: null },
+        "rh.contrats": { sort_order: null, label_fr: null, label_ar: null, group_key: rhSectionGroupKey("xshared") },
+      },
+      personal: {
+        "rh_sections.xmine01": { sort_order: 0, group_key: null, label_fr: "À moi" },
+        "rh_sections.payroll": { sort_order: 900, group_key: null, label_fr: "Salaires" },
+        "rh.paie": { sort_order: 0, group_key: rhSectionGroupKey("xmine01") },
+        // Section deleted since: the tab falls back to the super admin's choice, then the catalogue.
+        "rh.avances": { sort_order: 0, group_key: rhSectionGroupKey("xgone00") },
+      },
+    });
+    const sections = resolveRhSections(data, { includeEmpty: true });
+    expect(sections.slice(0, 2).map((s) => [s.key, s.titleFr, s.custom, s.shared])).toEqual([
+      ["xmine01", "À moi", true, false],
+      ["xshared", "Partagé", true, true],
+    ]);
+    expect(sections.some((s) => s.key === "xnoname")).toBe(false);
+    expect(sections.at(-1)?.titleFr).toBe("Salaires");
+    const byKey = new Map(sections.map((s) => [s.key, s.items.map((i) => i.key)]));
+    expect(byKey.get("xmine01")).toEqual(["rh.paie"]);
+    expect(byKey.get("xshared")).toEqual(["rh.contrats"]);
+    expect(byKey.get("payroll")).toContain("rh.avances");
+  });
+
   it("marks only the most specific tab active", () => {
     const items = resolveTabset(DEFAULT_LAYOUT, "rh");
     expect(activeItemKey(items, "/rh/paie/avances")).toBe("rh.avances");

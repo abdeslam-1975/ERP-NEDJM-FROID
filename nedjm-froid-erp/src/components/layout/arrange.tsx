@@ -6,6 +6,7 @@ import {
   isValidElement,
   useId,
   useMemo,
+  useRef,
   useState,
   type ComponentProps,
   type HTMLAttributes,
@@ -33,7 +34,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, ListOrdered, Move, RotateCcw, X } from "lucide-react";
+import { GripVertical, ListOrdered, Move, Pencil, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import { useArrange, useArrangeableList, useUiLayout } from "@/components/layout/ui-layout-context";
 import { Button } from "@/components/ui/button";
 import { RH_OTHERS_SECTION, RH_SECTIONS_TABSET, findItem, findTabset, itemKey, keysOfTabset } from "@/lib/ui/registry";
@@ -269,7 +270,7 @@ function GroupBox({
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "rounded-xl border border-dashed p-1.5",
+        "relative rounded-xl border border-dashed p-1.5",
         tone === "sidebar" ? "border-white/30" : "border-border",
         tone === "bar" && "w-52 shrink-0 bg-surface-muted/40",
         isDragging && "z-30 opacity-80",
@@ -325,11 +326,14 @@ function GroupedArrange({
   onChange,
   tone,
   groupAction,
+  footer,
 }: {
   source: ArrangeColumn[];
   onChange: (groups: { key: string; items: string[] }[]) => void;
   tone: Tone;
   groupAction?: (column: ArrangeColumn, moveAll: (to: string) => void) => ReactNode;
+  /** Last element of the list, outside the sortable groups (for example « Nouvel onglet »). */
+  footer?: ReactNode;
 }) {
   const sensors = useDndSensors();
   const dndId = useId();
@@ -434,6 +438,7 @@ function GroupedArrange({
               </SortableContext>
             </GroupBox>
           ))}
+          {footer}
         </ul>
       </SortableContext>
     </DndContext>
@@ -459,34 +464,159 @@ export function NavArrange({ tone = "panel" }: { tone?: "sidebar" | "panel" }) {
 /** Sections and tabs of the HR module bar; a tab, or a whole section, can be sent to another section (« Autres »). */
 export function RhArrange({ tone = "bar" }: { tone?: "bar" | "panel" }) {
   const layout = useUiLayout();
-  const { reorderRh } = useArrange();
+  const { reorderRh, addRhSection, renameRhSection, removeRhSection, target } = useArrange();
+  const sections = useMemo(() => resolveRhSections(layout, { includeEmpty: true }), [layout]);
   const source = useMemo<ArrangeColumn[]>(
     () =>
-      resolveRhSections(layout, { includeEmpty: true }).map((s) => ({
+      sections.map((s) => ({
         key: s.key,
         title: s.titleFr,
         items: s.items.map((i) => ({ key: i.key, label: i.label })),
       })),
-    [layout],
+    [sections],
   );
   return (
     <GroupedArrange
       source={source}
       onChange={reorderRh}
       tone={tone}
-      groupAction={(column, moveAll) =>
-        column.key !== RH_OTHERS_SECTION && column.items.length ? (
-          <button
-            type="button"
-            onClick={() => moveAll(RH_OTHERS_SECTION)}
-            title={`Mettre « ${column.title} » dans Autres · نقل إلى أخرى`}
-            className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-brand hover:bg-brand-muted"
-          >
-            → Autres
-          </button>
-        ) : null
-      }
+      groupAction={(column) => {
+        const section = sections.find((s) => s.key === column.key);
+        return (
+          <RhSectionTools
+            title={column.title}
+            removable={column.key !== RH_OTHERS_SECTION}
+            deletes={Boolean(section?.custom && (target === "all" || !section.shared))}
+            onRename={(label) => renameRhSection(column.key, label)}
+            onRemove={() => removeRhSection(column.key)}
+          />
+        );
+      }}
+      footer={<NewRhSection tone={tone} onAdd={addRhSection} />}
     />
+  );
+}
+
+/** Name typed in place: Entrée or leaving the field keeps it, Échap cancels (null). */
+function NameInput({
+  initial,
+  onDone,
+  className,
+}: {
+  initial: string;
+  onDone: (value: string | null) => void;
+  className?: string;
+}) {
+  const [text, setText] = useState(initial);
+  // Removing the field after Entrée may also fire a blur: the name is only handed over once.
+  const done = useRef(false);
+  const finish = (value: string | null) => {
+    if (done.current) return;
+    done.current = true;
+    onDone(value);
+  };
+  return (
+    <input
+      autoFocus
+      value={text}
+      maxLength={40}
+      placeholder="Nom de l'onglet · اسم التبويب"
+      aria-label="Nom de l'onglet"
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => finish(text)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") finish(text);
+        if (e.key === "Escape") finish(null);
+      }}
+      className={cn(
+        "h-8 rounded-lg border border-brand bg-surface px-2 text-[13px] font-semibold text-foreground outline-none focus-visible:ring-2 focus-visible:ring-brand/40",
+        className,
+      )}
+    />
+  );
+}
+
+const TOOL = "inline-flex size-6 shrink-0 items-center justify-center rounded-md text-foreground/45 transition-colors";
+
+function RhSectionTools({
+  title,
+  removable,
+  deletes,
+  onRename,
+  onRemove,
+}: {
+  title: string;
+  removable: boolean;
+  /** Created section deleted for good (otherwise it only disappears once its tabs are in « Autres »). */
+  deletes: boolean;
+  onRename: (label: string) => void;
+  onRemove: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        title="Renommer · إعادة التسمية"
+        aria-label={`Renommer « ${title} »`}
+        className={cn(TOOL, "hover:bg-brand-muted hover:text-brand")}
+      >
+        <Pencil className="size-3" aria-hidden />
+      </button>
+      {removable ? (
+        <button
+          type="button"
+          onClick={onRemove}
+          title={
+            deletes
+              ? "Supprimer l'onglet ; ses éléments vont dans « Autres » · حذف التبويب"
+              : "Retirer l'onglet : ses éléments vont dans « Autres » · حذف التبويب"
+          }
+          aria-label={`Supprimer « ${title} »`}
+          className={cn(TOOL, "hover:bg-red-500/10 hover:text-red-600")}
+        >
+          <Trash2 className="size-3" aria-hidden />
+        </button>
+      ) : null}
+      {editing ? (
+        <NameInput
+          initial={title}
+          onDone={(value) => {
+            setEditing(false);
+            if (value !== null && value.trim() !== title) onRename(value);
+          }}
+          className="absolute inset-x-1 top-1 z-10"
+        />
+      ) : null}
+    </>
+  );
+}
+
+function NewRhSection({ tone, onAdd }: { tone: Tone; onAdd: (label: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <li className={cn("shrink-0", tone === "bar" && "w-52")}>
+      {editing ? (
+        <NameInput
+          initial=""
+          onDone={(value) => {
+            setEditing(false);
+            if (value?.trim()) onAdd(value);
+          }}
+          className="w-full"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-brand/50 px-3 py-2 text-xs font-semibold text-brand transition-colors hover:bg-brand-muted"
+        >
+          <Plus className="size-3.5" aria-hidden />
+          Nouvel onglet · تبويب جديد
+        </button>
+      )}
+    </li>
   );
 }
 
