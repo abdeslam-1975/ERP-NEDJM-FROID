@@ -5,8 +5,10 @@ import { useMemo, useState } from "react";
 import type { HrDashboardStats } from "@/lib/actions/hr-lookups";
 import { useUiLayout } from "@/components/layout/ui-layout-context";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
+import { ChevronRight, LayoutDashboard } from "lucide-react";
 import { RhAlert, RhPage, bi } from "@/components/rh/rh-ui";
-import { isPathBlocked } from "@/lib/ui/resolve";
+import { RH_SECTION_ICONS } from "@/components/rh/rh-module-nav";
+import { resolveRhSections } from "@/lib/ui/resolve";
 
 function pctChange(current: number, previous: number) {
   if (previous <= 0) return current > 0 ? 100 : 0;
@@ -309,35 +311,6 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
 
         {/* Right: filters + live list + chart */}
         <section className="space-y-4">
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-3 py-2 shadow-[var(--card-shadow)]">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-foreground/35" aria-hidden>
-                <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.7" />
-                <path d="M16 16l4 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-              </svg>
-              <input
-                className="w-40 bg-transparent text-sm outline-none placeholder:text-foreground/35 sm:w-52"
-                placeholder={bi("Rechercher…", "بحث…")}
-                readOnly
-              />
-            </div>
-            <button
-              type="button"
-              className="relative inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-border bg-surface shadow-[var(--card-shadow)]"
-              aria-label="Notifications"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-                <path
-                  d="M6 9a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6Z"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                />
-                <path d="M10 19a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.7" />
-              </svg>
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-alert-critical" />
-            </button>
-          </div>
-
           <div className="rounded-2xl border border-border/80 bg-surface p-5 shadow-[var(--card-shadow)]">
             <h3 className="text-sm font-semibold text-foreground">
               {bi("Disponibilité chantier", "جاهزية الورشة")}
@@ -417,39 +390,46 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
   );
 }
 
-const QUICK_LINKS = [
-  { href: "/rh/employes", label: "Employés" },
-  { href: "/rh/contrats", label: "Contrats" },
-  { href: "/rh/postes", label: "Postes & grille salariale" },
-  { href: "/rh/presence", label: "Présence" },
-  { href: "/rh/conges", label: "Congés & absences" },
-  { href: "/rh/paie", label: "Paie" },
-  { href: "/simulateur", label: "Simulateur" },
-  { href: "/rh/sorties", label: "Sorties & STC" },
-  { href: "/rh/couts", label: "Coûts par chantier / contrat" },
-  { href: "/rh/interim", label: "Intérim (agences)" },
-  { href: "/rh/documents", label: "Documents" },
-  { href: "/rh/attestations", label: "Attestations & courriers" },
-  { href: "/rh/legal", label: "Cotisations" },
-  { href: "/rh/paie/exceptions", label: "Exceptions" },
-  { href: "/rh/paie/avances", label: "Avances & prêts" },
-  { href: "/rh/parametres", label: "Paramètres" },
-];
-
 function RhQuickLinks() {
   const layout = useUiLayout();
-  const links = QUICK_LINKS.filter((m) => !isPathBlocked(layout, m.href));
+  const sections = useMemo(
+    () =>
+      resolveRhSections(layout)
+        .map((s) => ({ ...s, items: s.items.filter((i) => i.href && i.href !== "/rh") }))
+        .filter((s) => s.items.length > 0),
+    [layout],
+  );
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {links.map((m) => (
-        <Link
-          key={m.href}
-          href={m.href}
-          className="rounded-2xl border border-border/80 bg-surface px-4 py-4 shadow-[var(--card-shadow)] transition hover:border-brand/40"
-        >
-          <p className="font-display text-lg font-semibold">{m.label}</p>
-        </Link>
-      ))}
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {sections.map((section) => {
+        const Icon = RH_SECTION_ICONS[section.key] ?? LayoutDashboard;
+        return (
+          <div
+            key={section.key}
+            className="rounded-2xl border border-border/80 bg-surface p-4 shadow-[var(--card-shadow)]"
+          >
+            <div className="mb-2 flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-muted text-brand">
+                <Icon className="h-4 w-4" aria-hidden />
+              </span>
+              <p className="font-display text-sm font-semibold text-foreground">{section.titleFr}</p>
+            </div>
+            <ul className="space-y-0.5">
+              {section.items.map((item) => (
+                <li key={item.key}>
+                  <Link
+                    href={item.href!}
+                    className="group flex items-center justify-between rounded-lg px-2 py-1.5 text-sm text-foreground/75 transition hover:bg-surface-muted hover:text-foreground"
+                  >
+                    {item.label}
+                    <ChevronRight className="h-3.5 w-3.5 text-foreground/30 transition group-hover:translate-x-0.5 group-hover:text-brand" aria-hidden />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
     </div>
   );
 }

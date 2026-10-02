@@ -1,4 +1,5 @@
 import {
+  RH_SECTIONS,
   UI_NAV_GROUPS,
   UI_TABSETS,
   findItem,
@@ -146,6 +147,33 @@ function pathMatches(item: UiItemDef, pathname: string): boolean {
   if (!item.href) return false;
   if (item.exact || item.href === "/") return pathname === item.href;
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
+}
+
+/** The item owning the route: the longest matching link, so /rh/paie/avances marks "Avances", not "Paie". */
+export function activeItemKey(items: ResolvedItem[], pathname: string): string | null {
+  let best: ResolvedItem | null = null;
+  for (const item of items) {
+    if (!pathMatches(item, pathname)) continue;
+    if (!best || (item.href?.length ?? 0) > (best.href?.length ?? 0)) best = item;
+  }
+  return best?.key ?? null;
+}
+
+export type ResolvedSection = { key: string; titleFr: string; titleAr: string; items: ResolvedItem[] };
+
+/** HR module bar: visible tabs grouped by section (catalogue order of the sections, tab order kept inside). */
+export function resolveRhSections(data: UiLayoutData): ResolvedSection[] {
+  const items = resolveTabset(data, "rh");
+  const known = new Set(RH_SECTIONS.map((s) => s.key));
+  const last = RH_SECTIONS[RH_SECTIONS.length - 1].key;
+  return RH_SECTIONS.map((section) => ({
+    ...section,
+    items: items.filter((item) => {
+      const wanted = data.overrides[item.key]?.group_key;
+      const key = wanted && known.has(wanted) ? wanted : item.section && known.has(item.section) ? item.section : last;
+      return key === section.key;
+    }),
+  })).filter((section) => section.items.length > 0);
 }
 
 const ALWAYS_OPEN = new Set(["/", "/parametres", "/parametres/interface"]);

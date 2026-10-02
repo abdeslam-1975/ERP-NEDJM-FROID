@@ -37,6 +37,8 @@ export type UiItemDef = {
   group?: string;
   /** Side menu only: tabset whose first visible item replaces `href` when `href` itself is hidden. */
   childTabset?: string;
+  /** HR module bar only: section (RH_SECTIONS) the tab is listed under. */
+  section?: string;
   descriptionFr?: string;
   superAdminOnly?: boolean;
 };
@@ -69,6 +71,17 @@ export const UI_NAV_GROUPS: UiGroupDef[] = [
   { key: "group.admin", titleFr: "Administration", titleAr: "الإدارة" },
 ];
 
+/** Sections of the HR module bar; a section shows only when one of its tabs is visible. */
+export const RH_SECTIONS: UiGroupDef[] = [
+  { key: "overview", titleFr: "Vue d'ensemble", titleAr: "نظرة عامة" },
+  { key: "people", titleFr: "Personnel", titleAr: "العمال" },
+  { key: "time", titleFr: "Temps & présence", titleAr: "الوقت والحضور" },
+  { key: "payroll", titleFr: "Paie", titleAr: "الأجور" },
+  { key: "documents", titleFr: "Documents", titleAr: "الوثائق" },
+  { key: "legal", titleFr: "Juridique", titleAr: "القانوني" },
+  { key: "settings", titleFr: "Paramètres", titleAr: "الإعدادات" },
+];
+
 export const UI_TABSETS: UiTabsetDef[] = [
   {
     key: "nav",
@@ -99,33 +112,33 @@ export const UI_TABSETS: UiTabsetDef[] = [
     titleAr: "وحدة الموارد البشرية",
     whereFr: "Barre d'onglets en haut des pages RH",
     items: [
-      { id: "dashboard", labelFr: "Tableau de bord", href: "/rh", exact: true },
-      { id: "employes", labelFr: "Employés", href: "/rh/employes" },
-      { id: "contrats", labelFr: "Contrats", href: "/rh/contrats" },
-      { id: "postes", labelFr: "Postes & grille", href: "/rh/postes" },
-      { id: "presence", labelFr: "Présence", href: "/rh/presence", exact: true },
-      { id: "presence_imports", labelFr: "Imports de présences", href: "/rh/presence/imports" },
-      { id: "conges", labelFr: "Congés", href: "/rh/conges" },
-      { id: "preparation", labelFr: "Préparation du mois", href: "/rh/paie/preparation" },
-      { id: "paie", labelFr: "Paie", href: "/rh/paie" },
-      { id: "simulateur", labelFr: "Simulateur", href: "/simulateur", alias: true },
-      { id: "exceptions", labelFr: "Exceptions", href: "/rh/paie/exceptions" },
-      { id: "avances", labelFr: "Avances", href: "/rh/paie/avances" },
-      { id: "virements", labelFr: "Virements", href: "/rh/paie/virements" },
-      { id: "declarations", labelFr: "Déclarations", href: "/rh/paie/declarations" },
-      { id: "operations_externes", labelFr: "Opérations externes", href: "/rh/paie/operations-externes" },
-      { id: "couts", labelFr: "Coûts", href: "/rh/couts" },
-      { id: "interim", labelFr: "Intérim", href: "/rh/interim" },
-      { id: "sorties", labelFr: "Sorties", href: "/rh/sorties" },
-      { id: "documents", labelFr: "Documents", href: "/rh/documents" },
-      { id: "attestations", labelFr: "Attestations", href: "/rh/attestations" },
-      { id: "legal", labelFr: "Cotisations & impôts", href: "/rh/legal", exact: true },
-      { id: "legal_propositions", labelFr: "Propositions légales", href: "/rh/legal/propositions" },
-      { id: "legal_documents", labelFr: "Documents juridiques", href: "/rh/legal/documents" },
-      { id: "legal_extraction", labelFr: "Extraction IA", href: "/rh/legal/extraction-ia" },
-      { id: "legal_veille", labelFr: "Veille juridique", href: "/rh/legal/veille" },
-      { id: "qualite", labelFr: "Qualité des données", href: "/rh/qualite-donnees" },
-      { id: "parametres", labelFr: "Paramètres", href: "/rh/parametres" },
+      { id: "dashboard", labelFr: "Tableau de bord", href: "/rh", exact: true, section: "overview" },
+      { id: "employes", labelFr: "Employés", href: "/rh/employes", section: "people" },
+      { id: "contrats", labelFr: "Contrats", href: "/rh/contrats", section: "people" },
+      { id: "postes", labelFr: "Postes & grille", href: "/rh/postes", section: "people" },
+      { id: "presence", labelFr: "Présence", href: "/rh/presence", exact: true, section: "time" },
+      { id: "presence_imports", labelFr: "Imports de présences", href: "/rh/presence/imports", section: "time" },
+      { id: "conges", labelFr: "Congés", href: "/rh/conges", section: "time" },
+      { id: "preparation", labelFr: "Préparation du mois", href: "/rh/paie/preparation", section: "payroll" },
+      { id: "paie", labelFr: "Paie", href: "/rh/paie", section: "payroll" },
+      { id: "simulateur", labelFr: "Simulateur", href: "/simulateur", alias: true, section: "payroll" },
+      { id: "exceptions", labelFr: "Exceptions", href: "/rh/paie/exceptions", section: "payroll" },
+      { id: "avances", labelFr: "Avances", href: "/rh/paie/avances", section: "payroll" },
+      { id: "virements", labelFr: "Virements", href: "/rh/paie/virements", section: "payroll" },
+      { id: "declarations", labelFr: "Déclarations", href: "/rh/paie/declarations", section: "payroll" },
+      { id: "operations_externes", labelFr: "Opérations externes", href: "/rh/paie/operations-externes", section: "payroll" },
+      { id: "couts", labelFr: "Coûts", href: "/rh/couts", section: "payroll" },
+      { id: "interim", labelFr: "Intérim", href: "/rh/interim", section: "people" },
+      { id: "sorties", labelFr: "Sorties", href: "/rh/sorties", section: "people" },
+      { id: "documents", labelFr: "Documents", href: "/rh/documents", section: "documents" },
+      { id: "attestations", labelFr: "Attestations", href: "/rh/attestations", section: "documents" },
+      { id: "legal", labelFr: "Cotisations & impôts", href: "/rh/legal", exact: true, section: "legal" },
+      { id: "legal_propositions", labelFr: "Propositions légales", href: "/rh/legal/propositions", section: "legal" },
+      { id: "legal_documents", labelFr: "Documents juridiques", href: "/rh/legal/documents", section: "legal" },
+      { id: "legal_extraction", labelFr: "Extraction IA", href: "/rh/legal/extraction-ia", section: "legal" },
+      { id: "legal_veille", labelFr: "Veille juridique", href: "/rh/legal/veille", section: "legal" },
+      { id: "qualite", labelFr: "Qualité des données", href: "/rh/qualite-donnees", section: "overview" },
+      { id: "parametres", labelFr: "Paramètres", href: "/rh/parametres", section: "settings" },
     ],
   },
   {

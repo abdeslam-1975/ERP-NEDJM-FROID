@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { UI_TABSETS, itemKey } from "@/lib/ui/registry";
+import { RH_SECTIONS, UI_TABSETS, findTabset, itemKey } from "@/lib/ui/registry";
 import {
   DEFAULT_LAYOUT,
+  activeItemKey,
   applyTabs,
   hiddenKeysForRoles,
   isPathBlocked,
   relabel,
   resolveNav,
+  resolveRhSections,
   resolveTabset,
   themeCss,
   type UiLayoutData,
@@ -133,6 +135,33 @@ describe("resolveNav", () => {
     const nav = resolveNav(layout({ hidden: ["rh.dashboard", "rh.employes"] }));
     const rh = nav.flatMap((g) => g.items).find((i) => i.key === "nav.rh");
     expect(rh).toMatchObject({ href: "/rh/contrats", activeHref: "/rh" });
+  });
+});
+
+describe("resolveRhSections / activeItemKey", () => {
+  it("files every RH tab under a declared section", () => {
+    const sections = new Set(RH_SECTIONS.map((s) => s.key));
+    for (const item of findTabset("rh")!.items) expect(sections.has(item.section ?? "")).toBe(true);
+  });
+
+  it("groups visible tabs, drops empty sections and honours a section override", () => {
+    const data = layout({
+      hidden: ["rh.documents", "rh.attestations"],
+      overrides: { "rh.couts": { sort_order: null, label_fr: null, label_ar: null, group_key: "overview" } },
+    });
+    const sections = resolveRhSections(data);
+    expect(sections.some((s) => s.key === "documents")).toBe(false);
+    expect(sections.find((s) => s.key === "overview")?.items.map((i) => i.key)).toContain("rh.couts");
+    expect(sections.find((s) => s.key === "payroll")?.items.map((i) => i.key)).not.toContain("rh.couts");
+  });
+
+  it("marks only the most specific tab active", () => {
+    const items = resolveTabset(DEFAULT_LAYOUT, "rh");
+    expect(activeItemKey(items, "/rh/paie/avances")).toBe("rh.avances");
+    expect(activeItemKey(items, "/rh/paie/bulletins")).toBe("rh.paie");
+    expect(activeItemKey(items, "/rh/presence/imports")).toBe("rh.presence_imports");
+    expect(activeItemKey(items, "/rh")).toBe("rh.dashboard");
+    expect(activeItemKey(items, "/finance")).toBeNull();
   });
 });
 
