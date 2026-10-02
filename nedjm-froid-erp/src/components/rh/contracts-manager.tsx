@@ -50,6 +50,7 @@ import {
   rhInput,
 } from "@/components/rh/rh-ui";
 import { ContractPrintDialog } from "@/components/rh/contract-print-dialog";
+import { ContractViewDialog } from "@/components/rh/contract-view-dialog";
 import { WorkRegimeField } from "@/components/rh/work-regime-field";
 import { ContractRubriquesField } from "@/components/rh/contract-rubriques-field";
 import type { SelectedSalaryLine } from "@/components/rh/contract-salary-fields";
@@ -247,6 +248,7 @@ export function ContractsManager({
   const [info, setInfo] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [printId, setPrintId] = useState<string | null>(null);
+  const [viewRow, setViewRow] = useState<HrContractRow | null>(null);
   const [showPreview, setShowPreview] = useState(true);
   const [preview, setPreview] = useState<(ContractPreviewContext & { key: string }) | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -626,6 +628,9 @@ export function ContractsManager({
       enableHiding: false,
       cell: ({ row }) => (
         <>
+          <Button variant="secondary" onClick={() => setViewRow(row.original)}>
+            {bi("Afficher", "عرض")}
+          </Button>{" "}
           <Button variant="secondary" onClick={() => openRow(row.original)}>
             {bi("Modifier", "تعديل")}
           </Button>{" "}
@@ -1141,6 +1146,24 @@ export function ContractsManager({
             ) : null}
           </div>
         </RhModal>
+      ) : null}
+      {viewRow ? (
+        <ContractViewDialog
+          contractId={viewRow.id}
+          title={`${viewRow.matricule} · ${viewRow.employee_name}`.trim()}
+          subtitle={[viewRow.site_name, viewRow.contract_type_code, statusOption(viewRow.status).label]
+            .filter(Boolean)
+            .join(" · ")}
+          onClose={() => setViewRow(null)}
+          onEdit={() => {
+            setViewRow(null);
+            openRow(viewRow);
+          }}
+          onPrint={() => {
+            setViewRow(null);
+            setPrintId(viewRow.id);
+          }}
+        />
       ) : null}
       {printId ? (
         <ContractPrintDialog

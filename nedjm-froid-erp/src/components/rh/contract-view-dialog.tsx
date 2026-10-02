@@ -1,0 +1,91 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { Pencil, Printer } from "lucide-react";
+import { getContractPrintContext, type ContractPrintContext } from "@/lib/actions/hr-contract-print";
+import { buildWorkContractHtml } from "@/components/rh/work-contract-print";
+import { Button } from "@/components/ui/button";
+import { RhAlert, RhModal, bi } from "@/components/rh/rh-ui";
+
+/** The saved contract exactly as it prints, read-only, with Edit and Print. */
+export function ContractViewDialog({
+  contractId,
+  title,
+  subtitle,
+  onEdit,
+  onPrint,
+  onClose,
+}: {
+  contractId: string;
+  title: string;
+  subtitle?: string;
+  onEdit: () => void;
+  onPrint: () => void;
+  onClose: () => void;
+}) {
+  const [context, setContext] = useState<ContractPrintContext | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getContractPrintContext(contractId).then((r) => {
+      if (cancelled) return;
+      if (r.ok) setContext(r.data);
+      else setError(r.error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [contractId]);
+
+  const html = useMemo(
+    () =>
+      context
+        ? buildWorkContractHtml(context.values, context.template).replace(
+            "</head>",
+            "<style>@media screen { body { padding: 28px 34px; } }</style></head>",
+          )
+        : "",
+    [context],
+  );
+
+  return (
+    <RhModal
+      size="lg"
+      title={title}
+      subtitle={subtitle}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            {bi("Fermer", "إغلاق")}
+          </Button>
+          <Button variant="secondary" onClick={onEdit}>
+            <Pencil aria-hidden />
+            {bi("Modifier", "تعديل")}
+          </Button>
+          <Button onClick={onPrint}>
+            <Printer aria-hidden />
+            {bi("Imprimer", "طباعة")}
+          </Button>
+        </>
+      }
+    >
+      {error ? (
+        <RhAlert tone="danger">{error}</RhAlert>
+      ) : (
+        <div className="h-[calc(100dvh-12rem)] min-h-[24rem] overflow-hidden rounded-xl bg-surface-muted/70 p-3">
+          {html ? (
+            <iframe
+              title={bi("Contrat de travail", "عقد العمل")}
+              srcDoc={html}
+              className="h-full w-full rounded-lg bg-white shadow-md ring-1 ring-black/5"
+            />
+          ) : (
+            <p className="p-6 text-center text-sm text-foreground/60">{bi("Chargement…", "جارٍ التحميل…")}</p>
+          )}
+        </div>
+      )}
+    </RhModal>
+  );
+}
