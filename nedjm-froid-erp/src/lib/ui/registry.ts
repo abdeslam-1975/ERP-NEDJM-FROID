@@ -389,19 +389,6 @@ export const UI_TABSETS: UiTabsetDef[] = [
     ],
   },
   {
-    key: "hr_documents",
-    level: "D",
-    titleFr: "Documents RH",
-    titleAr: "وثائق الموارد البشرية",
-    whereFr: "RH → Documents",
-    items: [
-      { id: "corr", labelFr: "Ordres de mission" },
-      { id: "conges", labelFr: "Titres de congé" },
-      { id: "autres", labelFr: "Correspondances" },
-      { id: "files", labelFr: "Pièces officielles" },
-    ],
-  },
-  {
     key: "hr_attendance",
     level: "D",
     titleFr: "Pointage",

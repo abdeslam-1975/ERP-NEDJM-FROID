@@ -257,7 +257,7 @@ export function LeaveManager({
               variant="secondary"
               onClick={() =>
                 row.correspondence_id
-                  ? router.push(`/rh/documents?onglet=conges&titre=${row.correspondence_id}#registre`)
+                  ? router.push(`/rh/documents?onglet=conges&titre=${row.correspondence_id}`)
                   : setPrintRow(row)
               }
             >

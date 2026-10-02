@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { ArrowDown, Eye, Sparkles, type LucideIcon } from "lucide-react";
-import { RH_CARD } from "@/components/rh/rh-ui";
+import { ArrowUpRight, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type DocumentTypeCard = {
@@ -8,52 +7,53 @@ export type DocumentTypeCard = {
   title: string;
   icon: LucideIcon;
   color: string;
-  count: number | null;
-  open?: { href: string; label: string; down?: boolean };
-  generate?: string;
+  summary: string;
+  /** Cards with a register select it in place; the others link to their own page. */
+  href?: string;
+  selected?: boolean;
+  onSelect?: () => void;
 };
 
-const secondary =
-  "inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-border/80 bg-surface text-sm font-medium text-foreground/75 transition hover:border-brand/35 hover:text-brand";
-const primary =
-  "ui-btn ui-btn-primary inline-flex h-9 flex-1 items-center justify-center gap-2 text-sm font-medium transition hover:-translate-y-px";
-
-/** One card per kind of HR document, with its count and the way to issue one. */
+/** The HR documents, one compact card each: selecting a card shows its register below. */
 export function DocumentTypeCards({ cards }: { cards: DocumentTypeCard[] }) {
   return (
-    <div className="ui-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {cards.map(({ key, title, icon: Icon, color, count, open, generate }) => (
-        <div key={key} className={cn(RH_CARD, "ui-lift group p-5")}>
-          <div className="flex items-start justify-between">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      {cards.map(({ key, title, icon: Icon, color, summary, href, selected, onSelect }) => {
+        const body = (
+          <>
             <span
-              className="flex h-12 w-12 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6"
+              className="flex size-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-105"
               style={{ background: `${color}17`, color }}
             >
-              <Icon className="h-6 w-6" strokeWidth={1.8} aria-hidden />
+              <Icon className="size-5" strokeWidth={1.8} aria-hidden />
             </span>
-            {count !== null ? (
-              <span className="text-xs text-foreground/50">
-                {count.toLocaleString("fr-FR")} généré{count > 1 ? "s" : ""}
-              </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold leading-snug text-foreground">{title}</span>
+              <span className="block truncate text-xs text-foreground/50">{summary}</span>
+            </span>
+            {href ? (
+              <ArrowUpRight
+                className="size-4 shrink-0 text-foreground/30 transition group-hover:text-brand"
+                aria-hidden
+              />
             ) : null}
-          </div>
-          <h3 className="mt-4 font-semibold text-foreground">{title}</h3>
-          <div className="mt-4 flex gap-2">
-            {open ? (
-              <Link href={open.href} className={secondary}>
-                {open.down ? <ArrowDown className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
-                {open.label}
-              </Link>
-            ) : null}
-            {generate ? (
-              <Link href={generate} className={primary}>
-                <Sparkles className="h-4 w-4" aria-hidden />
-                Générer
-              </Link>
-            ) : null}
-          </div>
-        </div>
-      ))}
+          </>
+        );
+        const className = cn(
+          "group flex items-center gap-3.5 rounded-2xl border bg-[var(--card-bg,var(--surface))] p-4 text-left shadow-[var(--card-shadow)] transition",
+          selected ? "border-transparent" : "border-border/70 hover:border-brand/30 hover:-translate-y-px",
+        );
+        const style = selected ? { boxShadow: `0 0 0 2px ${color}`, background: `${color}0d` } : undefined;
+        return href ? (
+          <Link key={key} href={href} className={className}>
+            {body}
+          </Link>
+        ) : (
+          <button key={key} type="button" className={className} style={style} aria-pressed={selected} onClick={onSelect}>
+            {body}
+          </button>
+        );
+      })}
     </div>
   );
 }
