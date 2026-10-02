@@ -127,6 +127,9 @@ export function CatalogSelect<T extends CatalogOption>({
 
 /* —— layout primitives —— */
 
+export const RH_CARD =
+  "rounded-[1.5rem] border border-border/70 bg-[var(--card-bg,var(--surface))] shadow-[var(--card-shadow)]";
+
 export function RhPage({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`rh-scope space-y-5 ${className}`}>{children}</div>;
 }

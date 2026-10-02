@@ -1,5 +1,8 @@
+import { Award, FileBadge, FilePenLine, Mail, Plane, Receipt } from "lucide-react";
 import { RhShell } from "@/components/rh/rh-shell";
 import { DocumentsManager } from "@/components/rh/documents-manager";
+import { DocumentTypeCards, type DocumentTypeCard } from "@/components/rh/document-type-cards";
+import { RhPage, RhPageHeader } from "@/components/rh/rh-ui";
 import {
   listHrCorrespondences,
   listHrFiles,
@@ -38,8 +41,67 @@ export default async function DocumentsPage({
       }))
     : [];
 
+  const corrRows = corr.ok ? corr.data : [];
+  const countOf = (...types: string[]) => corrRows.filter((r) => types.includes(r.type_code)).length;
+  const cards: DocumentTypeCard[] = [
+    {
+      key: "attest",
+      title: "Attestation de travail",
+      icon: FileBadge,
+      color: "#3b6ef5",
+      count: countOf("ATTEST"),
+      generate: "/rh/attestations",
+    },
+    {
+      key: "certif",
+      title: "Certificat de travail",
+      icon: Award,
+      color: "#8b5cf6",
+      count: countOf("CERTIF"),
+      generate: "/rh/attestations",
+    },
+    {
+      key: "om",
+      title: "Ordre de mission",
+      icon: Plane,
+      color: "#0ea5e9",
+      count: countOf("OM"),
+      open: { href: "#registre", label: "Registre", down: true },
+      generate: "/rh/documents?nouveau=om",
+    },
+    {
+      key: "contract",
+      title: "Contrat de travail",
+      icon: FilePenLine,
+      color: "#14b8a6",
+      count: contracts.ok ? contracts.data.length : null,
+      open: { href: "/rh/contrats", label: "Ouvrir" },
+    },
+    {
+      key: "slip",
+      title: "Bulletin de paie",
+      icon: Receipt,
+      color: "#f59e0b",
+      count: null,
+      open: { href: "/rh/paie/bulletins", label: "Ouvrir" },
+    },
+    {
+      key: "letter",
+      title: "Lettre administrative",
+      icon: Mail,
+      color: "#ec4899",
+      count: countOf("STC", "MED1", "MED2"),
+      generate: "/rh/attestations",
+    },
+  ];
+
   return (
     <RhShell title="Documents RH">
+      <RhPage>
+        <RhPageHeader eyebrow="Modèles et documents RH" title="Documents" />
+        <DocumentTypeCards cards={cards} />
+      </RhPage>
+      <div id="registre" className="mt-8 scroll-mt-32">
       <DocumentsManager
         files={files.ok ? files.data : []}
         correspondences={corr.ok ? corr.data : []}
@@ -56,6 +118,7 @@ export default async function DocumentsPage({
           undefined
         }
       />
+      </div>
     </RhShell>
   );
 }

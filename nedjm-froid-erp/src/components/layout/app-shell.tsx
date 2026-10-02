@@ -15,9 +15,15 @@ import { isPathBlocked, themeCss } from "@/lib/ui/resolve";
 
 export async function AppShell({
   title,
+  nav,
+  subnav,
   children,
 }: {
   title: string;
+  /** Module tabs shown in the top bar in place of the title. */
+  nav?: ReactNode;
+  /** Second row of the top bar, under the module tabs. */
+  subnav?: ReactNode;
   children: ReactNode;
 }) {
   const workspace = await getWorkspaceProfile();
@@ -32,6 +38,13 @@ export async function AppShell({
   }
   const notifications = await listMyNotifications().catch(() => null);
   const css = designCss(layout.design, layout.prefs) + themeCss(layout.theme);
+  const primaryRole = workspace.roles.find((r) => r.siteId === null) ?? workspace.roles[0] ?? null;
+  const initials = workspace.fullName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
 
   return (
     <UiLayoutProvider value={layout}>
@@ -43,14 +56,23 @@ export async function AppShell({
       >
         <div className="relative isolate flex min-h-screen bg-background text-foreground">
           <div aria-hidden className="ui-app-glow pointer-events-none fixed inset-0 -z-10 print:hidden" />
-          <Sidebar />
+          <Sidebar
+            user={{
+              name: workspace.fullName,
+              role: primaryRole?.roleLabelFr ?? "Utilisateur",
+              initials: initials || "NF",
+            }}
+            sites={workspace.accessibleSites}
+            activeSiteId={workspace.activeSite?.id ?? null}
+          />
           <div className="flex min-w-0 flex-1 flex-col">
             <Topbar
               title={title}
-              workspace={workspace}
+              nav={nav}
+              subnav={subnav}
               notifications={notifications?.ok ? notifications.data.rows : []}
             />
-            <main className="flex-1 px-4 pb-6 sm:px-6 lg:px-8 lg:pb-8">
+            <main className="flex-1 px-4 pt-7 pb-8 sm:px-6">
               <PageTransition>{children}</PageTransition>
             </main>
           </div>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Search } from "lucide-react";
 import { useUiLayout } from "@/components/layout/ui-layout-context";
 import { searchEmployees, type GlobalSearchEmployee } from "@/lib/actions/global-search";
 import { isPathBlocked } from "@/lib/ui/resolve";
@@ -73,6 +74,19 @@ export function GlobalSearch() {
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState(0);
   const boxRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    function onShortcut(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }
+    }
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, []);
 
   const layout = useUiLayout();
   const pages = useMemo(() => {
@@ -152,15 +166,16 @@ export function GlobalSearch() {
   const showPanel = open && query.trim().length > 0;
 
   return (
-    <div ref={boxRef} className="relative hidden md:block">
-      <div className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-3 py-2 shadow-[var(--card-shadow)]">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="text-foreground/35" aria-hidden>
-          <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.7" />
-          <path d="M16 16l4 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-        </svg>
+    <div ref={boxRef} className="relative mr-1 hidden md:block">
+      <div className="flex h-10 w-10 items-center gap-2 overflow-hidden rounded-xl bg-surface-muted px-3 text-foreground/55 ring-1 ring-transparent transition-[width,background-color,box-shadow] duration-300 focus-within:w-64 focus-within:bg-surface focus-within:ring-brand/40 hover:ring-brand/25 min-[1800px]:w-60">
+        <label htmlFor="global-search" className="shrink-0 cursor-pointer" title="Rechercher (Ctrl K)">
+          <Search className="h-4 w-4" aria-hidden />
+        </label>
         <input
-          className="w-44 bg-transparent text-sm outline-none placeholder:text-foreground/35 lg:w-56"
-          placeholder="Rechercher… · بحث"
+          id="global-search"
+          ref={inputRef}
+          className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-foreground/50"
+          placeholder="Rechercher"
           aria-label="Recherche globale"
           value={query}
           onChange={(e) => {
@@ -171,6 +186,9 @@ export function GlobalSearch() {
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
         />
+        <kbd className="shrink-0 rounded-md border border-border px-1.5 py-0.5 font-sans text-[11px] whitespace-nowrap text-foreground/50">
+          Ctrl K
+        </kbd>
       </div>
       {showPanel ? (
         <div className="absolute right-0 z-50 mt-2 w-[26rem] max-w-[90vw] overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl shadow-slate-950/15">

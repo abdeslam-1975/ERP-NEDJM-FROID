@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/layout/app-shell";
-import { RhModuleNav } from "@/components/rh/rh-module-nav";
+import { RhSectionTabs, RhSubTabs } from "@/components/rh/rh-module-nav";
 
-/** Shell RH : navigation interne du module (hors sidebar globale). */
+/** Shell RH : les sections du module remplacent le titre dans la barre du haut. */
 export function RhShell({
   title,
   children,
@@ -11,11 +11,8 @@ export function RhShell({
   children: ReactNode;
 }) {
   return (
-    <AppShell title={title}>
-      <div className="space-y-4">
-        <RhModuleNav />
-        {children}
-      </div>
+    <AppShell title={title} nav={<RhSectionTabs />} subnav={<RhSubTabs />}>
+      {children}
     </AppShell>
   );
 }

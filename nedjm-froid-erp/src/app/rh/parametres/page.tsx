@@ -1,5 +1,8 @@
 import { RhShell } from "@/components/rh/rh-shell";
 import { RhParametres } from "@/components/rh/rh-parametres";
+import { RhSettingsOverview } from "@/components/rh/rh-settings-overview";
+import { RhPage, RhPageHeader } from "@/components/rh/rh-ui";
+import { loadPayrollIrgScales } from "@/lib/actions/hr-ops";
 import { loadHrLookups } from "@/lib/actions/hr-lookups";
 import { listHrEmployeeFields, listHrEmployeeRows } from "@/lib/actions/hr-employees";
 import { listHrContracts } from "@/lib/actions/hr-contracts";
@@ -15,6 +18,7 @@ import { DEFAULT_FICHE_SETTINGS } from "@/lib/hr/fiche-settings";
 export const dynamic = "force-dynamic";
 
 export default async function RhParametresPage() {
+  const now = new Date();
   const [
     lookups,
     fields,
@@ -27,6 +31,7 @@ export default async function RhParametresPage() {
     sites,
     bulletin,
     attendanceAdmin,
+    irg,
   ] = await Promise.all([
     loadHrLookups(),
     listHrEmployeeFields(),
@@ -39,6 +44,7 @@ export default async function RhParametresPage() {
     listSites(),
     loadPayrollBulletinContext(),
     loadAttendanceColumnsAdmin(),
+    loadPayrollIrgScales({ year: now.getFullYear(), month: now.getMonth() + 1 }),
   ]);
   const salaryError =
     (!rubriques.ok && rubriques.error) ||
@@ -46,6 +52,20 @@ export default async function RhParametresPage() {
     undefined;
   return (
     <RhShell title="Paramètres RH">
+      <RhPage className="mb-5">
+        <RhPageHeader eyebrow="Configuration du module RH" title="Paramètres" />
+        <RhSettingsOverview
+          rates={bulletin.legalRates}
+          brackets={irg.ok ? irg.data.brackets.slice().sort((a, b) => a.min_annual - b.min_annual) : []}
+          counts={{
+            rubriques: rubriques.ok ? rubriques.data.length : 0,
+            lists: lookups.kinds.length,
+            fields: fields.ok ? fields.data.filter((f) => f.is_active).length : 0,
+            legends: lookups.legends.length,
+            sites: sites.ok ? sites.data.length : 0,
+          }}
+        />
+      </RhPage>
       <RhParametres
         kinds={lookups.kinds}
         items={lookups.catalogs}

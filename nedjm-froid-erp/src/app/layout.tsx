@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import {
   Cairo,
+  Geist,
   IBM_Plex_Sans,
   IBM_Plex_Sans_Arabic,
   Inter,
@@ -12,14 +13,21 @@ import {
 import { ThemeProvider } from "@/components/layout/theme-provider";
 import "./globals.css";
 
+const geist = Geist({
+  variable: "--font-geist",
+  subsets: ["latin"],
+});
+
 const sourceSans = Source_Sans_3({
   variable: "--font-source-sans",
   subsets: ["latin"],
+  preload: false,
 });
 
 const libreFranklin = Libre_Franklin({
   variable: "--font-libre-franklin",
   subsets: ["latin"],
+  preload: false,
 });
 
 /* Fonts offered in Paramètres › Interface: declared here, downloaded by the browser only once chosen. */
@@ -45,7 +53,7 @@ const ibmPlexArabic = IBM_Plex_Sans_Arabic({
 });
 const notoKufi = Noto_Kufi_Arabic({ variable: "--font-noto-kufi", subsets: ["arabic"], preload: false });
 
-const fontVariables = [sourceSans, libreFranklin, cairo, inter, ibmPlex, tajawal, ibmPlexArabic, notoKufi]
+const fontVariables = [geist, sourceSans, libreFranklin, cairo, inter, ibmPlex, tajawal, ibmPlexArabic, notoKufi]
   .map((font) => font.variable)
   .join(" ");
 

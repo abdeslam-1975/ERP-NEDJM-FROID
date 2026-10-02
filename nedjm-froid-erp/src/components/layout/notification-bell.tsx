@@ -44,7 +44,7 @@ export function NotificationBell({ initial }: { initial: NotificationRow[] }) {
         type="button"
         onClick={toggle}
         aria-label={unread ? `Notifications (${unread} non lues)` : "Notifications"}
-        className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface text-foreground/70 shadow-[var(--card-shadow)] transition hover:text-brand"
+        className="relative flex h-10 w-10 items-center justify-center rounded-xl text-foreground/60 transition hover:bg-brand/[0.08] hover:text-brand"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
           <path
@@ -56,7 +56,7 @@ export function NotificationBell({ initial }: { initial: NotificationRow[] }) {
           />
         </svg>
         {unread ? (
-          <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-red-600 px-1 text-center text-[11px] font-bold leading-5 text-white">
+          <span className="absolute top-1 right-1 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[10px] leading-4 font-bold text-white ring-2 ring-surface">
             {unread > 9 ? "9+" : unread}
           </span>
         ) : null}
