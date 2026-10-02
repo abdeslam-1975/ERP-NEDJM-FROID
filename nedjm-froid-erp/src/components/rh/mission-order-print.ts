@@ -102,7 +102,7 @@ function fontFace(origin: string, family: string, file: string, weight: string, 
 }
 
 /** Fonts served by the app itself so printing and archived copies work offline. */
-function plexFontFaces(origin: string) {
+export function plexFontFaces(origin: string) {
   return [
     fontFace(origin, "IBM Plex Sans", "ibm-plex-sans-latin.woff2", "400 600", RANGE_LATIN),
     fontFace(origin, "IBM Plex Sans", "ibm-plex-sans-latin-ext.woff2", "400 600", RANGE_LATIN_EXT),
@@ -118,12 +118,12 @@ function cairoFontFaces(origin: string) {
   return fontFace(origin, "Cairo", "cairo-arabic-700.woff2", "700", RANGE_ARABIC);
 }
 
-function naskhFontFaces(origin: string) {
+export function naskhFontFaces(origin: string) {
   return fontFace(origin, "Noto Naskh Arabic", "noto-naskh-arabic-700.woff2", "700", RANGE_ARABIC);
 }
 
 /** One span per letter so the line can be spread to the Arabic title's width. */
-function spreadLetters(value: string) {
+export function spreadLetters(value: string) {
   return Array.from(value)
     .map((char) => `<span>${char === " " ? "&nbsp;" : escapeHtml(char)}</span>`)
     .join("");
