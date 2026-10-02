@@ -46,7 +46,31 @@ async function loadSource(
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (!ctr) return { ok: false, error: "Contrat introuvable." };
-  const fiche = await getHrEmployeeFiche(ctr.employee_id);
+  const employee = await loadEmployee(supabase, ctr.employee_id);
+  if (!employee.ok) return employee;
+  return {
+    ok: true,
+    data: {
+      contract_number: ctr.contract_number,
+      contract_type_code: ctr.contract_type_code,
+      poste_ar: ctr.poste_ar,
+      poste_fr: ctr.poste_fr,
+      start_date: String(ctr.start_date),
+      end_date: ctr.end_date ? String(ctr.end_date) : null,
+      salaire_net_ref_monthly: ctr.salaire_net_ref_monthly == null ? null : Number(ctr.salaire_net_ref_monthly),
+      salaire_net_recup_monthly:
+        ctr.salaire_net_recup_monthly == null ? null : Number(ctr.salaire_net_recup_monthly),
+      print_data: (ctr.print_data ?? {}) as Record<string, unknown>,
+      employee: employee.data,
+    },
+  };
+}
+
+async function loadEmployee(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  employeeId: string,
+): Promise<ActionResult<ContractPrintSource["employee"]>> {
+  const fiche = await getHrEmployeeFiche(employeeId);
   if (!fiche.ok) return fiche;
   const e = fiche.data;
   let maritalAr: string | null = null;
@@ -66,37 +90,92 @@ async function loadSource(
   return {
     ok: true,
     data: {
-      contract_number: ctr.contract_number,
-      contract_type_code: ctr.contract_type_code,
-      poste_ar: ctr.poste_ar,
-      poste_fr: ctr.poste_fr,
-      start_date: String(ctr.start_date),
-      end_date: ctr.end_date ? String(ctr.end_date) : null,
-      salaire_net_ref_monthly: ctr.salaire_net_ref_monthly == null ? null : Number(ctr.salaire_net_ref_monthly),
-      salaire_net_recup_monthly:
-        ctr.salaire_net_recup_monthly == null ? null : Number(ctr.salaire_net_recup_monthly),
-      print_data: (ctr.print_data ?? {}) as Record<string, unknown>,
-      employee: {
-        matricule: e.matricule,
-        last_name: e.last_name,
-        first_name: e.first_name,
-        last_name_ar: e.last_name_ar,
-        first_name_ar: e.first_name_ar,
-        birth_date: e.birth_date,
-        birth_place_ar: e.birth_place_ar,
-        birth_place_fr: e.birth_place_fr,
-        father_name: e.father_name,
-        mother_name: e.mother_name,
-        marital_label_ar: maritalAr,
-        id_type_code: attr("id_type_code"),
-        id_number: attr("id_number"),
-        id_issued_on: attr("id_issued_on"),
-        id_issued_by: attr("id_issued_by"),
-        address_ar: e.address_ar,
-        address_fr: e.address_fr,
-      },
+      matricule: e.matricule,
+      last_name: e.last_name,
+      first_name: e.first_name,
+      last_name_ar: e.last_name_ar,
+      first_name_ar: e.first_name_ar,
+      birth_date: e.birth_date,
+      birth_place_ar: e.birth_place_ar,
+      birth_place_fr: e.birth_place_fr,
+      father_name: e.father_name,
+      mother_name: e.mother_name,
+      marital_label_ar: maritalAr,
+      id_type_code: attr("id_type_code"),
+      id_number: attr("id_number"),
+      id_issued_on: attr("id_issued_on"),
+      id_issued_by: attr("id_issued_by"),
+      address_ar: e.address_ar,
+      address_fr: e.address_fr,
     },
   };
+}
+
+export type ContractPreviewContext = {
+  employee: ContractPrintSource["employee"] | null;
+  contract_number: string | null;
+  print_data: Record<string, unknown>;
+  template: ContractTemplate;
+};
+
+/** What the contract form needs to draw the document live, before or after the contract is saved. */
+export async function getContractPreviewContext(input: {
+  employee_id: string | null;
+  contract_id: string | null;
+}): Promise<ActionResult<ContractPreviewContext>> {
+  const uuid = z.string().uuid();
+  if (input.employee_id && !uuid.safeParse(input.employee_id).success) return { ok: false, error: "Employé invalide." };
+  if (input.contract_id && !uuid.safeParse(input.contract_id).success) return { ok: false, error: "Contrat invalide." };
+  const supabase = await createClient();
+  const [employee, contract, template] = await Promise.all([
+    input.employee_id ? loadEmployee(supabase, input.employee_id) : null,
+    input.contract_id
+      ? supabase.from("hr_contracts").select("contract_number, print_data").eq("id", input.contract_id).maybeSingle()
+      : null,
+    loadTemplate(supabase),
+  ]);
+  if (employee && !employee.ok) return employee;
+  if (contract?.error) return { ok: false, error: contract.error.message };
+  if (!template.ok) return template;
+  return {
+    ok: true,
+    data: {
+      employee: employee?.data ?? null,
+      contract_number: contract?.data?.contract_number ?? null,
+      print_data: (contract?.data?.print_data ?? {}) as Record<string, unknown>,
+      template: template.data,
+    },
+  };
+}
+
+/** Daily deduction for an unjustified absence, printed in the contract (print_data.retenue). */
+export async function saveContractRetenue(input: { contract_id: string; retenue: string }): Promise<ActionResult> {
+  if (!z.string().uuid().safeParse(input.contract_id).success) return { ok: false, error: "Contrat invalide." };
+  const retenue = input.retenue.trim().replace(",", ".");
+  if (retenue && !/^\d{1,9}(\.\d{1,2})?$/.test(retenue)) {
+    return { ok: false, error: "Retenue / jour d'absence : saisissez un montant en DA." };
+  }
+  const supabase = await createClient();
+  const { data: ctr, error } = await supabase
+    .from("hr_contracts")
+    .select("print_data")
+    .eq("id", input.contract_id)
+    .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!ctr) return { ok: false, error: "Contrat introuvable." };
+  const print_data = { ...((ctr.print_data ?? {}) as Record<string, unknown>) };
+  if (retenue) print_data.retenue = retenue;
+  else delete print_data.retenue;
+  const { data: saved, error: saveErr } = await supabase
+    .from("hr_contracts")
+    .update({ print_data })
+    .eq("id", input.contract_id)
+    .select("id")
+    .maybeSingle();
+  if (saveErr) return { ok: false, error: saveErr.message };
+  if (!saved) return { ok: false, error: "Modification du contrat non autorisée." };
+  revalidatePath("/rh/contrats");
+  return { ok: true, data: undefined };
 }
 
 export async function getContractPrintContext(

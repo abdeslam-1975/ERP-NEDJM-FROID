@@ -1,10 +1,13 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Briefcase,
+  Eye,
+  EyeOff,
   FileSignature,
+  FileText,
   Landmark,
   ListChecks,
   MapPin,
@@ -23,7 +26,14 @@ import { getContractCompliance, type ContractComplianceOptions } from "@/lib/act
 import type { HrEmployeeRow } from "@/lib/actions/hr-employees";
 import type { SalaryAssignment, SalaryRubrique } from "@/lib/actions/hr-salary";
 import type { PosteRow } from "@/lib/actions/hr-postes";
+import {
+  getContractPreviewContext,
+  saveContractRetenue,
+  type ContractPreviewContext,
+} from "@/lib/actions/hr-contract-print";
 import { contractTypeAllowsFixedIrg } from "@/lib/hr/compliance";
+import { contractPrintDefaults, type ContractPrintSource } from "@/lib/hr/work-contract";
+import { buildWorkContractHtml } from "@/components/rh/work-contract-print";
 import { gridAsOf } from "@/lib/hr/payroll-calc";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
@@ -62,6 +72,28 @@ const STATUS_OPTIONS = [
   { value: "SUSPENDED", label: "Suspendu", dot: "bg-amber-500", tone: "warning" },
   { value: "ENDED", label: "Clôturé", dot: "bg-red-500", tone: "danger" },
 ] as const;
+
+const EMPTY_PRINT_EMPLOYEE: ContractPrintSource["employee"] = {
+  matricule: "",
+  last_name: "",
+  first_name: "",
+  last_name_ar: null,
+  first_name_ar: null,
+  birth_date: null,
+  birth_place_ar: null,
+  birth_place_fr: null,
+  father_name: null,
+  mother_name: null,
+  marital_label_ar: null,
+  id_type_code: null,
+  id_number: null,
+  id_issued_on: null,
+  id_issued_by: null,
+  address_ar: null,
+  address_fr: null,
+};
+
+const RETENUE_PATTERN = /^\d{1,9}([.,]\d{1,2})?$/;
 
 function statusOption(status: string) {
   return STATUS_OPTIONS.find((s) => s.value === status) ?? STATUS_OPTIONS[0];
@@ -142,6 +174,8 @@ type FormState = {
   start_date: string;
   end_date: string;
   status: "DRAFT" | "ACTIVE" | "SUSPENDED" | "ENDED";
+  /** Daily deduction for an unjustified absence, printed in the contract. */
+  retenue: string;
 };
 
 const emptyForm = (): FormState => ({
@@ -165,6 +199,7 @@ const emptyForm = (): FormState => ({
   start_date: "",
   end_date: "",
   status: "DRAFT",
+  retenue: "",
 });
 
 export function ContractsManager({
@@ -212,7 +247,61 @@ export function ContractsManager({
   const [info, setInfo] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [printId, setPrintId] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(true);
+  const [preview, setPreview] = useState<(ContractPreviewContext & { key: string }) | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  /** Retenue saved on the contract; null until it is known for an existing contract. */
+  const [retenueBase, setRetenueBase] = useState<string | null>("");
   const jobs = useMemo(() => catalogOptions(catalogs, "job_title"), [catalogs]);
+
+  const previewEmployee = open ? form.employee_id : "";
+  const previewContract = open ? (form.id ?? "") : "";
+  const previewKey = `${previewEmployee}|${previewContract}`;
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    getContractPreviewContext({
+      employee_id: previewEmployee || null,
+      contract_id: previewContract || null,
+    }).then((r) => {
+      if (cancelled) return;
+      if (!r.ok) {
+        setPreviewError(r.error);
+        return;
+      }
+      setPreviewError(null);
+      setPreview({ ...r.data, key: `${previewEmployee}|${previewContract}` });
+      if (previewContract) {
+        const saved = typeof r.data.print_data.retenue === "string" ? r.data.print_data.retenue : "";
+        setRetenueBase(saved);
+        setForm((f) => (f.id === previewContract && !f.retenue ? { ...f, retenue: saved } : f));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, previewEmployee, previewContract]);
+
+  const previewHtml = useMemo(() => {
+    if (!open || !preview) return "";
+    const current = preview.key === previewKey;
+    const values = contractPrintDefaults({
+      contract_number: current ? preview.contract_number : null,
+      contract_type_code: form.contract_type_code || null,
+      poste_ar: form.poste_ar || null,
+      poste_fr: form.poste_fr || null,
+      start_date: form.start_date,
+      end_date: form.end_date || null,
+      salaire_net_ref_monthly: form.salaire_net_ref_monthly ? Number(form.salaire_net_ref_monthly) : null,
+      salaire_net_recup_monthly: form.salaire_net_recup_monthly ? Number(form.salaire_net_recup_monthly) : null,
+      print_data: { ...(current ? preview.print_data : {}), retenue: form.retenue.trim() },
+      employee: (current && preview.employee) || EMPTY_PRINT_EMPLOYEE,
+    });
+    return buildWorkContractHtml(values, preview.template).replace(
+      "</head>",
+      "<style>@media screen { body { padding: 28px 34px; } }</style></head>",
+    );
+  }, [open, preview, previewKey, form]);
   const employeeOptions = useMemo(
     () =>
       employees.map((e) => ({
@@ -238,6 +327,7 @@ export function ContractsManager({
     setSelectedLines(lines);
     setLegal(emptyLegalChoice());
     setLegalBase(next.id ? null : { choice: emptyLegalChoice(), overrides: { IRG: null, CACOBATPH: null } });
+    setRetenueBase(next.id ? null : "");
     setError(null);
     setOpen(true);
     openedId.current = next.id;
@@ -303,6 +393,7 @@ export function ContractsManager({
         start_date: row.start_date,
         end_date: row.end_date ?? "",
         status: row.status as FormState["status"],
+        retenue: "",
       },
       linesForContract(row.id, row.employee_id),
     );
@@ -319,7 +410,7 @@ export function ContractsManager({
   const selectedEmployee = employees.find((e) => e.id === form.employee_id);
   const selectedSite = sites.find((s) => s.id === form.site_id);
 
-  function submit() {
+  function submit(thenPrint = false) {
     setError(null);
     if (!form.employee_id) {
       setError(bi("Choisissez l'employé.", "اختر العامل."));
@@ -340,6 +431,10 @@ export function ContractsManager({
     }
     if (!form.start_date) {
       setError(bi("Date de début obligatoire.", "أدخل تاريخ بداية العقد."));
+      return;
+    }
+    if (form.retenue.trim() && !RETENUE_PATTERN.test(form.retenue.trim())) {
+      setError("Retenue / jour d'absence : saisissez un montant en DA.");
       return;
     }
     if (form.id && !legalBase) {
@@ -451,6 +546,17 @@ export function ContractsManager({
         });
         return [...kept, ...added];
       });
+      const retenue = form.retenue.trim();
+      if (retenueBase === null ? retenue !== "" : retenue !== retenueBase) {
+        const saved = await saveContractRetenue({ contract_id: done.id, retenue });
+        if (!saved.ok) {
+          setForm((f) => ({ ...f, id: done.id }));
+          openedId.current = done.id;
+          setError(`Contrat enregistré, mais la retenue / jour d'absence ne l'a pas été : ${saved.error}`);
+          return;
+        }
+        setRetenueBase(retenue);
+      }
       if (canEditCompliance && legalBase) {
         const thisMonth = firstOfMonth();
         const legalErrors = await saveLegalChoice({
@@ -471,6 +577,7 @@ export function ContractsManager({
         }
       }
       setOpen(false);
+      if (thenPrint) setPrintId(done.id);
       const saved = done.closed_previous
         ? bi(
             "Contrat enregistré. L'ancien contrat principal a été clôturé la veille.",
@@ -594,389 +701,444 @@ export function ContractsManager({
           onClose={() => setOpen(false)}
           footer={
             <>
-              {form.id ? (
-                <Button variant="secondary" onClick={() => setPrintId(form.id ?? null)}>
-                  <Printer aria-hidden />
-                  {bi("Imprimer le contrat", "طباعة العقد")}
-                </Button>
-              ) : null}
+              <Button
+                variant="ghost"
+                className="hidden lg:inline-flex"
+                onClick={() => setShowPreview((v) => !v)}
+              >
+                {showPreview ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
+                {showPreview ? "Masquer l'aperçu" : "Afficher l'aperçu"}
+              </Button>
               {error ? (
                 <span role="alert" className="mr-auto max-w-xl text-xs font-semibold text-alert-critical">
                   {error}
                 </span>
-              ) : null}
+              ) : (
+                <span className="mr-auto" />
+              )}
               <Button variant="secondary" onClick={() => setOpen(false)}>
                 {bi("Annuler", "إلغاء")}
               </Button>
-              <Button disabled={pending} onClick={submit}>
+              <Button
+                variant="secondary"
+                disabled={pending}
+                title="Enregistre le contrat puis ouvre l'aperçu d'impression"
+                onClick={() => submit(true)}
+              >
+                <Printer aria-hidden />
+                {bi("Aperçu et impression", "معاينة وطباعة")}
+              </Button>
+              <Button disabled={pending} onClick={() => submit()}>
                 <Save aria-hidden />
                 {pending ? bi("Enregistrement…", "جارٍ الحفظ…") : bi("Enregistrer", "حفظ")}
               </Button>
             </>
           }
         >
-          <div className="mx-auto grid max-w-[92rem] gap-4 p-1 sm:p-2 lg:grid-cols-2 lg:items-start">
-            <div className="space-y-4">
-              <FormSection
-                icon={MapPin}
-                title="Employé, affectation et poste"
-                description="Qui, où, pour quelle activité et à quel poste."
-              >
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="sm:col-span-2">
-                    <RhField label={bi("Employé", "العامل")} required>
-                      <Combobox
-                        options={employeeOptions}
-                        value={form.employee_id}
-                        onChange={(v) => setForm({ ...form, employee_id: v })}
-                        placeholder="Choisir l'employé…"
-                        searchPlaceholder="Matricule, nom ou prénom…"
-                        emptyText="Aucun employé trouvé"
-                      />
-                    </RhField>
-                    {openPrincipal ? (
-                      <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
-                        {bi(
-                          `Contrat principal déjà ouvert (début ${openPrincipal.start_date.split("-").reverse().join("/")}).`,
-                          "لهذا العامل عقد رئيسي مفتوح.",
-                        )}
-                        <button
-                          type="button"
-                          className="font-semibold text-brand underline"
-                          onClick={() => openRow(openPrincipal)}
-                        >
-                          {bi("Ouvrir ce contrat", "فتح هذا العقد")}
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                  <RhField
-                    label={bi("Affectation", "التعيين")}
-                    required
-                    hint={form.id ? "Affectation en vigueur : elle ne se modifie pas depuis le contrat." : undefined}
-                  >
-                    <select
-                      className={rhInput}
-                      value={form.site_id}
-                      disabled={Boolean(form.id)}
-                      onChange={(e) => {
-                        const nextSite = sites.find((s) => s.id === e.target.value);
-                        setForm({
-                          ...form,
-                          site_id: e.target.value,
-                          activity_code_id: nextSite?.activity_code_id || form.activity_code_id,
-                        });
-                      }}
-                    >
-                      <option value="">—</option>
-                      {sites.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name_fr}
-                        </option>
-                      ))}
-                    </select>
-                  </RhField>
-                  <RhField
-                    label={bi("Activité", "النشاط")}
-                    required
-                    hint={
-                      activities.length === 0
-                        ? "Aucun code d'activité : ajoutez-en dans Référentiels › Codes d'activité."
-                        : undefined
-                    }
-                  >
-                    <select
-                      className={rhInput}
-                      value={form.activity_code_id}
-                      onChange={(e) => setForm({ ...form, activity_code_id: e.target.value })}
-                    >
-                      <option value="">—</option>
-                      {activities.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.code} · {a.label_fr}
-                        </option>
-                      ))}
-                    </select>
-                  </RhField>
-                  <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border/70 bg-surface-muted/40 px-3.5 py-2.5 sm:col-span-2">
-                    <span>
-                      <span className="block text-sm font-medium text-foreground">
-                        {bi("Affectation principale", "التعيين الرئيسي")}
-                      </span>
-                      <span className="block text-xs text-foreground/65">
-                        Un seul contrat principal ouvert par employé.
-                      </span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      className="peer sr-only"
-                      checked={form.affectation_principale}
-                      onChange={(e) => setForm({ ...form, affectation_principale: e.target.checked })}
-                    />
-                    <span className="relative h-5 w-9 shrink-0 rounded-full bg-border transition-colors after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-brand peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40" />
-                  </label>
-                </div>
-                <div className="mt-6 mb-4 flex items-center gap-2 text-[13px] font-semibold tracking-wide text-foreground/80 uppercase">
-                  <Briefcase className="size-4 text-brand" aria-hidden />
-                  Poste
-                  <span className="h-px flex-1 bg-border/70" />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <RhField label={bi("Poste (liste)", "المنصب (قائمة)")}>
-                    <select
-                      className={rhInput}
-                      value={form.qualification_code}
-                      onChange={(e) => {
-                        const job = jobs.find((j) => j.code === e.target.value);
-                        setForm({
-                          ...form,
-                          qualification_code: e.target.value,
-                          poste_fr: job?.label_fr ?? form.poste_fr,
-                          poste_ar: job?.label_ar ?? form.poste_ar,
-                        });
-                      }}
-                    >
-                      <option value="">—</option>
-                      {jobs.map((j) => (
-                        <option key={j.code} value={j.code}>
-                          {j.label_fr === j.label_ar ? j.label_fr : `${j.label_fr} — ${j.label_ar}`}
-                        </option>
-                      ))}
-                    </select>
-                  </RhField>
-                  {postes.length ? (
-                    <>
-                      <RhField label={bi("Poste (référentiel)", "المنصب (المرجع)")}>
-                        <select
-                          className={rhInput}
-                          value={form.poste_id}
-                          onChange={(e) => {
-                            const p = postes.find((x) => x.id === e.target.value);
-                            setForm({
-                              ...form,
-                              poste_id: e.target.value,
-                              poste_fr: p?.label_fr ?? form.poste_fr,
-                              poste_ar: p?.label_ar ?? form.poste_ar,
-                              grade: form.grade || (p?.grid[0]?.grade ?? ""),
-                            });
-                          }}
-                        >
-                          <option value="">—</option>
-                          {postes
-                            .filter((p) => p.is_active || p.id === form.poste_id)
-                            .map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.code} · {p.label_fr}
-                              </option>
-                            ))}
-                        </select>
-                      </RhField>
-                      <RhField
-                        label={bi("Grade / échelon", "الدرجة")}
-                        hint={
-                          gridSuggestion
-                            ? `Grille : ${gridSuggestion.base_monthly.toLocaleString("fr-DZ")} DA`
-                            : form.poste_id
-                              ? "Pas de grille pour ce grade"
-                              : undefined
-                        }
-                      >
-                        <div className="flex gap-2">
-                          <input
-                            className={rhInput}
-                            value={form.grade}
-                            onChange={(e) => setForm({ ...form, grade: e.target.value.toUpperCase() })}
-                          />
-                          {gridSuggestion && Number(form.salaire_base_monthly) !== gridSuggestion.base_monthly ? (
-                            <Button
-                              variant="secondary"
-                              className="mt-1.5 shrink-0"
-                              onClick={() =>
-                                setForm({
-                                  ...form,
-                                  salaire_base_monthly: String(gridSuggestion.base_monthly),
-                                  salaire_net_ref_monthly:
-                                    gridSuggestion.net_ref_monthly != null
-                                      ? String(gridSuggestion.net_ref_monthly)
-                                      : form.salaire_net_ref_monthly,
-                                })
-                              }
-                            >
-                              {bi("Appliquer", "تطبيق")}
-                            </Button>
-                          ) : null}
-                        </div>
-                      </RhField>
-                    </>
-                  ) : null}
-                  <RhField label={bi("Intitulé (français)", "المنصب FR")}>
-                    <input
-                      className={rhInput}
-                      value={form.poste_fr}
-                      onChange={(e) => setForm({ ...form, poste_fr: e.target.value })}
-                    />
-                  </RhField>
-                  <RhField label={bi("Intitulé (arabe)", "المنصب")}>
-                    <input
-                      dir="rtl"
-                      className={rhInput}
-                      value={form.poste_ar}
-                      onChange={(e) => setForm({ ...form, poste_ar: e.target.value })}
-                    />
-                  </RhField>
-                </div>
-              </FormSection>
-
-              <FormSection icon={FileSignature} title="Contrat" description="Type, régime de travail, période et statut.">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <RhField label={bi("Type de contrat", "نوع العقد")}>
-                    <CatalogSelect
-                      items={catalogs}
-                      kind="contract_type"
-                      value={form.contract_type_code}
-                      onChange={(v) => setForm({ ...form, contract_type_code: v })}
-                    />
-                  </RhField>
-                  <WorkRegimeField
-                    catalogs={catalogs}
-                    value={form.work_regime_code}
-                    onChange={(v) => setForm((f) => ({ ...f, work_regime_code: v }))}
-                    onCatalogsChange={setCatalogs}
-                    canManage={isSuperAdmin}
-                  />
-                  {form.contract_type_code === "INTERIM" ? (
-                    <>
-                      <RhField
-                        label="Agence d'intérim"
-                        hint="Intérimaire : présent au pointage, hors paie, facturé par l'agence"
-                      >
-                        <select
-                          className={rhInput}
-                          value={form.agency_id}
-                          onChange={(e) => setForm({ ...form, agency_id: e.target.value })}
-                        >
-                          <option value="">—</option>
-                          {agencies.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.label}
-                            </option>
-                          ))}
-                        </select>
-                      </RhField>
-                      <RhField
-                        label="Taux journalier facturé"
-                        hint={`Vide = taux de l'agence (${agencies.find((a) => a.id === form.agency_id)?.default_daily_rate ?? 0} DA)`}
-                      >
-                        <MoneyInput
-                          value={form.interim_daily_rate}
-                          onChange={(v) => setForm({ ...form, interim_daily_rate: v })}
+          <div
+            className={`grid gap-4 p-1 sm:p-2 ${showPreview ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] lg:items-start" : ""}`}
+          >
+            <div className={showPreview ? "space-y-4" : "grid gap-4 lg:grid-cols-2 lg:items-start"}>
+              <div className="space-y-4">
+                <FormSection
+                  icon={MapPin}
+                  title="Employé, affectation et poste"
+                  description="Qui, où, pour quelle activité et à quel poste."
+                >
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="sm:col-span-2">
+                      <RhField label={bi("Employé", "العامل")} required>
+                        <Combobox
+                          options={employeeOptions}
+                          value={form.employee_id}
+                          onChange={(v) => setForm({ ...form, employee_id: v })}
+                          placeholder="Choisir l'employé…"
+                          searchPlaceholder="Matricule, nom ou prénom…"
+                          emptyText="Aucun employé trouvé"
                         />
                       </RhField>
-                    </>
-                  ) : null}
-                  <RhField label={bi("Début (1er du mois)", "البداية (أول الشهر)")} required>
-                    <input
-                      type="date"
-                      className={rhInput}
-                      value={form.start_date}
-                      onChange={(e) => setForm({ ...form, start_date: e.target.value })}
-                    />
-                  </RhField>
-                  <RhField label={bi("Fin", "النهاية")} hint="Vide = durée indéterminée">
-                    <input
-                      type="date"
-                      className={rhInput}
-                      value={form.end_date}
-                      onChange={(e) => setForm({ ...form, end_date: e.target.value })}
-                    />
-                  </RhField>
-                  <div className="sm:col-span-2">
-                    <span className="text-[13px] font-semibold text-foreground/85">{bi("Statut", "الحالة")}</span>
-                    <div
-                      role="radiogroup"
-                      aria-label="Statut"
-                      className="mt-1.5 grid grid-cols-2 gap-1 rounded-xl border border-border/70 bg-surface-muted/60 p-1 sm:grid-cols-4"
-                    >
-                      {STATUS_OPTIONS.map((s) => {
-                        const active = form.status === s.value;
-                        return (
+                      {openPrincipal ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
+                          {bi(
+                            `Contrat principal déjà ouvert (début ${openPrincipal.start_date.split("-").reverse().join("/")}).`,
+                            "لهذا العامل عقد رئيسي مفتوح.",
+                          )}
                           <button
-                            key={s.value}
                             type="button"
-                            role="radio"
-                            aria-checked={active}
-                            onClick={() => setForm({ ...form, status: s.value })}
-                            className={`flex h-9 items-center justify-center gap-2 rounded-lg text-[13px] font-semibold transition ${
-                              active
-                                ? "bg-surface text-foreground shadow-sm ring-1 ring-border/70"
-                                : "text-foreground/70 hover:text-foreground"
-                            }`}
+                            className="font-semibold text-brand underline"
+                            onClick={() => openRow(openPrincipal)}
                           >
-                            <span className={`size-2 rounded-full ${s.dot}`} aria-hidden />
-                            {s.label}
+                            {bi("Ouvrir ce contrat", "فتح هذا العقد")}
                           </button>
-                        );
-                      })}
+                        </div>
+                      ) : null}
+                    </div>
+                    <RhField
+                      label={bi("Affectation", "التعيين")}
+                      required
+                      hint={form.id ? "Affectation en vigueur : elle ne se modifie pas depuis le contrat." : undefined}
+                    >
+                      <select
+                        className={rhInput}
+                        value={form.site_id}
+                        disabled={Boolean(form.id)}
+                        onChange={(e) => {
+                          const nextSite = sites.find((s) => s.id === e.target.value);
+                          setForm({
+                            ...form,
+                            site_id: e.target.value,
+                            activity_code_id: nextSite?.activity_code_id || form.activity_code_id,
+                          });
+                        }}
+                      >
+                        <option value="">—</option>
+                        {sites.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name_fr}
+                          </option>
+                        ))}
+                      </select>
+                    </RhField>
+                    <RhField
+                      label={bi("Activité", "النشاط")}
+                      required
+                      hint={
+                        activities.length === 0
+                          ? "Aucun code d'activité : ajoutez-en dans Référentiels › Codes d'activité."
+                          : undefined
+                      }
+                    >
+                      <select
+                        className={rhInput}
+                        value={form.activity_code_id}
+                        onChange={(e) => setForm({ ...form, activity_code_id: e.target.value })}
+                      >
+                        <option value="">—</option>
+                        {activities.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.code} · {a.label_fr}
+                          </option>
+                        ))}
+                      </select>
+                    </RhField>
+                    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border/70 bg-surface-muted/40 px-3.5 py-2.5 sm:col-span-2">
+                      <span>
+                        <span className="block text-sm font-medium text-foreground">
+                          {bi("Affectation principale", "التعيين الرئيسي")}
+                        </span>
+                        <span className="block text-xs text-foreground/65">
+                          Un seul contrat principal ouvert par employé.
+                        </span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        className="peer sr-only"
+                        checked={form.affectation_principale}
+                        onChange={(e) => setForm({ ...form, affectation_principale: e.target.checked })}
+                      />
+                      <span className="relative h-5 w-9 shrink-0 rounded-full bg-border transition-colors after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-brand peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40" />
+                    </label>
+                  </div>
+                  <div className="mt-6 mb-4 flex items-center gap-2 text-[13px] font-semibold tracking-wide text-foreground/80 uppercase">
+                    <Briefcase className="size-4 text-brand" aria-hidden />
+                    Poste
+                    <span className="h-px flex-1 bg-border/70" />
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <RhField label={bi("Poste (liste)", "المنصب (قائمة)")}>
+                      <select
+                        className={rhInput}
+                        value={form.qualification_code}
+                        onChange={(e) => {
+                          const job = jobs.find((j) => j.code === e.target.value);
+                          setForm({
+                            ...form,
+                            qualification_code: e.target.value,
+                            poste_fr: job?.label_fr ?? form.poste_fr,
+                            poste_ar: job?.label_ar ?? form.poste_ar,
+                          });
+                        }}
+                      >
+                        <option value="">—</option>
+                        {jobs.map((j) => (
+                          <option key={j.code} value={j.code}>
+                            {j.label_fr === j.label_ar ? j.label_fr : `${j.label_fr} — ${j.label_ar}`}
+                          </option>
+                        ))}
+                      </select>
+                    </RhField>
+                    {postes.length ? (
+                      <>
+                        <RhField label={bi("Poste (référentiel)", "المنصب (المرجع)")}>
+                          <select
+                            className={rhInput}
+                            value={form.poste_id}
+                            onChange={(e) => {
+                              const p = postes.find((x) => x.id === e.target.value);
+                              setForm({
+                                ...form,
+                                poste_id: e.target.value,
+                                poste_fr: p?.label_fr ?? form.poste_fr,
+                                poste_ar: p?.label_ar ?? form.poste_ar,
+                                grade: form.grade || (p?.grid[0]?.grade ?? ""),
+                              });
+                            }}
+                          >
+                            <option value="">—</option>
+                            {postes
+                              .filter((p) => p.is_active || p.id === form.poste_id)
+                              .map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.code} · {p.label_fr}
+                                </option>
+                              ))}
+                          </select>
+                        </RhField>
+                        <RhField
+                          label={bi("Grade / échelon", "الدرجة")}
+                          hint={
+                            gridSuggestion
+                              ? `Grille : ${gridSuggestion.base_monthly.toLocaleString("fr-DZ")} DA`
+                              : form.poste_id
+                                ? "Pas de grille pour ce grade"
+                                : undefined
+                          }
+                        >
+                          <div className="flex gap-2">
+                            <input
+                              className={rhInput}
+                              value={form.grade}
+                              onChange={(e) => setForm({ ...form, grade: e.target.value.toUpperCase() })}
+                            />
+                            {gridSuggestion && Number(form.salaire_base_monthly) !== gridSuggestion.base_monthly ? (
+                              <Button
+                                variant="secondary"
+                                className="mt-1.5 shrink-0"
+                                onClick={() =>
+                                  setForm({
+                                    ...form,
+                                    salaire_base_monthly: String(gridSuggestion.base_monthly),
+                                    salaire_net_ref_monthly:
+                                      gridSuggestion.net_ref_monthly != null
+                                        ? String(gridSuggestion.net_ref_monthly)
+                                        : form.salaire_net_ref_monthly,
+                                  })
+                                }
+                              >
+                                {bi("Appliquer", "تطبيق")}
+                              </Button>
+                            ) : null}
+                          </div>
+                        </RhField>
+                      </>
+                    ) : null}
+                    <RhField label={bi("Intitulé (français)", "المنصب FR")}>
+                      <input
+                        className={rhInput}
+                        value={form.poste_fr}
+                        onChange={(e) => setForm({ ...form, poste_fr: e.target.value })}
+                      />
+                    </RhField>
+                    <RhField label={bi("Intitulé (arabe)", "المنصب")}>
+                      <input
+                        dir="rtl"
+                        className={rhInput}
+                        value={form.poste_ar}
+                        onChange={(e) => setForm({ ...form, poste_ar: e.target.value })}
+                      />
+                    </RhField>
+                  </div>
+                </FormSection>
+
+                <FormSection icon={FileSignature} title="Contrat" description="Type, régime de travail, période et statut.">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <RhField label={bi("Type de contrat", "نوع العقد")}>
+                      <CatalogSelect
+                        items={catalogs}
+                        kind="contract_type"
+                        value={form.contract_type_code}
+                        onChange={(v) => setForm({ ...form, contract_type_code: v })}
+                      />
+                    </RhField>
+                    <WorkRegimeField
+                      catalogs={catalogs}
+                      value={form.work_regime_code}
+                      onChange={(v) => setForm((f) => ({ ...f, work_regime_code: v }))}
+                      onCatalogsChange={setCatalogs}
+                      canManage={isSuperAdmin}
+                    />
+                    {form.contract_type_code === "INTERIM" ? (
+                      <>
+                        <RhField
+                          label="Agence d'intérim"
+                          hint="Intérimaire : présent au pointage, hors paie, facturé par l'agence"
+                        >
+                          <select
+                            className={rhInput}
+                            value={form.agency_id}
+                            onChange={(e) => setForm({ ...form, agency_id: e.target.value })}
+                          >
+                            <option value="">—</option>
+                            {agencies.map((a) => (
+                              <option key={a.id} value={a.id}>
+                                {a.label}
+                              </option>
+                            ))}
+                          </select>
+                        </RhField>
+                        <RhField
+                          label="Taux journalier facturé"
+                          hint={`Vide = taux de l'agence (${agencies.find((a) => a.id === form.agency_id)?.default_daily_rate ?? 0} DA)`}
+                        >
+                          <MoneyInput
+                            value={form.interim_daily_rate}
+                            onChange={(v) => setForm({ ...form, interim_daily_rate: v })}
+                          />
+                        </RhField>
+                      </>
+                    ) : null}
+                    <RhField label={bi("Début (1er du mois)", "البداية (أول الشهر)")} required>
+                      <input
+                        type="date"
+                        className={rhInput}
+                        value={form.start_date}
+                        onChange={(e) => setForm({ ...form, start_date: e.target.value })}
+                      />
+                    </RhField>
+                    <RhField label={bi("Fin", "النهاية")} hint="Vide = durée indéterminée">
+                      <input
+                        type="date"
+                        className={rhInput}
+                        value={form.end_date}
+                        onChange={(e) => setForm({ ...form, end_date: e.target.value })}
+                      />
+                    </RhField>
+                    <div className="sm:col-span-2">
+                      <span className="text-[13px] font-semibold text-foreground/85">{bi("Statut", "الحالة")}</span>
+                      <div
+                        role="radiogroup"
+                        aria-label="Statut"
+                        className="mt-1.5 grid grid-cols-2 gap-1 rounded-xl border border-border/70 bg-surface-muted/60 p-1 sm:grid-cols-4"
+                      >
+                        {STATUS_OPTIONS.map((s) => {
+                          const active = form.status === s.value;
+                          return (
+                            <button
+                              key={s.value}
+                              type="button"
+                              role="radio"
+                              aria-checked={active}
+                              onClick={() => setForm({ ...form, status: s.value })}
+                              className={`flex h-9 items-center justify-center gap-2 rounded-lg text-[13px] font-semibold transition ${
+                                active
+                                  ? "bg-surface text-foreground shadow-sm ring-1 ring-border/70"
+                                  : "text-foreground/70 hover:text-foreground"
+                              }`}
+                            >
+                              <span className={`size-2 rounded-full ${s.dot}`} aria-hidden />
+                              {s.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </FormSection>
+                </FormSection>
+              </div>
+
+              <div className="space-y-4">
+                <FormSection icon={Wallet} title="Rémunération" description="Montants mensuels et retenue d'absence.">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <RhField label={bi("Salaire de base", "الأجر الأساسي")}>
+                      <MoneyInput
+                        value={form.salaire_base_monthly}
+                        onChange={(v) => setForm({ ...form, salaire_base_monthly: v })}
+                      />
+                    </RhField>
+                    <RhField label={bi("Net chantier", "صافي الميدان")}>
+                      <MoneyInput
+                        value={form.salaire_net_ref_monthly}
+                        onChange={(v) => setForm({ ...form, salaire_net_ref_monthly: v })}
+                      />
+                    </RhField>
+                    <RhField label={bi("Net récupération", "صافي الراحة")}>
+                      <MoneyInput
+                        value={form.salaire_net_recup_monthly}
+                        onChange={(v) => setForm({ ...form, salaire_net_recup_monthly: v })}
+                      />
+                    </RhField>
+                    <RhField
+                      label={bi("Retenue / jour d'absence", "اقتطاع الغياب")}
+                      hint={
+                        form.id && retenueBase === null
+                          ? "Chargement…"
+                          : "Par jour d'absence non justifiée, imprimée dans le contrat"
+                      }
+                    >
+                      <MoneyInput value={form.retenue} onChange={(v) => setForm({ ...form, retenue: v })} />
+                    </RhField>
+                  </div>
+                </FormSection>
+
+                <FormSection
+                  icon={Landmark}
+                  title="Cotisations et impôts"
+                  description="Chaque option affiche ses taux ; les cadres sous chaque champ montrent les taux appliqués."
+                >
+                  <ContractLegalFields
+                    options={complianceOptions}
+                    cnasCode={form.cnas_regime_code}
+                    onCnasChange={(v) => setForm((f) => ({ ...f, cnas_regime_code: v }))}
+                    choice={legal}
+                    onChoiceChange={setLegal}
+                    employeeId={form.employee_id}
+                    employeeIrgCategory={selectedEmployee?.irg_category ?? null}
+                    siteId={form.site_id}
+                    activityId={form.activity_code_id}
+                    showCacobatph={showCacobatph}
+                    allowsFixedIrg={contractTypeAllowsFixedIrg(catalogs, form.contract_type_code)}
+                    canEdit={canEditCompliance}
+                    loading={!legalBase}
+                  />
+                </FormSection>
+
+                <FormSection
+                  icon={ListChecks}
+                  title="Rubriques de salaire"
+                  description="Choisissez par classe, puis réglez le mode et la valeur de chaque rubrique."
+                >
+                  <ContractRubriquesField rubriques={rubriques} selected={selectedLines} onChange={setSelectedLines} />
+                </FormSection>
+              </div>
             </div>
-
-            <div className="space-y-4">
-              <FormSection icon={Wallet} title="Rémunération" description="Montants mensuels.">
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <RhField label={bi("Salaire de base", "الأجر الأساسي")}>
-                    <MoneyInput
-                      value={form.salaire_base_monthly}
-                      onChange={(v) => setForm({ ...form, salaire_base_monthly: v })}
-                    />
-                  </RhField>
-                  <RhField label={bi("Net chantier", "صافي الميدان")}>
-                    <MoneyInput
-                      value={form.salaire_net_ref_monthly}
-                      onChange={(v) => setForm({ ...form, salaire_net_ref_monthly: v })}
-                    />
-                  </RhField>
-                  <RhField label={bi("Net récupération", "صافي الراحة")}>
-                    <MoneyInput
-                      value={form.salaire_net_recup_monthly}
-                      onChange={(v) => setForm({ ...form, salaire_net_recup_monthly: v })}
-                    />
-                  </RhField>
+            {showPreview ? (
+              <aside className="hidden lg:block">
+                <div className="sticky top-0 flex h-[calc(100dvh-11rem)] flex-col overflow-hidden rounded-2xl border border-border/60 bg-surface-muted/70 shadow-[0_1px_3px_rgba(15,23,42,0.05)]">
+                  <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-surface px-4 py-3">
+                    <span className="flex items-center gap-2 font-display text-base font-semibold text-foreground">
+                      <FileText className="size-[18px] text-brand" strokeWidth={1.8} aria-hidden />
+                      Aperçu du contrat
+                    </span>
+                    <span className="text-xs text-foreground/60">
+                      {form.employee_id ? "Mis à jour pendant la saisie" : "Choisissez l'employé pour compléter le document"}
+                    </span>
+                  </div>
+                  <div className="min-h-0 flex-1 p-3">
+                    {previewHtml ? (
+                      <iframe
+                        title="Aperçu du contrat"
+                        srcDoc={previewHtml}
+                        className="h-full w-full rounded-lg bg-white shadow-md ring-1 ring-black/5"
+                      />
+                    ) : (
+                      <p className="p-6 text-center text-sm text-foreground/60">
+                        {previewError ?? "Chargement de l'aperçu…"}
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </FormSection>
-
-              <FormSection
-                icon={Landmark}
-                title="Cotisations et impôts"
-                description="Chaque option affiche ses taux ; les cadres sous chaque champ montrent les taux appliqués."
-              >
-                <ContractLegalFields
-                  options={complianceOptions}
-                  cnasCode={form.cnas_regime_code}
-                  onCnasChange={(v) => setForm((f) => ({ ...f, cnas_regime_code: v }))}
-                  choice={legal}
-                  onChoiceChange={setLegal}
-                  employeeId={form.employee_id}
-                  employeeIrgCategory={selectedEmployee?.irg_category ?? null}
-                  siteId={form.site_id}
-                  activityId={form.activity_code_id}
-                  showCacobatph={showCacobatph}
-                  allowsFixedIrg={contractTypeAllowsFixedIrg(catalogs, form.contract_type_code)}
-                  canEdit={canEditCompliance}
-                  loading={!legalBase}
-                />
-              </FormSection>
-
-              <FormSection
-                icon={ListChecks}
-                title="Rubriques de salaire"
-                description="Choisissez par classe, puis réglez le mode et la valeur de chaque rubrique."
-              >
-                <ContractRubriquesField rubriques={rubriques} selected={selectedLines} onChange={setSelectedLines} />
-              </FormSection>
-            </div>
+              </aside>
+            ) : null}
           </div>
         </RhModal>
       ) : null}
