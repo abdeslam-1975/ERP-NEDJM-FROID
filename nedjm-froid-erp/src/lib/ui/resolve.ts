@@ -7,6 +7,7 @@ import {
   findTabset,
   isGroupKey,
   itemKey,
+  rhSectionFromGroup,
   type UiIcon,
   type UiItemDef,
 } from "@/lib/ui/registry";
@@ -168,25 +169,32 @@ export function activeItemKey(items: ResolvedItem[], pathname: string): string |
 
 export type ResolvedSection = { key: string; titleFr: string; titleAr: string; items: ResolvedItem[] };
 
-/** HR module bar: visible tabs grouped by section (sections in the chosen order, tab order kept inside). */
-export function resolveRhSections(data: UiLayoutData): ResolvedSection[] {
+/** Section of a HR tab: the user's choice, then the super admin's, then the catalogue (last section otherwise). */
+export function rhSectionOf(data: UiLayoutData, item: UiItemDef & { key: string }): string {
+  return (
+    rhSectionFromGroup(data.personal[item.key]?.group_key) ??
+    rhSectionFromGroup(data.overrides[item.key]?.group_key) ??
+    rhSectionFromGroup(item.section) ??
+    RH_SECTIONS[RH_SECTIONS.length - 1].key
+  );
+}
+
+/**
+ * HR module bar: visible tabs grouped by section (sections in the chosen order, tab order kept inside).
+ * `includeEmpty`: also the sections left without a tab (to drop one into them while rearranging).
+ */
+export function resolveRhSections(data: UiLayoutData, opts: { includeEmpty?: boolean } = {}): ResolvedSection[] {
   const items = resolveTabset(data, "rh");
-  const known = new Set(RH_SECTIONS.map((s) => s.key));
-  const last = RH_SECTIONS[RH_SECTIONS.length - 1].key;
   return RH_SECTIONS.map((section, index) => ({
     section: {
       ...section,
-      items: items.filter((item) => {
-        const wanted = data.overrides[item.key]?.group_key;
-        const key = wanted && known.has(wanted) ? wanted : item.section && known.has(item.section) ? item.section : last;
-        return key === section.key;
-      }),
+      items: items.filter((item) => rhSectionOf(data, item) === section.key),
     },
     sort: sortValue(data, itemKey(RH_SECTIONS_TABSET, section.key), index),
   }))
     .sort((a, b) => a.sort - b.sort)
     .map(({ section }) => section)
-    .filter((section) => section.items.length > 0);
+    .filter((section) => opts.includeEmpty || section.items.length > 0);
 }
 
 const ALWAYS_OPEN = new Set(["/", "/parametres", "/parametres/interface"]);

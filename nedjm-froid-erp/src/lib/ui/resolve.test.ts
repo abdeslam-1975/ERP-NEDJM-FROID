@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { NAV_GROUPS_TABSET, RH_SECTIONS, RH_SECTIONS_TABSET, UI_NAV_GROUPS, UI_TABSETS, findTabset, itemKey, keysOfTabset } from "@/lib/ui/registry";
+import {
+  NAV_GROUPS_TABSET,
+  RH_OTHERS_SECTION,
+  RH_SECTIONS,
+  RH_SECTIONS_TABSET,
+  UI_NAV_GROUPS,
+  UI_TABSETS,
+  findTabset,
+  itemKey,
+  keysOfTabset,
+  rhSectionGroupKey,
+} from "@/lib/ui/registry";
 import {
   DEFAULT_LAYOUT,
   activeItemKey,
@@ -224,6 +235,26 @@ describe("resolveRhSections / activeItemKey", () => {
     });
     expect(resolveRhSections(data).map((s) => s.key).slice(0, 2)).toEqual(["legal", "payroll"]);
     expect(resolveRhSections(DEFAULT_LAYOUT).map((s) => s.key)[0]).toBe(RH_SECTIONS[0].key);
+  });
+
+  it("puts tabs away in « Autres », shown only once it holds a tab", () => {
+    expect(resolveRhSections(DEFAULT_LAYOUT).some((s) => s.key === RH_OTHERS_SECTION)).toBe(false);
+    expect(resolveRhSections(DEFAULT_LAYOUT, { includeEmpty: true }).some((s) => s.key === RH_OTHERS_SECTION)).toBe(true);
+
+    const others = rhSectionGroupKey(RH_OTHERS_SECTION);
+    const data = layout({
+      overrides: { "rh.contrats": { sort_order: null, label_fr: null, label_ar: null, group_key: others } },
+      personal: {
+        "rh.paie": { sort_order: 0, group_key: others },
+        "rh.conges": { sort_order: 0, group_key: rhSectionGroupKey("legal") },
+        "rh.avances": { sort_order: 0, group_key: "group.rh_unknown" },
+      },
+    });
+    const byKey = new Map(resolveRhSections(data).map((s) => [s.key, s.items.map((i) => i.key)]));
+    expect(byKey.get(RH_OTHERS_SECTION)).toEqual(expect.arrayContaining(["rh.contrats", "rh.paie"]));
+    expect(byKey.get("legal")).toContain("rh.conges");
+    expect(byKey.get("payroll")).toContain("rh.avances");
+    expect(byKey.get("payroll")).not.toContain("rh.paie");
   });
 
   it("marks only the most specific tab active", () => {

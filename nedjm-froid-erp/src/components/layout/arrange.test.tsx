@@ -9,7 +9,7 @@ vi.mock("@/lib/actions/ui-arrange", () => ({
   resetArrangement: vi.fn(async () => ({ ok: true, data: { count: 0 } })),
 }));
 
-const { ToolbarSlot, UiToolbar, ArrangeBar } = await import("@/components/layout/arrange");
+const { ToolbarSlot, UiToolbar, ArrangeBar, RhArrange } = await import("@/components/layout/arrange");
 const { UiLayoutProvider, useArrange } = await import("@/components/layout/ui-layout-context");
 const { DEFAULT_LAYOUT } = await import("@/lib/ui/resolve");
 
@@ -99,5 +99,41 @@ describe("UiToolbar", () => {
     const slots = container.querySelectorAll(".bar [aria-roledescription]");
     expect(slots.length).toBe(2);
     for (const slot of slots) expect(slot.firstElementChild?.className).toContain("pointer-events-none");
+  });
+});
+
+describe("RhArrange", () => {
+  it("sends a whole HR section to « Autres » and saves each tab with its new section", async () => {
+    const { saveArrangement } = await import("@/lib/actions/ui-arrange");
+    function Start() {
+      const { start, active } = useArrange();
+      return active ? <RhArrange /> : (
+        <button type="button" id="start" onClick={start}>
+          start
+        </button>
+      );
+    }
+    act(() =>
+      root.render(
+        <UiLayoutProvider value={DEFAULT_LAYOUT}>
+          <Start />
+          <ArrangeBar />
+        </UiLayoutProvider>,
+      ),
+    );
+    act(() => (container.querySelector("#start") as HTMLButtonElement).click());
+    const column = (title: string) =>
+      [...container.querySelectorAll("li")].find((li) => li.querySelector("span.truncate")?.textContent === title)!;
+    act(() => column("Documents").querySelector<HTMLButtonElement>('button[type="button"]')!.click());
+    expect(column("Autres").textContent).toContain("Attestations");
+    expect(column("Documents").textContent).not.toContain("Attestations");
+
+    const save = [...container.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Enregistrer"))!;
+    await act(async () => save.click());
+    const lists = vi.mocked(saveArrangement).mock.calls.at(-1)![0].lists;
+    const rh = lists.find((l) => l.tabset === "rh")!;
+    expect(rh.items.find((i) => i.key === "rh.attestations")?.group_key).toBe("group.rh_others");
+    expect(rh.items.find((i) => i.key === "rh.paie")?.group_key).toBe("group.rh_payroll");
+    expect(lists.some((l) => l.tabset === "rh_sections")).toBe(true);
   });
 });

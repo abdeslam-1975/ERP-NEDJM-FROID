@@ -36,8 +36,8 @@ import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, ListOrdered, Move, RotateCcw, X } from "lucide-react";
 import { useArrange, useArrangeableList, useUiLayout } from "@/components/layout/ui-layout-context";
 import { Button } from "@/components/ui/button";
-import { RH_SECTIONS_TABSET, findItem, findTabset, itemKey, keysOfTabset } from "@/lib/ui/registry";
-import { applyTabs, resolveNav } from "@/lib/ui/resolve";
+import { RH_OTHERS_SECTION, RH_SECTIONS_TABSET, findItem, findTabset, itemKey, keysOfTabset } from "@/lib/ui/registry";
+import { applyTabs, resolveNav, resolveRhSections } from "@/lib/ui/resolve";
 import { cn } from "@/lib/utils";
 
 function useDndSensors() {
@@ -243,17 +243,21 @@ export function DragHandle({ label, ...handle }: HandleProps & { label: string }
 
 /* —— side menu: groups and their modules —— */
 
-export type NavColumn = { key: string; title: string; items: { key: string; label: string }[] };
+export type ArrangeColumn = { key: string; title: string; items: { key: string; label: string }[] };
+
+type Tone = "sidebar" | "panel" | "bar";
 
 const groupId = (key: string) => `group:${key}`;
 
-function NavGroupBox({
+function GroupBox({
   column,
   tone,
+  action,
   children,
 }: {
-  column: NavColumn;
-  tone: "sidebar" | "panel";
+  column: ArrangeColumn;
+  tone: Tone;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -267,26 +271,32 @@ function NavGroupBox({
       className={cn(
         "rounded-xl border border-dashed p-1.5",
         tone === "sidebar" ? "border-white/30" : "border-border",
+        tone === "bar" && "w-52 shrink-0 bg-surface-muted/40",
         isDragging && "z-30 opacity-80",
       )}
     >
-      <div
-        className={cn(
-          "flex cursor-grab touch-none items-center gap-1.5 px-1.5 pb-1 text-[10px] font-semibold tracking-[0.14em] uppercase select-none active:cursor-grabbing",
-          tone === "sidebar" ? "text-white/60" : "text-foreground/50",
-        )}
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="size-3.5" aria-hidden />
-        {column.title}
+      <div className="flex items-center gap-1">
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 cursor-grab touch-none items-center gap-1.5 px-1.5 pb-1 text-[10px] font-semibold tracking-[0.14em] uppercase select-none active:cursor-grabbing",
+            tone === "sidebar" ? "text-white/60" : "text-foreground/50",
+          )}
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="size-3.5 shrink-0" aria-hidden />
+          <span className="truncate" title={column.title}>
+            {column.title}
+          </span>
+        </div>
+        {action}
       </div>
       {children}
     </li>
   );
 }
 
-function NavItemRow({ id, label, tone }: { id: string; label: string; tone: "sidebar" | "panel" }) {
+function GroupItemRow({ id, label, tone }: { id: string; label: string; tone: Tone }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, data: { type: "item" } });
   return (
     <li
@@ -306,21 +316,23 @@ function NavItemRow({ id, label, tone }: { id: string; label: string; tone: "sid
   );
 }
 
-/** Groups and modules of the side menu, both draggable; a module can be dropped into another group. */
-export function NavArrange({ tone = "panel" }: { tone?: "sidebar" | "panel" }) {
-  const layout = useUiLayout();
-  const { reorderNav } = useArrange();
+/**
+ * Groups and their items, both draggable; an item can be dropped into another group (empty groups included).
+ * `onChange` receives every group in order with the keys of its items.
+ */
+function GroupedArrange({
+  source,
+  onChange,
+  tone,
+  groupAction,
+}: {
+  source: ArrangeColumn[];
+  onChange: (groups: { key: string; items: string[] }[]) => void;
+  tone: Tone;
+  groupAction?: (column: ArrangeColumn, moveAll: (to: string) => void) => ReactNode;
+}) {
   const sensors = useDndSensors();
   const dndId = useId();
-  const source = useMemo<NavColumn[]>(
-    () =>
-      resolveNav(layout, { includeEmpty: true }).map((g) => ({
-        key: g.key,
-        title: g.titleFr,
-        items: g.items.map((i) => ({ key: i.key, label: i.label })),
-      })),
-    [layout],
-  );
   const [columns, setColumns] = useState(source);
   const [shownSource, setShownSource] = useState(source);
   if (shownSource !== source) {
@@ -330,7 +342,12 @@ export function NavArrange({ tone = "panel" }: { tone?: "sidebar" | "panel" }) {
 
   const labels = useMemo(() => new Map(source.flatMap((c) => c.items.map((i) => [i.key, i.label] as const))), [source]);
 
-  function containerOf(id: string, cols: NavColumn[]): string | null {
+  function commit(next: ArrangeColumn[]) {
+    setColumns(next);
+    onChange(next.map((c) => ({ key: c.key, items: c.items.map((i) => i.key) })));
+  }
+
+  function containerOf(id: string, cols: ArrangeColumn[]): string | null {
     if (id.startsWith("group:")) return id.slice(6);
     return cols.find((c) => c.items.some((i) => i.key === id))?.key ?? null;
   }
@@ -381,28 +398,95 @@ export function NavArrange({ tone = "panel" }: { tone?: "sidebar" | "panel" }) {
         });
       }
     }
-    setColumns(next);
-    reorderNav(next.map((c) => ({ key: c.key, items: c.items.map((i) => i.key) })));
+    commit(next);
+  }
+
+  function moveAll(from: string, to: string) {
+    const moving = columns.find((c) => c.key === from)?.items ?? [];
+    if (!moving.length || from === to) return;
+    commit(
+      columns.map((c) =>
+        c.key === from ? { ...c, items: [] } : c.key === to ? { ...c, items: [...c.items, ...moving] } : c,
+      ),
+    );
   }
 
   return (
     <DndContext id={dndId} sensors={sensors} collisionDetection={collision} onDragOver={onDragOver} onDragEnd={onDragEnd}>
-      <SortableContext items={columns.map((c) => groupId(c.key))} strategy={verticalListSortingStrategy}>
-        <ul className="space-y-2">
+      <SortableContext
+        items={columns.map((c) => groupId(c.key))}
+        strategy={tone === "bar" ? rectSortingStrategy : verticalListSortingStrategy}
+      >
+        <ul className={tone === "bar" ? "flex items-start gap-2 overflow-x-auto p-2" : "space-y-2"}>
           {columns.map((column) => (
-            <NavGroupBox key={column.key} column={column} tone={tone}>
+            <GroupBox
+              key={column.key}
+              column={column}
+              tone={tone}
+              action={groupAction?.(column, (to) => moveAll(column.key, to))}
+            >
               <SortableContext items={column.items.map((i) => i.key)} strategy={verticalListSortingStrategy}>
                 <ul className="min-h-8 space-y-1">
                   {column.items.map((item) => (
-                    <NavItemRow key={item.key} id={item.key} label={labels.get(item.key) ?? item.label} tone={tone} />
+                    <GroupItemRow key={item.key} id={item.key} label={labels.get(item.key) ?? item.label} tone={tone} />
                   ))}
                 </ul>
               </SortableContext>
-            </NavGroupBox>
+            </GroupBox>
           ))}
         </ul>
       </SortableContext>
     </DndContext>
+  );
+}
+
+/** Groups and modules of the side menu; a module can be dropped into another group. */
+export function NavArrange({ tone = "panel" }: { tone?: "sidebar" | "panel" }) {
+  const layout = useUiLayout();
+  const { reorderNav } = useArrange();
+  const source = useMemo<ArrangeColumn[]>(
+    () =>
+      resolveNav(layout, { includeEmpty: true }).map((g) => ({
+        key: g.key,
+        title: g.titleFr,
+        items: g.items.map((i) => ({ key: i.key, label: i.label })),
+      })),
+    [layout],
+  );
+  return <GroupedArrange source={source} onChange={reorderNav} tone={tone} />;
+}
+
+/** Sections and tabs of the HR module bar; a tab, or a whole section, can be sent to another section (« Autres »). */
+export function RhArrange({ tone = "bar" }: { tone?: "bar" | "panel" }) {
+  const layout = useUiLayout();
+  const { reorderRh } = useArrange();
+  const source = useMemo<ArrangeColumn[]>(
+    () =>
+      resolveRhSections(layout, { includeEmpty: true }).map((s) => ({
+        key: s.key,
+        title: s.titleFr,
+        items: s.items.map((i) => ({ key: i.key, label: i.label })),
+      })),
+    [layout],
+  );
+  return (
+    <GroupedArrange
+      source={source}
+      onChange={reorderRh}
+      tone={tone}
+      groupAction={(column, moveAll) =>
+        column.key !== RH_OTHERS_SECTION && column.items.length ? (
+          <button
+            type="button"
+            onClick={() => moveAll(RH_OTHERS_SECTION)}
+            title={`Mettre « ${column.title} » dans Autres · نقل إلى أخرى`}
+            className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-brand hover:bg-brand-muted"
+          >
+            → Autres
+          </button>
+        ) : null
+      }
+    />
   );
 }
 
@@ -462,9 +546,17 @@ export function ArrangeBar() {
               <p className="text-sm font-semibold text-foreground">Menu latéral · القائمة الجانبية</p>
               <NavArrange />
             </section>
-            {arrange.lists.map((list) => (
-              <PanelList key={list.tabset} tabset={list.tabset} items={list.items} />
-            ))}
+            {arrange.lists.some((l) => l.tabset === "rh") ? (
+              <section className="space-y-2">
+                <p className="text-sm font-semibold text-foreground">Barre RH · شريط الموارد البشرية</p>
+                <RhArrange tone="panel" />
+              </section>
+            ) : null}
+            {arrange.lists
+              .filter((list) => list.tabset !== "rh" && list.tabset !== RH_SECTIONS_TABSET)
+              .map((list) => (
+                <PanelList key={list.tabset} tabset={list.tabset} items={list.items} />
+              ))}
           </div>
         </aside>
       ) : null}

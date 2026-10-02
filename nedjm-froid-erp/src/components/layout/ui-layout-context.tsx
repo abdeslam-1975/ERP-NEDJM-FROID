@@ -12,7 +12,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { resetArrangement, saveArrangement, type ArrangeList, type ArrangeTarget } from "@/lib/actions/ui-arrange";
-import { NAV_GROUPS_TABSET, RH_SECTIONS_TABSET, findTabset, itemKey, keysOfTabset } from "@/lib/ui/registry";
+import { NAV_GROUPS_TABSET, RH_SECTIONS_TABSET, findTabset, itemKey, keysOfTabset, rhSectionGroupKey } from "@/lib/ui/registry";
 import {
   DEFAULT_LAYOUT,
   applyTabs,
@@ -45,6 +45,8 @@ type ArrangeApi = {
   reorder: (tabset: string, ids: string[]) => void;
   /** New side menu: groups in order, and the modules of each group in order. */
   reorderNav: (groups: { key: string; items: string[] }[]) => void;
+  /** New HR module bar: sections in order, and the tabs (keys) of each section in order. */
+  reorderRh: (sections: { key: string; items: string[] }[]) => void;
   register: (list: ArrangeableList) => () => void;
 };
 
@@ -64,6 +66,7 @@ const ArrangeContext = createContext<ArrangeApi>({
   reset: noop,
   reorder: noop,
   reorderNav: noop,
+  reorderRh: noop,
   register: () => noop,
 });
 
@@ -106,10 +109,19 @@ export function UiLayoutProvider({ value, children }: { value: UiLayoutData; chi
 
   const reorder = useCallback(
     (tabset: string, ids: string[]) => {
-      setDraft((prev) => ({ ...prev, ...positions(ids.map((id) => itemKey(tabset, id))) }));
+      setDraft((prev) => {
+        const next = { ...prev };
+        ids.forEach((id, index) => {
+          const key = itemKey(tabset, id);
+          // Keeps the section / group the item was moved to.
+          const group = prev[key]?.group_key ?? value.personal[key]?.group_key ?? null;
+          next[key] = { sort_order: (index + 1) * 10, group_key: group };
+        });
+        return next;
+      });
       touch([tabset]);
     },
-    [touch],
+    [touch, value.personal],
   );
 
   const reorderNav = useCallback(
@@ -126,6 +138,24 @@ export function UiLayoutProvider({ value, children }: { value: UiLayoutData; chi
         return next;
       });
       touch(["nav", NAV_GROUPS_TABSET]);
+    },
+    [touch],
+  );
+
+  const reorderRh = useCallback(
+    (sections: { key: string; items: string[] }[]) => {
+      setDraft((prev) => {
+        const next = { ...prev, ...positions(sections.map((s) => itemKey(RH_SECTIONS_TABSET, s.key))) };
+        let index = 0;
+        for (const section of sections) {
+          for (const key of section.items) {
+            index += 1;
+            next[key] = { sort_order: index * 10, group_key: rhSectionGroupKey(section.key) };
+          }
+        }
+        return next;
+      });
+      touch(["rh", RH_SECTIONS_TABSET]);
     },
     [touch],
   );
@@ -151,13 +181,19 @@ export function UiLayoutProvider({ value, children }: { value: UiLayoutData; chi
     }
     const payload: ArrangeList[] = [];
     const nav = resolveNav(layout, { includeEmpty: true });
+    const rhSections = resolveRhSections(layout, { includeEmpty: true });
     for (const tabset of touched) {
       if (tabset === NAV_GROUPS_TABSET) {
         payload.push({ tabset, items: nav.map((g) => ({ key: g.key })) });
       } else if (tabset === "nav") {
         payload.push({ tabset, items: nav.flatMap((g) => g.items.map((i) => ({ key: i.key, group_key: g.key }))) });
       } else if (tabset === RH_SECTIONS_TABSET) {
-        payload.push({ tabset, items: resolveRhSections(layout).map((s) => ({ key: itemKey(tabset, s.key) })) });
+        payload.push({ tabset, items: rhSections.map((s) => ({ key: itemKey(tabset, s.key) })) });
+      } else if (tabset === "rh") {
+        payload.push({
+          tabset,
+          items: rhSections.flatMap((s) => s.items.map((i) => ({ key: i.key, group_key: rhSectionGroupKey(s.key) }))),
+        });
       } else if (findTabset(tabset)) {
         payload.push({ tabset, items: resolveTabset(layout, tabset).map((i) => ({ key: i.key })) });
       }
@@ -213,9 +249,10 @@ export function UiLayoutProvider({ value, children }: { value: UiLayoutData; chi
       reset,
       reorder,
       reorderNav,
+      reorderRh,
       register,
     }),
-    [active, value.unrestricted, target, touched.length, pending, error, lists, finish, save, reset, reorder, reorderNav, register],
+    [active, value.unrestricted, target, touched.length, pending, error, lists, finish, save, reset, reorder, reorderNav, reorderRh, register],
   );
 
   return (
