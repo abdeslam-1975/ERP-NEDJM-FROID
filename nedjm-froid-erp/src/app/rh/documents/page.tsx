@@ -21,7 +21,7 @@ export default async function DocumentsPage({
   searchParams: Promise<{ nouveau?: string; onglet?: string; titre?: string }>;
 }) {
   const sp = await searchParams;
-  const tabs: DocumentsTab[] = ["corr", "conges", "files"];
+  const tabs: DocumentsTab[] = ["corr", "conges", "autres", "files"];
   const initialTab = tabs.find((tab) => tab === sp.onglet);
   const [files, corr, employees, lookups, contracts, fiche] = await Promise.all([
     listHrFiles(),

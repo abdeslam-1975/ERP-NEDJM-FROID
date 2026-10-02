@@ -93,7 +93,8 @@ export function RhTabs({
   onChange,
   uiKey,
 }: {
-  items: { id: string; label: string }[];
+  /** `count` shows a small badge after the label. */
+  items: { id: string; label: string; count?: number }[];
   value: string;
   onChange: (id: string) => void;
   /** Tabset of the interface catalogue (src/lib/ui/registry.ts): hidden / ordered / renamed per role. */
@@ -144,7 +145,19 @@ export function RhTabs({
                   transition={{ type: "spring", stiffness: 520, damping: 40 }}
                 />
               ) : null}
-              <span className="relative">{item.label}</span>
+              <span className="relative inline-flex items-center gap-2">
+                {item.label}
+                {item.count !== undefined ? (
+                  <span
+                    className={cn(
+                      "min-w-5 rounded-full px-1.5 py-px text-center text-[11px] font-semibold tabular-nums",
+                      active ? "bg-white/20 text-white" : "bg-foreground/[0.07] text-foreground/55",
+                    )}
+                  >
+                    {item.count}
+                  </span>
+                ) : null}
+              </span>
             </TabsPrimitive.Trigger>
           );
         })}

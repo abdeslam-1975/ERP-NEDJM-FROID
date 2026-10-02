@@ -395,9 +395,10 @@ export const UI_TABSETS: UiTabsetDef[] = [
     titleAr: "وثائق الموارد البشرية",
     whereFr: "RH → Documents",
     items: [
-      { id: "corr", labelFr: "أوامر المهمة — Ordres de mission" },
-      { id: "conges", labelFr: "سندات الإجازات — Titres de congé" },
-      { id: "files", labelFr: "الوثائق الرسمية — Pièces officielles" },
+      { id: "corr", labelFr: "Ordres de mission" },
+      { id: "conges", labelFr: "Titres de congé" },
+      { id: "autres", labelFr: "Correspondances" },
+      { id: "files", labelFr: "Pièces officielles" },
     ],
   },
   {

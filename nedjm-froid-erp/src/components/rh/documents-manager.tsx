@@ -1,8 +1,21 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  CalendarCheck,
+  CalendarDays,
+  Eye,
+  ExternalLink,
+  FileStack,
+  Mail,
+  Pencil,
+  Plane,
+  Plus,
+  Printer,
+  type LucideIcon,
+} from "lucide-react";
 import {
   saveLeaveTitle,
   upsertHrCorrespondence,
@@ -39,18 +52,24 @@ import {
 } from "@/components/rh/mission-order-dialog";
 import { LeaveTitleDialog, type LeaveTitleDraft } from "@/components/rh/leave-title-dialog";
 import { buildLeaveTitleHtml, leaveTitleReference } from "@/components/rh/leave-title-print";
-import { buildMissionOrderHtml } from "@/components/rh/mission-order-print";
+import { buildMissionOrderHtml, missionReference } from "@/components/rh/mission-order-print";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   CatalogSelect,
   RhAlert,
   RhChip,
   RhField,
-  RhPageHeader,
   RhPanel,
   RhTabs,
-  bi,
   catalogOptions,
   rhInput,
 } from "@/components/rh/rh-ui";
@@ -60,20 +79,82 @@ type SiteOpt = { id: string; name_fr: string };
 const corrCol = dataColumns<HrCorrespondenceRow>();
 const fileCol = dataColumns<HrFileRow>();
 
-const otherCorrColumns = [
-  corrCol.accessor("number", { header: "N°" }),
-  corrCol.accessor("type_code", { header: "Type" }),
-  corrCol.accessor((r) => `${r.matricule} ${r.employee_name}`, { id: "employee", header: "Employé" }),
-  corrCol.accessor((r) => `${r.start_date ?? "—"} → ${r.end_date ?? "—"}`, { id: "period", header: "Période" }),
-  corrCol.accessor("status_code", { header: "Statut" }),
-];
+function ReferenceCell({ reference, sub }: { reference: string; sub?: string }) {
+  return (
+    <div className="whitespace-nowrap">
+      <div className="font-mono text-[13px] font-semibold tracking-tight text-brand">{reference || "—"}</div>
+      {sub ? <div className="mt-0.5 text-xs text-foreground/45">{sub}</div> : null}
+    </div>
+  );
+}
 
-const fileColumns = [
-  fileCol.accessor((r) => `${r.matricule} ${r.employee_name}`, { id: "employee", header: "Employé" }),
-  fileCol.accessor("doc_type_code", { header: "Type" }),
-  fileCol.accessor((r) => r.issued_on ?? "—", { id: "issued_on", header: "Émis" }),
-  fileCol.accessor((r) => r.expires_on ?? "—", { id: "expires_on", header: "Expire" }),
-];
+function PersonCell({ name, matricule }: { name: string; matricule?: string | null }) {
+  return (
+    <div className="min-w-0">
+      <div className="truncate font-medium text-foreground">{name || "—"}</div>
+      {matricule ? <div className="font-mono text-xs text-foreground/45">{matricule}</div> : null}
+    </div>
+  );
+}
+
+function RowAction({ label, icon: Icon, onClick }: { label: string; icon: LucideIcon; onClick: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="size-8 rounded-lg text-foreground/55 hover:text-brand"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+    >
+      <Icon className="size-4" strokeWidth={1.9} />
+    </Button>
+  );
+}
+
+function RegisterSection({
+  icon: Icon,
+  color,
+  title,
+  description,
+  action,
+  children,
+}: {
+  icon: LucideIcon;
+  color: string;
+  title: string;
+  description: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <RhPanel padded={false}>
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border/60 px-5 py-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-3.5">
+          <span
+            className="flex size-11 shrink-0 items-center justify-center rounded-2xl"
+            style={{ background: `${color}17`, color }}
+          >
+            <Icon className="size-5" strokeWidth={1.8} aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <h3 className="font-display text-base font-semibold tracking-tight text-foreground">{title}</h3>
+            <p className="text-sm text-foreground/55">{description}</p>
+          </div>
+        </div>
+        {action}
+      </div>
+      <div className="p-4 sm:p-5">{children}</div>
+    </RhPanel>
+  );
+}
+
+function periodLabel(start: string | null | undefined, end: string | null | undefined) {
+  const from = formatOmDate(start);
+  const to = formatOmDate(end);
+  if (from && to) return from === to ? from : `${from} → ${to}`;
+  return from || to || "—";
+}
 
 function textPayload(payload: Record<string, unknown>, key: string) {
   const value = payload[key];
@@ -128,7 +209,7 @@ function printHtml(html: string) {
   }
 }
 
-export type DocumentsTab = "files" | "corr" | "conges";
+export type DocumentsTab = "corr" | "conges" | "autres" | "files";
 
 export function DocumentsManager({
   files,
@@ -182,6 +263,9 @@ export function DocumentsManager({
     expires_on: "",
     notes: "",
   });
+  const [corrOpen, setCorrOpen] = useState(false);
+  const [fileOpen, setFileOpen] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [corrForm, setCorrForm] = useState({
     employee_id: "",
     site_id: "",
@@ -291,7 +375,7 @@ export function DocumentsManager({
   function saveMission() {
     setMissionError(null);
     if (!missionForm.employee_id) {
-      setMissionError("Employé requis. · العامل مطلوب.");
+      setMissionError("Employé requis.");
       return;
     }
     const checked = missionOrderFieldsSchema.safeParse(missionForm);
@@ -347,7 +431,7 @@ export function DocumentsManager({
           r.data.archive_url
             ? `Ordre ${r.data.number} enregistré et archivé.`
             : `Ordre de mission ${r.data.number} enregistré.`
-        }${r.data.archive_error ? ` Archive non créée : ${r.data.archive_error}` : ""} Jours MS proposés dans le pointage, à valider. · أيام المهمة مقترحة في جدول الحضور وتنتظر الاعتماد.`,
+        }${r.data.archive_error ? ` Archive non créée : ${r.data.archive_error}` : ""} Jours MS proposés dans le pointage, à valider.`,
       );
       setPointageHref(
         missionPointageHref({
@@ -445,7 +529,7 @@ export function DocumentsManager({
       );
       setPointageHref(null);
       setError(null);
-      setInfo(`Titre de congé ${leaveTitleReference(draft.numero)} enregistré. · تم حفظ سند الإجازة.`);
+      setInfo(`Titre de congé ${leaveTitleReference(draft.numero)} enregistré.`);
       setTitleForm(null);
     });
   }
@@ -454,140 +538,311 @@ export function DocumentsManager({
   const leaveRows = corrRows.filter((row) => row.type_code === "LEAVE");
   const otherCorrRows = corrRows.filter((row) => row.type_code !== "OM" && row.type_code !== "LEAVE");
 
-  const leaveColumns = [
-    corrCol.accessor((r) => leaveTitleReference(r.number), {
-      id: "reference",
-      header: "Référence — الرقم المرجعي",
-      cell: ({ row: { original: r } }) => (
-        <>
-          <div className="font-mono font-semibold text-brand">{leaveTitleReference(r.number)}</div>
-          <div className="mt-0.5 text-[10px] text-foreground/40">{r.number}</div>
-        </>
-      ),
-    }),
-    corrCol.accessor((r) => r.matricule || "—", {
-      id: "matricule",
-      header: "Matricule — الرقم التسلسلي",
-      meta: { className: "font-mono" },
-    }),
-    corrCol.accessor((r) => `${r.last_name} ${r.first_name}`.trim() || "—", {
-      id: "employee",
-      header: "Nom et prénom — الاسم واللقب",
-    }),
-    corrCol.accessor((r) => leaveNature(leaveOfCorrespondence(r).kind).fr, {
-      id: "nature",
-      header: "Nature — طبيعة الإجازة",
-    }),
-    corrCol.accessor((r) => r.start_date ?? "", {
-      id: "period",
-      header: "Période — الفترة",
-      cell: ({ row: { original: r } }) => {
-        const leave = leaveOfCorrespondence(r);
-        return (
-          <span className="whitespace-nowrap tabular-nums">
-            {formatOmDate(leave.dateDebut)} → {formatOmDate(leave.dateFin)}
-          </span>
-        );
-      },
-    }),
-    corrCol.accessor((r) => leaveOfCorrespondence(r).jours, {
-      id: "jours",
-      header: "Jours — الأيام",
-      cell: (info) => <span className="tabular-nums">{leaveDaysLabel(info.getValue())}</span>,
-    }),
-    corrCol.display({
-      id: "actions",
-      header: "Titre — السند",
-      enableSorting: false,
-      enableHiding: false,
-      cell: ({ row: { original: r } }) =>
-        r.status_code === "CANCELLED" ? (
-          <RhChip tone="danger">{bi("Annulé", "ملغى")}</RhChip>
-        ) : (
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button variant="secondary" onClick={() => openTitle(r)}>
-              {bi("Ouvrir le titre", "فتح السند")}
-            </Button>
-            <Button variant="secondary" onClick={() => printTitle(titleDraftFromRow(r))}>
-              {bi("Imprimer", "طباعة")}
-            </Button>
-            {r.payload.titre ? null : <RhChip tone="warning">{bi("À compléter", "للإكمال")}</RhChip>}
-          </div>
-        ),
-    }),
-  ];
+
+  const typeLabel = (kind: string, code: string | null | undefined) =>
+    catalogs.find((item) => item.kind === kind && item.code === code)?.label_fr || code || "—";
+  const today = new Date().toISOString().slice(0, 10);
+
+  const employeeColumn = corrCol.accessor((r) => `${r.last_name} ${r.first_name}`.trim() || r.employee_name, {
+    id: "employee",
+    header: "Employé",
+    cell: (info) => <PersonCell name={info.getValue()} matricule={info.row.original.matricule} />,
+  });
 
   const omColumns = [
-    corrCol.accessor("number", {
-      header: "Référence unique — الرقم المرجعي",
+    corrCol.accessor((r) => missionReference(r.number), {
+      id: "reference",
+      header: "Référence",
       cell: ({ row: { original: r } }) => (
-        <>
-          <div className="font-mono font-semibold text-brand">{r.number}</div>
-          <div className="mt-0.5 text-[10px] text-foreground/40">{r.id}</div>
-        </>
+        <ReferenceCell reference={missionReference(r.number)} sub={`Établi le ${formatEstablishmentDate(r.created_at)}`} />
       ),
     }),
-    corrCol.accessor((r) => r.matricule || "—", {
-      id: "matricule",
-      header: "Matricule — الرقم التسلسلي",
-      meta: { className: "font-mono" },
+    employeeColumn,
+    corrCol.accessor((r) => textPayload(r.payload, "dest1") || textPayload(r.payload, "destination"), {
+      id: "mission",
+      header: "Mission",
+      cell: (info) => (
+        <div className="min-w-0">
+          <div className="truncate text-foreground/85">{info.getValue() || "—"}</div>
+          <div className="whitespace-nowrap text-xs tabular-nums text-foreground/45">
+            {periodLabel(info.row.original.start_date, info.row.original.end_date)}
+          </div>
+        </div>
+      ),
     }),
-    corrCol.accessor((r) => r.last_name || "—", { id: "last_name", header: "Nom — لقب العامل" }),
-    corrCol.accessor((r) => r.first_name || "—", { id: "first_name", header: "Prénom — اسم العامل" }),
-    corrCol.accessor((r) => r.created_by_name || "—", { id: "created_by", header: "Établi par — منشئ أمر المهمة" }),
-    corrCol.accessor("created_at", {
-      header: "Date d'établissement — تاريخ الإنشاء",
-      cell: (info) => formatEstablishmentDate(info.getValue()),
+    corrCol.accessor((r) => r.created_by_name || "—", {
+      id: "created_by",
+      header: "Établi par",
+      cell: (info) => <span className="text-foreground/65">{info.getValue()}</span>,
     }),
     corrCol.display({
       id: "actions",
-      header: "Consulter — عرض",
+      header: "",
       enableSorting: false,
       enableHiding: false,
+      meta: { align: "right" },
       cell: ({ row: { original: r } }) => (
-        <div className="flex flex-wrap gap-1">
-          <Button variant="secondary" onClick={() => consultMission(r)}>
-            Consulter l&apos;ordre de mission — عرض أمر المهمة
-          </Button>
-          <Button variant="secondary" onClick={() => openMissionRow(r)}>
-            {bi("Modifier", "تعديل")}
-          </Button>
+        <div className="flex justify-end gap-0.5">
+          <RowAction label="Consulter" icon={Eye} onClick={() => consultMission(r)} />
+          <RowAction label="Modifier" icon={Pencil} onClick={() => openMissionRow(r)} />
           {r.start_date ? (
-            <Button
-              variant="secondary"
+            <RowAction
+              label="Voir le pointage"
+              icon={CalendarDays}
               onClick={() =>
                 router.push(
-                  missionPointageHref({
-                    employeeId: r.employee_id,
-                    siteId: r.site_id,
-                    dateDepart: r.start_date,
-                  }),
+                  missionPointageHref({ employeeId: r.employee_id, siteId: r.site_id, dateDepart: r.start_date }),
                 )
               }
-            >
-              {bi("Pointage", "الحضور")}
-            </Button>
+            />
           ) : null}
         </div>
       ),
     }),
   ];
 
+  const leaveColumns = [
+    corrCol.accessor((r) => leaveTitleReference(r.number), {
+      id: "reference",
+      header: "Référence",
+      cell: ({ row: { original: r } }) => (
+        <ReferenceCell reference={leaveTitleReference(r.number)} sub={`Émis le ${formatEstablishmentDate(r.created_at)}`} />
+      ),
+    }),
+    employeeColumn,
+    corrCol.accessor((r) => leaveNature(leaveOfCorrespondence(r).kind).fr, {
+      id: "nature",
+      header: "Nature",
+      cell: (info) => <RhChip tone="brand">{info.getValue()}</RhChip>,
+    }),
+    corrCol.accessor((r) => r.start_date ?? "", {
+      id: "period",
+      header: "Période",
+      cell: ({ row: { original: r } }) => {
+        const leave = leaveOfCorrespondence(r);
+        return (
+          <div className="whitespace-nowrap">
+            <div className="tabular-nums text-foreground/85">{periodLabel(leave.dateDebut, leave.dateFin)}</div>
+            <div className="text-xs text-foreground/45">{leaveDaysLabel(leave.jours)}</div>
+          </div>
+        );
+      },
+    }),
+    corrCol.accessor((r) => (r.status_code === "CANCELLED" ? 2 : r.payload.titre ? 0 : 1), {
+      id: "state",
+      header: "État",
+      cell: ({ row: { original: r } }) =>
+        r.status_code === "CANCELLED" ? (
+          <RhChip tone="danger">Annulé</RhChip>
+        ) : r.payload.titre ? (
+          <RhChip tone="success">Complété</RhChip>
+        ) : (
+          <RhChip tone="warning">À compléter</RhChip>
+        ),
+    }),
+    corrCol.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      meta: { align: "right" },
+      cell: ({ row: { original: r } }) =>
+        r.status_code === "CANCELLED" ? null : (
+          <div className="flex justify-end gap-0.5">
+            <RowAction label="Ouvrir le titre" icon={Pencil} onClick={() => openTitle(r)} />
+            <RowAction label="Imprimer" icon={Printer} onClick={() => printTitle(titleDraftFromRow(r))} />
+          </div>
+        ),
+    }),
+  ];
+
+  const otherColumns = [
+    corrCol.accessor((r) => r.number ?? "", {
+      id: "reference",
+      header: "Référence",
+      cell: ({ row: { original: r } }) => (
+        <ReferenceCell reference={r.number ?? ""} sub={`Émis le ${formatEstablishmentDate(r.created_at)}`} />
+      ),
+    }),
+    corrCol.accessor((r) => typeLabel("correspondence_type", r.type_code), {
+      id: "type",
+      header: "Type",
+      cell: (info) => <RhChip>{info.getValue()}</RhChip>,
+    }),
+    employeeColumn,
+    corrCol.accessor((r) => r.start_date ?? "", {
+      id: "period",
+      header: "Période",
+      cell: ({ row: { original: r } }) => (
+        <span className="whitespace-nowrap tabular-nums text-foreground/85">{periodLabel(r.start_date, r.end_date)}</span>
+      ),
+    }),
+    corrCol.accessor((r) => typeLabel("correspondence_status", r.status_code), {
+      id: "status",
+      header: "Statut",
+      cell: (info) => {
+        const code = info.row.original.status_code;
+        const tone = code === "CANCELLED" ? "danger" : code === "DRAFT" ? "neutral" : "success";
+        return <RhChip tone={tone}>{info.getValue()}</RhChip>;
+      },
+    }),
+  ];
+
+  const fileColumns = [
+    fileCol.accessor((r) => r.employee_name, {
+      id: "employee",
+      header: "Employé",
+      cell: (info) => <PersonCell name={info.getValue()} matricule={info.row.original.matricule} />,
+    }),
+    fileCol.accessor((r) => typeLabel("document_type", r.doc_type_code), {
+      id: "type",
+      header: "Pièce",
+      cell: (info) => <span className="font-medium text-foreground/85">{info.getValue()}</span>,
+    }),
+    fileCol.accessor((r) => r.issued_on ?? "", {
+      id: "issued_on",
+      header: "Émise le",
+      cell: (info) => <span className="tabular-nums text-foreground/75">{formatOmDate(info.getValue()) || "—"}</span>,
+    }),
+    fileCol.accessor((r) => r.expires_on ?? "", {
+      id: "expires_on",
+      header: "Expire le",
+      cell: (info) => {
+        const value = info.getValue();
+        if (!value) return <span className="text-foreground/40">—</span>;
+        return value < today ? (
+          <RhChip tone="danger">Expirée · {formatOmDate(value)}</RhChip>
+        ) : (
+          <span className="tabular-nums text-foreground/75">{formatOmDate(value)}</span>
+        );
+      },
+    }),
+    fileCol.display({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      meta: { align: "right" },
+      cell: ({ row: { original: r } }) =>
+        r.file_url ? (
+          <div className="flex justify-end">
+            <RowAction
+              label="Ouvrir le fichier"
+              icon={ExternalLink}
+              onClick={() => window.open(r.file_url ?? "", "_blank", "noopener,noreferrer")}
+            />
+          </div>
+        ) : null,
+    }),
+  ];
+
+  function newMission() {
+    setMissionError(null);
+    setMissionForm(emptyMissionDraft());
+    setMissionOpen(true);
+  }
+
+  function saveCorrespondence() {
+    setFormError(null);
+    start(async () => {
+      const r = await upsertHrCorrespondence({ ...corrForm, site_id: corrForm.site_id || null });
+      if (!r.ok) {
+        setFormError(r.error);
+        return;
+      }
+      const emp = employees.find((e) => e.id === corrForm.employee_id);
+      setCorrRows((prev) => [
+        {
+          id: r.data.id,
+          employee_id: corrForm.employee_id,
+          site_id: corrForm.site_id || null,
+          type_code: corrForm.type_code,
+          number: r.data.number,
+          status_code: corrForm.status_code,
+          start_date: corrForm.start_date || null,
+          end_date: corrForm.end_date || null,
+          payload: {},
+          created_at: new Date().toISOString(),
+          created_by: null,
+          created_by_name: "—",
+          last_name: emp?.last_name ?? "",
+          first_name: emp?.first_name ?? "",
+          matricule: emp?.matricule ?? "",
+          employee_name: emp ? `${emp.last_name} ${emp.first_name}` : "",
+          archive_url: null,
+        },
+        ...prev,
+      ]);
+      setPointageHref(null);
+      setError(null);
+      setInfo(`Correspondance ${r.data.number} enregistrée.`);
+      setCorrOpen(false);
+      setCorrForm((f) => ({ ...f, employee_id: "", start_date: "", end_date: "" }));
+    });
+  }
+
+  function saveFile() {
+    setFormError(null);
+    start(async () => {
+      const r = await upsertHrFile(fileForm);
+      if (!r.ok) {
+        setFormError(r.error);
+        return;
+      }
+      const emp = employees.find((e) => e.id === fileForm.employee_id);
+      setFileRows((prev) => [
+        {
+          id: r.data.id,
+          employee_id: fileForm.employee_id,
+          doc_type_code: fileForm.doc_type_code,
+          file_url: fileForm.file_url || null,
+          file_name: null,
+          storage_path: null,
+          issued_on: fileForm.issued_on || null,
+          expires_on: fileForm.expires_on || null,
+          notes: fileForm.notes || null,
+          matricule: emp?.matricule ?? "",
+          employee_name: emp ? `${emp.last_name} ${emp.first_name}` : "",
+        },
+        ...prev,
+      ]);
+      setPointageHref(null);
+      setError(null);
+      setInfo("Pièce enregistrée.");
+      setFileOpen(false);
+      setFileForm((f) => ({ ...f, employee_id: "", file_url: "", issued_on: "", expires_on: "", notes: "" }));
+    });
+  }
+
+  const employeeSelect = (value: string, onChange: (id: string) => void) => (
+    <select className={rhInput} value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="">Choisir un employé…</option>
+      {employees.map((e) => (
+        <option key={e.id} value={e.id}>
+          {e.matricule} · {e.last_name} {e.first_name}
+        </option>
+      ))}
+    </select>
+  );
+
   return (
-    <div className="space-y-5">
-      <RhPageHeader
-        title="الوثائق الإدارية — Documents RH"
-        description="سجل إلكتروني مركزي لأوامر المهمة وسندات الإجازات. كل وثيقة تحصل على رقم مرجعي لا يُعاد استخدامه. · Registre central des ordres de mission et titres de congé : numéro de référence non réutilisable."
-      />
+    <div className="space-y-4">
+      <div>
+        <h2 className="font-display text-xl font-semibold tracking-tight text-foreground">Registre des documents</h2>
+        <p className="mt-0.5 text-sm text-foreground/55">
+          Chaque document reçoit une référence unique, jamais réutilisée.
+        </p>
+      </div>
       <RhTabs
         uiKey="hr_documents"
         items={[
-          { id: "corr", label: "أوامر المهمة — Ordres de mission" },
-          { id: "conges", label: "سندات الإجازات — Titres de congé" },
-          { id: "files", label: "الوثائق الرسمية — Pièces officielles" },
+          { id: "corr", label: "Ordres de mission", count: omRows.length },
+          { id: "conges", label: "Titres de congé", count: leaveRows.length },
+          { id: "autres", label: "Correspondances", count: otherCorrRows.length },
+          { id: "files", label: "Pièces officielles", count: fileRows.length },
         ]}
         value={tab}
-        onChange={(id) => setTab(id as typeof tab)}
+        onChange={(id) => setTab(id as DocumentsTab)}
       />
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
       {info && !error ? (
@@ -597,7 +852,7 @@ export function DocumentsManager({
             <>
               {" "}
               <Link href={pointageHref} className="font-semibold underline">
-                Ouvrir le pointage — فتح جدول الحضور
+                Ouvrir le pointage
               </Link>
             </>
           ) : null}
@@ -605,219 +860,45 @@ export function DocumentsManager({
       ) : null}
 
       {tab === "corr" ? (
-        <>
-          <RhPanel>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="text-base font-semibold text-foreground">
-                  أرشيف وتتبع أوامر المهمة — Archivage et suivi des ordres de mission
-                </h3>
-                <p className="mt-1 text-sm text-foreground/60">
-                  سجل إلكتروني مركزي. يمكن الرجوع إلى النسخة المؤرشفة في أي وقت. · Registre
-                  électronique central. Consultez la copie archivée à tout moment.
-                </p>
-              </div>
-              <Button
-                onClick={() => {
-                  setMissionError(null);
-                  setMissionForm(emptyMissionDraft());
-                  setMissionOpen(true);
-                }}
-              >
-                أمر بمهمة جديد — Nouvel ordre de mission
-              </Button>
-            </div>
-          </RhPanel>
-
+        <RegisterSection
+          icon={Plane}
+          color="#0ea5e9"
+          title="Ordres de mission"
+          description="Archivés à l'enregistrement et consultables à tout moment."
+          action={
+            <Button onClick={newMission}>
+              <Plus aria-hidden />
+              Nouvel ordre de mission
+            </Button>
+          }
+        >
           <DataTable
             data={omRows}
             columns={omColumns}
             getRowId={(r) => r.id}
             searchPlaceholder="Référence, matricule, nom…"
             searchText={(r) =>
-              [r.number, r.id, r.matricule, r.last_name, r.first_name, r.created_by_name].filter(Boolean).join(" ")
+              [r.number, missionReference(r.number), r.matricule, r.last_name, r.first_name, r.created_by_name]
+                .filter(Boolean)
+                .join(" ")
             }
-            emptyTitle={bi("Aucun ordre de mission archivé", "لا توجد أوامر مهمة في الأرشيف")}
+            emptyTitle="Aucun ordre de mission"
+            emptyBody="Créez le premier avec « Nouvel ordre de mission »."
           />
-
-          <RhPanel>
-            <h3 className="mb-3 text-sm font-semibold text-foreground/80">
-              {bi("Autres correspondances", "مراسلات أخرى")}
-            </h3>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <RhField label="Employé">
-                <select
-                  className={rhInput}
-                  value={corrForm.employee_id}
-                  onChange={(e) =>
-                    setCorrForm({ ...corrForm, employee_id: e.target.value })
-                  }
-                >
-                  <option value="">—</option>
-                  {employees.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.matricule} · {e.last_name} {e.first_name}
-                    </option>
-                  ))}
-                </select>
-              </RhField>
-              <RhField label="Chantier">
-                <select
-                  className={rhInput}
-                  value={corrForm.site_id}
-                  onChange={(e) =>
-                    setCorrForm({ ...corrForm, site_id: e.target.value })
-                  }
-                >
-                  <option value="">—</option>
-                  {sites.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name_fr}
-                    </option>
-                  ))}
-                </select>
-              </RhField>
-              <RhField label="Type">
-                <CatalogSelect
-                  items={otherTypes}
-                  kind="correspondence_type"
-                  value={corrForm.type_code}
-                  onChange={(v) => setCorrForm({ ...corrForm, type_code: v })}
-                  allowEmpty={false}
-                />
-              </RhField>
-              <RhField label="Statut">
-                <CatalogSelect
-                  items={catalogs}
-                  kind="correspondence_status"
-                  value={corrForm.status_code}
-                  onChange={(v) => setCorrForm({ ...corrForm, status_code: v })}
-                  allowEmpty={false}
-                />
-              </RhField>
-              <RhField label="Du">
-                <input
-                  type="date"
-                  className={rhInput}
-                  value={corrForm.start_date}
-                  onChange={(e) =>
-                    setCorrForm({ ...corrForm, start_date: e.target.value })
-                  }
-                />
-              </RhField>
-              <RhField label="Au">
-                <input
-                  type="date"
-                  className={rhInput}
-                  value={corrForm.end_date}
-                  onChange={(e) =>
-                    setCorrForm({ ...corrForm, end_date: e.target.value })
-                  }
-                />
-              </RhField>
-              {legendHint ? (
-                <p className="sm:col-span-3 text-xs text-foreground/60">
-                  هذا النوع يكتب رمز الحضور: {legendHint}
-                </p>
-              ) : null}
-              <div className="sm:col-span-3">
-                <Button
-                  disabled={pending}
-                  onClick={() => {
-                    setError(null);
-                    start(async () => {
-                      const r = await upsertHrCorrespondence({
-                        ...corrForm,
-                        site_id: corrForm.site_id || null,
-                      });
-                      if (!r.ok) {
-                        setError(r.error);
-                        return;
-                      }
-                      const emp = employees.find((e) => e.id === corrForm.employee_id);
-                      setCorrRows((prev) => [
-                        {
-                          id: r.data.id,
-                          employee_id: corrForm.employee_id,
-                          site_id: corrForm.site_id || null,
-                          type_code: corrForm.type_code,
-                          number: r.data.number,
-                          status_code: corrForm.status_code,
-                          start_date: corrForm.start_date || null,
-                          end_date: corrForm.end_date || null,
-                          payload: {},
-                          created_at: new Date().toISOString(),
-                          created_by: null,
-                          created_by_name: "—",
-                          last_name: emp?.last_name ?? "",
-                          first_name: emp?.first_name ?? "",
-                          matricule: emp?.matricule ?? "",
-                          employee_name: emp
-                            ? `${emp.last_name} ${emp.first_name}`
-                            : "",
-                          archive_url: null,
-                        },
-                        ...prev,
-                      ]);
-                      setPointageHref(null);
-                      setInfo(`Document ${r.data.number} enregistré.`);
-                    });
-                  }}
-                >
-                  Émettre la correspondance
-                </Button>
-              </div>
-            </div>
-          </RhPanel>
-          <DataTable
-            data={otherCorrRows}
-            columns={otherCorrColumns}
-            getRowId={(r) => r.id}
-            searchPlaceholder="N°, type, employé…"
-            emptyTitle="لا توجد سجلات"
-          />
-          {missionOpen ? (
-            <MissionOrderDialog
-              pending={pending}
-              error={missionError}
-              employees={employees}
-              sites={sites}
-              catalogs={catalogs}
-              contracts={contracts}
-              orders={omRows}
-              value={missionForm}
-              onChange={setMissionForm}
-              onClose={closeMission}
-              onSubmit={saveMission}
-              onPrint={() => printMission(missionForm)}
-              onReset={() => {
-                setMissionError(null);
-                setMissionForm(emptyMissionDraft());
-              }}
-              onOpenOrder={openMissionRow}
-            />
-          ) : null}
-        </>
+        </RegisterSection>
       ) : tab === "conges" ? (
-        <>
-          <RhPanel>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="text-base font-semibold text-foreground">
-                  سندات الإجازات — Titres de congé
-                </h3>
-                <p className="mt-1 max-w-2xl text-sm text-foreground/60">
-                  Chaque congé approuvé reçoit un titre numéroté (NF/CNG). Complétez le transport, la pièce
-                  d&apos;identité et la validation, puis imprimez. · كل إجازة معتمدة تحصل على سند مرقّم. أكمل
-                  البيانات ثم اطبع.
-                </p>
-              </div>
-              <Button variant="secondary" onClick={() => router.push("/rh/conges")}>
-                {bi("Demandes de congé", "طلبات الإجازات")}
-              </Button>
-            </div>
-          </RhPanel>
-
+        <RegisterSection
+          icon={CalendarCheck}
+          color="#22a06b"
+          title="Titres de congé"
+          description="Un titre numéroté par congé approuvé : complétez-le, puis imprimez."
+          action={
+            <Button variant="secondary" onClick={() => router.push("/rh/conges")}>
+              <CalendarCheck aria-hidden />
+              Demandes de congé
+            </Button>
+          }
+        >
           <DataTable
             data={leaveRows}
             columns={leaveColumns}
@@ -828,141 +909,256 @@ export function DocumentsManager({
                 .filter(Boolean)
                 .join(" ")
             }
-            emptyTitle={bi("Aucun titre de congé — approuvez une demande de congé", "لا توجد سندات إجازات")}
+            emptyTitle="Aucun titre de congé"
+            emptyBody="Les titres apparaissent ici dès qu'une demande de congé est approuvée."
           />
-          {titleForm ? (
-            <LeaveTitleDialog
-              pending={pending}
-              error={titleError}
-              sites={sites}
-              catalogs={catalogs}
-              value={titleForm}
-              onChange={setTitleForm}
-              onClose={() => {
-                setTitleForm(null);
-                setTitleError(null);
+        </RegisterSection>
+      ) : tab === "autres" ? (
+        <RegisterSection
+          icon={Mail}
+          color="#ec4899"
+          title="Correspondances"
+          description="Autres courriers RH numérotés, avec leur période et leur statut."
+          action={
+            <Button
+              onClick={() => {
+                setFormError(null);
+                setCorrOpen(true);
               }}
-              onSubmit={saveTitle}
-              onPrint={() => printTitle(titleForm)}
-            />
-          ) : null}
-        </>
+            >
+              <Plus aria-hidden />
+              Nouvelle correspondance
+            </Button>
+          }
+        >
+          <DataTable
+            data={otherCorrRows}
+            columns={otherColumns}
+            getRowId={(r) => r.id}
+            searchPlaceholder="Référence, type, employé…"
+            searchText={(r) =>
+              [r.number, typeLabel("correspondence_type", r.type_code), r.matricule, r.employee_name]
+                .filter(Boolean)
+                .join(" ")
+            }
+            emptyTitle="Aucune correspondance"
+          />
+        </RegisterSection>
       ) : (
-        <>
-          <RhPanel>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <RhField label="Employé">
-                <select
-                  className={rhInput}
-                  value={fileForm.employee_id}
-                  onChange={(e) =>
-                    setFileForm({ ...fileForm, employee_id: e.target.value })
-                  }
-                >
-                  <option value="">—</option>
-                  {employees.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.matricule} · {e.last_name} {e.first_name}
-                    </option>
-                  ))}
-                </select>
-              </RhField>
-              <RhField label="Type de pièce">
-                <CatalogSelect
-                  items={catalogs}
-                  kind="document_type"
-                  value={fileForm.doc_type_code}
-                  onChange={(v) => setFileForm({ ...fileForm, doc_type_code: v })}
-                  allowEmpty={false}
-                />
-              </RhField>
-              <RhField label="Lien fichier">
-                <input
-                  className={rhInput}
-                  value={fileForm.file_url}
-                  onChange={(e) =>
-                    setFileForm({ ...fileForm, file_url: e.target.value })
-                  }
-                />
-              </RhField>
-              <RhField label="Émis le">
-                <input
-                  type="date"
-                  className={rhInput}
-                  value={fileForm.issued_on}
-                  onChange={(e) =>
-                    setFileForm({ ...fileForm, issued_on: e.target.value })
-                  }
-                />
-              </RhField>
-              <RhField label="Expire le">
-                <input
-                  type="date"
-                  className={rhInput}
-                  value={fileForm.expires_on}
-                  onChange={(e) =>
-                    setFileForm({ ...fileForm, expires_on: e.target.value })
-                  }
-                />
-              </RhField>
-              <RhField label="Notes">
-                <input
-                  className={rhInput}
-                  value={fileForm.notes}
-                  onChange={(e) =>
-                    setFileForm({ ...fileForm, notes: e.target.value })
-                  }
-                />
-              </RhField>
-              <div>
-                <Button
-                  disabled={pending}
-                  onClick={() => {
-                    setError(null);
-                    start(async () => {
-                      const r = await upsertHrFile(fileForm);
-                      if (!r.ok) {
-                        setError(r.error);
-                        return;
-                      }
-                      const emp = employees.find((e) => e.id === fileForm.employee_id);
-                      setFileRows((prev) => [
-                        {
-                          id: r.data.id,
-                          employee_id: fileForm.employee_id,
-                          doc_type_code: fileForm.doc_type_code,
-                          file_url: fileForm.file_url || null,
-                          file_name: null,
-                          storage_path: null,
-                          issued_on: fileForm.issued_on || null,
-                          expires_on: fileForm.expires_on || null,
-                          notes: fileForm.notes || null,
-                          matricule: emp?.matricule ?? "",
-                          employee_name: emp
-                            ? `${emp.last_name} ${emp.first_name}`
-                            : "",
-                        },
-                        ...prev,
-                      ]);
-                      setPointageHref(null);
-                      setInfo("Pièce enregistrée.");
-                    });
-                  }}
-                >
-                  Enregistrer le document
-                </Button>
-              </div>
-            </div>
-          </RhPanel>
+        <RegisterSection
+          icon={FileStack}
+          color="#64748b"
+          title="Pièces officielles"
+          description="Pièces d'identité, diplômes et documents remis par les employés."
+          action={
+            <Button
+              onClick={() => {
+                setFormError(null);
+                setFileOpen(true);
+              }}
+            >
+              <Plus aria-hidden />
+              Ajouter une pièce
+            </Button>
+          }
+        >
           <DataTable
             data={fileRows}
             columns={fileColumns}
             getRowId={(r) => r.id}
-            searchPlaceholder="Employé, type…"
-            emptyTitle="لا توجد سجلات"
+            searchPlaceholder="Employé, pièce…"
+            searchText={(r) =>
+              [r.matricule, r.employee_name, typeLabel("document_type", r.doc_type_code), r.notes]
+                .filter(Boolean)
+                .join(" ")
+            }
+            emptyTitle="Aucune pièce enregistrée"
           />
-        </>
+        </RegisterSection>
       )}
+
+      <Dialog open={corrOpen} onOpenChange={setCorrOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Nouvelle correspondance</DialogTitle>
+            <DialogDescription>Une référence unique lui est attribuée à l&apos;enregistrement.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <RhField label="Employé" required>
+                {employeeSelect(corrForm.employee_id, (id) => setCorrForm({ ...corrForm, employee_id: id }))}
+              </RhField>
+            </div>
+            <RhField label="Type">
+              <CatalogSelect
+                items={otherTypes}
+                kind="correspondence_type"
+                value={corrForm.type_code}
+                onChange={(v) => setCorrForm({ ...corrForm, type_code: v })}
+                allowEmpty={false}
+              />
+            </RhField>
+            <RhField label="Statut">
+              <CatalogSelect
+                items={catalogs}
+                kind="correspondence_status"
+                value={corrForm.status_code}
+                onChange={(v) => setCorrForm({ ...corrForm, status_code: v })}
+                allowEmpty={false}
+              />
+            </RhField>
+            <div className="sm:col-span-2">
+              <RhField label="Chantier">
+                <select
+                  className={rhInput}
+                  value={corrForm.site_id}
+                  onChange={(e) => setCorrForm({ ...corrForm, site_id: e.target.value })}
+                >
+                  <option value="">—</option>
+                  {sites.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name_fr}
+                    </option>
+                  ))}
+                </select>
+              </RhField>
+            </div>
+            <RhField label="Du">
+              <input
+                type="date"
+                className={rhInput}
+                value={corrForm.start_date}
+                onChange={(e) => setCorrForm({ ...corrForm, start_date: e.target.value })}
+              />
+            </RhField>
+            <RhField label="Au">
+              <input
+                type="date"
+                className={rhInput}
+                value={corrForm.end_date}
+                onChange={(e) => setCorrForm({ ...corrForm, end_date: e.target.value })}
+              />
+            </RhField>
+          </div>
+          {legendHint ? (
+            <RhAlert tone="info">Ce type inscrit le code de présence « {legendHint} » dans le pointage.</RhAlert>
+          ) : null}
+          {formError ? <RhAlert tone="danger">{formError}</RhAlert> : null}
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setCorrOpen(false)}>
+              Annuler
+            </Button>
+            <Button disabled={pending || !corrForm.employee_id} onClick={saveCorrespondence}>
+              Enregistrer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={fileOpen} onOpenChange={setFileOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Ajouter une pièce officielle</DialogTitle>
+            <DialogDescription>Rattachez la pièce à l&apos;employé, avec ses dates de validité.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <RhField label="Employé" required>
+                {employeeSelect(fileForm.employee_id, (id) => setFileForm({ ...fileForm, employee_id: id }))}
+              </RhField>
+            </div>
+            <RhField label="Type de pièce">
+              <CatalogSelect
+                items={catalogs}
+                kind="document_type"
+                value={fileForm.doc_type_code}
+                onChange={(v) => setFileForm({ ...fileForm, doc_type_code: v })}
+                allowEmpty={false}
+              />
+            </RhField>
+            <RhField label="Lien du fichier">
+              <input
+                className={rhInput}
+                placeholder="https://…"
+                value={fileForm.file_url}
+                onChange={(e) => setFileForm({ ...fileForm, file_url: e.target.value })}
+              />
+            </RhField>
+            <RhField label="Émise le">
+              <input
+                type="date"
+                className={rhInput}
+                value={fileForm.issued_on}
+                onChange={(e) => setFileForm({ ...fileForm, issued_on: e.target.value })}
+              />
+            </RhField>
+            <RhField label="Expire le">
+              <input
+                type="date"
+                className={rhInput}
+                value={fileForm.expires_on}
+                onChange={(e) => setFileForm({ ...fileForm, expires_on: e.target.value })}
+              />
+            </RhField>
+            <div className="sm:col-span-2">
+              <RhField label="Notes">
+                <input
+                  className={rhInput}
+                  value={fileForm.notes}
+                  onChange={(e) => setFileForm({ ...fileForm, notes: e.target.value })}
+                />
+              </RhField>
+            </div>
+          </div>
+          {formError ? <RhAlert tone="danger">{formError}</RhAlert> : null}
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setFileOpen(false)}>
+              Annuler
+            </Button>
+            <Button disabled={pending || !fileForm.employee_id} onClick={saveFile}>
+              Enregistrer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {missionOpen ? (
+        <MissionOrderDialog
+          pending={pending}
+          error={missionError}
+          employees={employees}
+          sites={sites}
+          catalogs={catalogs}
+          contracts={contracts}
+          orders={omRows}
+          value={missionForm}
+          onChange={setMissionForm}
+          onClose={closeMission}
+          onSubmit={saveMission}
+          onPrint={() => printMission(missionForm)}
+          onReset={() => {
+            setMissionError(null);
+            setMissionForm(emptyMissionDraft());
+          }}
+          onOpenOrder={openMissionRow}
+        />
+      ) : null}
+      {titleForm ? (
+        <LeaveTitleDialog
+          pending={pending}
+          error={titleError}
+          sites={sites}
+          catalogs={catalogs}
+          value={titleForm}
+          onChange={setTitleForm}
+          onClose={() => {
+            setTitleForm(null);
+            setTitleError(null);
+          }}
+          onSubmit={saveTitle}
+          onPrint={() => printTitle(titleForm)}
+        />
+      ) : null}
     </div>
   );
 }
