@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  saveLeaveTitle,
   upsertHrCorrespondence,
   upsertHrFile,
   type HrCorrespondenceRow,
@@ -13,29 +14,44 @@ import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import type { HrEmployeeRow } from "@/lib/actions/hr-employees";
 import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
 import {
+  OM_DONNEUR,
+  OM_FAIT_A,
   formatEstablishmentDate,
+  formatOmDate,
   missionOrderFieldsSchema,
   missionPayload,
   missionPointageHref,
+  pickMissionContract,
   type MissionContractHint,
 } from "@/lib/hr/mission-order";
+import {
+  LEAVE_TITLE_FIELD_KEYS,
+  leaveDaysLabel,
+  leaveNature,
+  leaveOfCorrespondence,
+  leaveTitleFieldsSchema,
+} from "@/lib/hr/leave-title";
 import {
   MissionOrderDialog,
   emptyMissionDraft,
   missionDraftDateIssue,
   type MissionDraft,
 } from "@/components/rh/mission-order-dialog";
+import { LeaveTitleDialog, type LeaveTitleDraft } from "@/components/rh/leave-title-dialog";
+import { buildLeaveTitleHtml, leaveTitleReference } from "@/components/rh/leave-title-print";
 import { buildMissionOrderHtml } from "@/components/rh/mission-order-print";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 import {
   CatalogSelect,
   RhAlert,
+  RhChip,
   RhField,
   RhPageHeader,
   RhPanel,
   RhTabs,
   bi,
+  catalogOptions,
   rhInput,
 } from "@/components/rh/rh-ui";
 
@@ -134,10 +150,12 @@ export function DocumentsManager({
   loadError?: string;
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<"files" | "corr">("corr");
+  const [tab, setTab] = useState<"files" | "corr" | "conges">("corr");
   const [missionOpen, setMissionOpen] = useState(openMission);
   const [missionForm, setMissionForm] = useState<MissionDraft>(emptyMissionDraft);
   const [missionError, setMissionError] = useState<string | null>(null);
+  const [titleForm, setTitleForm] = useState<LeaveTitleDraft | null>(null);
+  const [titleError, setTitleError] = useState<string | null>(null);
   const [fileRows, setFileRows] = useState(files);
   const [corrRows, setCorrRows] = useState(correspondences);
   const [pending, start] = useTransition();
@@ -340,8 +358,152 @@ export function DocumentsManager({
     printMission(draftFromRow(row));
   }
 
+  function titleDraftFromRow(row: HrCorrespondenceRow): LeaveTitleDraft {
+    const emp = employees.find((item) => item.id === row.employee_id);
+    const contract = pickMissionContract(contracts, row.employee_id);
+    const site = sites.find((item) => item.id === contract?.site_id);
+    const idType = catalogOptions(catalogs, "id_type").find((item) => item.code === emp?.id_type_code);
+    const saved = (row.payload.titre ?? {}) as Record<string, unknown>;
+    const defaults: Record<string, string> = {
+      matricule: row.matricule || emp?.matricule || "",
+      nom: row.last_name || emp?.last_name || "",
+      prenom: row.first_name || emp?.first_name || "",
+      affectation: site?.name_fr || emp?.fiche_affectation || "",
+      poste: contract?.poste_fr || emp?.fiche_poste || "",
+      pieceType: idType?.label_fr || emp?.id_type_code || "",
+      pieceNum: emp?.id_number || "",
+      donneur: OM_DONNEUR,
+      faitA: OM_FAIT_A,
+      dateDoc: (row.created_at ?? "").slice(0, 10),
+    };
+    const fields = Object.fromEntries(
+      LEAVE_TITLE_FIELD_KEYS.map((key) => [
+        key,
+        typeof saved[key] === "string" ? (saved[key] as string) : (defaults[key] ?? ""),
+      ]),
+    ) as Record<(typeof LEAVE_TITLE_FIELD_KEYS)[number], string>;
+    return {
+      ...fields,
+      id: row.id,
+      numero: row.number,
+      employee_id: row.employee_id,
+      status_code: row.status_code,
+      leave: leaveOfCorrespondence(row),
+    };
+  }
+
+  function openTitle(row: HrCorrespondenceRow) {
+    setTitleError(null);
+    setTitleForm(titleDraftFromRow(row));
+  }
+
+  function printTitle(draft: LeaveTitleDraft) {
+    const checked = leaveTitleFieldsSchema.safeParse({
+      ...draft,
+      matricule: draft.matricule || "—",
+      nom: draft.nom || "—",
+    });
+    if (!checked.success) {
+      setTitleError(checked.error.issues[0]?.message ?? "Données invalides");
+      return;
+    }
+    printHtml(
+      buildLeaveTitleHtml(
+        checked.data,
+        draft.leave,
+        draft.numero,
+        companyLetterheadUrl(letterheadUrl, window.location.origin),
+        window.location.origin,
+      ),
+    );
+  }
+
+  function saveTitle() {
+    if (!titleForm) return;
+    setTitleError(null);
+    const draft = titleForm;
+    start(async () => {
+      const r = await saveLeaveTitle({ id: draft.id, fields: draft });
+      if (!r.ok) {
+        setTitleError(r.error);
+        return;
+      }
+      setCorrRows((prev) =>
+        prev.map((row) => (row.id === draft.id ? { ...row, payload: { ...row.payload, titre: r.data.titre } } : row)),
+      );
+      setPointageHref(null);
+      setError(null);
+      setInfo(`Titre de congé ${leaveTitleReference(draft.numero)} enregistré. · تم حفظ سند الإجازة.`);
+      setTitleForm(null);
+    });
+  }
+
   const omRows = corrRows.filter((row) => row.type_code === "OM");
-  const otherCorrRows = corrRows.filter((row) => row.type_code !== "OM");
+  const leaveRows = corrRows.filter((row) => row.type_code === "LEAVE");
+  const otherCorrRows = corrRows.filter((row) => row.type_code !== "OM" && row.type_code !== "LEAVE");
+
+  const leaveColumns = [
+    corrCol.accessor((r) => leaveTitleReference(r.number), {
+      id: "reference",
+      header: "Référence — الرقم المرجعي",
+      cell: ({ row: { original: r } }) => (
+        <>
+          <div className="font-mono font-semibold text-brand">{leaveTitleReference(r.number)}</div>
+          <div className="mt-0.5 text-[10px] text-foreground/40">{r.number}</div>
+        </>
+      ),
+    }),
+    corrCol.accessor((r) => r.matricule || "—", {
+      id: "matricule",
+      header: "Matricule — الرقم التسلسلي",
+      meta: { className: "font-mono" },
+    }),
+    corrCol.accessor((r) => `${r.last_name} ${r.first_name}`.trim() || "—", {
+      id: "employee",
+      header: "Nom et prénom — الاسم واللقب",
+    }),
+    corrCol.accessor((r) => leaveNature(leaveOfCorrespondence(r).kind).fr, {
+      id: "nature",
+      header: "Nature — طبيعة الإجازة",
+    }),
+    corrCol.accessor((r) => r.start_date ?? "", {
+      id: "period",
+      header: "Période — الفترة",
+      cell: ({ row: { original: r } }) => {
+        const leave = leaveOfCorrespondence(r);
+        return (
+          <span className="whitespace-nowrap tabular-nums">
+            {formatOmDate(leave.dateDebut)} → {formatOmDate(leave.dateFin)}
+          </span>
+        );
+      },
+    }),
+    corrCol.accessor((r) => leaveOfCorrespondence(r).jours, {
+      id: "jours",
+      header: "Jours — الأيام",
+      cell: (info) => <span className="tabular-nums">{leaveDaysLabel(info.getValue())}</span>,
+    }),
+    corrCol.display({
+      id: "actions",
+      header: "Titre — السند",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row: { original: r } }) =>
+        r.status_code === "CANCELLED" ? (
+          <RhChip tone="danger">{bi("Annulé", "ملغى")}</RhChip>
+        ) : (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button variant="secondary" onClick={() => openTitle(r)}>
+              {bi("Ouvrir le titre", "فتح السند")}
+            </Button>
+            <Button variant="secondary" onClick={() => printTitle(titleDraftFromRow(r))}>
+              {bi("Imprimer", "طباعة")}
+            </Button>
+            {r.payload.titre ? null : <RhChip tone="warning">{bi("À compléter", "للإكمال")}</RhChip>}
+          </div>
+        ),
+    }),
+  ];
 
   const omColumns = [
     corrCol.accessor("number", {
@@ -402,13 +564,14 @@ export function DocumentsManager({
   return (
     <div className="space-y-5">
       <RhPageHeader
-        title="أرشيف وتتبع أوامر المهمة — Archivage et suivi des ordres de mission"
-        description="سجل إلكتروني مركزي. كل أمر يحصل على معرّف داخلي فريد ورقم مرجعي لا يُعاد استخدامه. · Registre central : identifiant unique (UUID) et numéro de référence non réutilisable."
+        title="الوثائق الإدارية — Documents RH"
+        description="سجل إلكتروني مركزي لأوامر المهمة وسندات الإجازات. كل وثيقة تحصل على رقم مرجعي لا يُعاد استخدامه. · Registre central des ordres de mission et titres de congé : numéro de référence non réutilisable."
       />
       <RhTabs
         uiKey="hr_documents"
         items={[
           { id: "corr", label: "أوامر المهمة — Ordres de mission" },
+          { id: "conges", label: "سندات الإجازات — Titres de congé" },
           { id: "files", label: "الوثائق الرسمية — Pièces officielles" },
         ]}
         value={tab}
@@ -620,6 +783,55 @@ export function DocumentsManager({
                 setMissionForm(emptyMissionDraft());
               }}
               onOpenOrder={openMissionRow}
+            />
+          ) : null}
+        </>
+      ) : tab === "conges" ? (
+        <>
+          <RhPanel>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-foreground">
+                  سندات الإجازات — Titres de congé
+                </h3>
+                <p className="mt-1 max-w-2xl text-sm text-foreground/60">
+                  Chaque congé approuvé reçoit un titre numéroté (NF/CNG). Complétez le transport, la pièce
+                  d&apos;identité et la validation, puis imprimez. · كل إجازة معتمدة تحصل على سند مرقّم. أكمل
+                  البيانات ثم اطبع.
+                </p>
+              </div>
+              <Button variant="secondary" onClick={() => router.push("/rh/conges")}>
+                {bi("Demandes de congé", "طلبات الإجازات")}
+              </Button>
+            </div>
+          </RhPanel>
+
+          <DataTable
+            data={leaveRows}
+            columns={leaveColumns}
+            getRowId={(r) => r.id}
+            searchPlaceholder="Référence, matricule, nom…"
+            searchText={(r) =>
+              [r.number, leaveTitleReference(r.number), r.matricule, r.last_name, r.first_name]
+                .filter(Boolean)
+                .join(" ")
+            }
+            emptyTitle={bi("Aucun titre de congé — approuvez une demande de congé", "لا توجد سندات إجازات")}
+          />
+          {titleForm ? (
+            <LeaveTitleDialog
+              pending={pending}
+              error={titleError}
+              sites={sites}
+              catalogs={catalogs}
+              value={titleForm}
+              onChange={setTitleForm}
+              onClose={() => {
+                setTitleForm(null);
+                setTitleError(null);
+              }}
+              onSubmit={saveTitle}
+              onPrint={() => printTitle(titleForm)}
             />
           ) : null}
         </>

@@ -16,18 +16,68 @@ function escapeHtml(value: string) {
     .replace(/"/g, "&quot;");
 }
 
-function text(value: string | null | undefined) {
+export function sheetText(value: string | null | undefined) {
   return escapeHtml(value ?? "");
+}
+
+const text = sheetText;
+
+/** "000005/26" → "NF/<code>/0005/26". */
+export function documentReference(code: string, numero: string | null | undefined) {
+  const value = (numero ?? "").trim();
+  if (!value) return "";
+  const match = /^(\d+)\/(\d{2,4})$/.exec(value);
+  if (!match) return `NF/${code}/${value}`;
+  return `NF/${code}/${String(Number(match[1])).padStart(4, "0")}/${match[2]}`;
 }
 
 /** "000005/26" → "NF/OM/0005/26". */
 export function missionReference(numero: string | null | undefined) {
-  const value = (numero ?? "").trim();
-  if (!value) return "";
-  const match = /^(\d+)\/(\d{2,4})$/.exec(value);
-  if (!match) return `NF/OM/${value}`;
-  return `NF/OM/${String(Number(match[1])).padStart(4, "0")}/${match[2]}`;
+  return documentReference("OM", numero);
 }
+
+/** Label, value and Arabic label cells; `fr`, `value` and `ar` are already-escaped HTML. */
+export function sheetRow(fr: string, value: string, ar: string) {
+  return `<div class="om-row"><div class="om-fr">${fr}</div><div class="om-val">${value}</div><div class="om-ar">${ar}</div></div>`;
+}
+
+/** Fields shared by every sheet built on the sectioned layout (sections I, III, IV, V and footer). */
+export type SectionedSheetFields = Pick<
+  MissionOrderFields,
+  | "matricule"
+  | "nom"
+  | "prenom"
+  | "affectation"
+  | "codeAffectation"
+  | "poste"
+  | "moyen"
+  | "modele"
+  | "immat"
+  | "kmDepart"
+  | "kmRetour"
+  | "pieceType"
+  | "pieceNum"
+  | "pieceFonction"
+  | "donneur"
+  | "faitA"
+  | "dateDoc"
+>;
+
+export type SectionedSheet = {
+  fields: SectionedSheetFields;
+  titleFr: string;
+  titleAr: string;
+  reference: string;
+  /** Plain text for the browser tab / PDF name. */
+  documentTitle: string;
+  identificationTitle: string;
+  /** Prints the "Code affectation" row in section I (default true). */
+  showCodeAffectation?: boolean;
+  /** Section II heading and rows (built with `sheetRow`). */
+  details: { title: string; rows: string[] };
+  /** Section V heading and the declaration printed under the ID document (plain text). */
+  signature: { title: string; declaration: string };
+};
 
 type TransportMode = "service" | "tous";
 
@@ -68,6 +118,17 @@ function cairoFontFaces(origin: string) {
   return fontFace(origin, "Cairo", "cairo-arabic-700.woff2", "700", RANGE_ARABIC);
 }
 
+function naskhFontFaces(origin: string) {
+  return fontFace(origin, "Noto Naskh Arabic", "noto-naskh-arabic-700.woff2", "700", RANGE_ARABIC);
+}
+
+/** One span per letter so the line can be spread to the Arabic title's width. */
+function spreadLetters(value: string) {
+  return Array.from(value)
+    .map((char) => `<span>${char === " " ? "&nbsp;" : escapeHtml(char)}</span>`)
+    .join("");
+}
+
 /** `assetOrigin` must be absolute when the HTML is written into a print frame. */
 export function buildMissionOrderHtml(fields: MissionPrintFields, letterheadUrl: string, assetOrigin = "") {
   return fields.gabarit === OM_GABARIT_ANCIEN
@@ -76,18 +137,49 @@ export function buildMissionOrderHtml(fields: MissionPrintFields, letterheadUrl:
 }
 
 function buildMissionOrderHtmlV2(fields: MissionPrintFields, letterheadUrl: string, assetOrigin: string) {
+  return buildSectionedSheetHtml(
+    {
+      fields,
+      titleFr: "ORDRE DE MISSION",
+      titleAr: "أمر بمهمة",
+      reference: missionReference(fields.numero),
+      documentTitle: `ORDRE DE MISSION ${fields.numero ?? ""}`.trim(),
+      identificationTitle: "I. IDENTIFICATION DU MISSIONNAIRE",
+      details: {
+        title: "II. ITINÉRAIRE DE LA MISSION",
+        rows: [
+          sheetRow("Destination(s) :", text(omJoin(fields.dest1, fields.dest2)), "الوجهة :"),
+          sheetRow('Départ :<span class="om-sub">(lieu et date)</span>', text(omJoin(fields.lieuDepart, formatOmDate(fields.dateDepart))), 'الذهاب :<span class="om-sub">(المكان والتاريخ)</span>'),
+          sheetRow('Retour :<span class="om-sub">(lieu et date)</span>', text(omJoin(fields.lieuRetour, formatOmDate(fields.dateRetour))), 'العودة :<span class="om-sub">(المكان والتاريخ)</span>'),
+          sheetRow("Objet de la mission :", text(fields.motif), "سبب المهمة :"),
+        ],
+      },
+      signature: {
+        title: "V. SIGNATURE DU MISSIONNAIRE",
+        declaration:
+          "Je déclare avoir lu et pris connaissance des conditions de la présente mission et les accepter.",
+      },
+    },
+    letterheadUrl,
+    assetOrigin,
+  );
+}
+
+/** Sectioned A4 sheet (letterhead, I identification, II details, III transport, IV validation, V signature). */
+export function buildSectionedSheetHtml(sheet: SectionedSheet, letterheadUrl: string, assetOrigin = "") {
+  const { fields } = sheet;
   const km = (value: string | null) => (value ? `${value} km` : "");
   const mode = transportMode(fields.moyen);
   const check = (value: TransportMode) => (mode === value ? "✓" : "");
-  const row = (fr: string, value: string, ar: string) =>
-    `<div class="om-row"><div class="om-fr">${fr}</div><div class="om-val">${value}</div><div class="om-ar">${ar}</div></div>`;
+  const row = sheetRow;
   return `<!doctype html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <title>ORDRE DE MISSION ${text(fields.numero)}</title>
+  <title>${text(sheet.documentTitle)}</title>
   <style>
     ${plexFontFaces(assetOrigin)}
+    ${naskhFontFaces(assetOrigin)}
     @page { size: A4 portrait; margin: 0; }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #fff; color: #111; }
@@ -113,12 +205,13 @@ function buildMissionOrderHtmlV2(fields: MissionPrintFields, letterheadUrl: stri
       pointer-events: none;
     }
     .om-head, .om-stack, .om-foot { position: relative; z-index: 1; }
-    .om-head { display: grid; grid-template-columns: 1fr 1fr; align-items: end; margin-bottom: 2mm; }
-    .om-ref { justify-self: start; font-size: 13px; font-weight: 500; padding-bottom: 1.5mm; }
+    .om-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 3.5mm; }
+    .om-ref { font-size: 13px; font-weight: 500; }
     .om-ref b { font-weight: 600; margin-left: 2mm; letter-spacing: .4px; }
-    .om-title { text-align: center; line-height: 1.15; }
-    .om-title-ar { font-family: "IBM Plex Sans Arabic", sans-serif; font-size: 25px; font-weight: 600; direction: rtl; }
-    .om-title-fr { font-size: 17px; font-weight: 500; letter-spacing: 4px; margin-top: 1mm; }
+    .om-title { display: inline-flex; flex-direction: column; color: #0d0d0d; }
+    .om-title-ar { font-family: "Noto Naskh Arabic", "IBM Plex Sans Arabic", serif; font-size: 58px; font-weight: 700; line-height: 1.2; direction: rtl; text-align: center; white-space: nowrap; }
+    /* Zero width + full min-width: the Arabic word alone sets the block width. */
+    .om-title-fr { display: flex; justify-content: space-between; width: 0; min-width: 100%; font-size: 12.5px; font-weight: 600; line-height: 1; margin-top: .8mm; padding-top: 1.6mm; border-top: 1.2pt solid #0d0d0d; }
     .om-stack { flex: 1 1 auto; display: flex; flex-direction: column; gap: 2.5mm; min-height: 0; }
     .om-block { display: flex; flex-direction: column; }
     .om-id { flex: 1.15 1 0; }
@@ -166,30 +259,27 @@ function buildMissionOrderHtmlV2(fields: MissionPrintFields, letterheadUrl: stri
 <div id="om-print-view">
   <img class="om-letterhead" src="${escapeHtml(letterheadUrl)}" alt="">
   <div class="om-head">
-    <div class="om-ref">Réf :<b>${text(missionReference(fields.numero))}</b></div>
+    <div class="om-ref">Réf :<b>${text(sheet.reference)}</b></div>
     <div class="om-title">
-      <div class="om-title-ar">أمر بمهمة</div>
-      <div class="om-title-fr">ORDRE DE MISSION</div>
+      <div class="om-title-ar">${text(sheet.titleAr)}</div>
+      <div class="om-title-fr" aria-label="${escapeHtml(sheet.titleFr)}">${spreadLetters(sheet.titleFr)}</div>
     </div>
   </div>
   <div class="om-stack">
     <section class="om-block om-id">
-      <div class="om-sec"><span>I. IDENTIFICATION DU MISSIONNAIRE</span><span class="om-rule"></span></div>
+      <div class="om-sec"><span>${text(sheet.identificationTitle)}</span><span class="om-rule"></span></div>
       <div class="om-rows">
         ${row("Matricule :", text(fields.matricule), "الرقم التسلسلي :")}
         ${row("Nom et Prénom :", text(`${fields.nom} ${fields.prenom ?? ""}`.trim().toUpperCase()), "الاسم واللقب :")}
         ${row("Affectation :", text(fields.affectation), "التعيين :")}
-        ${row("Code affectation :", text(fields.codeAffectation), "رمز التعيين :")}
+        ${sheet.showCodeAffectation === false ? "" : row("Code affectation :", text(fields.codeAffectation), "رمز التعيين :")}
         ${row("Fonction :", text(fields.poste), "الوظيفة :")}
       </div>
     </section>
     <section class="om-block om-trip">
-      <div class="om-sec"><span>II. ITINÉRAIRE DE LA MISSION</span><span class="om-rule"></span></div>
+      <div class="om-sec"><span>${text(sheet.details.title)}</span><span class="om-rule"></span></div>
       <div class="om-rows">
-        ${row("Destination(s) :", text(omJoin(fields.dest1, fields.dest2)), "الوجهة :")}
-        ${row('Départ :<span class="om-sub">(lieu et date)</span>', text(omJoin(fields.lieuDepart, formatOmDate(fields.dateDepart))), 'الذهاب :<span class="om-sub">(المكان والتاريخ)</span>')}
-        ${row('Retour :<span class="om-sub">(lieu et date)</span>', text(omJoin(fields.lieuRetour, formatOmDate(fields.dateRetour))), 'العودة :<span class="om-sub">(المكان والتاريخ)</span>')}
-        ${row("Objet de la mission :", text(fields.motif), "سبب المهمة :")}
+        ${sheet.details.rows.join("\n        ")}
       </div>
     </section>
     <section class="om-block om-trans">
@@ -214,10 +304,10 @@ function buildMissionOrderHtmlV2(fields: MissionPrintFields, letterheadUrl: stri
       </div>
       <div class="om-divider"></div>
       <div class="om-col">
-        <div class="om-sec"><span>V. SIGNATURE DU MISSIONNAIRE</span><span class="om-rule"></span></div>
+        <div class="om-sec"><span>${text(sheet.signature.title)}</span><span class="om-rule"></span></div>
         ${row("Pièce d'identité :", text(fields.pieceType), "وثيقة التعريف :")}
         ${row("N° :", text(fields.pieceNum), "رقم :")}
-        <p class="om-declare">Je déclare avoir lu et pris connaissance des conditions de la présente mission et les accepter.</p>
+        <p class="om-declare">${text(sheet.signature.declaration)}</p>
       </div>
     </section>
   </div>
