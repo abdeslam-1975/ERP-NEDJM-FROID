@@ -29,28 +29,56 @@ export function missionReference(numero: string | null | undefined) {
   return `NF/OM/${String(Number(match[1])).padStart(4, "0")}/${match[2]}`;
 }
 
-type TransportMode = "service" | "train" | "avion" | "autre";
+type TransportMode = "service" | "tous";
 
+/** Legacy values (Train, Avion, Taxi…) print as "tous moyens". */
 function transportMode(moyen: string | null): TransportMode | null {
   const value = (moyen ?? "").trim().toLowerCase();
   if (!value) return null;
   if (value.includes("véhicule") || value.includes("vehicule") || value.includes("service")) return "service";
-  if (value === "train") return "train";
-  if (value === "avion") return "avion";
-  return "autre";
+  return "tous";
 }
 
-export function buildMissionOrderHtml(fields: MissionPrintFields, letterheadUrl: string) {
+const OM_FONT_DIR = "/fonts/om";
+const RANGE_LATIN =
+  "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD";
+const RANGE_LATIN_EXT =
+  "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF";
+const RANGE_ARABIC =
+  "U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC";
+
+function fontFace(origin: string, family: string, file: string, weight: string, range: string) {
+  return `@font-face { font-family: "${family}"; font-style: normal; font-weight: ${weight}; font-display: swap; src: url("${origin}${OM_FONT_DIR}/${file}") format("woff2"); unicode-range: ${range}; }`;
+}
+
+/** Fonts served by the app itself so printing and archived copies work offline. */
+function plexFontFaces(origin: string) {
+  return [
+    fontFace(origin, "IBM Plex Sans", "ibm-plex-sans-latin.woff2", "400 600", RANGE_LATIN),
+    fontFace(origin, "IBM Plex Sans", "ibm-plex-sans-latin-ext.woff2", "400 600", RANGE_LATIN_EXT),
+    // Same weight descriptor per pair, otherwise Chrome keeps only the latin face.
+    ...["400", "500", "600"].flatMap((weight) => [
+      fontFace(origin, "IBM Plex Sans Arabic", "ibm-plex-sans-latin.woff2", weight, RANGE_LATIN),
+      fontFace(origin, "IBM Plex Sans Arabic", `ibm-plex-sans-arabic-${weight}.woff2`, weight, RANGE_ARABIC),
+    ]),
+  ].join("\n    ");
+}
+
+function cairoFontFaces(origin: string) {
+  return fontFace(origin, "Cairo", "cairo-arabic-700.woff2", "700", RANGE_ARABIC);
+}
+
+/** `assetOrigin` must be absolute when the HTML is written into a print frame. */
+export function buildMissionOrderHtml(fields: MissionPrintFields, letterheadUrl: string, assetOrigin = "") {
   return fields.gabarit === OM_GABARIT_ANCIEN
-    ? buildMissionOrderHtmlV1(fields, letterheadUrl)
-    : buildMissionOrderHtmlV2(fields, letterheadUrl);
+    ? buildMissionOrderHtmlV1(fields, letterheadUrl, assetOrigin)
+    : buildMissionOrderHtmlV2(fields, letterheadUrl, assetOrigin);
 }
 
-function buildMissionOrderHtmlV2(fields: MissionPrintFields, letterheadUrl: string) {
+function buildMissionOrderHtmlV2(fields: MissionPrintFields, letterheadUrl: string, assetOrigin: string) {
   const km = (value: string | null) => (value ? `${value} km` : "");
   const mode = transportMode(fields.moyen);
   const check = (value: TransportMode) => (mode === value ? "✓" : "");
-  const autre = mode === "autre" ? ` : ${text(fields.moyen)}` : "";
   const row = (fr: string, value: string, ar: string) =>
     `<div class="om-row"><div class="om-fr">${fr}</div><div class="om-val">${value}</div><div class="om-ar">${ar}</div></div>`;
   return `<!doctype html>
@@ -58,8 +86,8 @@ function buildMissionOrderHtmlV2(fields: MissionPrintFields, letterheadUrl: stri
 <head>
   <meta charset="utf-8">
   <title>ORDRE DE MISSION ${text(fields.numero)}</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap">
   <style>
+    ${plexFontFaces(assetOrigin)}
     @page { size: A4 portrait; margin: 0; }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #fff; color: #111; }
@@ -106,7 +134,7 @@ function buildMissionOrderHtmlV2(fields: MissionPrintFields, letterheadUrl: stri
     .om-val:empty::before { content: ""; display: block; margin: 0 4mm; border-bottom: 1pt dotted #8a8a8a; height: 3.5mm; }
     .om-sub { display: block; font-weight: 400; font-size: 10.5px; margin-top: .3mm; color: #666; }
     .om-indent { padding-left: 6mm; }
-    .om-modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2mm; padding: 1.5mm 1mm; }
+    .om-modes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2mm; padding: 1.5mm 1mm; }
     .om-mode { display: flex; align-items: center; gap: 2mm; font-size: 12px; color: #333; }
     .om-check { width: 4.2mm; height: 4.2mm; border: .8pt solid #111; border-radius: 1mm; display: grid; place-items: center; font-size: 11px; font-weight: 600; line-height: 1; flex: 0 0 auto; color: #111; }
     .om-mode small { display: block; direction: rtl; font-size: 12px; text-align: left; font-family: "IBM Plex Sans Arabic", sans-serif; }
@@ -167,10 +195,8 @@ function buildMissionOrderHtmlV2(fields: MissionPrintFields, letterheadUrl: stri
     <section class="om-block om-trans">
       <div class="om-sec"><span>III. MODE DE TRANSPORT</span><span class="om-rule"></span></div>
       <div class="om-modes">
+        <div class="om-mode"><span class="om-check">${check("tous")}</span><span>Tous moyens de transport<small>جميع وسائل النقل</small></span></div>
         <div class="om-mode"><span class="om-check">${check("service")}</span><span>Véhicule de service<small>سيارة المصلحة</small></span></div>
-        <div class="om-mode"><span class="om-check">${check("train")}</span><span>Train<small>قطار</small></span></div>
-        <div class="om-mode"><span class="om-check">${check("avion")}</span><span>Avion<small>طائرة</small></span></div>
-        <div class="om-mode"><span class="om-check">${check("autre")}</span><span>Autres${autre}<small>أخرى</small></span></div>
       </div>
       <div class="om-rows">
         ${row("Modèle :", text(fields.modele), "النوع :")}
@@ -204,15 +230,15 @@ function buildMissionOrderHtmlV2(fields: MissionPrintFields, letterheadUrl: stri
 </html>`;
 }
 
-function buildMissionOrderHtmlV1(fields: MissionPrintFields, letterheadUrl: string) {
+function buildMissionOrderHtmlV1(fields: MissionPrintFields, letterheadUrl: string, assetOrigin: string) {
   const km = (value: string | null) => (value ? `${value} km` : "");
   return `<!doctype html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
   <title>ORDRE DE MISSION ${text(fields.numero)}</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@700&display=swap">
   <style>
+    ${cairoFontFaces(assetOrigin)}
     @page { size: A4 portrait; margin: 0; }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #fff; color: #111; }

@@ -9,6 +9,7 @@ import {
   OM_FAIT_A,
   OM_GABARIT_ANCIEN,
   OM_LIEU_DEPART,
+  OM_MOYENS,
   missionDateBounds,
   missionDateIssue,
   pickMissionContract,
@@ -102,8 +103,6 @@ export const emptyMissionDraft = (): MissionDraft => ({
 
 type SiteOpt = { id: string; name_fr: string };
 
-const MOYENS = ["", "Train", "Avion", "Taxi", "Véhicule de l'entreprise"];
-
 function withCurrent(options: string[], current: string) {
   const values = options.filter(Boolean);
   if (current && !values.includes(current)) values.unshift(current);
@@ -149,6 +148,7 @@ export function MissionOrderDialog({
   const jobs = catalogOptions(catalogs, "job_title").map((item) => item.label_fr);
   const affectations = sites.map((site) => site.name_fr);
   const idTypes = catalogOptions(catalogs, "id_type");
+  const legacy = value.gabarit === OM_GABARIT_ANCIEN;
   const today = todayIsoAlgiers();
   const saved = value.id ? { dateDepart: value.savedDateDepart, dateRetour: value.savedDateRetour } : null;
   const bounds = missionDateBounds(value, today, saved);
@@ -356,6 +356,13 @@ export function MissionOrderDialog({
                 ))}
               </select>
             </RhField>
+            <RhField label="Code affectation — رمز التعيين">
+              <input
+                className={rhInput}
+                value={value.codeAffectation}
+                onChange={(e) => set({ codeAffectation: e.target.value })}
+              />
+            </RhField>
             <RhField label="Fonction / Poste">
               <select className={rhInput} value={value.poste} onChange={(e) => set({ poste: e.target.value })}>
                 <option value="" />
@@ -409,9 +416,11 @@ export function MissionOrderDialog({
               />
               {dateError("dateDepart")}
             </RhField>
-            <RhField label="Heure de départ">
-              <input type="time" className={rhInput} value={value.heureDepart} onChange={(e) => set({ heureDepart: e.target.value })} />
-            </RhField>
+            {legacy ? (
+              <RhField label="Heure de départ">
+                <input type="time" className={rhInput} value={value.heureDepart} onChange={(e) => set({ heureDepart: e.target.value })} />
+              </RhField>
+            ) : null}
             <RhField label="Lieu de retour">
               <input className={rhInput} value={value.lieuRetour} onChange={(e) => set({ lieuRetour: e.target.value })} />
             </RhField>
@@ -425,9 +434,11 @@ export function MissionOrderDialog({
               />
               {dateError("dateRetour")}
             </RhField>
-            <RhField label="Heure de retour">
-              <input type="time" className={rhInput} value={value.heureRetour} onChange={(e) => set({ heureRetour: e.target.value })} />
-            </RhField>
+            {legacy ? (
+              <RhField label="Heure de retour">
+                <input type="time" className={rhInput} value={value.heureRetour} onChange={(e) => set({ heureRetour: e.target.value })} />
+              </RhField>
+            ) : null}
             <div className="sm:col-span-2 lg:col-span-3">
               <RhField label="Motif du déplacement">
                 <textarea
@@ -458,7 +469,7 @@ export function MissionOrderDialog({
             <RhField label="Moyen de transport">
               <select className={rhInput} value={value.moyen} onChange={(e) => set({ moyen: e.target.value })}>
                 <option value="" />
-                {withCurrent(MOYENS.filter(Boolean), value.moyen).map((item) => (
+                {withCurrent([...OM_MOYENS], value.moyen).map((item) => (
                   <option key={item}>{item}</option>
                 ))}
               </select>
@@ -479,7 +490,7 @@ export function MissionOrderDialog({
         </section>
 
         <section className="space-y-3 rounded-2xl border border-border/70 p-4">
-          <h4 className="text-sm font-semibold">Pièce d&apos;identité & émission</h4>
+          <h4 className="text-sm font-semibold">Pièce d&apos;identité du missionnaire — وثيقة تعريف العامل</h4>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <RhField label="Type de pièce">
               <input className={rhInput} placeholder="Carte d'identité..." value={value.pieceType} onChange={(e) => set({ pieceType: e.target.value })} />
@@ -487,17 +498,27 @@ export function MissionOrderDialog({
             <RhField label="N° pièce">
               <input className={rhInput} value={value.pieceNum} onChange={(e) => set({ pieceNum: e.target.value })} />
             </RhField>
-            <RhField label="Délivré le">
-              <input type="date" className={rhInput} value={value.pieceDelivre} onChange={(e) => set({ pieceDelivre: e.target.value })} />
+            {legacy ? (
+              <>
+                <RhField label="Délivré le">
+                  <input type="date" className={rhInput} value={value.pieceDelivre} onChange={(e) => set({ pieceDelivre: e.target.value })} />
+                </RhField>
+                <RhField label="À (lieu)">
+                  <input className={rhInput} value={value.pieceLieu} onChange={(e) => set({ pieceLieu: e.target.value })} />
+                </RhField>
+              </>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="space-y-3 rounded-2xl border border-border/70 p-4">
+          <h4 className="text-sm font-semibold">Donneur de l&apos;OM & émission — مسلّم الأمر والإصدار</h4>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <RhField label="Donneur de l'OM">
+              <input className={rhInput} value={value.donneur} onChange={(e) => set({ donneur: e.target.value })} />
             </RhField>
             <RhField label="Fonction du donneur de l'OM">
               <input className={rhInput} value={value.pieceFonction} onChange={(e) => set({ pieceFonction: e.target.value })} />
-            </RhField>
-            <RhField label="À (lieu)">
-              <input className={rhInput} value={value.pieceLieu} onChange={(e) => set({ pieceLieu: e.target.value })} />
-            </RhField>
-            <RhField label="Donneur de l'OM">
-              <input className={rhInput} value={value.donneur} onChange={(e) => set({ donneur: e.target.value })} />
             </RhField>
             <RhField label="Fait à">
               <input className={rhInput} value={value.faitA} onChange={(e) => set({ faitA: e.target.value })} />
