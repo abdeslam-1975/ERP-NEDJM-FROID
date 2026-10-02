@@ -1,5 +1,6 @@
 "use client";
 
+import { LogOut } from "lucide-react";
 import { logoutAction } from "@/lib/actions/auth";
 
 export function LogoutButton({
@@ -12,23 +13,9 @@ export function LogoutButton({
       <form action={logoutAction}>
         <button
           type="submit"
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-white/10 text-sm font-semibold text-white transition hover:bg-white/15"
+          className="group flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-white/[0.07] text-sm font-semibold text-white ring-1 ring-inset ring-white/10 transition hover:bg-white/[0.14]"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-            <path
-              d="M10 7V5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1v-2"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-            />
-            <path
-              d="M4 12h11M8 8l-4 4 4 4"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <LogOut className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" strokeWidth={1.8} aria-hidden />
           Déconnexion
         </button>
       </form>
