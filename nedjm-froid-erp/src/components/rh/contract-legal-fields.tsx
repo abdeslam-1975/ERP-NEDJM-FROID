@@ -7,6 +7,13 @@ import {
   type ContractComplianceOptions,
 } from "@/lib/actions/hr-compliance";
 import { DEFAULT_CNAS_REGIME, DISABLED_IRG_CATEGORY, FIXED_IRG_RATES, type ComplianceOverride } from "@/lib/hr/compliance";
+import { Check, ChevronsUpDown } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { RhField, rhInput } from "@/components/rh/rh-ui";
 
 export type LegalChoice = {
@@ -138,10 +145,6 @@ function zoneRate(z: Zone) {
   return z.rate_pct > 0 ? `−${rate(z.rate_pct)} % ${z.applies_to === "BASE" ? "de la base" : "de l'impôt"}` : "0 %";
 }
 
-function cnasRates(r: ContractComplianceOptions["regimes"][number]) {
-  return `${rate(r.employee_pct)}/${rate(r.employer_pct)}/${rate(r.fos_pct)}`;
-}
-
 function cacoSplit(o: ContractComplianceOptions, conges: boolean, intemperies: boolean) {
   const c = o.cacobatph;
   return {
@@ -160,17 +163,96 @@ type Chip = { label: string; value: string };
 function RateChips({ items }: { items: Chip[] }) {
   if (!items.length) return null;
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
+    <div className="mt-2.5 flex flex-wrap gap-2">
       {items.map((c) => (
         <span
           key={c.label}
-          className="inline-flex items-baseline gap-1.5 rounded-lg border border-border/60 bg-surface-muted/70 px-2 py-1 text-[11px] text-foreground/55"
+          className="inline-flex items-baseline gap-2 rounded-lg border border-border/70 bg-surface-muted/70 px-2.5 py-1.5 text-xs font-medium text-foreground/70"
         >
           {c.label}
-          <span className="font-semibold tabular-nums text-foreground">{c.value}</span>
+          <span className="text-sm font-semibold tabular-nums text-foreground">{c.value}</span>
         </span>
       ))}
     </div>
+  );
+}
+
+function RateTiles({ items }: { items: Chip[] }) {
+  return (
+    <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+      {items.map((c) => (
+        <div key={c.label} className="rounded-xl border border-border/70 bg-surface-muted/60 px-3 py-2.5 text-center">
+          <div className="text-xs font-medium text-foreground/65">{c.label}</div>
+          <div className="mt-0.5 font-display text-xl font-semibold tabular-nums text-foreground">{c.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+type Regime = ContractComplianceOptions["regimes"][number];
+
+const cnasGrid = "grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem_4.5rem_5.5rem] items-center gap-2";
+
+function CnasPicker({
+  regimes,
+  value,
+  autoRegime,
+  onChange,
+}: {
+  regimes: Regime[];
+  value: string;
+  autoRegime: Regime | undefined;
+  onChange: (code: string) => void;
+}) {
+  const picked = value ? regimes.find((r) => r.code === value) : undefined;
+  const pct = (v: number) => `${rate(v)} %`;
+  const row = (key: string, code: string, label: string, r: Regime | undefined, selected: boolean) => (
+    <DropdownMenuItem key={key} className={`${cnasGrid} py-2.5`} onSelect={() => onChange(code)}>
+      <span className="flex items-center gap-1.5 font-semibold">
+        {selected ? <Check className="text-brand" aria-hidden /> : <span className="size-4" />}
+        {code || "Auto"}
+      </span>
+      <span className="truncate text-foreground/80">{label}</span>
+      <span className="text-right tabular-nums">{r ? pct(r.employee_pct) : "—"}</span>
+      <span className="text-right tabular-nums">{r ? pct(r.employer_pct) : "—"}</span>
+      <span className="text-right tabular-nums">{r ? pct(r.fos_pct) : "—"}</span>
+    </DropdownMenuItem>
+  );
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="mt-1.5 flex h-11 w-full items-center gap-3 rounded-xl border border-border/80 bg-surface px-3.5 text-left text-sm text-foreground outline-none transition focus-visible:border-brand focus-visible:ring-4 focus-visible:ring-brand/10"
+        >
+          <span className="rounded-md bg-brand-muted px-2 py-0.5 text-xs font-bold text-brand">
+            {picked?.code ?? (value || "Auto")}
+          </span>
+          <span className="min-w-0 flex-1 truncate font-medium">
+            {picked
+              ? picked.label_fr
+              : value
+                ? value
+                : `Automatique (fiche employé)${autoRegime ? ` : ${autoRegime.code}` : ""}`}
+          </span>
+          <ChevronsUpDown className="size-4 shrink-0 text-foreground/45" aria-hidden />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-(--radix-dropdown-menu-trigger-width) min-w-[34rem] p-1.5">
+        <div className={`${cnasGrid} border-b border-border/60 px-2.5 pb-2 pt-1 text-xs font-semibold text-foreground/60`}>
+          <span className="pl-5">Code</span>
+          <span>Régime</span>
+          <span className="text-right">Salarié</span>
+          <span className="text-right">Patronal</span>
+          <span className="text-right">Œuvres soc.</span>
+        </div>
+        <div className="max-h-80 overflow-y-auto pt-1">
+          {row("auto", "", "Automatique (fiche employé)", autoRegime, !value)}
+          {regimes.map((r) => row(r.code, r.code, r.label_fr, r, r.code === value))}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -203,14 +285,10 @@ export function ContractLegalFields({
   canEdit: boolean;
   loading: boolean;
 }) {
-  const knownCnas = options.regimes.some((r) => r.code === cnasCode);
   const lockedHint = !canEdit ? "Réservé aux droits « Cotisations & impôts »" : loading ? "Chargement…" : undefined;
 
   const autoRegimeCode = (employeeId && options.employee_social_profile[employeeId]) || DEFAULT_CNAS_REGIME;
   const autoRegime = options.regimes.find((r) => r.code === autoRegimeCode);
-  const cnasAuto = autoRegime
-    ? `Automatique (fiche employé) : ${autoRegime.code} : ${cnasRates(autoRegime)}`
-    : "Automatique (profil de la fiche employé)";
 
   const bareme = options.bareme_pcts.length ? `${options.bareme_pcts.map(rate).join("/")} %` : "";
   const scale = options.bareme_pcts.length
@@ -301,18 +379,13 @@ export function ContractLegalFields({
   return (
     <div className="grid gap-5">
       <div>
-        <RhField label="CNAS">
-          <select className={rhInput} value={cnasCode} onChange={(e) => onCnasChange(e.target.value)}>
-            <option value="">{cnasAuto}</option>
-            {cnasCode && !knownCnas ? <option value={cnasCode}>{cnasCode}</option> : null}
-            {options.regimes.map((r) => (
-              <option key={r.code} value={r.code} title={r.label_fr}>
-                {r.code} : {cnasRates(r)}
-              </option>
-            ))}
-          </select>
-        </RhField>
-        <RateChips items={cnasChips} />
+        <span className="text-[13px] font-semibold text-foreground/85">CNAS</span>
+        <CnasPicker regimes={options.regimes} value={cnasCode} autoRegime={autoRegime} onChange={onCnasChange} />
+        {cnasChips.length ? (
+          <RateTiles items={cnasChips} />
+        ) : (
+          <p className="mt-2 text-xs text-foreground/60">Taux de ce régime non renseignés dans les paramètres.</p>
+        )}
       </div>
 
       <div>
@@ -391,7 +464,7 @@ export function ContractLegalFields({
               ))}
             </select>
           </RhField>
-          <RateChips items={cacoChips} />
+          <RateTiles items={cacoChips} />
         </div>
       ) : null}
     </div>

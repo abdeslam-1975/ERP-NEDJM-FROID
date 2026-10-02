@@ -6,7 +6,7 @@ export { RhModal, RhTabs } from "@/components/rh/rh-ui-client";
 
 /* —— tokens (Tailwind) —— */
 export const rhInput =
-  "mt-1.5 h-10 w-full rounded-xl border border-border/80 bg-surface px-3.5 text-sm text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none transition placeholder:text-foreground/35 focus:border-brand focus:ring-4 focus:ring-brand/10";
+  "mt-1.5 h-10 w-full rounded-xl border border-border/80 bg-surface px-3.5 text-sm text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none transition placeholder:text-foreground/45 focus:border-brand focus:ring-4 focus:ring-brand/10 disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-foreground/75";
 
 export const rhSelect = rhInput;
 
@@ -29,12 +29,12 @@ export function RhField({
 }) {
   return (
     <label className="block text-[11px] font-semibold uppercase tracking-[0.06em] text-foreground/55">
-      <span className="inline-flex items-center gap-1 normal-case tracking-normal text-xs font-medium text-foreground/75">
+      <span className="inline-flex items-center gap-1 normal-case tracking-normal text-[13px] font-semibold text-foreground/85">
         {label}
         {required ? <span className="text-alert-critical">*</span> : null}
       </span>
       {children}
-      {hint ? <span className="mt-1 block text-[11px] font-normal normal-case tracking-normal text-foreground/45">{hint}</span> : null}
+      {hint ? <span className="mt-1 block text-xs font-normal normal-case tracking-normal text-foreground/60">{hint}</span> : null}
     </label>
   );
 }

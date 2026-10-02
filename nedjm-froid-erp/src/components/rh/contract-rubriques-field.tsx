@@ -49,7 +49,7 @@ export function ContractRubriquesField({
             type="button"
             className="flex h-10 w-full items-center justify-between gap-2 rounded-xl border border-border/80 bg-surface px-3.5 text-left text-sm outline-none transition focus-visible:border-brand focus-visible:ring-4 focus-visible:ring-brand/10"
           >
-            <span className={lines.length ? "" : "text-foreground/40"}>
+            <span className={lines.length ? "font-medium" : "text-foreground/55"}>
               {lines.length ? `${lines.length} rubrique${lines.length > 1 ? "s" : ""} choisie${lines.length > 1 ? "s" : ""}` : "Choisir les rubriques…"}
             </span>
             <ChevronsUpDown className="size-4 shrink-0 text-foreground/40" aria-hidden />
@@ -65,7 +65,7 @@ export function ContractRubriquesField({
               <DropdownMenuSub key={cls.id}>
                 <DropdownMenuSubTrigger>
                   <span className="font-semibold">CLASSE {cls.id}</span>
-                  <span className="text-xs text-foreground/50">{cls.fr}</span>
+                  <span className="text-xs text-foreground/65">{cls.fr}</span>
                   {count ? (
                     <span className="rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">{count}</span>
                   ) : null}
@@ -79,7 +79,7 @@ export function ContractRubriquesField({
                         onCheckedChange={(checked) => toggle(r, checked === true)}
                         onSelect={(e) => e.preventDefault()}
                       >
-                        <span className="font-mono text-xs text-foreground/55">{r.code}</span>
+                        <span className="font-mono text-xs text-foreground/70">{r.code}</span>
                         <span className="truncate">{r.label_fr}</span>
                       </DropdownMenuCheckboxItem>
                     ))
@@ -94,7 +94,7 @@ export function ContractRubriquesField({
       </DropdownMenu>
 
       {!lines.length ? (
-        <p className="rounded-xl border border-dashed border-border/80 px-4 py-5 text-center text-xs text-foreground/45">
+        <p className="rounded-xl border border-dashed border-border/80 px-4 py-5 text-center text-[13px] text-foreground/60">
           Aucune rubrique choisie. Ouvrez la liste et cochez les rubriques par classe.
         </p>
       ) : null}
@@ -108,7 +108,8 @@ export function ContractRubriquesField({
                   <span className="mr-1.5 rounded-md bg-brand-muted px-1.5 py-0.5 text-[11px] font-semibold text-brand">
                     C{r.category}
                   </span>
-                  <span className="font-mono text-xs text-foreground/55">{r.code}</span> {r.label_fr}
+                  <span className="font-mono text-xs text-foreground/70">{r.code}</span>{" "}
+                  <span className="font-medium text-foreground">{r.label_fr}</span>
                 </span>
                 <select
                   aria-label={`Mode ${r.code}`}
@@ -135,7 +136,7 @@ export function ContractRubriquesField({
                     value={line.amount}
                     onChange={(e) => onChange({ ...selected, [r.id]: { ...line, amount: e.target.value } })}
                   />
-                  <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-foreground/45">
+                  <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs font-medium text-foreground/60">
                     {valueSuffix(line.unit)}
                   </span>
                 </div>

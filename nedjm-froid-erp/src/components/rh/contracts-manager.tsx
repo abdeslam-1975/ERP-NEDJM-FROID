@@ -85,8 +85,8 @@ function FormSection({
           <Icon className="size-[18px]" strokeWidth={1.8} aria-hidden />
         </span>
         <div className="min-w-0">
-          <h3 className="font-display text-sm font-semibold text-foreground">{title}</h3>
-          {description ? <p className="mt-0.5 text-xs leading-relaxed text-foreground/50">{description}</p> : null}
+          <h3 className="font-display text-base font-semibold text-foreground">{title}</h3>
+          {description ? <p className="mt-0.5 text-[13px] leading-relaxed text-foreground/65">{description}</p> : null}
         </div>
       </header>
       {children}
@@ -617,7 +617,11 @@ export function ContractsManager({
         >
           <div className="mx-auto grid max-w-[92rem] gap-4 p-1 sm:p-2 lg:grid-cols-2 lg:items-start">
             <div className="space-y-4">
-              <FormSection icon={MapPin} title="Employé et affectation" description="Qui, où et pour quelle activité.">
+              <FormSection
+                icon={MapPin}
+                title="Employé, affectation et poste"
+                description="Qui, où, pour quelle activité et à quel poste."
+              >
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="sm:col-span-2">
                     <RhField label={bi("Employé", "العامل")} required>
@@ -699,7 +703,7 @@ export function ContractsManager({
                       <span className="block text-sm font-medium text-foreground">
                         {bi("Affectation principale", "التعيين الرئيسي")}
                       </span>
-                      <span className="block text-[11px] text-foreground/50">
+                      <span className="block text-xs text-foreground/65">
                         Un seul contrat principal ouvert par employé.
                       </span>
                     </span>
@@ -712,104 +716,11 @@ export function ContractsManager({
                     <span className="relative h-5 w-9 shrink-0 rounded-full bg-border transition-colors after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-brand peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-brand/40" />
                   </label>
                 </div>
-              </FormSection>
-
-              <FormSection icon={FileSignature} title="Contrat" description="Type, régime de travail, période et statut.">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <RhField label={bi("Type de contrat", "نوع العقد")}>
-                    <CatalogSelect
-                      items={catalogs}
-                      kind="contract_type"
-                      value={form.contract_type_code}
-                      onChange={(v) => setForm({ ...form, contract_type_code: v })}
-                    />
-                  </RhField>
-                  <WorkRegimeField
-                    catalogs={catalogs}
-                    value={form.work_regime_code}
-                    onChange={(v) => setForm((f) => ({ ...f, work_regime_code: v }))}
-                    onCatalogsChange={setCatalogs}
-                    canManage={isSuperAdmin}
-                  />
-                  {form.contract_type_code === "INTERIM" ? (
-                    <>
-                      <RhField
-                        label="Agence d'intérim"
-                        hint="Intérimaire : présent au pointage, hors paie, facturé par l'agence"
-                      >
-                        <select
-                          className={rhInput}
-                          value={form.agency_id}
-                          onChange={(e) => setForm({ ...form, agency_id: e.target.value })}
-                        >
-                          <option value="">—</option>
-                          {agencies.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.label}
-                            </option>
-                          ))}
-                        </select>
-                      </RhField>
-                      <RhField
-                        label="Taux journalier facturé"
-                        hint={`Vide = taux de l'agence (${agencies.find((a) => a.id === form.agency_id)?.default_daily_rate ?? 0} DA)`}
-                      >
-                        <MoneyInput
-                          value={form.interim_daily_rate}
-                          onChange={(v) => setForm({ ...form, interim_daily_rate: v })}
-                        />
-                      </RhField>
-                    </>
-                  ) : null}
-                  <RhField label={bi("Début (1er du mois)", "البداية (أول الشهر)")} required>
-                    <input
-                      type="date"
-                      className={rhInput}
-                      value={form.start_date}
-                      onChange={(e) => setForm({ ...form, start_date: e.target.value })}
-                    />
-                  </RhField>
-                  <RhField label={bi("Fin", "النهاية")} hint="Vide = durée indéterminée">
-                    <input
-                      type="date"
-                      className={rhInput}
-                      value={form.end_date}
-                      onChange={(e) => setForm({ ...form, end_date: e.target.value })}
-                    />
-                  </RhField>
-                  <div className="sm:col-span-2">
-                    <span className="text-xs font-medium text-foreground/75">{bi("Statut", "الحالة")}</span>
-                    <div
-                      role="radiogroup"
-                      aria-label="Statut"
-                      className="mt-1.5 grid grid-cols-2 gap-1 rounded-xl border border-border/70 bg-surface-muted/60 p-1 sm:grid-cols-4"
-                    >
-                      {STATUS_OPTIONS.map((s) => {
-                        const active = form.status === s.value;
-                        return (
-                          <button
-                            key={s.value}
-                            type="button"
-                            role="radio"
-                            aria-checked={active}
-                            onClick={() => setForm({ ...form, status: s.value })}
-                            className={`flex h-8 items-center justify-center gap-2 rounded-lg text-xs font-semibold transition ${
-                              active
-                                ? "bg-surface text-foreground shadow-sm ring-1 ring-border/70"
-                                : "text-foreground/55 hover:text-foreground"
-                            }`}
-                          >
-                            <span className={`size-2 rounded-full ${s.dot}`} aria-hidden />
-                            {s.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                <div className="mt-6 mb-4 flex items-center gap-2 text-[13px] font-semibold tracking-wide text-foreground/80 uppercase">
+                  <Briefcase className="size-4 text-brand" aria-hidden />
+                  Poste
+                  <span className="h-px flex-1 bg-border/70" />
                 </div>
-              </FormSection>
-
-              <FormSection icon={Briefcase} title="Poste" description="Intitulé imprimé sur le contrat et grille de salaire.">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <RhField label={bi("Poste (liste)", "المنصب (قائمة)")}>
                     <select
@@ -915,6 +826,101 @@ export function ContractsManager({
                   </RhField>
                 </div>
               </FormSection>
+
+              <FormSection icon={FileSignature} title="Contrat" description="Type, régime de travail, période et statut.">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <RhField label={bi("Type de contrat", "نوع العقد")}>
+                    <CatalogSelect
+                      items={catalogs}
+                      kind="contract_type"
+                      value={form.contract_type_code}
+                      onChange={(v) => setForm({ ...form, contract_type_code: v })}
+                    />
+                  </RhField>
+                  <WorkRegimeField
+                    catalogs={catalogs}
+                    value={form.work_regime_code}
+                    onChange={(v) => setForm((f) => ({ ...f, work_regime_code: v }))}
+                    onCatalogsChange={setCatalogs}
+                    canManage={isSuperAdmin}
+                  />
+                  {form.contract_type_code === "INTERIM" ? (
+                    <>
+                      <RhField
+                        label="Agence d'intérim"
+                        hint="Intérimaire : présent au pointage, hors paie, facturé par l'agence"
+                      >
+                        <select
+                          className={rhInput}
+                          value={form.agency_id}
+                          onChange={(e) => setForm({ ...form, agency_id: e.target.value })}
+                        >
+                          <option value="">—</option>
+                          {agencies.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.label}
+                            </option>
+                          ))}
+                        </select>
+                      </RhField>
+                      <RhField
+                        label="Taux journalier facturé"
+                        hint={`Vide = taux de l'agence (${agencies.find((a) => a.id === form.agency_id)?.default_daily_rate ?? 0} DA)`}
+                      >
+                        <MoneyInput
+                          value={form.interim_daily_rate}
+                          onChange={(v) => setForm({ ...form, interim_daily_rate: v })}
+                        />
+                      </RhField>
+                    </>
+                  ) : null}
+                  <RhField label={bi("Début (1er du mois)", "البداية (أول الشهر)")} required>
+                    <input
+                      type="date"
+                      className={rhInput}
+                      value={form.start_date}
+                      onChange={(e) => setForm({ ...form, start_date: e.target.value })}
+                    />
+                  </RhField>
+                  <RhField label={bi("Fin", "النهاية")} hint="Vide = durée indéterminée">
+                    <input
+                      type="date"
+                      className={rhInput}
+                      value={form.end_date}
+                      onChange={(e) => setForm({ ...form, end_date: e.target.value })}
+                    />
+                  </RhField>
+                  <div className="sm:col-span-2">
+                    <span className="text-[13px] font-semibold text-foreground/85">{bi("Statut", "الحالة")}</span>
+                    <div
+                      role="radiogroup"
+                      aria-label="Statut"
+                      className="mt-1.5 grid grid-cols-2 gap-1 rounded-xl border border-border/70 bg-surface-muted/60 p-1 sm:grid-cols-4"
+                    >
+                      {STATUS_OPTIONS.map((s) => {
+                        const active = form.status === s.value;
+                        return (
+                          <button
+                            key={s.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            onClick={() => setForm({ ...form, status: s.value })}
+                            className={`flex h-9 items-center justify-center gap-2 rounded-lg text-[13px] font-semibold transition ${
+                              active
+                                ? "bg-surface text-foreground shadow-sm ring-1 ring-border/70"
+                                : "text-foreground/70 hover:text-foreground"
+                            }`}
+                          >
+                            <span className={`size-2 rounded-full ${s.dot}`} aria-hidden />
+                            {s.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </FormSection>
             </div>
 
             <div className="space-y-4">
@@ -944,7 +950,7 @@ export function ContractsManager({
               <FormSection
                 icon={Landmark}
                 title="Cotisations et impôts"
-                description="Chaque option affiche ses taux ; les pastilles montrent ceux qui s'appliquent."
+                description="Chaque option affiche ses taux ; les cadres sous chaque champ montrent les taux appliqués."
               >
                 <ContractLegalFields
                   options={complianceOptions}
