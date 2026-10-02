@@ -143,8 +143,17 @@ describe("isPathBlocked", () => {
   it("uses the most specific RH tab", () => {
     const data = layout({ hidden: ["rh.paie"] });
     expect(isPathBlocked(data, "/rh/paie")).toBe(true);
-    expect(isPathBlocked(data, "/rh/paie/bulletins")).toBe(true);
+    expect(isPathBlocked(data, "/rh/paie/fiscal")).toBe(true);
     expect(isPathBlocked(data, "/rh/paie/virements")).toBe(false);
+    expect(isPathBlocked(data, "/rh/paie/bulletins")).toBe(false);
+  });
+
+  it("blocks the pages a tab owns through its routes", () => {
+    const data = layout({ hidden: ["rh.documents"] });
+    expect(isPathBlocked(data, "/rh/documents")).toBe(true);
+    expect(isPathBlocked(data, "/rh/contrats")).toBe(true);
+    expect(isPathBlocked(data, "/rh/paie/bulletins")).toBe(true);
+    expect(isPathBlocked(data, "/rh/paie")).toBe(false);
   });
 
   it("does not block a route through an alias link", () => {
@@ -206,7 +215,7 @@ describe("resolveNav", () => {
   it("sends the RH entry to the first visible RH page when the dashboard is hidden", () => {
     const nav = resolveNav(layout({ hidden: ["rh.dashboard", "rh.employes"] }));
     const rh = nav.flatMap((g) => g.items).find((i) => i.key === "nav.rh");
-    expect(rh).toMatchObject({ href: "/rh/contrats", activeHref: "/rh" });
+    expect(rh).toMatchObject({ href: "/rh/postes", activeHref: "/rh" });
   });
 });
 
@@ -243,7 +252,7 @@ describe("resolveRhSections / activeItemKey", () => {
 
     const others = rhSectionGroupKey(RH_OTHERS_SECTION);
     const data = layout({
-      overrides: { "rh.contrats": { sort_order: null, label_fr: null, label_ar: null, group_key: others } },
+      overrides: { "rh.postes": { sort_order: null, label_fr: null, label_ar: null, group_key: others } },
       personal: {
         "rh.paie": { sort_order: 0, group_key: others },
         "rh.conges": { sort_order: 0, group_key: rhSectionGroupKey("legal") },
@@ -251,7 +260,7 @@ describe("resolveRhSections / activeItemKey", () => {
       },
     });
     const byKey = new Map(resolveRhSections(data).map((s) => [s.key, s.items.map((i) => i.key)]));
-    expect(byKey.get(RH_OTHERS_SECTION)).toEqual(expect.arrayContaining(["rh.contrats", "rh.paie"]));
+    expect(byKey.get(RH_OTHERS_SECTION)).toEqual(expect.arrayContaining(["rh.postes", "rh.paie"]));
     expect(byKey.get("legal")).toContain("rh.conges");
     expect(byKey.get("payroll")).toContain("rh.avances");
     expect(byKey.get("payroll")).not.toContain("rh.paie");
@@ -262,7 +271,7 @@ describe("resolveRhSections / activeItemKey", () => {
       overrides: {
         "rh_sections.xshared": { sort_order: 1, label_fr: "Partagé", label_ar: null, group_key: null },
         "rh_sections.xnoname": { sort_order: 2, label_fr: null, label_ar: null, group_key: null },
-        "rh.contrats": { sort_order: null, label_fr: null, label_ar: null, group_key: rhSectionGroupKey("xshared") },
+        "rh.postes": { sort_order: null, label_fr: null, label_ar: null, group_key: rhSectionGroupKey("xshared") },
       },
       personal: {
         "rh_sections.xmine01": { sort_order: 0, group_key: null, label_fr: "À moi" },
@@ -281,14 +290,16 @@ describe("resolveRhSections / activeItemKey", () => {
     expect(sections.at(-1)?.titleFr).toBe("Salaires");
     const byKey = new Map(sections.map((s) => [s.key, s.items.map((i) => i.key)]));
     expect(byKey.get("xmine01")).toEqual(["rh.paie"]);
-    expect(byKey.get("xshared")).toEqual(["rh.contrats"]);
+    expect(byKey.get("xshared")).toEqual(["rh.postes"]);
     expect(byKey.get("payroll")).toContain("rh.avances");
   });
 
   it("marks only the most specific tab active", () => {
     const items = resolveTabset(DEFAULT_LAYOUT, "rh");
     expect(activeItemKey(items, "/rh/paie/avances")).toBe("rh.avances");
-    expect(activeItemKey(items, "/rh/paie/bulletins")).toBe("rh.paie");
+    expect(activeItemKey(items, "/rh/paie/fiscal")).toBe("rh.paie");
+    expect(activeItemKey(items, "/rh/paie/bulletins")).toBe("rh.documents");
+    expect(activeItemKey(items, "/rh/contrats")).toBe("rh.documents");
     expect(activeItemKey(items, "/rh/presence/imports")).toBe("rh.presence_imports");
     expect(activeItemKey(items, "/rh")).toBe("rh.dashboard");
     expect(activeItemKey(items, "/finance")).toBeNull();

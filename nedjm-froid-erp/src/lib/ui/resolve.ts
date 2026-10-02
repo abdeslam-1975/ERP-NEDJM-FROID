@@ -155,18 +155,31 @@ export function applyTabs<T extends { id: string; label: string }>(data: UiLayou
     .map((entry) => entry.item);
 }
 
-function pathMatches(item: UiItemDef, pathname: string): boolean {
-  if (!item.href) return false;
-  if (item.exact || item.href === "/") return pathname === item.href;
-  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+/** Length of the item route matching the path (its link or one of its `routes`), -1 when none does. */
+function matchLength(item: UiItemDef, pathname: string): number {
+  let best = -1;
+  if (item.href) {
+    const exact = item.exact || item.href === "/";
+    if (exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`)) {
+      best = item.href.length;
+    }
+  }
+  for (const route of item.routes ?? []) {
+    if ((pathname === route || pathname.startsWith(`${route}/`)) && route.length > best) best = route.length;
+  }
+  return best;
 }
 
 /** The item owning the route: the longest matching link, so /rh/paie/avances marks "Avances", not "Paie". */
 export function activeItemKey(items: ResolvedItem[], pathname: string): string | null {
   let best: ResolvedItem | null = null;
+  let bestLength = -1;
   for (const item of items) {
-    if (!pathMatches(item, pathname)) continue;
-    if (!best || (item.href?.length ?? 0) > (best.href?.length ?? 0)) best = item;
+    const length = matchLength(item, pathname);
+    if (length > bestLength) {
+      best = item;
+      bestLength = length;
+    }
   }
   return best?.key ?? null;
 }
@@ -249,9 +262,14 @@ export function isPathBlocked(data: UiLayoutData, pathname: string): boolean {
   if (data.unrestricted || ALWAYS_OPEN.has(pathname)) return false;
   for (const tabset of UI_TABSETS) {
     let best: UiItemDef | null = null;
+    let bestLength = -1;
     for (const item of tabset.items) {
-      if (item.alias || !pathMatches(item, pathname)) continue;
-      if (!best || (item.href?.length ?? 0) > (best.href?.length ?? 0)) best = item;
+      if (item.alias) continue;
+      const length = matchLength(item, pathname);
+      if (length > bestLength) {
+        best = item;
+        bestLength = length;
+      }
     }
     if (best && isKeyHidden(data, itemKey(tabset.key, best.id))) return true;
   }

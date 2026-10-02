@@ -1273,10 +1273,6 @@ export function AttendanceManager({
                   <Icon d={ICONS.user} className="h-4 w-4 text-foreground/50" />
                   Fiche employé
                 </Link>
-                <Link className={MENU_ITEM} href="/rh/documents?nouveau=om" onClick={close}>
-                  <Icon d={ICONS.file} className="h-4 w-4 text-foreground/50" />
-                  Nouvel ordre de mission
-                </Link>
                 <Link className={MENU_ITEM} href="/rh/presence/imports" onClick={close}>
                   <Icon d={ICONS.inbox} className="h-4 w-4 text-foreground/50" />
                   Imports d&apos;archives

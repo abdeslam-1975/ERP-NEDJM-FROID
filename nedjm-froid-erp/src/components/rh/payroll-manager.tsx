@@ -466,7 +466,6 @@ export function PayrollManager({
                 ["social", "/rh/paie/social", "Social"],
                 ["fiscal", "/rh/paie/fiscal", "Fiscal"],
                 ["legal", "/rh/legal", bi("Cotisations & impôts", "الاشتراكات والضرائب")],
-                ["bulletins", "/rh/paie/bulletins", "Bulletins"],
                 ["simulator", "/simulateur?cible=paie", "Simulateur"],
                 ["exceptions", "/rh/paie/exceptions", bi("Exceptions", "استثناءات")],
                 ["advances", "/rh/paie/avances", bi("Avances & prêts", "التسبيقات والقروض")],

@@ -95,7 +95,7 @@ export function LettersManager({
         </div>
         <p className="mt-2 text-xs text-foreground/55">
           {bi(
-            "Les titres de congé s'impriment depuis Congés ; certificat et solde de tout compte sont aussi accessibles depuis Sorties.",
+            "Les titres de congé s'impriment depuis le Registre ; certificat et solde de tout compte sont aussi accessibles depuis Sorties.",
             "",
           )}
         </p>

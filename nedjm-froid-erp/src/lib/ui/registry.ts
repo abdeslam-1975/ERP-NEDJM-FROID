@@ -29,6 +29,8 @@ export type UiItemDef = {
   /** Route opened by the item. Hiding the item also blocks this route (and its sub-routes unless `exact`). */
   href?: string;
   exact?: boolean;
+  /** Other routes the item owns without a tab of their own (marked active, blocked with it). */
+  routes?: string[];
   /** Link to a route owned by another item: hiding it only removes the link. */
   alias?: boolean;
   /** Never hidden (home page, settings hub, interface screen). */
@@ -159,7 +161,6 @@ export const UI_TABSETS: UiTabsetDef[] = [
     items: [
       { id: "dashboard", labelFr: "Tableau de bord", href: "/rh", exact: true, section: "overview" },
       { id: "employes", labelFr: "Employés", href: "/rh/employes", section: "people" },
-      { id: "contrats", labelFr: "Contrats", href: "/rh/contrats", section: "people" },
       { id: "postes", labelFr: "Postes & grille", href: "/rh/postes", section: "people" },
       { id: "presence", labelFr: "Présence", href: "/rh/presence", exact: true, section: "time" },
       { id: "presence_imports", labelFr: "Imports de présences", href: "/rh/presence/imports", section: "time" },
@@ -175,7 +176,13 @@ export const UI_TABSETS: UiTabsetDef[] = [
       { id: "couts", labelFr: "Coûts", href: "/rh/couts", section: "payroll" },
       { id: "interim", labelFr: "Intérim", href: "/rh/interim", section: "people" },
       { id: "sorties", labelFr: "Sorties", href: "/rh/sorties", section: "people" },
-      { id: "documents", labelFr: "Registre", href: "/rh/documents", section: "documents" },
+      {
+        id: "documents",
+        labelFr: "Registre",
+        href: "/rh/documents",
+        routes: ["/rh/contrats", "/rh/paie/bulletins"],
+        section: "documents",
+      },
       { id: "attestations", labelFr: "Attestations", href: "/rh/attestations", section: "documents" },
       { id: "legal", labelFr: "Cotisations & impôts", href: "/rh/legal", exact: true, section: "legal" },
       { id: "legal_propositions", labelFr: "Propositions légales", href: "/rh/legal/propositions", section: "legal" },
@@ -411,10 +418,6 @@ export const UI_TABSETS: UiTabsetDef[] = [
     ["payroll", "Paie"],
     ["new", "Nouvelle exception"],
   ]),
-  toolbar("btn_rh_transfers", "Virements", "التحويلات", "RH → Paie → Virements", [
-    ["external_ops", "Opérations externes"],
-    ["bulletins", "Bulletins"],
-  ]),
   toolbar("btn_rh_contracts", "Contrats de travail", "عقود العمل", "RH → Contrats", [
     ["exceptions", "Exceptions"],
     ["new", "Nouveau contrat"],
@@ -424,7 +427,6 @@ export const UI_TABSETS: UiTabsetDef[] = [
     ["social", "Social"],
     ["fiscal", "Fiscal"],
     ["legal", "Cotisations & impôts"],
-    ["bulletins", "Bulletins"],
     ["simulator", "Simulateur"],
     ["exceptions", "Exceptions"],
     ["advances", "Avances & prêts"],

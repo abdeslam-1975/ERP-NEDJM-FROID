@@ -14,17 +14,10 @@ const PAGES: PageEntry[] = [
   { href: "/", fr: "Tableau de bord", ar: "لوحة القيادة" },
   { href: "/rh", fr: "Ressources humaines", ar: "الموارد البشرية" },
   { href: "/rh/employes", fr: "Employés", ar: "العمال", keywords: "fiche salarie personnel" },
-  { href: "/rh/contrats", fr: "Contrats de travail", ar: "العقود" },
   { href: "/rh/postes", fr: "Postes & grille", ar: "المناصب" },
   { href: "/rh/presence", fr: "Présence / pointage", ar: "الحضور" },
   { href: "/rh/conges", fr: "Congés", ar: "العطل" },
   { href: "/rh/paie", fr: "Paie", ar: "الأجور", keywords: "salaire" },
-  {
-    href: "/rh/paie/bulletins",
-    fr: "Bulletins de paie",
-    ar: "كشوف الأجر",
-    keywords: "bulletin fiche de paie kashf ajr كشف الاجر الراتب",
-  },
   { href: "/rh/paie/social", fr: "Paie — social (CNAS)", ar: "الضمان الاجتماعي" },
   { href: "/rh/paie/fiscal", fr: "Paie — fiscal (IRG)", ar: "الضريبة" },
   { href: "/rh/paie/exceptions", fr: "Exceptions de paie", ar: "استثناءات" },
@@ -39,7 +32,13 @@ const PAGES: PageEntry[] = [
   { href: "/rh/couts", fr: "Coûts de la paie", ar: "التكاليف" },
   { href: "/rh/interim", fr: "Intérim", ar: "العمل المؤقت" },
   { href: "/rh/sorties", fr: "Sorties", ar: "الخروج" },
-  { href: "/rh/documents", fr: "Documents RH", ar: "الوثائق" },
+  {
+    href: "/rh/documents",
+    fr: "Documents RH",
+    ar: "الوثائق",
+    keywords:
+      "contrat de travail bulletin de paie kashf ajr كشف الاجر العقود ordre de mission titre de conge fiche de renseignements",
+  },
   { href: "/rh/attestations", fr: "Attestations", ar: "الشهادات" },
   { href: "/rh/legal", fr: "Cotisations & impôts", ar: "الاشتراكات والضرائب", keywords: "cnas irg cacobatph regime" },
   { href: "/rh/parametres", fr: "Paramètres RH", ar: "إعدادات الموارد البشرية", keywords: "rubriques" },
@@ -129,8 +128,8 @@ export function GlobalSearch() {
     ...pages.map((page) => ({ kind: "page" as const, page })),
   ];
 
-  function bulletinsHref(e: GlobalSearchEmployee) {
-    return `/rh/paie/bulletins?q=${encodeURIComponent(e.matricule || e.name)}`;
+  function ficheHref(e: GlobalSearchEmployee) {
+    return `/rh/employes?q=${encodeURIComponent(e.matricule || e.name)}`;
   }
 
   function reset() {
@@ -159,7 +158,7 @@ export function GlobalSearch() {
     } else if (e.key === "Enter") {
       e.preventDefault();
       const r = results[Math.min(active, results.length - 1)];
-      go(r.kind === "page" ? r.page.href : bulletinsHref(r.employee));
+      go(r.kind === "page" ? r.page.href : ficheHref(r.employee));
     }
   }
 
@@ -214,16 +213,9 @@ export function GlobalSearch() {
                     ) : null}
                   </div>
                   <Link
-                    href={bulletinsHref(e)}
+                    href={ficheHref(e)}
                     onClick={reset}
                     className="rounded-lg bg-brand px-2.5 py-1 text-xs font-semibold text-white hover:opacity-90"
-                  >
-                    Bulletins · كشف الأجر
-                  </Link>
-                  <Link
-                    href={`/rh/employes?q=${encodeURIComponent(e.matricule || e.name)}`}
-                    onClick={reset}
-                    className="rounded-lg border border-border px-2.5 py-1 text-xs font-semibold text-foreground/75 hover:bg-surface-muted"
                   >
                     Fiche
                   </Link>

@@ -16,8 +16,7 @@ import {
   FileClock,
   FilePenLine,
   HandCoins,
-  Plane,
-  Receipt,
+  FolderOpen,
   TrendingDown,
   TrendingUp,
   UserPlus,
@@ -395,10 +394,9 @@ const ALERT_META: Record<ContractAlert["key"], { icon: LucideIcon; color: string
 const QUICK_ACTIONS: { icon: LucideIcon; label: string; href: string }[] = [
   { icon: UserPlus, label: "Nouvel employé", href: "/rh/employes?nouveau=1" },
   { icon: FileBadge, label: "Attestation", href: "/rh/attestations" },
-  { icon: Plane, label: "Ordre de mission", href: "/rh/documents?nouveau=om" },
   { icon: CalendarPlus, label: "Congé", href: "/rh/conges" },
   { icon: HandCoins, label: "Avance", href: "/rh/paie/avances" },
-  { icon: Receipt, label: "Bulletins", href: "/rh/paie/bulletins" },
+  { icon: FolderOpen, label: "Documents", href: "/rh/documents" },
 ];
 
 export function initialsOf(name: string) {
