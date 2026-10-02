@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NAV_GROUPS_TABSET, RH_SECTIONS, UI_NAV_GROUPS, UI_TABSETS, findTabset, itemKey, keysOfTabset } from "@/lib/ui/registry";
+import { NAV_GROUPS_TABSET, RH_SECTIONS, RH_SECTIONS_TABSET, UI_NAV_GROUPS, UI_TABSETS, findTabset, itemKey, keysOfTabset } from "@/lib/ui/registry";
 import {
   DEFAULT_LAYOUT,
   activeItemKey,
@@ -214,6 +214,16 @@ describe("resolveRhSections / activeItemKey", () => {
     expect(sections.some((s) => s.key === "documents")).toBe(false);
     expect(sections.find((s) => s.key === "overview")?.items.map((i) => i.key)).toContain("rh.couts");
     expect(sections.find((s) => s.key === "payroll")?.items.map((i) => i.key)).not.toContain("rh.couts");
+  });
+
+  it("orders the sections as chosen (the user's order first)", () => {
+    expect(keysOfTabset(RH_SECTIONS_TABSET)).toEqual(RH_SECTIONS.map((s) => `rh_sections.${s.key}`));
+    const data = layout({
+      overrides: { "rh_sections.payroll": { sort_order: 1, label_fr: null, label_ar: null, group_key: null } },
+      personal: { "rh_sections.legal": { sort_order: 0, group_key: null } },
+    });
+    expect(resolveRhSections(data).map((s) => s.key).slice(0, 2)).toEqual(["legal", "payroll"]);
+    expect(resolveRhSections(DEFAULT_LAYOUT).map((s) => s.key)[0]).toBe(RH_SECTIONS[0].key);
   });
 
   it("marks only the most specific tab active", () => {

@@ -36,7 +36,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, ListOrdered, Move, RotateCcw, X } from "lucide-react";
 import { useArrange, useArrangeableList, useUiLayout } from "@/components/layout/ui-layout-context";
 import { Button } from "@/components/ui/button";
-import { findItem, findTabset, itemKey } from "@/lib/ui/registry";
+import { RH_SECTIONS_TABSET, findItem, findTabset, itemKey, keysOfTabset } from "@/lib/ui/registry";
 import { applyTabs, resolveNav } from "@/lib/ui/resolve";
 import { cn } from "@/lib/utils";
 
@@ -120,7 +120,7 @@ export function SortableStrip({
 }: ComponentProps<"div"> & { tabset?: string; ids: string[] }) {
   const { active } = useArrange();
   const nodes = Children.toArray(children);
-  if (!active || !tabset || !findTabset(tabset) || nodes.length !== ids.length || ids.length < 2) {
+  if (!active || !tabset || !keysOfTabset(tabset) || nodes.length !== ids.length || ids.length < 2) {
     return <div {...rest}>{children}</div>;
   }
   return <StripDnd tabset={tabset} ids={ids} nodes={nodes} {...rest} />;
@@ -406,7 +406,30 @@ export function NavArrange({ tone = "panel" }: { tone?: "sidebar" | "panel" }) {
   );
 }
 
-/* —— floating bar of the « Réorganiser » mode —— */
+/* —— « Réorganiser » mode —— */
+
+/** Top bar button that turns the mode on (nothing can be dragged until it is). */
+export function ArrangeButton() {
+  const { active, start } = useArrange();
+  return (
+    <button
+      type="button"
+      onClick={start}
+      disabled={active}
+      aria-pressed={active}
+      title="Réorganiser la page : déplacer les onglets, le menu et les boutons · إعادة الترتيب"
+      className={cn(
+        "inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-sm font-semibold shadow-[var(--card-shadow)] transition",
+        active
+          ? "border-brand bg-brand text-white"
+          : "border-border bg-surface text-foreground/75 hover:bg-brand-muted hover:text-foreground",
+      )}
+    >
+      <Move className="size-4" aria-hidden />
+      <span className="hidden md:inline">Réorganiser</span>
+    </button>
+  );
+}
 
 export function ArrangeBar() {
   const arrange = useArrange();
@@ -501,15 +524,16 @@ export function ArrangeBar() {
 function PanelList({ tabset, items }: { tabset: string; items: { id: string; label: string }[] }) {
   const { reorder } = useArrange();
   const def = findTabset(tabset);
-  if (!def || items.length < 2) return null;
+  const title = def?.titleFr ?? (tabset === RH_SECTIONS_TABSET ? "Barre RH — sections" : null);
+  if (!title || items.length < 2) return null;
   const labels = new Map(items.map((i) => [i.id, i.label]));
   return (
     <section className="space-y-2">
       <div>
-        <p className="text-sm font-semibold text-foreground">{def.titleFr}</p>
+        <p className="text-sm font-semibold text-foreground">{title}</p>
         <p className="text-xs text-foreground/55">
-          {def.kind === "toolbar" ? "Boutons · " : "Onglets · "}
-          {def.whereFr}
+          {def?.kind === "toolbar" ? "Boutons · " : "Onglets · "}
+          {def?.whereFr ?? "Ressources humaines"}
         </p>
       </div>
       <SortableRows ids={items.map((i) => i.id)} onReorder={(ids) => reorder(tabset, ids)} className="space-y-1">

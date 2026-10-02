@@ -481,6 +481,9 @@ function toolbar(key: string, titleFr: string, titleAr: string, whereFr: string,
 /** Pseudo tabset of the settings screen: the side menu groups (order and titles). */
 export const NAV_GROUPS_TABSET = "nav_groups";
 
+/** Pseudo tabset: the sections of the HR module bar (order only). */
+export const RH_SECTIONS_TABSET = "rh_sections";
+
 export function itemKey(tabset: string, id: string): string {
   return `${tabset}.${id.replace(/-/g, "_")}`;
 }
@@ -505,6 +508,7 @@ export function isGroupKey(key: string): boolean {
 /** Keys a list is made of (the side menu groups for NAV_GROUPS_TABSET); null for an unknown list. */
 export function keysOfTabset(tabset: string): string[] | null {
   if (tabset === NAV_GROUPS_TABSET) return UI_NAV_GROUPS.map((g) => g.key);
+  if (tabset === RH_SECTIONS_TABSET) return RH_SECTIONS.map((s) => itemKey(RH_SECTIONS_TABSET, s.key));
   const def = findTabset(tabset);
   return def ? def.items.map((i) => itemKey(def.key, i.id)) : null;
 }

@@ -1,5 +1,6 @@
 import {
   RH_SECTIONS,
+  RH_SECTIONS_TABSET,
   UI_NAV_GROUPS,
   UI_TABSETS,
   findItem,
@@ -167,19 +168,25 @@ export function activeItemKey(items: ResolvedItem[], pathname: string): string |
 
 export type ResolvedSection = { key: string; titleFr: string; titleAr: string; items: ResolvedItem[] };
 
-/** HR module bar: visible tabs grouped by section (catalogue order of the sections, tab order kept inside). */
+/** HR module bar: visible tabs grouped by section (sections in the chosen order, tab order kept inside). */
 export function resolveRhSections(data: UiLayoutData): ResolvedSection[] {
   const items = resolveTabset(data, "rh");
   const known = new Set(RH_SECTIONS.map((s) => s.key));
   const last = RH_SECTIONS[RH_SECTIONS.length - 1].key;
-  return RH_SECTIONS.map((section) => ({
-    ...section,
-    items: items.filter((item) => {
-      const wanted = data.overrides[item.key]?.group_key;
-      const key = wanted && known.has(wanted) ? wanted : item.section && known.has(item.section) ? item.section : last;
-      return key === section.key;
-    }),
-  })).filter((section) => section.items.length > 0);
+  return RH_SECTIONS.map((section, index) => ({
+    section: {
+      ...section,
+      items: items.filter((item) => {
+        const wanted = data.overrides[item.key]?.group_key;
+        const key = wanted && known.has(wanted) ? wanted : item.section && known.has(item.section) ? item.section : last;
+        return key === section.key;
+      }),
+    },
+    sort: sortValue(data, itemKey(RH_SECTIONS_TABSET, section.key), index),
+  }))
+    .sort((a, b) => a.sort - b.sort)
+    .map(({ section }) => section)
+    .filter((section) => section.items.length > 0);
 }
 
 const ALWAYS_OPEN = new Set(["/", "/parametres", "/parametres/interface"]);
