@@ -211,8 +211,11 @@ describe("payroll calc", () => {
       expect(lines.filter((l) => l.code === "303")).toHaveLength(1);
       expect(lines.find((l) => l.code === "106")).toMatchObject({ amount: 2100, label_fr: nuisance.label_fr });
       expect(lines.find((l) => l.code === "303")).toMatchObject({ quantity: 1, amount: 157 });
-      expect(lines.find((l) => l.code === "921")?.amount).toBe(-9000);
     }
+    expect(build(31).find((l) => l.code === "921")).toMatchObject({ unit: "month_days", quantity: 0 });
+    expect(build(31).find((l) => l.code === "921")?.amount).toBeCloseTo(0);
+    expect(build(10).find((l) => l.code === "921")).toMatchObject({ quantity: 21, amount: -6096.77 });
+    expect(build(0).find((l) => l.code === "921")).toMatchObject({ quantity: 31, amount: -9000 });
   });
 
   it("keeps a contract in payroll while it covers the month, including open-ended", () => {
