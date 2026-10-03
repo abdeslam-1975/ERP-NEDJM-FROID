@@ -13,9 +13,12 @@ import {
   MapPin,
   Printer,
   Save,
+  Upload,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ContractImportDialog } from "@/components/rh/contract-import-dialog";
 import { ToolbarSlot } from "@/components/layout/arrange";
 import {
   upsertHrContract,
@@ -147,6 +150,7 @@ function MoneyInput({ value, onChange }: { value: string; onChange: (v: string) 
 
 type SiteOpt = {
   id: string;
+  code?: string | null;
   name_fr: string;
   is_active: boolean;
   activity_code_id?: string | null;
@@ -238,7 +242,14 @@ export function ContractsManager({
   canEditCompliance?: boolean;
   loadError?: string;
 }) {
+  const router = useRouter();
   const [rows, setRows] = useState(initialContracts);
+  const [seenContracts, setSeenContracts] = useState(initialContracts);
+  if (seenContracts !== initialContracts) {
+    setSeenContracts(initialContracts);
+    setRows(initialContracts);
+  }
+  const [importOpen, setImportOpen] = useState(false);
   const [asgRows, setAsgRows] = useState(assignments);
   const [catalogs, setCatalogs] = useState(initialCatalogs);
   const [open, setOpen] = useState(false);
@@ -680,6 +691,12 @@ export function ContractsManager({
                 <Link href="/rh/paie/exceptions">{bi("Exceptions", "استثناءات")}</Link>
               </Button>
             </ToolbarSlot>
+            <ToolbarSlot id="import">
+              <Button variant="secondary" onClick={() => setImportOpen(true)}>
+                <Upload aria-hidden />
+                {bi("Importer des contrats", "استيراد العقود")}
+              </Button>
+            </ToolbarSlot>
             <ToolbarSlot id="new">
               <Button
                 onClick={() => {
@@ -694,6 +711,17 @@ export function ContractsManager({
       />
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
       {info && !error ? <RhAlert tone="success">{info}</RhAlert> : null}
+      {importOpen ? (
+        <ContractImportDialog
+          employees={employees}
+          sites={sites}
+          activities={activities}
+          catalogs={catalogs}
+          contracts={rows}
+          onClose={() => setImportOpen(false)}
+          onImported={() => router.refresh()}
+        />
+      ) : null}
       <DataTable
         data={rows}
         columns={columns}

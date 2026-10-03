@@ -420,6 +420,7 @@ export const UI_TABSETS: UiTabsetDef[] = [
   ]),
   toolbar("btn_rh_contracts", "Contrats de travail", "عقود العمل", "RH → Contrats", [
     ["exceptions", "Exceptions"],
+    ["import", "Importer des contrats"],
     ["new", "Nouveau contrat"],
   ]),
   toolbar("btn_rh_payroll_links", "Raccourcis de la paie", "اختصارات الأجور", "RH → Paie (en-tête)", [

@@ -72,6 +72,15 @@ export function parseCsvMatrix(text: string): string[][] {
 
 /** First sheet of an .xlsx, or a .csv, as rows of plain text cells. */
 export async function readEmployeeSheet(buffer: ArrayBuffer, filename: string): Promise<string[][]> {
+  return (await readSheetMatrix(buffer, filename)).matrix;
+}
+
+/** One sheet of an .xlsx (the named one, else the first non-empty one), or a .csv, with the workbook's sheet names. */
+export async function readSheetMatrix(
+  buffer: ArrayBuffer,
+  filename: string,
+  sheetName = "",
+): Promise<{ sheets: string[]; sheet: string; matrix: string[][] }> {
   const name = filename.toLowerCase();
   const bytes = new Uint8Array(buffer);
   if (name.endsWith(".xls")) {
@@ -80,16 +89,18 @@ export async function readEmployeeSheet(buffer: ArrayBuffer, filename: string): 
   const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
   if (!isZip) {
     if (name.endsWith(".xlsx")) throw new Error("Fichier Excel illisible.");
-    return parseCsvMatrix(new TextDecoder("utf-8").decode(bytes));
+    return { sheets: [], sheet: "", matrix: parseCsvMatrix(new TextDecoder("utf-8").decode(bytes)) };
   }
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer);
-  const ws = wb.worksheets.find((s) => s.actualRowCount > 0) ?? wb.worksheets[0];
-  if (!ws) throw new Error("Classeur Excel sans feuille.");
+  const ws = sheetName
+    ? wb.worksheets.find((s) => s.name === sheetName)
+    : (wb.worksheets.find((s) => s.actualRowCount > 0) ?? wb.worksheets[0]);
+  if (!ws) throw new Error(sheetName ? `Feuille « ${sheetName} » introuvable.` : "Classeur Excel sans feuille.");
   const rows: string[][] = [];
   ws.eachRow({ includeEmpty: false }, (row) => {
     const values = Array.isArray(row.values) ? row.values.slice(1) : [];
     rows.push(Array.from({ length: values.length }, (_, i) => cellText(values[i])));
   });
-  return rows;
+  return { sheets: wb.worksheets.map((s) => s.name), sheet: ws.name, matrix: rows };
 }
