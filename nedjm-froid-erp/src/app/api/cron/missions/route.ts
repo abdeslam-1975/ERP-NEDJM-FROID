@@ -10,7 +10,7 @@ function sameSecret(given: string, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-/** Daily: open ordres de mission (« Fin de mission ») are carried over to the current month of the pointage. */
+/** Daily: open ordres de mission (« Fin de mission ») keep covering the pointage 12 months ahead. */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) {
