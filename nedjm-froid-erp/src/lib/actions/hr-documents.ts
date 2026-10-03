@@ -32,6 +32,8 @@ import { getHrFicheSettings } from "@/lib/actions/hr-fiche";
 import { DEFAULT_FICHE_SETTINGS } from "@/lib/hr/fiche-settings";
 import { valuesFromFicheRecord } from "@/lib/hr/employee-field-utils";
 import { buildFicheRenseignementsFileName } from "@/lib/hr/fiche-renseignements-pdf";
+import { createLeaveRequest, decideLeaveRequest, listLeaveBalances } from "@/lib/actions/hr-leave";
+import { calendarDays } from "@/lib/hr/leave";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -590,6 +592,70 @@ export async function saveLeaveTitle(input: {
       archive_url: archived.ok ? archived.data.archive_url : null,
       archive_path: archived.ok ? archived.data.archive_path : null,
       archive_error: archived.ok ? null : archived.error,
+    },
+  };
+}
+
+export type NewLeaveTitleResult =
+  | { status: "balance"; balance: number; days: number }
+  | { status: "submitted"; message: string }
+  | { status: "created"; row: HrCorrespondenceRow; archive_error: string | null };
+
+/**
+ * « Nouveau titre de congé »: records the leave request, approves it (which numbers the title) and saves the
+ * print fields. Without the right to approve, the request stays pending and the title comes with the approval.
+ */
+export async function createLeaveTitle(input: {
+  request: { employee_id: string; kind: string; start_date: string; end_date: string; days?: string };
+  fields: unknown;
+  confirmBalance?: boolean;
+}): Promise<ActionResult<NewLeaveTitleResult>> {
+  const checked = leaveTitleFieldsSchema.safeParse(input.fields);
+  if (!checked.success) {
+    return { ok: false, error: checked.error.issues[0]?.message ?? "Données invalides" };
+  }
+  const { employee_id, kind, start_date, end_date } = input.request;
+  if (!UUID.test(employee_id ?? "")) return { ok: false, error: "Recherchez d'abord l'employé. · ابحث عن العامل" };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start_date ?? "") || !/^\d{4}-\d{2}-\d{2}$/.test(end_date ?? "")) {
+    return { ok: false, error: "Dates du congé requises (du … au …). · تواريخ الإجازة مطلوبة" };
+  }
+  const days = Number(String(input.request.days ?? "").replace(",", ".")) || calendarDays(start_date, end_date);
+  if (kind === "ANNUAL" && !input.confirmBalance) {
+    const balances = await listLeaveBalances({ employeeId: employee_id });
+    const balance = balances.ok ? balances.data[0]?.balance : undefined;
+    if (balance !== undefined && balance < days) return { ok: true, data: { status: "balance", balance, days } };
+  }
+  const created = await createLeaveRequest({ employee_id, kind, start_date, end_date, days: input.request.days || undefined });
+  if (!created.ok) return created;
+  const decided = await decideLeaveRequest({ id: created.data.id, status: "APPROVED" });
+  if (!decided.ok || !decided.data.correspondence_id) {
+    return {
+      ok: true,
+      data: {
+        status: "submitted",
+        message: `Demande de congé enregistrée, en attente d'approbation : le titre sera établi à l'approbation.${
+          decided.ok ? "" : ` (${decided.error})`
+        }`,
+      },
+    };
+  }
+  const corrId = decided.data.correspondence_id;
+  const saved = await saveLeaveTitle({ id: corrId, fields: checked.data });
+  const supabase = await createClient();
+  const { data: row, error } = await supabase
+    .from("hr_correspondences")
+    .select(
+      "id, employee_id, site_id, type_code, number, status_code, start_date, end_date, payload, created_at, created_by, employee:hr_employees ( matricule, last_name, first_name ), creator:sys_users!hr_correspondences_created_by_fkey ( full_name, email )",
+    )
+    .eq("id", corrId)
+    .maybeSingle();
+  if (error || !row) return { ok: false, error: error?.message ?? "Titre de congé introuvable après création." };
+  return {
+    ok: true,
+    data: {
+      status: "created",
+      row: mapCorrespondenceRow(row),
+      archive_error: saved.ok ? saved.data.archive_error : saved.error,
     },
   };
 }

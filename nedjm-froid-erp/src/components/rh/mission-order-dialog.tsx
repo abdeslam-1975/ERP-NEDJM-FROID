@@ -109,6 +109,48 @@ export function withCurrent(options: string[], current: string) {
   return values;
 }
 
+/** Employees matching a matricule, last name or first name (exact, prefix, or contains from 3 letters). */
+export function findEmployees(employees: HrEmployeeRow[], needle: string) {
+  return employees.filter((emp) => {
+    const mat = emp.matricule.toUpperCase();
+    const nom = emp.last_name.toUpperCase();
+    const prenom = emp.first_name.toUpperCase();
+    return (
+      mat === needle ||
+      mat.startsWith(needle) ||
+      nom === needle ||
+      nom.startsWith(needle) ||
+      (needle.length >= 3 && nom.includes(needle)) ||
+      prenom === needle ||
+      (needle.length >= 3 && prenom.includes(needle))
+    );
+  });
+}
+
+/** Identity block of an HR document filled from the employee file and the main contract. */
+export function employeeIdentity(
+  emp: HrEmployeeRow,
+  contracts: MissionContractHint[],
+  sites: readonly SiteOpt[],
+  catalogs: CatalogItem[],
+) {
+  const contract = pickMissionContract(contracts, emp.id);
+  const site = sites.find((row) => row.id === contract?.site_id);
+  const type = catalogOptions(catalogs, "id_type").find((item) => item.code === emp.id_type_code);
+  return {
+    site_id: contract?.site_id ?? "",
+    matricule: emp.matricule,
+    nom: emp.last_name,
+    prenom: emp.first_name,
+    affectation: site?.name_fr || emp.fiche_affectation || "",
+    poste: contract?.poste_fr || emp.fiche_poste || "",
+    pieceType: type?.label_fr || emp.id_type_code || "",
+    pieceNum: emp.id_number || "",
+    pieceDelivre: (emp.id_issued_on || "").slice(0, 10),
+    pieceLieu: emp.id_issued_by || "",
+  };
+}
+
 export function MissionOrderDialog({
   pending,
   error,
@@ -147,7 +189,6 @@ export function MissionOrderDialog({
   const set = (patch: Partial<MissionDraft>) => onChange({ ...value, ...patch });
   const jobs = catalogOptions(catalogs, "job_title").map((item) => item.label_fr);
   const affectations = sites.map((site) => site.name_fr);
-  const idTypes = catalogOptions(catalogs, "id_type");
   const legacy = value.gabarit === OM_GABARIT_ANCIEN;
   const today = todayIsoAlgiers();
   const saved = value.id ? { dateDepart: value.savedDateDepart, dateRetour: value.savedDateRetour } : null;
@@ -162,24 +203,7 @@ export function MissionOrderDialog({
     dateIssue?.field === field ? `${rhInput} border-red-500 ring-1 ring-red-300` : rhInput;
 
   function applyEmployee(emp: HrEmployeeRow) {
-    const contract = pickMissionContract(contracts, emp.id);
-    const site = sites.find((row) => row.id === contract?.site_id);
-    const poste = contract?.poste_fr || emp.fiche_poste || "";
-    const type = idTypes.find((item) => item.code === emp.id_type_code);
-    onChange({
-      ...value,
-      employee_id: emp.id,
-      site_id: contract?.site_id ?? "",
-      matricule: emp.matricule,
-      nom: emp.last_name,
-      prenom: emp.first_name,
-      affectation: site?.name_fr || emp.fiche_affectation || "",
-      poste,
-      pieceType: type?.label_fr || emp.id_type_code || "",
-      pieceNum: emp.id_number || "",
-      pieceDelivre: (emp.id_issued_on || "").slice(0, 10),
-      pieceLieu: emp.id_issued_by || "",
-    });
+    onChange({ ...value, employee_id: emp.id, ...employeeIdentity(emp, contracts, sites, catalogs) });
     setMatches([]);
     setEmployeeQuery("");
     setLocalError(null);
@@ -191,20 +215,7 @@ export function MissionOrderDialog({
       setLocalError("Saisissez un matricule, un nom ou un prénom.");
       return;
     }
-    const found = employees.filter((emp) => {
-      const mat = emp.matricule.toUpperCase();
-      const nom = emp.last_name.toUpperCase();
-      const prenom = emp.first_name.toUpperCase();
-      return (
-        mat === needle ||
-        mat.startsWith(needle) ||
-        nom === needle ||
-        nom.startsWith(needle) ||
-        (needle.length >= 3 && nom.includes(needle)) ||
-        prenom === needle ||
-        (needle.length >= 3 && prenom.includes(needle))
-      );
-    });
+    const found = findEmployees(employees, needle);
     if (found.length === 0) {
       setMatches([]);
       setLocalError(`Aucun employé trouvé pour « ${needle} ».`);

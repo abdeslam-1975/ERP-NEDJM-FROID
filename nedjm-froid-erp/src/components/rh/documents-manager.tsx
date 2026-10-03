@@ -20,6 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
+  createLeaveTitle,
   saveLeaveTitle,
   upsertHrCorrespondence,
   type HrCorrespondenceRow,
@@ -63,7 +64,7 @@ import {
   missionDraftDateIssue,
   type MissionDraft,
 } from "@/components/rh/mission-order-dialog";
-import { LeaveTitleDialog, type LeaveTitleDraft } from "@/components/rh/leave-title-dialog";
+import { LeaveTitleDialog, emptyLeaveTitleDraft, type LeaveTitleDraft } from "@/components/rh/leave-title-dialog";
 import { DocumentTypeCards } from "@/components/rh/document-type-cards";
 import { buildLeaveTitleHtml, leaveTitleReference } from "@/components/rh/leave-title-print";
 import { buildMissionOrderHtml, missionReference } from "@/components/rh/mission-order-print";
@@ -485,8 +486,56 @@ export function DocumentsManager({
       employee_id: row.employee_id,
       status_code: row.status_code,
       leave: leaveOfCorrespondence(row),
+      daysText: "",
       saved: Object.keys(saved).length > 0,
     };
+  }
+
+  function newTitle() {
+    setTitleError(null);
+    setTitleForm(emptyLeaveTitleDraft());
+  }
+
+  function createTitle(draft: LeaveTitleDraft, confirmBalance = false) {
+    start(async () => {
+      const r = await createLeaveTitle({
+        request: {
+          employee_id: draft.employee_id,
+          kind: draft.leave.kind,
+          start_date: draft.leave.dateDebut,
+          end_date: draft.leave.dateFin,
+          days: draft.daysText,
+        },
+        fields: draft,
+        confirmBalance,
+      });
+      if (!r.ok) {
+        setTitleError(r.error);
+        return;
+      }
+      if (r.data.status === "balance") {
+        const { balance, days } = r.data;
+        if (window.confirm(`Solde insuffisant (${balance} j disponibles pour ${days} j demandés). Enregistrer quand même ?`)) {
+          createTitle(draft, true);
+        }
+        return;
+      }
+      setPointageHref(null);
+      setError(null);
+      if (r.data.status === "submitted") {
+        setInfo(r.data.message);
+        setTitleForm(null);
+        return;
+      }
+      const { row, archive_error } = r.data;
+      setCorrRows((prev) => [row, ...prev.filter((item) => item.id !== row.id)]);
+      setInfo(
+        `Titre de congé ${leaveTitleReference(row.number)} enregistré${row.archive_url ? " et archivé en PDF" : ""}.${
+          archive_error ? ` Archive non créée : ${archive_error}` : ""
+        } Jours proposés dans le pointage, à valider.`,
+      );
+      setTitleForm(null);
+    });
   }
 
   function openTitle(row: HrCorrespondenceRow) {
@@ -519,6 +568,10 @@ export function DocumentsManager({
     if (!titleForm) return;
     setTitleError(null);
     const draft = titleForm;
+    if (!draft.id) {
+      createTitle(draft);
+      return;
+    }
     start(async () => {
       const r = await saveLeaveTitle({ id: draft.id, fields: draft });
       if (!r.ok) {
@@ -868,9 +921,9 @@ export function DocumentsManager({
           title="Titres de congé"
           description="Un titre numéroté par congé approuvé : complétez-le, puis imprimez."
           action={
-            <Button variant="secondary" onClick={() => router.push("/rh/conges")}>
-              <CalendarCheck aria-hidden />
-              Demandes de congé
+            <Button onClick={newTitle}>
+              <Plus aria-hidden />
+              Nouveau titre de congé
             </Button>
           }
         >
@@ -885,7 +938,7 @@ export function DocumentsManager({
                 .join(" ")
             }
             emptyTitle="Aucun titre de congé"
-            emptyBody="Les titres apparaissent ici dès qu'une demande de congé est approuvée."
+            emptyBody="Créez le premier avec « Nouveau titre de congé »."
           />
         </RegisterSection>
       ) : (
@@ -969,8 +1022,10 @@ export function DocumentsManager({
         <LeaveTitleDialog
           pending={pending}
           error={titleError}
+          employees={employees}
           sites={sites}
           catalogs={catalogs}
+          contracts={contracts}
           titles={leaveRows}
           value={titleForm}
           onChange={setTitleForm}
@@ -980,7 +1035,7 @@ export function DocumentsManager({
           }}
           onSubmit={saveTitle}
           onPrint={() => printTitle(titleForm)}
-          onNew={() => router.push("/rh/conges")}
+          onReset={newTitle}
           onOpenTitle={openTitle}
         />
       ) : null}
