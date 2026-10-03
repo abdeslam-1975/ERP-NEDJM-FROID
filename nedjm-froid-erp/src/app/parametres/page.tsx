@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { RhPageHeader } from "@/components/rh/rh-ui";
+import { TestDataResetCard } from "@/components/settings/test-data-reset-card";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { getUiLayout } from "@/lib/ui/layout";
 import { isPathBlocked, resolveTabset } from "@/lib/ui/resolve";
@@ -40,6 +41,7 @@ export default async function ParametresPage() {
             </Link>
           ))}
         </div>
+        {workspace?.isSuperAdmin ? <TestDataResetCard /> : null}
       </div>
     </AppShell>
   );
