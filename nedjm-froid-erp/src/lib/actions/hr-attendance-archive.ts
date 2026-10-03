@@ -18,6 +18,7 @@ import {
   chunk,
   decodeCsv,
   detectDelimiter,
+  matchArchiveLinesByName,
   parseArchiveAnalysis,
   parseCsv,
   parseGridArchive,
@@ -407,6 +408,7 @@ async function parseSource(
   ext: "xlsx" | "csv",
   format: "GRID" | "ROWS",
   periodFrom: string,
+  sheetName: string,
 ): Promise<ArchiveParseResult & { sheet?: string; delimiter?: string }> {
   let matrix: unknown[][];
   let sheet: string | undefined;
@@ -418,8 +420,8 @@ async function parseSource(
     } catch {
       return { ok: false, error: "Classeur Excel illisible." };
     }
-    const ws = wb.worksheets[0];
-    if (!ws) return { ok: false, error: "Classeur sans feuille." };
+    const ws = sheetName ? wb.worksheets.find((w) => w.name === sheetName) : wb.worksheets[0];
+    if (!ws) return { ok: false, error: sheetName ? `Feuille « ${sheetName} » introuvable.` : "Classeur sans feuille." };
     sheet = ws.name;
     matrix = sheetToMatrix(ws);
   } else {
@@ -454,8 +456,16 @@ export async function registerArchiveBatch(
   const bytes = Buffer.from(await blob.arrayBuffer());
   if (bytes.byteLength > ARCHIVE_SOURCE_MAX_BYTES) return { ok: false, error: "Fichier trop volumineux (10 Mo maximum)." };
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  const parsedFile = await parseSource(bytes, ext, meta.format, meta.period_from);
+  const parsedFile = await parseSource(bytes, ext, meta.format, meta.period_from, ext === "xlsx" ? meta.sheet : "");
   if (!parsedFile.ok) return { ok: false, error: parsedFile.error };
+  if (meta.match_by === "NAME") {
+    const { data: staff, error: staffErr } = await supabase
+      .from("hr_employees")
+      .select("matricule, last_name, first_name")
+      .limit(10000);
+    if (staffErr) return { ok: false, error: staffErr.message };
+    parsedFile.lines = matchArchiveLinesByName(parsedFile.lines, staff ?? []);
+  }
 
   const { data: id, error } = await supabase.rpc("hr_attendance_import_create", {
     p_path: path,
@@ -476,7 +486,12 @@ export async function registerArchiveBatch(
       control_lines: meta.control_lines,
       control_employees: meta.control_employees,
     },
-    p_parse: { ...parsedFile.report, sheet: parsedFile.sheet ?? null, delimiter: parsedFile.delimiter ?? null },
+    p_parse: {
+      ...parsedFile.report,
+      sheet: parsedFile.sheet ?? null,
+      delimiter: parsedFile.delimiter ?? null,
+      match_by: meta.match_by,
+    },
     p_expected: parsedFile.lines.length,
   });
   revalidateArchives();

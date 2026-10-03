@@ -20,6 +20,9 @@ export const PIECE_EXT: Record<ArchivePieceMime, string> = {
 
 export const ARCHIVE_FORMATS = ["GRID", "ROWS"] as const;
 export type ArchiveFormat = (typeof ARCHIVE_FORMATS)[number];
+/** How a file row is tied to an employee: by matricule, or by last + first name (MAT is a mere row number). */
+export const ARCHIVE_MATCH_MODES = ["MATRICULE", "NAME"] as const;
+export type ArchiveMatchMode = (typeof ARCHIVE_MATCH_MODES)[number];
 export const PROVENANCE_KINDS = ["PAPER_REGISTER", "SOURCE_SOFTWARE", "TRANSMITTED", "OTHER"] as const;
 export type ProvenanceKind = (typeof PROVENANCE_KINDS)[number];
 export const BATCH_STATUSES = [
@@ -167,6 +170,9 @@ export const archiveMetaSchema = z
     comment: z.string().trim().max(1000),
     control_lines: optCount,
     control_employees: optCount,
+    /** Worksheet to read in a multi-sheet workbook (empty: the first one). */
+    sheet: z.string().trim().max(120),
+    match_by: z.enum(ARCHIVE_MATCH_MODES),
   })
   .superRefine((m, ctx) => {
     if (m.period_to < m.period_from) {
@@ -202,6 +208,8 @@ export function emptyArchiveMeta(): ArchiveMeta {
     comment: "",
     control_lines: null,
     control_employees: null,
+    sheet: "",
+    match_by: "MATRICULE",
   };
 }
 
@@ -315,6 +323,68 @@ function rowIsEmpty(row: unknown[]): boolean {
   return row.every((v) => cellText(v) === "");
 }
 
+/** Day column header: "12", or a day followed by its weekday ("12 Lun"). */
+function dayOfHeader(text: string): number | null {
+  const m = /^(\d{1,2})(?:\s+[A-Za-zÀ-ÿ.]{2,9})?$/.exec(text);
+  if (!m) return null;
+  const day = Number(m[1]);
+  return day >= 1 && day <= 31 ? day : null;
+}
+
+const SHEET_MONTHS: Array<[RegExp, number]> = [
+  [/JANV/, 1],
+  [/FEV|FÉV/, 2],
+  [/MARS/, 3],
+  [/AVR/, 4],
+  [/MAI/, 5],
+  [/JUIN/, 6],
+  [/JUIL/, 7],
+  [/AOU|AOÛ/, 8],
+  [/SEPT/, 9],
+  [/OCT/, 10],
+  [/NOV/, 11],
+  [/DEC|DÉC/, 12],
+];
+
+/** "JANVIER 2026" → "2026-01"; null when the sheet name holds no French month and year. */
+export function monthOfSheetName(name: string): string | null {
+  const upper = name.toUpperCase();
+  const year = /\b(20\d{2})\b/.exec(upper)?.[1];
+  const month = SHEET_MONTHS.find(([re]) => re.test(upper))?.[1];
+  return year && month ? `${year}-${String(month).padStart(2, "0")}` : null;
+}
+
+/** Same normalisation as hr_att_import_name_key (accents, case, spaces, apostrophes, dots, dashes). */
+export function archiveNameKey(value: string | null | undefined): string {
+  return (value ?? "")
+    .trim()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[\s'.-]+/g, "");
+}
+
+/**
+ * Name matching: each line gets the matricule of the single employee with the same last + first name.
+ * Unmatched or ambiguous names get a marker that cannot match any matricule, so the analysis rejects them.
+ */
+export function matchArchiveLinesByName(
+  lines: ArchiveLine[],
+  employees: Array<{ matricule: string; last_name: string | null; first_name: string | null }>,
+): ArchiveLine[] {
+  const byName = new Map<string, string[]>();
+  for (const e of employees) {
+    const key = `${archiveNameKey(e.last_name)}|${archiveNameKey(e.first_name)}`;
+    byName.set(key, [...(byName.get(key) ?? []), e.matricule]);
+  }
+  return lines.map((line) => {
+    const found = byName.get(`${archiveNameKey(line.last_name)}|${archiveNameKey(line.first_name)}`) ?? [];
+    const matricule =
+      found.length === 1 ? found[0] : `?${[line.last_name, line.first_name].filter(Boolean).join(" ")}`.slice(0, 40);
+    return { ...line, matricule };
+  });
+}
+
 /**
  * Monthly grid (same layout as the pointage template): a header row with "Matricule", optional "Nom" /
  * "Prénom", day columns 1..31 and optional HS50 / HS75 / HS100 columns; one row per employee. Every
@@ -343,8 +413,8 @@ export function parseGridArchive(matrix: unknown[][], period: { year: number; mo
       lastCol = idx;
     } else if (firstCol < 0 && FIRST_NAME_KEYS.has(key)) {
       firstCol = idx;
-    } else if (/^\d{1,2}$/.test(text) && Number(text) >= 1 && Number(text) <= 31 && ![...dayCols.keys()].includes(Number(text))) {
-      dayCols.set(Number(text), idx);
+    } else if (dayOfHeader(text) != null && !dayCols.has(dayOfHeader(text)!)) {
+      dayCols.set(dayOfHeader(text)!, idx);
     } else if (hourKey(v)) {
       hourCols.set(idx, hourKey(v)!);
     } else {
@@ -367,6 +437,8 @@ export function parseGridArchive(matrix: unknown[][], period: { year: number; mo
     const matricule = clip(cellText(row[matCol]), 40, rowErrors);
     const lastName = lastCol >= 0 ? clip(cellText(row[lastCol]), 120, rowErrors) || null : null;
     const firstName = firstCol >= 0 ? clip(cellText(row[firstCol]), 120, rowErrors) || null : null;
+    // Totals and legend blocks under the staff list carry no matricule nor name.
+    if (!matricule && !lastName && !firstName) continue;
     let used = false;
     for (const [day, col] of [...dayCols].sort((a, b) => a[0] - b[0])) {
       const code = cellText(row[col]).toUpperCase();

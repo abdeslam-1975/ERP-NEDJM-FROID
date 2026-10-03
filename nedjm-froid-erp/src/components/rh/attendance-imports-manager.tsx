@@ -51,6 +51,7 @@ import {
   existingValueText,
   lineStatusLabel,
   lineStatusTone,
+  monthOfSheetName,
   natureLabel,
   periodNature,
   provenanceLabel,
@@ -63,6 +64,13 @@ import { QuickDialog } from "@/components/rules/rule-ui";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhChip, RhField, RhPageHeader, RhPanel, RhStat, RhTabs, RhToolbar, rhInput } from "@/components/rh/rh-ui";
+
+async function readSheetNames(file: File): Promise<string[]> {
+  const ExcelJS = (await import("exceljs")).default;
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(await file.arrayBuffer());
+  return wb.worksheets.map((w) => w.name);
+}
 
 type SiteOption = { id: string; code: string; name: string };
 type LegendOption = { code: string; label: string };
@@ -1091,11 +1099,40 @@ function DepositDialog({
   const [pending, start] = useTransition();
   const [meta, setMeta] = useState<ArchiveMeta>(emptyArchiveMeta);
   const [file, setFile] = useState<File | null>(null);
+  const [sheets, setSheets] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<string | null>(null);
   const set = <K extends keyof ArchiveMeta>(k: K, v: ArchiveMeta[K]) => setMeta((m) => ({ ...m, [k]: v }));
   const nature = meta.period_from && meta.period_to ? periodNature(meta.period_from, meta.period_to) : null;
   const grid = meta.format === "GRID";
+
+  function chooseSheet(name: string) {
+    const month = monthOfSheetName(name);
+    setMeta((m) => ({
+      ...m,
+      sheet: name,
+      ...(month
+        ? {
+            period_from: month,
+            period_to: m.format === "GRID" || m.period_to < month ? month : m.period_to,
+            reference_year: Number(month.slice(0, 4)),
+          }
+        : {}),
+    }));
+  }
+
+  function pickFile(next: File | null) {
+    setFile(next);
+    setSheets([]);
+    setMeta((m) => ({ ...m, sheet: "" }));
+    if (!next || sourceExtOf(next.name) !== "xlsx") return;
+    readSheetNames(next)
+      .then((names) => {
+        setSheets(names);
+        if (names.length > 1) chooseSheet(names.find((n) => monthOfSheetName(n)) ?? names[0]);
+      })
+      .catch(() => setError("Classeur Excel illisible."));
+  }
 
   function setFormat(format: ArchiveMeta["format"]) {
     setMeta((m) => ({
@@ -1179,11 +1216,32 @@ function DepositDialog({
           required
           hint={
             grid
-              ? "Classeur .xlsx ou CSV UTF-8 : colonnes Matricule, Nom, Prénom, jours 1 à 31, HS50/HS75/HS100 (même disposition que la grille de pointage)."
+              ? "Classeur .xlsx ou CSV UTF-8 : colonnes Matricule (ou MAT), Nom, Prénom, jours 1 à 31 (« 1 » ou « 1 Lun »), HS50/HS75/HS100. Les autres colonnes (poste, totaux, salaires…) et les lignes sans salarié sont ignorées."
               : "Classeur .xlsx ou CSV UTF-8 : colonnes Matricule, Nom, Prénom, Date, Code, Chantier, HS50/HS75/HS100 facultatives."
           }
         >
-          <input type="file" className={rhInput} accept=".xlsx,.csv" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <input type="file" className={rhInput} accept=".xlsx,.csv" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
+        </RhField>
+        {sheets.length > 1 ? (
+          <RhField label="Feuille du classeur" required hint="Le mois est repris du nom de la feuille (ex. « JANVIER 2026 ») ; vérifiez-le ci-dessous.">
+            <select className={rhInput} value={meta.sheet} onChange={(e) => chooseSheet(e.target.value)}>
+              {sheets.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </RhField>
+        ) : null}
+        <RhField label="Rapprochement des salariés" required>
+          <select
+            className={rhInput}
+            value={meta.match_by}
+            onChange={(e) => set("match_by", e.target.value as ArchiveMeta["match_by"])}
+          >
+            <option value="MATRICULE">Par matricule</option>
+            <option value="NAME">Par nom et prénom (la colonne MAT n&apos;est qu&apos;un numéro d&apos;ordre)</option>
+          </select>
         </RhField>
         <div className="grid gap-4 sm:grid-cols-3">
           <RhField label={grid ? "Mois" : "Premier mois"} required>

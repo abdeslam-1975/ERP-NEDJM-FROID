@@ -6,6 +6,8 @@ import {
   decodeCsv,
   detectDelimiter,
   emptyArchiveMeta,
+  matchArchiveLinesByName,
+  monthOfSheetName,
   parseArchiveAnalysis,
   parseArchiveDate,
   parseCsv,
@@ -79,11 +81,68 @@ describe("parseGridArchive", () => {
     expect(parseGridArchive([["Matricule", "Nom"]], { year: 2026, month: 1 }).ok).toBe(false);
   });
 
+  it("reads a site sheet: weekday day headers, extra columns, totals and legend below the staff", () => {
+    const sheet = [
+      [1, 2026],
+      [],
+      ["", "N", "MAT", "NOM", "PRENOM", "POSTE OCCUPE", "AFFECTATION", "1 Jeu", "2 Ven", "31 Sam", "MS", "SALAIRE MENSUEL", "NET à PAYER"],
+      ["", 1, 1, "CHINE", "ABOUBAKR", "INGENIEUR", "EL GASSI", "MS", "MS", "CRP", 2, 210000, 120000],
+      ["", 2, 2, "BEN SAYAH", "LOTFI", "TS", "EL GASSI", "CRP", "", "MS", 1, 160000, 95000],
+      [],
+      ["", "", "", "", "", "", "", "TOTAUX", "", "", "", "", ""],
+      ["", "", "", "", "", "", "", 13, "MS", "Mission", "", "", ""],
+    ];
+    const r = parseGridArchive(sheet, { year: 2026, month: 1 });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.report.header_row).toBe(3);
+    expect(r.report.day_columns).toBe(3);
+    expect(r.report.rows).toBe(2);
+    expect(r.lines.map((l) => `${l.last_name}:${l.work_date}:${l.source_code}`)).toEqual([
+      "CHINE:2026-01-01:MS",
+      "CHINE:2026-01-02:MS",
+      "CHINE:2026-01-31:CRP",
+      "BEN SAYAH:2026-01-01:CRP",
+      "BEN SAYAH:2026-01-31:MS",
+    ]);
+  });
+
   it("clips over-long values and records it", () => {
     const r = parseGridArchive([["Matricule", 1], ["M".repeat(50), "P"]], { year: 2026, month: 1 });
     if (!r.ok) throw new Error(r.error);
     expect(r.lines[0].matricule).toHaveLength(40);
     expect(r.lines[0].parse_errors).toContain("FIELD_TOO_LONG");
+  });
+});
+
+describe("site workbooks", () => {
+  it("reads the month of a sheet name", () => {
+    expect(monthOfSheetName("JANVIER 2026")).toBe("2026-01");
+    expect(monthOfSheetName("Février 2026")).toBe("2026-02");
+    expect(monthOfSheetName("AOUT 2026")).toBe("2026-08");
+    expect(monthOfSheetName("SEPTEMBRE 2026")).toBe("2026-09");
+    expect(monthOfSheetName("Permissions")).toBeNull();
+    expect(monthOfSheetName("MARS")).toBeNull();
+  });
+
+  it("ties lines to employees by last and first name", () => {
+    const r = parseGridArchive(
+      [
+        ["MAT", "NOM", "PRENOM", 1],
+        [1, "Chine", "Aboubakr", "MS"],
+        [2, "BEN-SAYAH", "Lotfi", "MS"],
+        [3, "INCONNU", "X", "MS"],
+        [4, "DOUBLE", "Y", "MS"],
+      ],
+      { year: 2026, month: 1 },
+    );
+    if (!r.ok) throw new Error(r.error);
+    const matched = matchArchiveLinesByName(r.lines, [
+      { matricule: "05/26", last_name: "CHINE", first_name: "ABOUBAKR" },
+      { matricule: "07/25", last_name: "BEN SAYAH", first_name: "LOTFI" },
+      { matricule: "01/24", last_name: "DOUBLE", first_name: "Y" },
+      { matricule: "02/24", last_name: "DOUBLE", first_name: "Y" },
+    ]);
+    expect(matched.map((l) => l.matricule)).toEqual(["05/26", "07/25", "?INCONNU X", "?DOUBLE Y"]);
   });
 });
 
