@@ -733,8 +733,8 @@ export function ContractsManager({
       <RhPageHeader
         title={bi("Contrats de travail", "عقود العمل")}
         description={bi(
-          "Le chantier porte l'activité et le CACOBATPH. Les quatre classes de rubriques se règlent dans la fiche contrat. Un contrat brouillon entre aussi dans la paie.",
-          "الورشة تحمل النشاط وCACOBATPH. الأصناف الأربعة تُضبط داخل بطاقة العقد. العقد المسودة يدخل أيضاً في كشف الأجر.",
+          "Le chantier porte l'activité et le CACOBATPH. Les cinq classes de rubriques (dont la retenue de garantie) se règlent dans la fiche contrat. Un contrat brouillon entre aussi dans la paie.",
+          "الورشة تحمل النشاط وCACOBATPH. الأصناف الخمسة (ومنها اقتطاع الضمان) تُضبط داخل بطاقة العقد. العقد المسودة يدخل أيضاً في كشف الأجر.",
         )}
         actionsTabset="btn_rh_contracts"
         actions={

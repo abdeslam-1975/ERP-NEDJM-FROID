@@ -2,7 +2,7 @@
 
 import { ChevronsUpDown, X } from "lucide-react";
 import type { SalaryRubrique } from "@/lib/actions/hr-salary";
-import { sortBySalaryClass } from "@/lib/hr/payroll-calc";
+import { RETENUE_CATEGORY, sortBySalaryClass } from "@/lib/hr/payroll-calc";
 import {
   VALUE_MODES,
   applyValueMode,
@@ -21,7 +21,9 @@ import {
 import { SALARY_CLASSES, type SelectedSalaryLine } from "@/components/rh/contract-salary-fields";
 import { rhInput } from "@/components/rh/rh-ui";
 
-const PICKABLE_CLASSES = SALARY_CLASSES.filter((c) => c.id !== "5");
+const PICKABLE_CLASSES = SALARY_CLASSES.map((c) =>
+  c.id === RETENUE_CATEGORY ? { ...c, fr: "RETENUE DE GARANTIE" } : c,
+);
 
 export function ContractRubriquesField({
   rubriques,
@@ -36,7 +38,10 @@ export function ContractRubriquesField({
 
   function toggle(r: SalaryRubrique, checked: boolean) {
     const next = { ...selected };
-    if (checked) next[r.id] = { amount: String(r.default_amount || 0), unit: r.unit };
+    if (checked) {
+      const amount = r.category === RETENUE_CATEGORY ? Math.abs(r.default_amount) : r.default_amount;
+      next[r.id] = { amount: String(amount || 0), unit: r.unit };
+    }
     else delete next[r.id];
     onChange(next);
   }
@@ -131,6 +136,7 @@ export function ContractRubriquesField({
                 <div className="relative">
                   <input
                     aria-label={`Valeur ${r.code}`}
+                    title={r.category === RETENUE_CATEGORY ? "Montant positif, déduit du net sur le bulletin" : undefined}
                     className={`${rhInput} mt-0 h-9 pr-12`}
                     inputMode="decimal"
                     value={line.amount}
