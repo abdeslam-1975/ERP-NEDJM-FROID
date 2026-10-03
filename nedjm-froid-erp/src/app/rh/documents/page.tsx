@@ -16,6 +16,7 @@ import { ContractsRegister } from "@/components/rh/contracts-register";
 import { BulletinsRegister } from "@/components/rh/bulletins-register";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 export default async function DocumentsPage({
   searchParams,

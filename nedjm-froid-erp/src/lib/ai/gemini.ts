@@ -23,11 +23,24 @@ type GeminiResponse = {
   error?: { message?: string; status?: string };
 };
 
-/** One structured call: the model must answer with JSON matching `schema`. */
-export async function generateStructured(input: {
-  parts: GeminiPart[];
-  schema: object;
-}): Promise<unknown> {
+const RETRY_DELAYS_MS = [3_000, 8_000];
+
+/** One structured call: the model must answer with JSON matching `schema`. Overload (503) is retried briefly. */
+export async function generateStructured(input: { parts: GeminiPart[]; schema: object }): Promise<unknown> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await callOnce(input);
+    } catch (error) {
+      const delay = RETRY_DELAYS_MS[attempt];
+      if (!(error instanceof OverloadError) || delay === undefined) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
+class OverloadError extends Error {}
+
+async function callOnce(input: { parts: GeminiPart[]; schema: object }): Promise<unknown> {
   const key = process.env.GEMINI_API_KEY?.trim();
   if (!key) throw new Error("Clé Gemini absente (variable GEMINI_API_KEY).");
 
@@ -65,6 +78,9 @@ export async function generateStructured(input: {
     }
     if (response.status === 429) {
       throw new Error("Quota Gemini atteint. Réessayez dans quelques minutes.");
+    }
+    if (response.status === 503) {
+      throw new OverloadError("Gemini est surchargé en ce moment. Réessayez dans une minute.");
     }
     throw new Error(`Gemini : ${reason}`);
   }

@@ -13,13 +13,17 @@ import {
   MapPin,
   Printer,
   Save,
+  ScanText,
   Upload,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ContractImportDialog } from "@/components/rh/contract-import-dialog";
+import { ContractPdfDialog, type ContractPdfScan } from "@/components/rh/contract-pdf-dialog";
 import { ToolbarSlot } from "@/components/layout/arrange";
+import { attachContractPdf } from "@/lib/actions/hr-contract-pdf";
+import { contractFormFromPdf, matchPdfEmployee } from "@/lib/hr/contract-pdf";
 import {
   upsertHrContract,
   type HrContractRow,
@@ -250,6 +254,9 @@ export function ContractsManager({
     setRows(initialContracts);
   }
   const [importOpen, setImportOpen] = useState(false);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  /** Scanned contract read by the AI for the form being filled; archived once the contract is saved. */
+  const [scan, setScan] = useState<(ContractPdfScan & { warnings: string[]; matched: boolean }) | null>(null);
   const [asgRows, setAsgRows] = useState(assignments);
   const [catalogs, setCatalogs] = useState(initialCatalogs);
   const [open, setOpen] = useState(false);
@@ -345,7 +352,8 @@ export function ContractsManager({
     );
   }, [postes, form.poste_id, form.grade, form.start_date]);
 
-  function openModal(next: FormState, lines: Record<string, SelectedSalaryLine>) {
+  function openModal(next: FormState, lines: Record<string, SelectedSalaryLine>, nextScan: typeof scan = null) {
+    setScan(nextScan);
     setForm(next);
     setSelectedLines(lines);
     setLegal(emptyLegalChoice());
@@ -389,6 +397,44 @@ export function ContractsManager({
       }
     }
     return next;
+  }
+
+  function openScan(read: ContractPdfScan) {
+    setPdfOpen(false);
+    const { form: values, warnings } = contractFormFromPdf(read.read);
+    const match = matchPdfEmployee(read.read, employees, read.file_name);
+    const hint = (read.read.site ?? "").toLowerCase();
+    const site = hint
+      ? sites.find(
+          (s) =>
+            s.is_active &&
+            (hint.includes(s.name_fr.toLowerCase()) || (s.code ? hint.includes(s.code.toLowerCase()) : false)),
+        )
+      : undefined;
+    if (!match.employee_id) {
+      const near = match.candidates
+        .map((id) => employees.find((e) => e.id === id))
+        .filter((e) => e !== undefined)
+        .map((e) => `${e.matricule} ${e.last_name} ${e.first_name}`);
+      warnings.unshift(
+        near.length
+          ? `Employé non identifié avec certitude : choisissez-le (proches : ${near.join(", ")}).`
+          : "Employé introuvable : créez d'abord sa fiche, puis choisissez-le.",
+      );
+    }
+    if (values.retenue) warnings.push("Vérifiez la retenue / jour d'absence lue dans le contrat.");
+    openModal(
+      {
+        ...emptyForm(),
+        ...values,
+        employee_id: match.employee_id ?? "",
+        site_id: site?.id ?? "",
+        activity_code_id: site?.activity_code_id ?? "",
+        status: "ACTIVE",
+      },
+      defaultContractLines(),
+      { ...read, warnings, matched: Boolean(match.employee_id) },
+    );
   }
 
   function openRow(row: HrContractRow) {
@@ -497,6 +543,13 @@ export function ContractsManager({
         return;
       }
       const done = result.data;
+      let scanNote = "";
+      if (scan && !form.id) {
+        const attached = await attachContractPdf({ contract_id: done.id, path: scan.path, file_name: scan.file_name });
+        if (attached.ok) setArchives((a) => ({ ...a, [done.id]: attached.data.archive_url }));
+        else scanNote = ` Le PDF importé n'a pas été archivé : ${attached.error}`;
+        setScan(null);
+      }
       const emp = employees.find((e) => e.id === form.employee_id);
       const site = sites.find((s) => s.id === form.site_id);
       const next: HrContractRow = {
@@ -545,7 +598,7 @@ export function ContractsManager({
       });
       if (done.warning) {
         setForm((f) => ({ ...f, id: done.id }));
-        setError(done.warning);
+        setError(done.warning + scanNote);
         return;
       }
       setAsgRows((prev) => {
@@ -608,12 +661,12 @@ export function ContractsManager({
           )
         : bi("Contrat enregistré.", "تم حفظ العقد.");
       setInfo(
-        done.payroll_notice
+        (done.payroll_notice
           ? `${saved} ${done.payroll_notice}`
           : `${saved} ${bi(
               "Les bulletins seront calculés à la génération de la paie, sur décision.",
               "تُحسب الكشوف عند توليد الأجور، بقرار.",
-            )}`,
+            )}`) + scanNote,
       );
     });
   }
@@ -697,6 +750,12 @@ export function ContractsManager({
                 {bi("Importer des contrats", "استيراد العقود")}
               </Button>
             </ToolbarSlot>
+            <ToolbarSlot id="import_pdf">
+              <Button variant="secondary" onClick={() => setPdfOpen(true)}>
+                <ScanText aria-hidden />
+                {bi("Contrat PDF", "عقد PDF")}
+              </Button>
+            </ToolbarSlot>
             <ToolbarSlot id="new">
               <Button
                 onClick={() => {
@@ -722,6 +781,7 @@ export function ContractsManager({
           onImported={() => router.refresh()}
         />
       ) : null}
+      {pdfOpen ? <ContractPdfDialog onClose={() => setPdfOpen(false)} onRead={openScan} /> : null}
       <DataTable
         data={rows}
         columns={columns}
@@ -790,6 +850,36 @@ export function ContractsManager({
             </>
           }
         >
+          {scan ? (
+            <div className="p-1 pb-3 sm:px-2">
+              <RhAlert tone={scan.warnings.length ? "warning" : "info"}>
+                <p className="font-semibold">
+                  {bi(`Lu par l'IA depuis « ${scan.file_name} »`, "قُرئ بالذكاء الاصطناعي")} — vérifiez chaque champ avant
+                  d&apos;enregistrer.
+                </p>
+                <p className="mt-1">
+                  {[
+                    scan.read.contract_number ? `N° ${scan.read.contract_number}` : null,
+                    [scan.read.last_name_ar, scan.read.first_name_ar].filter(Boolean).join(" ") || null,
+                    [scan.read.last_name_latin, scan.read.first_name_latin].filter(Boolean).join(" ") || null,
+                    scan.read.birth_date ? `né le ${scan.read.birth_date.split("-").reverse().join("/")}` : null,
+                    scan.read.serial_number ? `réf. ${scan.read.serial_number}` : null,
+                    scan.read.site ? `chantier : ${scan.read.site}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+                {scan.warnings.length ? (
+                  <ul className="mt-1 list-disc ps-5">
+                    {scan.warnings.map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                <p className="mt-1 text-xs opacity-75">Le fichier sera archivé avec le contrat à l&apos;enregistrement.</p>
+              </RhAlert>
+            </div>
+          ) : null}
           <div
             className={`grid gap-4 p-1 sm:p-2 ${showPreview ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)] lg:items-start" : ""}`}
           >
