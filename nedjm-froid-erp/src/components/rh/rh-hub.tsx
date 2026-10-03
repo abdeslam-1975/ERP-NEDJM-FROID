@@ -6,6 +6,7 @@ import {
   Activity,
   Banknote,
   BellRing,
+  ArrowRight,
   CalendarClock,
   CalendarPlus,
   ChartPie,
@@ -392,6 +393,7 @@ const ALERT_META: Record<ContractAlert["key"], { icon: LucideIcon; color: string
 };
 
 const QUICK_ACTIONS: { icon: LucideIcon; label: string; href: string }[] = [
+  { icon: CalendarClock, label: "Pointage", href: "/rh/presence" },
   { icon: UserPlus, label: "Nouvel employé", href: "/rh/employes?nouveau=1" },
   { icon: FileBadge, label: "Attestation", href: "/rh/attestations" },
   { icon: CalendarPlus, label: "Congé", href: "/rh/conges" },
@@ -444,7 +446,9 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
   const empChange = pctChange(stats.employeesActive, stats.employeesActivePrev);
   const headcount = useMemo(() => stats.headcount.slice(-range), [stats.headcount, range]);
   const quickActions = useMemo(() => QUICK_ACTIONS.filter((a) => !isPathBlocked(layout, a.href.split("?")[0])), [layout]);
+  const attendanceOpen = !isPathBlocked(layout, "/rh/presence");
   const today = new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const month = new Date().toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
   const attDay = att.date
     ? new Date(`${att.date}T00:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
     : null;
@@ -534,6 +538,42 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
             {attDay ? `${att.present + att.mission} présents · ${attDay}` : "Aucun pointage ce mois-ci"}
           </p>
         </Link>
+
+        {attendanceOpen ? (
+          <Link
+            href="/rh/presence"
+            className="group relative col-span-12 flex flex-wrap items-center gap-x-6 gap-y-4 overflow-hidden rounded-[1.5rem] bg-[linear-gradient(120deg,var(--color-brand)_0%,color-mix(in_oklab,var(--color-brand)_70%,#7c3aed)_100%)] p-6 text-white shadow-[0_18px_40px_-18px_var(--color-brand)] transition hover:-translate-y-0.5"
+          >
+            <span className="pointer-events-none absolute -top-16 -right-10 h-48 w-48 rounded-full bg-white/10 blur-2xl" aria-hidden />
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/25">
+              <CalendarClock className="h-7 w-7" strokeWidth={1.8} aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-lg font-semibold">Tableau de présence</span>
+              <span className="block text-sm text-white/75 first-letter:uppercase" suppressHydrationWarning>
+                {month}
+                {attDay ? ` · dernier jour pointé : ${attDay}` : " · aucun pointage ce mois-ci"}
+              </span>
+            </span>
+            <span className="flex flex-wrap gap-2">
+              {[
+                { label: "Présents", value: att.present },
+                { label: "Absents", value: att.absent },
+                { label: "En congé", value: att.leave },
+                { label: "En mission", value: att.mission },
+              ].map((s) => (
+                <span key={s.label} className="rounded-xl bg-white/12 px-3 py-1.5 text-center ring-1 ring-white/15">
+                  <span className="block text-base leading-tight font-semibold tabular-nums">{s.value}</span>
+                  <span className="block text-[11px] text-white/70">{s.label}</span>
+                </span>
+              ))}
+            </span>
+            <span className="inline-flex h-11 items-center gap-2 rounded-xl bg-white px-5 text-sm font-semibold text-brand shadow-sm transition group-hover:gap-3">
+              Ouvrir le tableau
+              <ArrowRight className="h-4 w-4" aria-hidden />
+            </span>
+          </Link>
+        ) : null}
 
         <section className={cn(RH_CARD, "col-span-12 p-6 xl:col-span-8")}>
           <CardTitle
