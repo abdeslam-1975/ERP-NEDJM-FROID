@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, FileText, Plus, Printer } from "lucide-react";
+import { Eye, FileText, Plus, Printer, RefreshCw } from "lucide-react";
 import {
   decideEmployeeBulletin,
   getPayslipBulletinHtml,
@@ -55,7 +55,7 @@ export function BulletinsRegisterView({
   const [pending, start] = useTransition();
 
   /** A draft payslip computed before the latest changes opens the recalculation instead of the stale copy. */
-  function view(row: PayslipRegisterRow, then: (html: string) => void) {
+  function view(row: PayslipRegisterRow, then: (html: string) => void, force = false) {
     if (row.status_code !== "DRAFT") return withHtml(row, then);
     setError(null);
     start(async () => {
@@ -63,6 +63,7 @@ export function BulletinsRegisterView({
         employee_id: row.employee_id,
         year: row.period_year,
         month: row.period_month,
+        force,
       });
       if (!r.ok) return setError(r.error);
       if (r.data.kind === "decision") {
@@ -206,6 +207,28 @@ export function BulletinsRegisterView({
                           <Printer aria-hidden />
                           Imprimer
                         </Button>
+                        {r.status_code === "DRAFT" ? (
+                          <Button
+                            variant="ghost"
+                            disabled={pending}
+                            title="Recalculer ce bulletin brouillon avec les règles et données actuelles"
+                            onClick={() =>
+                              view(
+                                r,
+                                (html) =>
+                                  setViewing({
+                                    title: `Bulletin de paie ${periodLabel(r.period_year, r.period_month)}`,
+                                    subtitle: `${r.matricule} · ${r.employee_name}`,
+                                    html,
+                                  }),
+                                true,
+                              )
+                            }
+                          >
+                            <RefreshCw aria-hidden />
+                            Recalculer
+                          </Button>
+                        ) : null}
                         {r.status_code !== "DRAFT" && archive ? (
                           <Button variant="ghost" onClick={() => window.open(archive, "_blank", "noopener,noreferrer")}>
                             <FileText aria-hidden />

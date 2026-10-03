@@ -110,6 +110,8 @@ const employeePeriodSchema = z.object({
   employee_id: z.string().uuid(),
   year: z.number().int().min(2000).max(2100),
   month: z.number().int().min(1).max(12),
+  /** Recalculate a draft payslip even when no input change was recorded (calculation rules changed). */
+  force: z.boolean().optional(),
 });
 
 export type EmployeeBulletinStep =
@@ -168,7 +170,7 @@ async function draftIsStale(supabase: Awaited<ReturnType<typeof createClient>>, 
 export async function requestEmployeeBulletin(input: unknown): Promise<ActionResult<EmployeeBulletinStep>> {
   const parsed = employeePeriodSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Choisissez l'employé, le mois et l'année." };
-  const { employee_id, year, month } = parsed.data;
+  const { employee_id, year, month, force } = parsed.data;
   const ws = await getWorkspaceProfile();
   if (!ws) return { ok: false, error: "Session requise." };
   const supabase = await createClient();
@@ -177,7 +179,7 @@ export async function requestEmployeeBulletin(input: unknown): Promise<ActionRes
   try {
     existing = await employeeSlip(supabase, employee_id, year, month);
     if (existing && normalizeRunStatus(existing.run_status) === "DRAFT") {
-      stale = await draftIsStale(supabase, existing.run_id, employee_id);
+      stale = force === true || (await draftIsStale(supabase, existing.run_id, employee_id));
     }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Lecture des bulletins impossible." };
