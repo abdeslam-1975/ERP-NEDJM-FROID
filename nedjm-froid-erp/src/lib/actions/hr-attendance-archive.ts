@@ -551,6 +551,66 @@ export async function listUnknownCodes(id: string): Promise<ActionResult<{ code:
   };
 }
 
+export type NameReviewRow = {
+  source_name: string;
+  lines: number;
+  employee_id: string | null;
+  matricule: string | null;
+  employee_name: string | null;
+};
+
+/** Names of the batch left without an employee, then the names already tied to one by hand. */
+export async function listArchiveNameReview(id: string): Promise<ActionResult<NameReviewRow[]>> {
+  if (!UUID_RE.test(id)) return { ok: false, error: "Lot invalide." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("hr_attendance_import_name_review", { p_batch: id });
+  if (error) return { ok: false, error: error.message };
+  return {
+    ok: true,
+    data: ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+      source_name: String(r.source_name ?? ""),
+      lines: Number(r.lines ?? 0),
+      employee_id: r.employee_id ? String(r.employee_id) : null,
+      matricule: r.matricule ? String(r.matricule) : null,
+      employee_name: r.employee_name ? String(r.employee_name) : null,
+    })),
+  };
+}
+
+export type ArchiveEmployeeOption = { id: string; matricule: string; last_name: string; first_name: string };
+
+export async function listArchiveEmployees(): Promise<ActionResult<ArchiveEmployeeOption[]>> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("hr_employees")
+    .select("id, matricule, last_name, first_name")
+    .order("last_name")
+    .limit(10000);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, data: (data ?? []) as ArchiveEmployeeOption[] };
+}
+
+const aliasSchema = z.object({
+  batchId: uuid,
+  name: z.string().trim().min(1).max(240),
+  employeeId: uuid.nullable(),
+});
+
+/** Ties a name of the file to an employee for this and every later import (null unties it); the batch is analysed again. */
+export async function setArchiveNameAlias(input: unknown): Promise<ActionResult<ArchiveAnalysis>> {
+  const parsed = aliasSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides." };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("hr_attendance_import_set_alias", {
+    p_batch: parsed.data.batchId,
+    p_name: parsed.data.name,
+    p_employee: parsed.data.employeeId,
+  });
+  revalidateArchives();
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, data: parseArchiveAnalysis(data) };
+}
+
 const mappingSchema = z.object({
   id: uuid,
   map: z.record(z.string().trim().min(1).max(16), z.string().trim().min(1).max(16)),

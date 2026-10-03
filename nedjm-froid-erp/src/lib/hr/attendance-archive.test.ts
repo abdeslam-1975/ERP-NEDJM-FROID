@@ -15,6 +15,7 @@ import {
   parseRowsArchive,
   periodNature,
   selfValidationBlocker,
+  similarNameScore,
   sourceExtOf,
 } from "@/lib/hr/attendance-archive";
 
@@ -274,5 +275,11 @@ describe("helpers", () => {
     expect(sourceExtOf("export.csv")).toBe("csv");
     expect(sourceExtOf("scan.pdf")).toBeNull();
     expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+  });
+
+  it("scores close spellings of a name", () => {
+    expect(similarNameScore("FRADJ SAID", "FREDJ SAID")).toBe(1);
+    expect(similarNameScore("YAHIA CHERIF ALI ABDERAHMANE", "YAHIA CHERIF ALI ABDERRAHMANE")).toBe(4);
+    expect(similarNameScore("MENZER MERWAN", "TAMER BOUBAKER")).toBe(0);
   });
 });

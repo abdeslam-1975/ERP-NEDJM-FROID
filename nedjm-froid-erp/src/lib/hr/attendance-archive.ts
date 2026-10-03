@@ -364,6 +364,20 @@ export function archiveNameKey(value: string | null | undefined): string {
     .replace(/[\s'.-]+/g, "");
 }
 
+/** Words of a name sharing their first four letters with a word of the other name (FRADJ SAID ~ FREDJ SAID = 1). */
+export function similarNameScore(a: string, b: string): number {
+  const words = (v: string) =>
+    v
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase()
+      .split(/[^A-Z]+/)
+      .filter((w) => w.length >= 3)
+      .map((w) => w.slice(0, 4));
+  const other = new Set(words(b));
+  return new Set(words(a).filter((w) => other.has(w))).size;
+}
+
 /**
  * Name matching: each line gets the matricule of the single employee with the same last + first name.
  * Unmatched or ambiguous names get a marker that cannot match any matricule, so the analysis rejects them.

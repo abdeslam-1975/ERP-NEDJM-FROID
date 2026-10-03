@@ -11,7 +11,9 @@ import {
   commitArchiveBatch,
   confirmCodeMapping,
   getArchiveFileUrl,
+  listArchiveEmployees,
   listArchiveLines,
+  listArchiveNameReview,
   listUnknownCodes,
   prepareArchivePieceUpload,
   prepareArchiveUpload,
@@ -21,13 +23,16 @@ import {
   requestImportPolicy,
   resolveArchiveConflicts,
   revokeCodeMapping,
+  setArchiveNameAlias,
   validateArchiveBatch,
   type ActionResult,
   type ArchiveAccess,
+  type ArchiveEmployeeOption,
   type ArchiveBatch,
   type ArchiveDetail,
   type ArchiveLineRow,
   type CodeMapping,
+  type NameReviewRow,
 } from "@/lib/actions/hr-attendance-archive";
 import {
   ARCHIVE_BUCKET,
@@ -56,12 +61,14 @@ import {
   periodNature,
   provenanceLabel,
   selfValidationBlocker,
+  similarNameScore,
   sourceExtOf,
   type ArchiveMeta,
   type ArchivePieceMime,
 } from "@/lib/hr/attendance-archive";
 import { QuickDialog } from "@/components/rules/rule-ui";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhChip, RhField, RhPageHeader, RhPanel, RhStat, RhTabs, RhToolbar, rhInput } from "@/components/rh/rh-ui";
 
@@ -492,6 +499,10 @@ function BatchDetail({
           </div>
         ) : null}
 
+        {b.analyzed_at && can.analyze && access.create ? (
+          <NameMatchPanel key={b.analyzed_at} batchId={b.id} onDone={onDone} />
+        ) : null}
+
         {openD5 ? (
           <RhAlert tone="warning">
             Décision D5 « conflit d&apos;import » {openD5.status === "PENDING" ? "en attente" : "décidée, à terminer"} —{" "}
@@ -577,6 +588,112 @@ function BatchDetail({
         <LinesTable batchId={b.id} counts={a.counts} />
       </div>
     </RhPanel>
+  );
+}
+
+function NameMatchPanel({ batchId, onDone }: { batchId: string; onDone: (text: string) => void }) {
+  const [rows, setRows] = useState<NameReviewRow[]>([]);
+  const [employees, setEmployees] = useState<ArchiveEmployeeOption[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([listArchiveNameReview(batchId), listArchiveEmployees()]).then(([names, staff]) => {
+      if (cancelled) return;
+      if (!names.ok) return setError(names.error);
+      if (!staff.ok) return setError(staff.error);
+      setRows(names.data);
+      setEmployees(staff.data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [batchId]);
+
+  function optionsFor(name: string) {
+    return employees
+      .map((e) => {
+        const full = `${e.last_name} ${e.first_name}`;
+        return { e, full, score: similarNameScore(name, full) };
+      })
+      .sort((x, y) => y.score - x.score || x.full.localeCompare(y.full))
+      .map(({ e, full, score }) => ({
+        value: e.id,
+        label: `${e.matricule} · ${full}`,
+        keywords: full,
+        hint: score ? "nom proche" : undefined,
+      }));
+  }
+
+  function choose(name: string, employeeId: string | null) {
+    setError(null);
+    start(async () => {
+      const r = await setArchiveNameAlias({ batchId, name, employeeId });
+      if (!r.ok) return setError(r.error);
+      onDone(
+        employeeId
+          ? `« ${name} » rattaché à l'employé choisi ; lot analysé à nouveau. Ce choix vaut aussi pour les imports suivants.`
+          : `Rapprochement de « ${name} » retiré ; lot analysé à nouveau.`,
+      );
+    });
+  }
+
+  if (!rows.length && !error) return null;
+  const open = rows.filter((r) => !r.employee_id);
+  return (
+    <div className="space-y-3 rounded-xl border border-border/60 p-3">
+      <div>
+        <p className="text-sm font-semibold">
+          Noms à rapprocher · مطابقة الأسماء{open.length ? ` (${open.length} à choisir)` : ""}
+        </p>
+        <p className="text-xs text-foreground/60">
+          Ces noms du fichier ne correspondent à aucun employé de l&apos;application. Choisissez l&apos;employé : le lot est
+          analysé à nouveau et le choix est retenu pour les imports suivants. Un salarié absent de l&apos;application se crée
+          d&apos;abord dans Employés.
+        </p>
+      </div>
+      {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs text-foreground/55">
+            <tr>
+              <th className="px-2 py-1.5 font-medium">Nom dans le fichier</th>
+              <th className="px-2 py-1.5 font-medium">Lignes</th>
+              <th className="px-2 py-1.5 font-medium">Employé dans l&apos;application</th>
+              <th className="px-2 py-1.5" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.source_name} className="border-t border-border/50">
+                <td className="px-2 py-1.5 font-medium">{r.source_name}</td>
+                <td className="px-2 py-1.5 tabular-nums text-foreground/60">{r.lines}</td>
+                <td className="min-w-72 px-2 py-1.5">
+                  <Combobox
+                    options={optionsFor(r.source_name)}
+                    value={r.employee_id ?? ""}
+                    disabled={pending}
+                    allowEmpty={false}
+                    onChange={(v) => v && v !== r.employee_id && choose(r.source_name, v)}
+                    placeholder="Choisir l'employé…"
+                    searchPlaceholder="Matricule, nom ou prénom…"
+                    emptyText="Aucun employé trouvé"
+                  />
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  {r.employee_id ? (
+                    <Button variant="ghost" disabled={pending} onClick={() => choose(r.source_name, null)}>
+                      Retirer
+                    </Button>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
