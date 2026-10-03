@@ -13,7 +13,7 @@ import {
   roundMoney,
   sortForPayslip,
 } from "@/lib/hr/payroll-calc";
-import { baseDailyTaux, daysInMonth } from "@/lib/hr/attendance-movements";
+import { baseDailyTaux, daysInMonth, legendCrpShare } from "@/lib/hr/attendance-movements";
 import { explainMonthlyIrg, type IrgBracket, type IrgRule } from "@/lib/hr/irg-calc";
 
 export type BulletinLine = {
@@ -437,9 +437,13 @@ export function slipToBulletin(
   const irgBase = slip.irg_base ?? Math.max(0, taxable - slip.employee_ss);
   const intempSal = slip.intemperies_employee ?? 0;
   const intempPat = slip.intemperies_employer ?? 0;
+  const crpDays = Object.entries(slip.days_by_code ?? {}).reduce(
+    (sum, [code, count]) => sum + legendCrpShare(code) * Number(count || 0),
+    0,
+  );
   const lines = buildBulletinLines({
     lines: slip.lines,
-    daysPaid: slip.days_paid,
+    daysPaid: Math.max(0, slip.days_paid - crpDays),
     periodYear: slip.period_year,
     periodMonth: slip.period_month,
     grossCotisable: slip.gross_amount,

@@ -51,8 +51,29 @@ export function BulletinsRegisterView({
   const [page, setPage] = useState(0);
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [viewing, setViewing] = useState<{ title: string; subtitle: string; html: string } | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<boolean | BulletinDialogInitial>(false);
   const [pending, start] = useTransition();
+
+  /** A draft payslip computed before the latest changes opens the recalculation instead of the stale copy. */
+  function view(row: PayslipRegisterRow, then: (html: string) => void) {
+    if (row.status_code !== "DRAFT") return withHtml(row, then);
+    setError(null);
+    start(async () => {
+      const r = await requestEmployeeBulletin({
+        employee_id: row.employee_id,
+        year: row.period_year,
+        month: row.period_month,
+      });
+      if (!r.ok) return setError(r.error);
+      if (r.data.kind === "decision") {
+        setCreating({ employeeId: row.employee_id, year: row.period_year, month: row.period_month, decision: r.data });
+        return;
+      }
+      const html = await getPayslipBulletinHtml({ slip_id: r.data.slip_id, year: row.period_year, month: row.period_month });
+      if (html.ok) then(html.data.html);
+      else setError(html.error);
+    });
+  }
 
   const periods = useMemo(
     () => [...new Set(rows.map((r) => `${r.period_year}-${String(r.period_month).padStart(2, "0")}`))],
@@ -169,7 +190,7 @@ export function BulletinsRegisterView({
                           variant="secondary"
                           disabled={pending}
                           onClick={() =>
-                            withHtml(r, (html) =>
+                            view(r, (html) =>
                               setViewing({
                                 title: `Bulletin de paie ${periodLabel(r.period_year, r.period_month)}`,
                                 subtitle: `${r.matricule} · ${r.employee_name}`,
@@ -181,7 +202,7 @@ export function BulletinsRegisterView({
                           <Eye aria-hidden />
                           Afficher
                         </Button>
-                        <Button variant="ghost" disabled={pending} onClick={() => withHtml(r, printHtml)}>
+                        <Button variant="ghost" disabled={pending} onClick={() => view(r, printHtml)}>
                           <Printer aria-hidden />
                           Imprimer
                         </Button>
@@ -245,6 +266,7 @@ export function BulletinsRegisterView({
       {creating ? (
         <NewBulletinDialog
           employees={employees}
+          initial={creating === true ? undefined : creating}
           onClose={() => setCreating(false)}
           onReady={(slip) => {
             setCreating(false);
@@ -271,22 +293,34 @@ const DECISION_TEXT: Record<"D1" | "D3" | "D4", string> = {
   D1: "Des règles du mois attendent une approbation : la paie ne peut pas encore être générée. La demande (D1) est ouverte au Centre de décisions.",
 };
 
+type DecisionStep = Extract<EmployeeBulletinStep, { kind: "decision" }>;
+
+type BulletinDialogInitial = { employeeId: string; year: number; month: number; decision: DecisionStep };
+
+function justificationFor(year: number, month: number, employee: BulletinEmployee | undefined) {
+  return employee ? `Bulletin de paie ${periodLabel(year, month)} de ${employee.matricule} ${employee.name}.` : "";
+}
+
 function NewBulletinDialog({
   employees,
+  initial,
   onClose,
   onReady,
 }: {
   employees: readonly BulletinEmployee[];
+  initial?: BulletinDialogInitial;
   onClose: () => void;
   onReady: (slip: { slip_id: string; year: number; month: number; employee: BulletinEmployee }) => void;
 }) {
   const now = new Date();
-  const [employeeId, setEmployeeId] = useState("");
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [employeeId, setEmployeeId] = useState(initial?.employeeId ?? "");
+  const [year, setYear] = useState(initial?.year ?? now.getFullYear());
+  const [month, setMonth] = useState(initial?.month ?? now.getMonth() + 1);
   const [error, setError] = useState<string | null>(null);
-  const [decision, setDecision] = useState<Extract<EmployeeBulletinStep, { kind: "decision" }> | null>(null);
-  const [justification, setJustification] = useState("");
+  const [decision, setDecision] = useState<DecisionStep | null>(initial?.decision ?? null);
+  const [justification, setJustification] = useState(() =>
+    initial ? justificationFor(initial.year, initial.month, employees.find((e) => e.id === initial.employeeId)) : "",
+  );
   const [pending, start] = useTransition();
   const employee = employees.find((e) => e.id === employeeId);
   const staleSlipId = decision?.stale_slip_id;
@@ -304,7 +338,7 @@ function NewBulletinDialog({
       if (!r.ok) return setError(r.error);
       if (r.data.kind === "slip") return onReady({ slip_id: r.data.slip_id, year, month, employee });
       setDecision(r.data);
-      setJustification(`Bulletin de paie ${periodLabel(year, month)} de ${employee.matricule} ${employee.name}.`);
+      setJustification(justificationFor(year, month, employee));
     });
   }
 

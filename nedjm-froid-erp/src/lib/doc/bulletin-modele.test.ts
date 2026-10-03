@@ -66,7 +66,7 @@ describe("official payslip template (modèle fiche de paie)", () => {
     const doc = new DOMParser().parseFromString(printed, "text/html");
     const base = [...doc.querySelectorAll("tr")].find((tr) => tr.textContent?.includes("SALAIRE DE BASE"));
     const cells = [...(base?.querySelectorAll("td") ?? [])].map((td) => td.textContent?.trim());
-    expect(cells).toEqual(["100", "SALAIRE DE BASE", "30", "40000,00", "1333,33 DA/j", "40000,00", ""]);
+    expect(cells).toEqual(["100", "SALAIRE DE BASE", "28", "40000,00", "1333,33 DA/j", "40000,00", ""]);
     expect(printed).toContain("123450,67 DA");
   });
 

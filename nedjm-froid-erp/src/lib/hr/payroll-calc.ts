@@ -592,7 +592,7 @@ export function buildPayrollLines(input: {
   /** Days actually worked, récupération days excluded. */
   daysWorked: number;
   /**
-   * Récupération (CRP) days: paid by the base salary and the CRP rubriques. Per-day work
+   * Récupération (CRP) days: paid by the CRP rubriques only. The base salary and per-day work
    * rubriques skip them; fixed work rubriques (monthly, percent) stay whole and are not repeated
    * by the same CRP rubrique.
    */
@@ -622,14 +622,9 @@ export function buildPayrollLines(input: {
   };
 
   if (input.baseMonthly > 0) {
-    const qty = quantityForUnit("month", input.daysPaid, input.daysWorked, input.monthFraction);
-    const amount = computeLineAmount({
-      unit: "month",
-      unitAmount: input.baseMonthly,
-      quantity: qty,
-      baseMonthly: input.baseMonthly,
-      nature: "indemnite",
-    });
+    const workShare = daysCrp > 0 && input.daysPaid > 0 ? workDaysPaid / input.daysPaid : 1;
+    const qty = Math.round(input.monthFraction * workShare * 10_000) / 10_000;
+    const amount = roundMoney(input.baseMonthly * input.monthFraction * workShare);
     lines.push({
       rubrique_id: null,
       exception_id: null,

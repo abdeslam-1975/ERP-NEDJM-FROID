@@ -168,7 +168,8 @@ describe("payroll calc", () => {
         exceptions: [],
       });
     const lines = build(4);
-    expect(lines.find((l) => l.code === "BASE")?.amount).toBe(31000);
+    expect(lines.find((l) => l.code === "BASE")?.amount).toBe(27000);
+    expect(build(0).find((l) => l.code === "BASE")?.amount).toBe(31000);
     const work = lines.filter((l) => !l.label_fr.includes("récupération"));
     const crp = lines.filter((l) => l.label_fr.includes("récupération"));
     expect(work.find((l) => l.code === "302")).toMatchObject({ quantity: 27, amount: 13500 });
