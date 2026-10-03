@@ -178,7 +178,7 @@ describe("payroll calc", () => {
     expect(build(0).some((l) => l.label_fr.includes("récupération"))).toBe(false);
   });
 
-  it("drops work rubriques (monthly and percent too) when the whole month is récupération", () => {
+  it("keeps fixed work rubriques whole and does not repeat them as CRP lines", () => {
     const ctr = { employee_id: null, site_id: null, contract_id: "c1", is_active: true } as const;
     const nuisance: PayrollRubrique = { ...hygiene, id: "r-106", code: "106", category: "1" };
     const garantie: PayrollRubrique = { ...hygiene, id: "r-921", code: "921", category: "5", nature: "retenue" };
@@ -204,16 +204,14 @@ describe("payroll calc", () => {
         ],
         exceptions: [],
       });
-    const full = build(31);
-    expect(full.filter((l) => l.code === "106")).toHaveLength(1);
-    expect(full.filter((l) => l.code === "303")).toHaveLength(1);
-    expect(full.find((l) => l.code === "106")).toMatchObject({ amount: 2100 });
-    expect(full.find((l) => l.code === "106")?.label_fr).toContain("récupération");
-    expect(full.find((l) => l.code === "921")?.amount).toBe(-9000);
-    const split = build(10);
-    const work106 = split.find((l) => l.code === "106" && !l.label_fr.includes("récupération"));
-    const crp106 = split.find((l) => l.code === "106" && l.label_fr.includes("récupération"));
-    expect((work106?.amount ?? 0) + (crp106?.amount ?? 0)).toBeCloseTo(2100, 0);
+    for (const daysCrp of [31, 10]) {
+      const lines = build(daysCrp);
+      expect(lines.filter((l) => l.code === "106")).toHaveLength(1);
+      expect(lines.filter((l) => l.code === "303")).toHaveLength(1);
+      expect(lines.find((l) => l.code === "106")).toMatchObject({ amount: 2100, label_fr: nuisance.label_fr });
+      expect(lines.find((l) => l.code === "303")).toMatchObject({ quantity: 1, amount: 157 });
+      expect(lines.find((l) => l.code === "921")?.amount).toBe(-9000);
+    }
   });
 
   it("keeps a contract in payroll while it covers the month, including open-ended", () => {
