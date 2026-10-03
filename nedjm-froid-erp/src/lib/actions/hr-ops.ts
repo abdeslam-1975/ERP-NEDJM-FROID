@@ -936,7 +936,7 @@ async function computePayrollSlips(
 
   let assignmentQuery = supabase
     .from("hr_salary_assignments")
-    .select("rubrique_id, employee_id, site_id, contract_id, poste_id, amount, unit, is_active")
+    .select("rubrique_id, employee_id, site_id, contract_id, poste_id, amount, unit, is_active, period_scope")
     .eq("is_active", true);
   if (scope.length) {
     assignmentQuery = assignmentQuery.or(
@@ -1153,6 +1153,8 @@ async function computePayrollSlips(
         contractCount: group.contractCount,
         daysPaid: mov.days_paid,
         daysPresence: mov.days_presence_qty,
+        daysCrp: mov.days_crp,
+        daysCrpPresence: mov.days_crp_presence,
         annualLeaveDays: annualLeaveByEmp.get(ctr.employee_id) ?? 0,
         salary,
         compliance: resolved,

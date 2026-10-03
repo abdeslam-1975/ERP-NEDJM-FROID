@@ -26,6 +26,17 @@ const PICKABLE_CLASSES = SALARY_CLASSES.map((c) =>
   c.id === RETENUE_CATEGORY ? { ...c, fr: "RETENUE DE GARANTIE" } : c,
 );
 
+function crpHint(line: SelectedSalaryLine) {
+  const value = line.amount.trim() || "0";
+  if (line.unit === "percent") {
+    return `Bulletin : ${value} % du salaire de base × jours de récupération ÷ jours du mois. Rien si aucun CRP.`;
+  }
+  if (line.unit === "month" || line.unit === "month_days") {
+    return `Bulletin : ${value} DA ÷ jours du mois × jours de récupération (CRP). Rien si aucun CRP.`;
+  }
+  return `Bulletin : ${value} DA × jours de récupération (CRP) du mois. Rien si aucun CRP.`;
+}
+
 function computeHint(line: SelectedSalaryLine) {
   const value = line.amount.trim() || "0";
   if (line.unit === "percent") return `Bulletin : ${value} % du salaire de base.`;
@@ -36,18 +47,22 @@ function computeHint(line: SelectedSalaryLine) {
     return `Bulletin : ${value} DA ÷ jours du mois × jours travaillés (Nbr = jours de présence). Mois complet = ${value} DA exactement.`;
   }
   if (line.unit === "presence_day") return `Bulletin : ${value} DA × jours travaillés du mois (Nbr = jours de présence).`;
-  return `Bulletin : ${value} DA × jours payés du mois (Nbr = jours du mois, ex. 31 × ${value}).`;
+  return `Bulletin : ${value} DA × jours payés du mois, récupération exclue (ex. 31 × ${value}).`;
 }
 
 export function ContractRubriquesField({
   rubriques,
   selected,
   onChange,
+  scope = "WORK",
 }: {
   rubriques: SalaryRubrique[];
   selected: Record<string, SelectedSalaryLine>;
   onChange: (next: Record<string, SelectedSalaryLine>) => void;
+  /** CRP = rubriques paid only on récupération days. */
+  scope?: "WORK" | "CRP";
 }) {
+  const hint = scope === "CRP" ? crpHint : computeHint;
   const lines = sortBySalaryClass(rubriques.filter((r) => selected[r.id]));
 
   function toggle(r: SalaryRubrique, checked: boolean) {
@@ -114,7 +129,9 @@ export function ContractRubriquesField({
 
       {!lines.length ? (
         <p className="rounded-xl border border-dashed border-border/80 px-4 py-5 text-center text-[13px] text-foreground/60">
-          Aucune rubrique choisie. Ouvrez la liste et cochez les rubriques par classe.
+          {scope === "CRP"
+            ? "Aucune rubrique de récupération : les jours CRP ne reçoivent que le salaire de base."
+            : "Aucune rubrique choisie. Ouvrez la liste et cochez les rubriques par classe."}
         </p>
       ) : null}
       {lines.length ? (
@@ -168,7 +185,7 @@ export function ContractRubriquesField({
                 >
                   <X className="size-4" aria-hidden />
                 </button>
-                <span className="text-xs text-foreground/60 sm:col-span-4">{computeHint(line)}</span>
+                <span className="text-xs text-foreground/60 sm:col-span-4">{hint(line)}</span>
               </div>
             );
           })}

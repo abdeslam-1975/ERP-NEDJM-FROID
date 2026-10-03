@@ -61,7 +61,13 @@ export type PayrollAssignment = {
   amount: number;
   unit?: SalaryUnit | null;
   is_active: boolean;
+  /** WORK (default) = days actually worked; CRP = paid only on récupération days. */
+  period_scope?: "WORK" | "CRP" | null;
 };
+
+export function isCrpAssignment(a: Pick<PayrollAssignment, "period_scope">) {
+  return a.period_scope === "CRP";
+}
 
 export type SalaryGridRow = {
   poste_id: string;
@@ -541,6 +547,41 @@ function toLine(
   };
 }
 
+export const CRP_LABEL_FR = " (récupération)";
+export const CRP_LABEL_AR = " (عطلة تعويضية)";
+
+/**
+ * CRP rubrique line: per-day units pay each récupération day; monthly amounts and
+ * percentages are spread over the days of the month.
+ */
+function crpLine(
+  rub: PayrollRubrique,
+  picked: { amount: number; source: LineSource; unit: SalaryUnit | null },
+  daysCrp: number,
+  calendarDays: number,
+  baseMonthly: number,
+  sortOrder: number,
+): PayrollLine {
+  const declared = picked.unit ?? rub.unit;
+  const unit: SalaryUnit = declared === "month" ? "month_days" : declared;
+  const qty = unit === "percent" ? daysCrp / calendarDays : daysCrp;
+  const amount = computeLineAmount({
+    unit,
+    unitAmount: picked.amount,
+    quantity: qty,
+    baseMonthly,
+    nature: rub.nature,
+    category: rub.category,
+    calendarDays,
+  });
+  const line = toLine({ ...rub, unit }, picked.source, picked.amount, qty, amount, sortOrder, null);
+  return {
+    ...line,
+    label_fr: `${rub.label_fr}${CRP_LABEL_FR}`,
+    label_ar: `${rub.label_ar}${CRP_LABEL_AR}`,
+  };
+}
+
 export function buildPayrollLines(input: {
   employeeId: string;
   siteId: string;
@@ -548,7 +589,10 @@ export function buildPayrollLines(input: {
   posteId?: string | null;
   baseMonthly: number;
   daysPaid: number;
+  /** Days actually worked, récupération days excluded. */
   daysWorked: number;
+  /** Récupération (CRP) days: paid by the base salary, by CRP rubriques only otherwise. */
+  daysCrp?: number;
   /** From paidMonthFraction: quantity of monthly and percent lines. */
   monthFraction: number;
   year: number;
@@ -561,6 +605,10 @@ export function buildPayrollLines(input: {
 }): PayrollLine[] {
   const lines: PayrollLine[] = [...(input.extraLines ?? [])];
   const calendarDays = new Date(input.year, input.month, 0).getDate();
+  const daysCrp = Math.max(0, input.daysCrp ?? 0);
+  const workDaysPaid = Math.max(0, input.daysPaid - daysCrp);
+  const workAssignments = input.assignments.filter((a) => !isCrpAssignment(a));
+  const crpAssignments = input.assignments.filter(isCrpAssignment);
   let sort = 10;
   const ctx = {
     employeeId: input.employeeId,
@@ -599,10 +647,10 @@ export function buildPayrollLines(input: {
 
   const active = input.rubriques.filter((r) => r.is_active);
   for (const rub of active) {
-    const picked = resolvePermanentAssignment(rub.id, input.assignments, ctx);
+    const picked = resolvePermanentAssignment(rub.id, workAssignments, ctx);
     if (!picked) continue;
     const unit = picked.unit ?? rub.unit;
-    const qty = quantityForUnit(unit, input.daysPaid, input.daysWorked, input.monthFraction);
+    const qty = quantityForUnit(unit, workDaysPaid, input.daysWorked, input.monthFraction);
     const amount = computeLineAmount({
       unit,
       unitAmount: picked.amount,
@@ -614,6 +662,16 @@ export function buildPayrollLines(input: {
     });
     lines.push(toLine({ ...rub, unit }, picked.source, picked.amount, qty, amount, sort, null));
     sort += 10;
+  }
+
+  if (daysCrp > 0) {
+    for (const rub of active) {
+      const picked = resolvePermanentAssignment(rub.id, crpAssignments, ctx);
+      if (!picked) continue;
+      const line = crpLine(rub, picked, daysCrp, calendarDays, input.baseMonthly, sort);
+      lines.push(line);
+      sort += 10;
+    }
   }
 
   for (const ex of input.exceptions) {

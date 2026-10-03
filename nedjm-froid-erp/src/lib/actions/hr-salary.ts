@@ -47,6 +47,8 @@ export type SalaryAssignment = {
   amount: number;
   unit: SalaryRubrique["unit"] | null;
   is_active: boolean;
+  /** WORK = jours travaillés ; CRP = jours de récupération. */
+  period_scope: "WORK" | "CRP";
 };
 
 function revalidateSalary() {
@@ -88,7 +90,7 @@ export async function listSalaryAssignments(): Promise<ActionResult<SalaryAssign
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("hr_salary_assignments")
-    .select("id, rubrique_id, employee_id, site_id, contract_id, poste_id, amount, unit, is_active")
+    .select("id, rubrique_id, employee_id, site_id, contract_id, poste_id, amount, unit, is_active, period_scope")
     .order("created_at");
   if (error) return { ok: false, error: error.message };
   return {
@@ -98,6 +100,7 @@ export async function listSalaryAssignments(): Promise<ActionResult<SalaryAssign
       poste_id: row.poste_id ?? null,
       amount: Number(row.amount),
       unit: (row.unit as SalaryAssignment["unit"]) ?? null,
+      period_scope: row.period_scope === "CRP" ? "CRP" : "WORK",
     })) as SalaryAssignment[],
   };
 }
@@ -262,7 +265,7 @@ export async function deleteSalaryAssignment(
 export async function replaceContractSalaryLines(input: {
   contract_id: string;
   employee_id: string;
-  lines: { rubrique_id: string; amount: number; unit?: SalaryRubrique["unit"] }[];
+  lines: { rubrique_id: string; amount: number; unit?: SalaryRubrique["unit"]; period_scope?: "WORK" | "CRP" }[];
 }): Promise<ActionResult<{ count: number }>> {
   const gate = await requireHrSalaryValues();
   if (!gate.ok) return gate;
@@ -273,7 +276,7 @@ export async function replaceContractSalaryLines(input: {
     .select("id, apply_scope, is_active, unit, category");
   if (rErr) return { ok: false, error: rErr.message };
   const byId = new Map((rubs ?? []).map((r) => [r.id, r]));
-  type Line = { rubrique_id: string; amount: number; unit?: SalaryRubrique["unit"] };
+  type Line = (typeof input.lines)[number];
   const contractLines: Line[] = [];
   const employeeLines: Line[] = [];
   for (const id of ids) {
@@ -305,6 +308,7 @@ export async function replaceContractSalaryLines(input: {
       amount: line.amount,
       unit: line.unit ?? byId.get(line.rubrique_id)?.unit ?? null,
       is_active: true,
+      period_scope: line.period_scope ?? "WORK",
     })),
     ...employeeLines.map((line) => ({
       rubrique_id: line.rubrique_id,
@@ -314,6 +318,7 @@ export async function replaceContractSalaryLines(input: {
       amount: line.amount,
       unit: line.unit ?? byId.get(line.rubrique_id)?.unit ?? null,
       is_active: true,
+      period_scope: line.period_scope ?? "WORK",
     })),
   ];
   const { error } = await supabase.rpc("hr_salary_assignments_replace", {

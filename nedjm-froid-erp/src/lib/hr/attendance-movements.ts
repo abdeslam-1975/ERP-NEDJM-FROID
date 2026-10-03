@@ -28,7 +28,19 @@ export type AttendanceMovements = {
   days_rappel: number;
   /** Days pointed with each legend code (upper-case code → count). */
   days_by_code: Record<string, number>;
+  /** Récupération days (CRP = 1, half codes such as P/2-CRP/2 = 0.5). */
+  days_crp: number;
+  /** Part of days_presence_qty that is récupération, not work (full CRP days). */
+  days_crp_presence: number;
 };
+
+/** Récupération share of a legend: 1 for CRP, 0.5 for a half code (…CRP/2), else 0. */
+export function legendCrpShare(code: string): number {
+  const c = String(code ?? "").trim().toUpperCase();
+  if (c === "CRP") return 1;
+  if (/(^|[-\s])CRP\/2($|[-\s])/.test(c)) return 0.5;
+  return 0;
+}
 
 /** Classifie une légende vers un compartiment Mouvements (libellés + code système). */
 export function legendMovementBucket(legend: AttendanceLegend): MovementBucket {
@@ -76,6 +88,8 @@ export function emptyMovements(): AttendanceMovements {
     days_abandon: 0,
     days_rappel: 0,
     days_by_code: {},
+    days_crp: 0,
+    days_crp_presence: 0,
   };
 }
 
@@ -96,12 +110,15 @@ export function accumulateAttendanceMovements(
     const current = out.get(cell.employee_id) ?? emptyMovements();
     current.days_paid += coef;
     if (code) current.days_by_code[code] = (current.days_by_code[code] ?? 0) + 1;
+    const crp = legend ? legendCrpShare(code) : 0;
+    current.days_crp += crp;
     const bucket = legend
       ? legendMovementBucket(legend)
       : ("other" as MovementBucket);
     if (bucket === "worked") {
       current.days_worked += 1;
       current.days_presence_qty += coef;
+      if (crp === 1) current.days_crp_presence += coef;
     } else if (bucket === "leave") {
       current.days_leave += 1;
     } else if (bucket === "absence") {

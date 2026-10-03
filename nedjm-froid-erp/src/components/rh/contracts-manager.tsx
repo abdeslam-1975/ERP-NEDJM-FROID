@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } f
 import Link from "next/link";
 import {
   Briefcase,
+  CalendarClock,
   Eye,
   EyeOff,
   FileSignature,
@@ -163,6 +164,11 @@ type ActivityOpt = { id: string; code: string; label_fr: string };
 
 const col = dataColumns<HrContractRow>();
 
+type ContractLines = {
+  work: Record<string, SelectedSalaryLine>;
+  crp: Record<string, SelectedSalaryLine>;
+};
+
 type FormState = {
   id?: string;
   employee_id: string;
@@ -262,6 +268,8 @@ export function ContractsManager({
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(emptyForm());
   const [selectedLines, setSelectedLines] = useState<Record<string, SelectedSalaryLine>>({});
+  /** Rubriques paid only on récupération (CRP) days. */
+  const [crpLines, setCrpLines] = useState<Record<string, SelectedSalaryLine>>({});
   const [legal, setLegal] = useState<LegalChoice>(emptyLegalChoice());
   /** What the contract had when the form opened; null while it loads. */
   const [legalBase, setLegalBase] = useState<{ choice: LegalChoice; overrides: LegalOverrides } | null>(null);
@@ -352,10 +360,11 @@ export function ContractsManager({
     );
   }, [postes, form.poste_id, form.grade, form.start_date]);
 
-  function openModal(next: FormState, lines: Record<string, SelectedSalaryLine>, nextScan: typeof scan = null) {
+  function openModal(next: FormState, lines: ContractLines, nextScan: typeof scan = null) {
     setScan(nextScan);
     setForm(next);
-    setSelectedLines(lines);
+    setSelectedLines(lines.work);
+    setCrpLines(lines.crp);
     setLegal(emptyLegalChoice());
     setLegalBase(next.id ? null : { choice: emptyLegalChoice(), overrides: { IRG: null, CACOBATPH: null } });
     setRetenueBase(next.id ? null : "");
@@ -377,26 +386,27 @@ export function ContractsManager({
     }
   }
 
-  function defaultContractLines() {
-    const next: Record<string, SelectedSalaryLine> = {};
+  function defaultContractLines(): ContractLines {
+    const work: Record<string, SelectedSalaryLine> = {};
     for (const r of rubriques) {
       if (r.is_active && r.apply_scope !== "site" && r.default_amount > 0) {
-        next[r.id] = { amount: String(r.default_amount), unit: r.unit };
+        work[r.id] = { amount: String(r.default_amount), unit: r.unit };
       }
     }
-    return next;
+    return { work, crp: {} };
   }
 
-  function linesForContract(contractId: string, employeeId: string) {
-    const next: Record<string, SelectedSalaryLine> = {};
+  function linesForContract(contractId: string, employeeId: string): ContractLines {
+    const lines: ContractLines = { work: {}, crp: {} };
     for (const a of asgRows) {
       if (!a.is_active) continue;
       if (a.contract_id === contractId || a.employee_id === employeeId) {
         const rub = rubriques.find((r) => r.id === a.rubrique_id);
-        next[a.rubrique_id] = { amount: String(a.amount), unit: a.unit ?? rub?.unit ?? "month" };
+        const target = a.period_scope === "CRP" ? lines.crp : lines.work;
+        target[a.rubrique_id] = { amount: String(a.amount), unit: a.unit ?? rub?.unit ?? "month" };
       }
     }
-    return next;
+    return lines;
   }
 
   function openScan(read: ContractPdfScan) {
@@ -511,11 +521,14 @@ export function ContractsManager({
       return;
     }
     start(async () => {
-      const salary_lines = Object.entries(selectedLines).map(([rubrique_id, line]) => ({
-        rubrique_id,
-        amount: Number(line.amount || 0),
-        unit: line.unit,
-      }));
+      const toLines = (lines: Record<string, SelectedSalaryLine>, period_scope: "WORK" | "CRP") =>
+        Object.entries(lines).map(([rubrique_id, line]) => ({
+          rubrique_id,
+          amount: Number(line.amount || 0),
+          unit: line.unit,
+          period_scope,
+        }));
+      const salary_lines = [...toLines(selectedLines, "WORK"), ...toLines(crpLines, "CRP")];
       let result: Awaited<ReturnType<typeof upsertHrContract>>;
       try {
         result = await upsertHrContract({
@@ -608,7 +621,7 @@ export function ContractsManager({
           if (!rub || rub.apply_scope === "site") return [];
           return [
             {
-              id: `${next.id}-${line.rubrique_id}`,
+              id: `${next.id}-${line.rubrique_id}-${line.period_scope}`,
               rubrique_id: line.rubrique_id,
               employee_id: rub.apply_scope === "employee" ? form.employee_id : null,
               site_id: null,
@@ -617,6 +630,7 @@ export function ContractsManager({
               amount: line.amount,
               unit: line.unit ?? rub.unit,
               is_active: true,
+              period_scope: line.period_scope,
             },
           ];
         });
@@ -1253,6 +1267,19 @@ export function ContractsManager({
                   description="Choisissez par classe, puis réglez le mode et la valeur de chaque rubrique."
                 >
                   <ContractRubriquesField rubriques={rubriques} selected={selectedLines} onChange={setSelectedLines} />
+                </FormSection>
+
+                <FormSection
+                  icon={CalendarClock}
+                  title="Rubriques de récupération (CRP) · بنود العطلة التعويضية"
+                  description="Payées seulement sur les jours pointés CRP. Le salaire de base reste dû ; les rubriques ci-dessus ne s'appliquent pas à ces jours."
+                >
+                  <ContractRubriquesField
+                    rubriques={rubriques}
+                    selected={crpLines}
+                    onChange={setCrpLines}
+                    scope="CRP"
+                  />
                 </FormSection>
               </div>
             </div>

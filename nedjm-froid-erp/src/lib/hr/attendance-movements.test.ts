@@ -36,6 +36,25 @@ describe("attendance movements for bulletin", () => {
     expect(m?.days_by_code).toEqual({ P: 14, CA: 15, AN: 1 });
   });
 
+  it("counts récupération days apart from the worked presence", () => {
+    const crpLegends = [
+      ...legends,
+      { code: "CRP", label_fr: "Récupération", coefficient: 1, counts_as_presence: true },
+      { code: "P/2-CRP/2", label_fr: "DEMI P / DEMI CRP", coefficient: 0.5, counts_as_presence: true },
+    ];
+    const m = accumulateAttendanceMovements(
+      [
+        ...Array.from({ length: 20 }, () => ({ employee_id: "e1", legend_code: "P" })),
+        ...Array.from({ length: 3 }, () => ({ employee_id: "e1", legend_code: "CRP" })),
+        { employee_id: "e1", legend_code: "P/2-CRP/2" },
+      ],
+      crpLegends,
+    ).get("e1");
+    expect(m?.days_crp).toBe(3.5);
+    expect(m?.days_presence_qty).toBe(23.5);
+    expect(m?.days_crp_presence).toBe(3);
+  });
+
   it("classifies system codes even when labels vary", () => {
     expect(
       legendMovementBucket({

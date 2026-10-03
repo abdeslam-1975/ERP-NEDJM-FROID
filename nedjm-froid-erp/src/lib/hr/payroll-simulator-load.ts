@@ -27,6 +27,7 @@ import {
   exceptionAppliesToPeriod,
   groupContractsByEmployee,
   PAYROLL_CONTRACT_STATUSES,
+  isCrpAssignment,
   resolvePermanentAssignment,
   salaryAsOf,
   type PayrollAdvance,
@@ -320,7 +321,7 @@ async function load(
     supabase.from("ref_sites").select("name_fr").eq("id", siteId).maybeSingle(),
     supabase
       .from("hr_salary_assignments")
-      .select("rubrique_id, employee_id, site_id, contract_id, poste_id, amount, unit, is_active")
+      .select("rubrique_id, employee_id, site_id, contract_id, poste_id, amount, unit, is_active, period_scope")
       .eq("is_active", true)
       .or(`employee_id.eq.${empId},employee_id.is.null`),
     supabase
@@ -410,7 +411,9 @@ async function load(
     net: num(ctr.salaire_net_ref_monthly),
   });
 
-  const asg = ((assignments.data ?? []) as PayrollAssignment[]).map((a) => ({ ...a, amount: num(a.amount) }));
+  const asg = ((assignments.data ?? []) as PayrollAssignment[])
+    .filter((a) => !isCrpAssignment(a))
+    .map((a) => ({ ...a, amount: num(a.amount) }));
   const ctx = { employeeId: empId, siteId, contractId: ctrId, posteId: (ctr.poste_id as string | null) ?? null };
   const rubricLines: SimRubricLine[] = [];
   for (const rub of rubriques) {

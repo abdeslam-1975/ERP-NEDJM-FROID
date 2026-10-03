@@ -144,6 +144,40 @@ describe("payroll calc", () => {
     ).toBe(-1500);
   });
 
+  it("pays CRP rubriques on récupération days only and keeps them out of the work rubriques", () => {
+    const ctr = { employee_id: null, site_id: null, contract_id: "c1", is_active: true } as const;
+    const build = (daysCrp: number) =>
+      buildPayrollLines({
+        employeeId: "e1",
+        siteId: "s1",
+        contractId: "c1",
+        baseMonthly: 31000,
+        daysPaid: 31,
+        daysWorked: 31 - daysCrp,
+        daysCrp,
+        monthFraction: 1,
+        year: 2026,
+        month: 1,
+        rubriques: [panier, hygiene],
+        assignments: [
+          { ...ctr, rubrique_id: "r-302", amount: 500, unit: "day" },
+          { ...ctr, rubrique_id: "r-303", amount: 3100, unit: "month_days" },
+          { ...ctr, rubrique_id: "r-302", amount: 200, unit: "day", period_scope: "CRP" },
+          { ...ctr, rubrique_id: "r-303", amount: 6200, unit: "month", period_scope: "CRP" },
+        ],
+        exceptions: [],
+      });
+    const lines = build(4);
+    expect(lines.find((l) => l.code === "BASE")?.amount).toBe(31000);
+    const work = lines.filter((l) => !l.label_fr.includes("récupération"));
+    const crp = lines.filter((l) => l.label_fr.includes("récupération"));
+    expect(work.find((l) => l.code === "302")).toMatchObject({ quantity: 27, amount: 13500 });
+    expect(work.find((l) => l.code === "303")).toMatchObject({ quantity: 27, amount: 2700 });
+    expect(crp.find((l) => l.code === "302")).toMatchObject({ quantity: 4, amount: 800 });
+    expect(crp.find((l) => l.code === "303")).toMatchObject({ unit: "month_days", quantity: 4, amount: 800 });
+    expect(build(0).some((l) => l.label_fr.includes("récupération"))).toBe(false);
+  });
+
   it("keeps a contract in payroll while it covers the month, including open-ended", () => {
     expect(contractCoversPeriod("2026-09-01", null, "2026-09-01", "2026-09-30")).toBe(true);
     expect(contractCoversPeriod("2026-08-01", "2026-08-31", "2026-09-01", "2026-09-30")).toBe(false);

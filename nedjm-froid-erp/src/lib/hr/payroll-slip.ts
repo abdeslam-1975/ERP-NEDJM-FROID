@@ -95,6 +95,10 @@ export type SlipSubject = {
   /** Paid days from attendance, before removing the leave paid by the CACOBATPH fund. */
   daysPaid: number;
   daysPresence: number;
+  /** Récupération days (paid by the base and the CRP rubriques only). */
+  daysCrp?: number;
+  /** Part of daysPresence that is récupération, removed from the worked days. */
+  daysCrpPresence?: number;
   annualLeaveDays: number;
   salary: { base: number; net: number };
   compliance: ResolvedCompliance;
@@ -137,7 +141,11 @@ export function computeSlip(input: {
     );
   }
   const paid = Math.min(Math.max(0, subject.daysPaid - fundLeave), subject.coveredDays);
-  const worked = Math.min(subject.daysPresence, subject.coveredDays);
+  const worked = Math.min(
+    Math.max(0, subject.daysPresence - (subject.daysCrpPresence ?? 0)),
+    subject.coveredDays,
+  );
+  const daysCrp = Math.min(Math.max(0, subject.daysCrp ?? 0), subject.coveredDays);
   const monthFraction = paidMonthFraction({
     daysPaid: paid,
     coveredDays: subject.coveredDays,
@@ -170,6 +178,7 @@ export function computeSlip(input: {
     baseMonthly: salary.base,
     daysPaid: paid,
     daysWorked: worked,
+    daysCrp,
     monthFraction,
     year,
     month,

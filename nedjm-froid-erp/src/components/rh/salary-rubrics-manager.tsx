@@ -462,6 +462,7 @@ export function SalaryRubricsManager({
         amount: Number(asg.amount || 0),
         unit: rub?.unit ?? null,
         is_active: true,
+        period_scope: values.find((x) => x.id === result.data.id)?.period_scope ?? "WORK",
       };
       setValues((prev) => [...prev.filter((x) => x.id !== result.data.id), next]);
       setAsg({ id: "", rubrique_id: asg.rubrique_id, target_id: "", amount: "0", level: asg.level });

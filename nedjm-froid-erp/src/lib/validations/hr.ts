@@ -308,6 +308,7 @@ export const hrContractSalaryLineSchema = z.object({
   rubrique_id: z.string().uuid(),
   amount: z.coerce.number().min(-99_999_999).max(99_999_999),
   unit: z.enum(["day", "month", "percent", "presence_day", "month_days"]).optional(),
+  period_scope: z.enum(["WORK", "CRP"]).default("WORK"),
 });
 
 export const hrContractSchema = z.object({
