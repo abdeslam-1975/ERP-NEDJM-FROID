@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import {
+  archiveContractPrint,
   getContractPrintContext,
   saveContractPrint,
   saveContractTemplate,
@@ -76,16 +77,19 @@ export function ContractPrintDialog({
   canEditTemplate,
   onClose,
   onNumbered,
+  onArchived,
 }: {
   contractId: string;
   canEditTemplate: boolean;
   onClose: () => void;
   onNumbered?: (numero: string) => void;
+  onArchived?: (url: string) => void;
 }) {
   const [values, setValues] = useState<ContractPrintValues | null>(null);
   const [template, setTemplate] = useState<ContractTemplate | null>(null);
   const [editingTemplate, setEditingTemplate] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [archive, setArchive] = useState<{ state: "running" | "done"; url?: string } | null>(null);
   const [pending, start] = useTransition();
 
   useEffect(() => {
@@ -114,6 +118,7 @@ export function ContractPrintDialog({
   function print() {
     if (!values || !template) return;
     setError(null);
+    setArchive(null);
     start(async () => {
       const r = await saveContractPrint({ contract_id: contractId, values });
       if (!r.ok) {
@@ -124,6 +129,16 @@ export function ContractPrintDialog({
       setValues(next);
       onNumbered?.(r.data.numero);
       printHtml(buildWorkContractHtml(next, template));
+      setArchive({ state: "running" });
+      void archiveContractPrint(contractId).then((a) => {
+        if (a.ok) {
+          setArchive({ state: "done", url: a.data.archive_url });
+          onArchived?.(a.data.archive_url);
+        } else {
+          setArchive(null);
+          setError(`Contrat enregistré, archive PDF non créée : ${a.error}`);
+        }
+      });
     });
   }
 
@@ -156,6 +171,22 @@ export function ContractPrintDialog({
       {error ? (
         <div className="mb-3">
           <RhAlert tone="danger">{error}</RhAlert>
+        </div>
+      ) : null}
+      {archive ? (
+        <div className="mb-3">
+          <RhAlert tone={archive.state === "done" ? "success" : "info"}>
+            {archive.state === "running" ? (
+              bi("Archivage du contrat en PDF…", "جارٍ أرشفة العقد PDF…")
+            ) : (
+              <>
+                {bi("Contrat archivé en PDF.", "تمت أرشفة العقد PDF.")}{" "}
+                <a href={archive.url} target="_blank" rel="noopener noreferrer" className="font-semibold underline">
+                  {bi("Ouvrir le PDF", "فتح PDF")}
+                </a>
+              </>
+            )}
+          </RhAlert>
         </div>
       ) : null}
       {!values || !template ? (

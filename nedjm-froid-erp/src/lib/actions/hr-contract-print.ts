@@ -5,6 +5,12 @@ import { z } from "zod";
 import { requireHrSalaryValues } from "@/lib/auth/require-roles";
 import { createClient } from "@/lib/supabase/server";
 import { getHrEmployeeFiche } from "@/lib/actions/hr-employees";
+import { upsertHrFile } from "@/lib/actions/hr-documents";
+import { contractArchiveType } from "@/lib/hr/contract-archive";
+import { hrFileHref } from "@/lib/hr/hr-file-url";
+import { htmlToPdf } from "@/lib/pdf/html-to-pdf";
+import { archiveFileStem, archiveFolder, hrPdfOptions, requestOrigin, uploadHrPdf } from "@/lib/pdf/print-archive";
+import { buildWorkContractHtml } from "@/components/rh/work-contract-print";
 import {
   contractPrintDataToSave,
   contractPrintDefaults,
@@ -255,6 +261,43 @@ export async function saveContractPrint(input: {
   }
   revalidatePath("/rh/contrats");
   return { ok: true, data: { numero } };
+}
+
+/** Archives the saved contract as a PDF rendered from the print HTML; it replaces the contract's previous archive. */
+export async function archiveContractPrint(contractId: string): Promise<ActionResult<{ archive_url: string }>> {
+  if (!z.string().uuid().safeParse(contractId).success) return { ok: false, error: "Contrat invalide." };
+  try {
+    const supabase = await createClient();
+    const { data: ctr, error } = await supabase
+      .from("hr_contracts")
+      .select("employee_id")
+      .eq("id", contractId)
+      .maybeSingle();
+    if (error) return { ok: false, error: error.message };
+    if (!ctr) return { ok: false, error: "Contrat introuvable." };
+    const [context, origin] = await Promise.all([getContractPrintContext(contractId), requestOrigin()]);
+    if (!context.ok) return context;
+    const { values, template } = context.data;
+    const pdf = await htmlToPdf(buildWorkContractHtml(values, template), hrPdfOptions(supabase, origin));
+    const safeNum = (values.numero || "SN").replace(/\//g, "-");
+    const path = `${archiveFolder(ctr.employee_id)}/CONTRAT-${safeNum}-${crypto.randomUUID()}.pdf`;
+    const uploadError = await uploadHrPdf(supabase, path, pdf);
+    if (uploadError) return { ok: false, error: uploadError };
+    const archiveUrl = hrFileHref(path);
+    const filed = await upsertHrFile({
+      employee_id: ctr.employee_id,
+      doc_type_code: contractArchiveType(contractId),
+      file_url: archiveUrl,
+      file_name: `CONTRAT_${archiveFileStem(safeNum, values.matricule || "NA", values.nom || "")}.pdf`,
+      storage_path: path,
+      notes: `Contrat de travail ${values.numero} · عقد العمل`,
+    });
+    if (!filed.ok) return filed;
+    revalidatePath("/rh/documents");
+    return { ok: true, data: { archive_url: archiveUrl } };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Échec de l'archivage du contrat." };
+  }
 }
 
 const templateSchema = z.object({

@@ -94,6 +94,8 @@ const EMPTY_PRINT_EMPLOYEE: ContractPrintSource["employee"] = {
   address_fr: null,
 };
 
+const NO_ARCHIVES: Record<string, string> = {};
+
 const RETENUE_PATTERN = /^\d{1,9}([.,]\d{1,2})?$/;
 
 function statusOption(status: string) {
@@ -217,8 +219,10 @@ export function ContractsManager({
   canEditCompliance = false,
   postes = [],
   agencies = [],
+  contractArchives = NO_ARCHIVES,
   loadError,
 }: {
+  contractArchives?: Record<string, string>;
   postes?: PosteRow[];
   agencies?: { id: string; label: string; default_daily_rate: number }[];
   initialContracts: HrContractRow[];
@@ -249,6 +253,12 @@ export function ContractsManager({
   const [pending, start] = useTransition();
   const [printId, setPrintId] = useState<string | null>(null);
   const [viewRow, setViewRow] = useState<HrContractRow | null>(null);
+  const [archives, setArchives] = useState(contractArchives);
+  const [seenArchives, setSeenArchives] = useState(contractArchives);
+  if (seenArchives !== contractArchives) {
+    setSeenArchives(contractArchives);
+    setArchives(contractArchives);
+  }
   const [showPreview, setShowPreview] = useState(true);
   const [preview, setPreview] = useState<(ContractPreviewContext & { key: string }) | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -637,6 +647,18 @@ export function ContractsManager({
           <Button variant="secondary" onClick={() => setPrintId(row.original.id)}>
             {bi("Imprimer", "طباعة")}
           </Button>
+          {archives[row.original.id] ? (
+            <>
+              {" "}
+              <Button
+                variant="secondary"
+                onClick={() => window.open(archives[row.original.id], "_blank", "noopener,noreferrer")}
+              >
+                <FileText aria-hidden />
+                {bi("PDF archivé", "PDF مؤرشف")}
+              </Button>
+            </>
+          ) : null}
         </>
       ),
     }),
@@ -1170,6 +1192,7 @@ export function ContractsManager({
           contractId={printId}
           canEditTemplate={canEditSalaryValues}
           onClose={() => setPrintId(null)}
+          onArchived={(url) => setArchives((prev) => ({ ...prev, [printId]: url }))}
         />
       ) : null}
     </div>

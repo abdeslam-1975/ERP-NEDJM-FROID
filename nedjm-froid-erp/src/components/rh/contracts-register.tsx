@@ -9,6 +9,7 @@ import { listContractComplianceOptions } from "@/lib/actions/hr-compliance";
 import { getComplianceAccess } from "@/lib/auth/compliance-access";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { HR_SALARY_VALUE_ROLES, workspaceHasRole } from "@/lib/auth/require-roles";
+import { listContractArchives } from "@/lib/hr/contract-archive";
 
 /** Register of work contracts, shown in the Documents page. */
 export async function ContractsRegister() {
@@ -23,6 +24,7 @@ export async function ContractsRegister() {
     agencies,
     complianceOptions,
     compliance,
+    archives,
   ] = await Promise.all([
     listHrContracts(),
     listHrEmployeeRows(),
@@ -34,6 +36,7 @@ export async function ContractsRegister() {
     listAgencies(),
     listContractComplianceOptions(),
     getComplianceAccess(),
+    listContractArchives(),
   ]);
 
   return (
@@ -60,6 +63,7 @@ export async function ContractsRegister() {
             }
       }
       canEditCompliance={compliance.canWrite}
+      contractArchives={archives}
       postes={postes.ok ? postes.data : []}
       agencies={(agencies.ok ? agencies.data : [])
         .filter((a) => a.is_active)
