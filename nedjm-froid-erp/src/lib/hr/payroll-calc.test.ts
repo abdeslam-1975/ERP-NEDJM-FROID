@@ -117,6 +117,33 @@ describe("payroll calc", () => {
     expect(row?.amount).toBe(2000);
   });
 
+  it("spreads a month_days amount over the days of the payslip month", () => {
+    const at = (year: number, month: number, daysWorked: number) =>
+      buildPayrollLines({
+        employeeId: "e1",
+        siteId: "s1",
+        contractId: "c1",
+        baseMonthly: 0,
+        daysPaid: daysWorked,
+        daysWorked,
+        monthFraction: 1,
+        year,
+        month,
+        rubriques: [hygiene],
+        assignments: [
+          { rubrique_id: "r-303", employee_id: null, site_id: null, contract_id: "c1", amount: 5000, unit: "month_days", is_active: true },
+        ],
+        exceptions: [],
+      }).find((l) => l.code === "303");
+    expect(at(2026, 1, 31)).toMatchObject({ unit: "month_days", quantity: 31, unit_amount: 5000, amount: 5000 });
+    expect(at(2026, 2, 28)?.amount).toBe(5000);
+    expect(at(2026, 1, 20)?.amount).toBe(3225.81);
+    expect(at(2026, 1, 40)?.amount).toBe(5000);
+    expect(
+      computeLineAmount({ unit: "month_days", unitAmount: 3000, quantity: 15, baseMonthly: 0, nature: "prime", category: "5", calendarDays: 30 }),
+    ).toBe(-1500);
+  });
+
   it("keeps a contract in payroll while it covers the month, including open-ended", () => {
     expect(contractCoversPeriod("2026-09-01", null, "2026-09-01", "2026-09-30")).toBe(true);
     expect(contractCoversPeriod("2026-08-01", "2026-08-31", "2026-09-01", "2026-09-30")).toBe(false);

@@ -8,6 +8,7 @@ import {
   applyValueMode,
   valueModeSelectValue,
   valueSuffix,
+  type ValueMode,
 } from "@/lib/hr/salary-value-mode";
 import {
   DropdownMenu,
@@ -30,6 +31,9 @@ function computeHint(line: SelectedSalaryLine) {
   if (line.unit === "percent") return `Bulletin : ${value} % du salaire de base.`;
   if (line.unit === "month") {
     return `Bulletin : ${value} DA une seule fois par mois (Nbr = 1), quel que soit le nombre de jours. Pour un montant par jour, choisissez « Journalier *J ».`;
+  }
+  if (line.unit === "month_days") {
+    return `Bulletin : ${value} DA ÷ jours du mois × jours travaillés (Nbr = jours de présence). Mois complet = ${value} DA exactement.`;
   }
   if (line.unit === "presence_day") return `Bulletin : ${value} DA × jours travaillés du mois (Nbr = jours de présence).`;
   return `Bulletin : ${value} DA × jours payés du mois (Nbr = jours du mois, ex. 31 × ${value}).`;
@@ -133,7 +137,7 @@ export function ContractRubriquesField({
                   onChange={(e) =>
                     onChange({
                       ...selected,
-                      [r.id]: { ...line, unit: applyValueMode(e.target.value as "percent" | "month" | "day", line.unit) },
+                      [r.id]: { ...line, unit: applyValueMode(e.target.value as ValueMode, line.unit) },
                     })
                   }
                 >

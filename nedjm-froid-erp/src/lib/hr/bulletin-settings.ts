@@ -348,7 +348,7 @@ export function withPct(template: string, pct: number | null | undefined) {
 
 export function tauxUnitSuffix(unit: string, settings: HrBulletinSettings) {
   if (unit === "percent") return settings.unit_percent;
-  if (unit === "day" || unit === "presence_day") return settings.unit_day;
+  if (unit === "day" || unit === "presence_day" || unit === "month_days") return settings.unit_day;
   if (unit === "month") return settings.unit_da;
   return "";
 }

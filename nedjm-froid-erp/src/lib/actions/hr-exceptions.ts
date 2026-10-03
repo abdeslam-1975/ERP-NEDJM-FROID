@@ -16,7 +16,7 @@ export type SalaryExceptionRow = {
   employee_id: string;
   rubrique_id: string;
   amount: number;
-  unit: "day" | "month" | "percent" | "presence_day" | null;
+  unit: "day" | "month" | "percent" | "presence_day" | "month_days" | null;
   period_year: number;
   period_month: number;
   duration_mode: "once" | "until";

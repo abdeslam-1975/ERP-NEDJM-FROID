@@ -9,6 +9,7 @@ import {
   valueModeSelectValue,
   valueSuffix,
   type SalaryUnit,
+  type ValueMode,
 } from "@/lib/hr/salary-value-mode";
 import { RETENUE_CATEGORY, sortBySalaryClass } from "@/lib/hr/payroll-calc";
 
@@ -148,7 +149,7 @@ export function ContractSalaryFields({
                             onChange(r.id, {
                               amount: current?.amount ?? String(r.default_amount || 0),
                               unit: applyValueMode(
-                                e.target.value as "percent" | "month" | "day",
+                                e.target.value as ValueMode,
                                 unit,
                               ),
                             })

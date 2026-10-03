@@ -20,7 +20,7 @@ export const NEGATIVE_AMOUNT_ERROR =
 export function amountAllowedForClass(category: string | null | undefined, amount: number) {
   return amount >= 0 || category === RETENUE_CATEGORY;
 }
-export type SalaryUnit = "day" | "month" | "percent" | "presence_day";
+export type SalaryUnit = "day" | "month" | "percent" | "presence_day" | "month_days";
 export type SalaryNature =
   | "indemnite"
   | "prime"
@@ -267,7 +267,7 @@ export function quantityForUnit(
   monthFraction: number,
 ) {
   if (unit === "day") return daysPaid;
-  if (unit === "presence_day") return daysWorked;
+  if (unit === "presence_day" || unit === "month_days") return daysWorked;
   return monthFraction;
 }
 
@@ -471,7 +471,15 @@ export function computeLineAmount(input: {
   baseMonthly: number;
   nature: SalaryNature;
   category?: SalaryCategory;
+  /** Days of the period month; `month_days` spreads the monthly amount over them. */
+  calendarDays?: number;
 }) {
+  if (input.unit === "month_days") {
+    const cal = input.calendarDays && input.calendarDays > 0 ? input.calendarDays : 30;
+    const raw = (input.unitAmount * Math.min(Math.max(input.quantity, 0), cal)) / cal;
+    const negative = input.category === RETENUE_CATEGORY || input.nature === "retenue";
+    return roundMoney(negative ? -Math.abs(raw) : raw);
+  }
   const qty = input.quantity;
   if (input.category === RETENUE_CATEGORY) {
     const raw =
@@ -552,6 +560,7 @@ export function buildPayrollLines(input: {
   extraLines?: PayrollLine[];
 }): PayrollLine[] {
   const lines: PayrollLine[] = [...(input.extraLines ?? [])];
+  const calendarDays = new Date(input.year, input.month, 0).getDate();
   let sort = 10;
   const ctx = {
     employeeId: input.employeeId,
@@ -601,6 +610,7 @@ export function buildPayrollLines(input: {
       baseMonthly: input.baseMonthly,
       nature: rub.nature,
       category: rub.category,
+      calendarDays,
     });
     lines.push(toLine({ ...rub, unit }, picked.source, picked.amount, qty, amount, sort, null));
     sort += 10;
@@ -620,6 +630,7 @@ export function buildPayrollLines(input: {
       baseMonthly: input.baseMonthly,
       nature: rub.nature,
       category: rub.category,
+      calendarDays,
     });
     lines.push(toLine({ ...rub, unit }, "exception", ex.amount, qty, amount, sort, ex.id));
     sort += 10;

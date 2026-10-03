@@ -53,6 +53,7 @@ const UNIT_OPTIONS: SimOption[] = [
   { value: "month", label: "Mensuel" },
   { value: "day", label: "/ jour payé" },
   { value: "presence_day", label: "/ jour présence" },
+  { value: "month_days", label: "Mensuel ÷ jours du mois" },
   { value: "percent", label: "% du base" },
 ];
 

@@ -79,6 +79,7 @@ function levelOf(row: SalaryAssignment): Scope {
 function unitLabel(unit: SalaryRubrique["unit"]) {
   if (unit === "percent") return bi("Pourcentage *%", "نسبة");
   if (unit === "month") return bi("Montant /F", "مبلغ");
+  if (unit === "month_days") return bi("Mensuel ÷ jours du mois", "شهري ÷ أيام الشهر");
   if (unit === "presence_day") return bi("Journalier présence", "برام حضور");
   return bi("Journalier *J", "برام");
 }
@@ -797,6 +798,7 @@ export function SalaryRubricsManager({
                   <option value="month">{bi("Montant /F", "مبلغ")}</option>
                   <option value="day">{bi("Journalier *J", "برام")}</option>
                   <option value="presence_day">{bi("Journalier présence", "برام حضور")}</option>
+                  <option value="month_days">{bi("Mensuel ÷ jours du mois", "شهري ÷ أيام الشهر")}</option>
                 </select>
               </RhField>
               <RhField label={bi("Classe fiscale", "الصنف الضريبي")}>

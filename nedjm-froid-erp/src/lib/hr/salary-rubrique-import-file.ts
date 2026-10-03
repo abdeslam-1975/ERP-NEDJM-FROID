@@ -67,7 +67,7 @@ export async function buildSalaryRubriquesTemplate(): Promise<ArrayBuffer> {
   const guide = wb.addWorksheet("Guide");
   guide.addRow(["Champ / الحقل", "Valeurs / القيم"]);
   guide.addRow(["nature", "indemnite | prime | rappel | remboursement | retenue"]);
-  guide.addRow(["unit", "day | month | percent | presence_day"]);
+  guide.addRow(["unit", "day | month | percent | presence_day | month_days"]);
   guide.addRow([
     "category",
     "1 CNAS+IRG · ضمان+ضريبة | 2 CNAS · ضمان | 3 IRG · ضريبة | 4 none · لا شيء",

@@ -30,6 +30,7 @@ import {
   valueModeSelectValue,
   valueSuffix,
   type SalaryUnit,
+  type ValueMode,
 } from "@/lib/hr/salary-value-mode";
 
 type Emp = { id: string; label: string };
@@ -464,7 +465,7 @@ export function ExceptionsManager({
                   setForm({
                     ...form,
                     unit: applyValueMode(
-                      e.target.value as "percent" | "month" | "day",
+                      e.target.value as ValueMode,
                       form.unit,
                     ),
                   })

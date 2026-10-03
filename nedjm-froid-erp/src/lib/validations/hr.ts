@@ -307,7 +307,7 @@ export const hrFicheSettingsSchema = z.object({
 export const hrContractSalaryLineSchema = z.object({
   rubrique_id: z.string().uuid(),
   amount: z.coerce.number().min(-99_999_999).max(99_999_999),
-  unit: z.enum(["day", "month", "percent", "presence_day"]).optional(),
+  unit: z.enum(["day", "month", "percent", "presence_day", "month_days"]).optional(),
 });
 
 export const hrContractSchema = z.object({
@@ -449,7 +449,7 @@ export const salaryRubriqueSchema = z.object({
   label_ar: z.string().trim().min(1).max(160),
   label_fr: z.string().trim().min(1).max(160),
   nature: z.enum(["indemnite", "prime", "rappel", "remboursement", "retenue"]),
-  unit: z.enum(["day", "month", "percent", "presence_day"]),
+  unit: z.enum(["day", "month", "percent", "presence_day", "month_days"]),
   category: z.enum(SALARY_CATEGORIES),
   cotisable: z.boolean(),
   taxable: z.boolean(),
@@ -465,7 +465,7 @@ export const salaryAssignmentSchema = z.object({
   target_id: z.string().uuid(),
   target_kind: z.enum(["employee", "site", "contract", "poste"]).optional(),
   amount: z.coerce.number().min(-99_999_999).max(99_999_999),
-  unit: z.enum(["day", "month", "percent", "presence_day"]).optional().nullable(),
+  unit: z.enum(["day", "month", "percent", "presence_day", "month_days"]).optional().nullable(),
   is_active: z.boolean().default(true),
 });
 
@@ -480,7 +480,7 @@ export const salaryExceptionSchema = z
     employee_id: z.string().uuid(),
     rubrique_id: z.string().uuid(),
     amount: z.coerce.number().min(-99_999_999).max(99_999_999),
-    unit: z.enum(["day", "month", "percent", "presence_day"]).optional().nullable(),
+    unit: z.enum(["day", "month", "percent", "presence_day", "month_days"]).optional().nullable(),
     period_year: z.coerce.number().int().min(2020).max(2100),
     period_month: z.coerce.number().int().min(1).max(12),
     duration_mode: z.enum(["once", "until"]).default("once"),

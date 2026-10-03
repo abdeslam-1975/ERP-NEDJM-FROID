@@ -26,7 +26,7 @@ export type SalaryRubrique = {
   label_ar: string;
   label_fr: string;
   nature: "indemnite" | "prime" | "rappel" | "remboursement" | "retenue";
-  unit: "day" | "month" | "percent" | "presence_day";
+  unit: "day" | "month" | "percent" | "presence_day" | "month_days";
   category: SalaryCategory;
   cotisable: boolean;
   taxable: boolean;

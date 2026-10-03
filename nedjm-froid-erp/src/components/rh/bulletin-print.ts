@@ -191,6 +191,11 @@ export function buildBulletinLines(input: {
       nombre = taux !== 0 ? abs / (taux / 100) : 0;
       tauxSuffix = settings.unit_percent;
       cols = { nbr: null, base: nombre, rate: taux };
+    } else if (line.unit === "month_days") {
+      nombre = line.quantity;
+      taux = baseDailyTaux(Math.abs(line.unit_amount), input.periodYear, input.periodMonth);
+      tauxSuffix = settings.unit_day;
+      cols = { nbr: nombre, base: Math.abs(line.unit_amount), rate: taux };
     } else if (line.unit === "day" || line.unit === "presence_day") {
       nombre = line.quantity;
       taux = line.unit_amount;

@@ -27,7 +27,7 @@ export type RubriqueDraft = {
   label_ar: string;
   label_fr: string;
   nature: "indemnite" | "prime" | "rappel" | "remboursement" | "retenue";
-  unit: "day" | "month" | "percent" | "presence_day";
+  unit: "day" | "month" | "percent" | "presence_day" | "month_days";
   category: SalaryCategory;
   cotisable: boolean;
   taxable: boolean;
@@ -114,6 +114,7 @@ function parseNature(raw: string): RubriqueDraft["nature"] | null {
 
 function parseUnit(raw: string, label = ""): RubriqueDraft["unit"] {
   const v = `${raw} ${label}`.toLowerCase();
+  if (v.includes("month_days") || v.includes("÷")) return "month_days";
   if (v.includes("presence") || v.includes("حضور")) return "presence_day";
   if (v.includes("percent") || v.includes("%") || v.includes("نسبة")) return "percent";
   if (/\*j\b|\/\s*j\b|jour|day|يومي|يوم/.test(v)) return "day";
