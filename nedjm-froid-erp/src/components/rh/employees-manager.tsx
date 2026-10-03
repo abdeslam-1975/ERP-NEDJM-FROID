@@ -47,6 +47,7 @@ import { EmployeeCardPreview } from "@/components/rh/employee-card-preview";
 import { EmployeeImportDialog } from "@/components/rh/employee-import-dialog";
 import { DEFAULT_FICHE_SETTINGS, type HrFicheSettings } from "@/lib/hr/fiche-settings";
 import { mergeAffectationCatalog } from "@/lib/hr/affectation-options";
+import { sortEmployees } from "@/lib/hr/employee-order";
 
 const col = dataColumns<HrEmployeeFiche>();
 const fieldCol = dataColumns<HrEmployeeField>();
@@ -233,16 +234,7 @@ export function EmployeesManager({
       if (saved) {
         setRows((prev) => {
           const without = prev.filter((r) => r.id !== saved.id);
-          return [...without, saved].sort((a, b) => {
-            const aOk = a.import_seq != null;
-            const bOk = b.import_seq != null;
-            if (aOk && bOk && a.import_seq !== b.import_seq) {
-              return (a.import_seq as number) - (b.import_seq as number);
-            }
-            if (aOk && !bOk) return -1;
-            if (!aOk && bOk) return 1;
-            return a.matricule.localeCompare(b.matricule, "fr", { numeric: true });
-          });
+          return sortEmployees([...without, saved]);
         });
         setValues(valuesFromFiche(saved, fields));
       }
@@ -268,9 +260,7 @@ export function EmployeesManager({
         return;
       }
       setRows((prev) =>
-        prev.map((r) =>
-          r.id === row.id ? { ...r, status: result.data.status } : r,
-        ),
+        sortEmployees(prev.map((r) => (r.id === row.id ? { ...r, status: result.data.status } : r))),
       );
     });
   }

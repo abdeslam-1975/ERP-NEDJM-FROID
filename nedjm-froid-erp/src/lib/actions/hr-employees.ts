@@ -13,6 +13,7 @@ import {
   hrEmployeeFieldMetaSchema,
 } from "@/lib/validations/hr";
 import { maritalAllowsChildren, missingRequiredFields } from "@/lib/hr/employee-field-utils";
+import { sortEmployees } from "@/lib/hr/employee-order";
 import {
   digitsOnly,
   isLatinUppercaseField,
@@ -193,21 +194,6 @@ function attrText(attrs: unknown, key: string): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
-}
-
-function sortEmployees<T extends { matricule: string; import_seq?: number | null }>(
-  rows: T[],
-): T[] {
-  return [...rows].sort((a, b) => {
-    const aOk = a.import_seq != null;
-    const bOk = b.import_seq != null;
-    if (aOk && bOk && a.import_seq !== b.import_seq) {
-      return (a.import_seq as number) - (b.import_seq as number);
-    }
-    if (aOk && !bOk) return -1;
-    if (!aOk && bOk) return 1;
-    return a.matricule.localeCompare(b.matricule, "fr", { numeric: true });
-  });
 }
 
 const EMP_CORE_SELECT =
