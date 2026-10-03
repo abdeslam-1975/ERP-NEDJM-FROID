@@ -12,7 +12,6 @@ import { getHrFicheSettings } from "@/lib/actions/hr-fiche";
 import { mergeAffectationCatalog } from "@/lib/hr/affectation-options";
 import { DEFAULT_FICHE_SETTINGS } from "@/lib/hr/fiche-settings";
 import type { MissionContractHint } from "@/lib/hr/mission-order";
-import { resolvePayrollPeriod } from "@/lib/hr/payroll-calc";
 import { ContractsRegister } from "@/components/rh/contracts-register";
 import { BulletinsRegister } from "@/components/rh/bulletins-register";
 
@@ -21,18 +20,13 @@ export const dynamic = "force-dynamic";
 export default async function DocumentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ nouveau?: string; onglet?: string; titre?: string; year?: string; month?: string }>;
+  searchParams: Promise<{ nouveau?: string; onglet?: string; titre?: string }>;
 }) {
   const sp = await searchParams;
   const tabs: DocumentsTab[] = ["fiches", "contrats", "missions", "conges", "bulletins"];
   const initialTab = tabs.find((tab) => tab === sp.onglet);
-  const period = resolvePayrollPeriod(sp.year, sp.month);
   const register =
-    initialTab === "contrats" ? (
-      <ContractsRegister />
-    ) : initialTab === "bulletins" ? (
-      <BulletinsRegister year={period.year} month={period.month} />
-    ) : null;
+    initialTab === "contrats" ? <ContractsRegister /> : initialTab === "bulletins" ? <BulletinsRegister /> : null;
   const [files, corr, employees, lookups, contracts, fiche, fields] = await Promise.all([
     listHrFiles(),
     listHrCorrespondences(),

@@ -5,15 +5,26 @@ import { upsertHrFile } from "@/lib/actions/hr-documents";
 import { renderBulletinHtml, slipToBulletin } from "@/components/rh/bulletin-print";
 import { bulletinRatesFromVars } from "@/lib/hr/bulletin-settings";
 import { hrFileDisplayUrl, hrFileHref } from "@/lib/hr/hr-file-url";
+import { bulletinArchiveType } from "@/lib/hr/bulletin-archive-key";
 import { withPdfRenderer } from "@/lib/pdf/html-to-pdf";
 import { archiveFileStem, archiveFolder, hrPdfOptions, requestOrigin, uploadHrPdf } from "@/lib/pdf/print-archive";
 
-/** One archived bulletin per employee and month: the file row is keyed by this document type. */
-export function bulletinArchiveType(year: number, month: number) {
-  return `BULLETIN_${year}_${String(month).padStart(2, "0")}`;
-}
-
 const FINAL_STATUSES = new Set(["VALIDATED", "LOCKED"]);
+
+/** Every archived bulletin, by `bulletinArchiveKey`. */
+export async function listAllBulletinArchives(): Promise<Record<string, string>> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("hr_employee_files")
+    .select("employee_id, doc_type_code, file_url, storage_path")
+    .like("doc_type_code", "BULLETIN_%");
+  const out: Record<string, string> = {};
+  for (const row of data ?? []) {
+    const url = hrFileDisplayUrl(row.storage_path, row.file_url);
+    if (url && /^BULLETIN_\d{4}_\d{2}$/.test(row.doc_type_code)) out[`${row.employee_id}:${row.doc_type_code}`] = url;
+  }
+  return out;
+}
 
 /** Archived bulletins of the month, by employee id. */
 export async function listBulletinArchives(year: number, month: number): Promise<Record<string, string>> {

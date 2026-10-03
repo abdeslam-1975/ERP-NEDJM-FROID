@@ -43,6 +43,7 @@ import { isSalaryCategory, sortBySalaryClass, type SalaryCategory } from "@/lib/
 import { DEFAULT_CNAS_REGIME } from "@/lib/hr/compliance";
 import { unverifiedRules } from "@/lib/hr/legal-vars-as-of";
 import { SlipTraceDialog } from "@/components/rh/slip-trace-dialog";
+import { printHtml } from "@/components/rh/print-frame";
 import {
   bulletinRatesFromVars,
   DEFAULT_BULLETIN_SETTINGS,
@@ -55,54 +56,6 @@ type SiteOpt = { id: string; name_fr: string };
 type View = "all" | "social" | "fiscal";
 const SLIP_PAGE = 40;
 const NO_ARCHIVES: Record<string, string> = {};
-
-function printHtml(html: string) {
-  const existing = document.getElementById("hr-print-frame");
-  existing?.remove();
-  const frame = document.createElement("iframe");
-  frame.id = "hr-print-frame";
-  frame.setAttribute("aria-hidden", "true");
-  frame.style.position = "fixed";
-  frame.style.left = "-10000px";
-  frame.style.top = "0";
-  frame.style.width = "794px";
-  frame.style.height = "1123px";
-  frame.style.border = "0";
-  document.body.appendChild(frame);
-  const doc = frame.contentDocument;
-  const win = frame.contentWindow;
-  if (!doc || !win) {
-    frame.remove();
-    return;
-  }
-  doc.open();
-  doc.write(html);
-  doc.close();
-  const cleanup = () => frame.remove();
-  win.addEventListener("afterprint", cleanup);
-  const run = () => {
-    win.focus();
-    win.print();
-    window.setTimeout(cleanup, 2000);
-  };
-  const images = Array.from(doc.images);
-  if (!images.length) {
-    window.setTimeout(run, 50);
-    return;
-  }
-  let pending = images.length;
-  const done = () => {
-    pending -= 1;
-    if (pending <= 0) window.setTimeout(run, 50);
-  };
-  for (const image of images) {
-    if (image.complete) done();
-    else {
-      image.addEventListener("load", done);
-      image.addEventListener("error", done);
-    }
-  }
-}
 
 function printBulletins(template: string, models: BulletinModel[]) {
   printHtml(renderBulletinHtml(template, models, window.location.origin));
