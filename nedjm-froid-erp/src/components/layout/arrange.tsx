@@ -2,6 +2,7 @@
 
 import {
   Children,
+  cloneElement,
   Fragment,
   isValidElement,
   useId,
@@ -136,10 +137,13 @@ export function ToolbarSlot({ children }: { id: string; children: ReactNode }) {
 
 type Slot = { id: string; label: string; node: ReactElement; index: number };
 
-function flatten(children: ReactNode): ReactNode[] {
-  return Children.toArray(children).flatMap((node) =>
-    isValidElement<{ children?: ReactNode }>(node) && node.type === Fragment ? flatten(node.props.children) : [node],
-  );
+/** Children with fragments unwrapped; keys of unwrapped children are prefixed by their fragment's key so they stay unique. */
+function flatten(children: ReactNode, prefix = ""): ReactNode[] {
+  return Children.toArray(children).flatMap((node) => {
+    if (!isValidElement<{ children?: ReactNode }>(node)) return [node];
+    if (node.type === Fragment) return flatten(node.props.children, `${prefix}${node.key ?? ""}/`);
+    return [prefix ? cloneElement(node, { key: `${prefix}${node.key ?? ""}` }) : node];
+  });
 }
 
 /**

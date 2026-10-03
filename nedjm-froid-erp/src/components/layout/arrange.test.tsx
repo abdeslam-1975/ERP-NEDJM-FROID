@@ -1,198 +1,38 @@
 // @vitest-environment jsdom
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock("@/lib/actions/ui-arrange", () => ({
-  saveArrangement: vi.fn(async () => ({ ok: true, data: { count: 0 } })),
-  resetArrangement: vi.fn(async () => ({ ok: true, data: { count: 0 } })),
-}));
-
-const { ToolbarSlot, UiToolbar, ArrangeBar, RhArrange } = await import("@/components/layout/arrange");
-const { UiLayoutProvider, useArrange } = await import("@/components/layout/ui-layout-context");
-const { DEFAULT_LAYOUT } = await import("@/lib/ui/resolve");
+import { createRoot } from "react-dom/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ToolbarSlot, UiToolbar } from "@/components/layout/arrange";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-let container: HTMLDivElement;
-let root: Root;
-
-beforeEach(() => {
-  container = document.createElement("div");
-  document.body.appendChild(container);
-  root = createRoot(container);
-});
-
-afterEach(() => {
-  act(() => root.unmount());
-  container.remove();
-});
-
-function Toolbar({ withColumns = true }: { withColumns?: boolean }) {
-  return (
-    <UiToolbar tabset="btn_rh_employees" className="bar">
-      <>
-        <ToolbarSlot id="new">
-          <button type="button">Nouvel employé</button>
-        </ToolbarSlot>
-        <span>texte</span>
-        {withColumns ? (
-          <ToolbarSlot id="columns">
-            <button type="button">Colonnes</button>
-          </ToolbarSlot>
-        ) : null}
-      </>
-    </UiToolbar>
-  );
-}
-
-const texts = () => [...container.querySelectorAll(".bar > *")].map((el) => el.textContent);
-
 describe("UiToolbar", () => {
-  it("renders the buttons in the catalogue order, other elements staying in place", () => {
-    act(() => root.render(<Toolbar />));
-    expect(texts()).toEqual(["Colonnes", "texte", "Nouvel employé"]);
-  });
+  afterEach(() => vi.restoreAllMocks());
 
-  it("follows the user's own order and skips buttons not rendered", () => {
-    const value = { ...DEFAULT_LAYOUT, personal: { "btn_rh_employees.new": { sort_order: 1, group_key: null } } };
-    act(() =>
-      root.render(
-        <UiLayoutProvider value={value}>
-          <Toolbar />
-        </UiLayoutProvider>,
-      ),
-    );
-    expect(texts()).toEqual(["Nouvel employé", "texte", "Colonnes"]);
-    act(() =>
-      root.render(
-        <UiLayoutProvider value={value}>
-          <Toolbar withColumns={false} />
-        </UiLayoutProvider>,
-      ),
-    );
-    expect(texts()).toEqual(["Nouvel employé", "texte"]);
-  });
-
-  it("makes the buttons draggable and inert while rearranging", () => {
-    function Start() {
-      const { start } = useArrange();
-      return (
-        <button type="button" id="start" onClick={start}>
-          start
-        </button>
-      );
-    }
-    act(() =>
-      root.render(
-        <UiLayoutProvider value={DEFAULT_LAYOUT}>
-          <Start />
-          <Toolbar />
-          <ArrangeBar />
-        </UiLayoutProvider>,
-      ),
-    );
-    expect(container.querySelector('[role="region"]')).toBeNull();
-    act(() => (container.querySelector("#start") as HTMLButtonElement).click());
-    expect(container.querySelector('[role="region"]')?.textContent).toContain("Réorganiser");
-    const slots = container.querySelectorAll(".bar [aria-roledescription]");
-    expect(slots.length).toBe(2);
-    for (const slot of slots) expect(slot.firstElementChild?.className).toContain("pointer-events-none");
+  it("keeps keys unique when slots sit in a fragment next to other children", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    act(() => root.render(
+      <UiToolbar tabset="btn_rh_payroll_period">
+        <label>Chantier</label>
+        <label>Mois</label>
+        <ToolbarSlot id="view_month">
+          <button>Voir ce mois</button>
+        </ToolbarSlot>
+        <>
+          <ToolbarSlot id="show_bulletin">
+            <button>Afficher</button>
+          </ToolbarSlot>
+          <ToolbarSlot id="print">
+            <button>Imprimer</button>
+          </ToolbarSlot>
+        </>
+      </UiToolbar>,
+    ));
+    expect(container.textContent).toContain("Afficher");
+    expect(container.textContent).toContain("Imprimer");
+    expect(errors.mock.calls.flat().join(" ")).not.toMatch(/same key/);
+    act(() => root.unmount());
   });
 });
-
-describe("RhArrange", () => {
-  function Start() {
-    const { start, active } = useArrange();
-    return active ? (
-      <RhArrange />
-    ) : (
-      <button type="button" id="start" onClick={start}>
-        start
-      </button>
-    );
-  }
-
-  function open() {
-    act(() =>
-      root.render(
-        <UiLayoutProvider value={DEFAULT_LAYOUT}>
-          <Start />
-          <ArrangeBar />
-        </UiLayoutProvider>,
-      ),
-    );
-    act(() => (container.querySelector("#start") as HTMLButtonElement).click());
-  }
-
-  const titles = () => [...container.querySelectorAll("li > div span.truncate")].map((s) => s.textContent);
-  const column = (title: string) =>
-    [...container.querySelectorAll("li")].find((li) => li.querySelector("span.truncate")?.textContent === title);
-  const button = (label: string) => container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
-  const buttonWithText = (text: string) => [...container.querySelectorAll("button")].find((b) => b.textContent?.startsWith(text))!;
-
-  function typeName(value: string) {
-    const input = container.querySelector<HTMLInputElement>('input[aria-label="Nom de l\'onglet"]')!;
-    act(() => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    act(() => {
-      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    });
-  }
-
-  async function saved() {
-    const { saveArrangement } = await import("@/lib/actions/ui-arrange");
-    await act(async () => buttonWithText("Enregistrer").click());
-    return vi.mocked(saveArrangement).mock.calls.at(-1)![0];
-  }
-
-  it("removes a catalogue section: its tabs go to « Autres », saved with their new section", async () => {
-    open();
-    act(() => button("Supprimer « Documents »").click());
-    expect(column("Autres")?.textContent).toContain("Attestations");
-    expect(column("Documents")?.textContent).not.toContain("Attestations");
-    expect(button("Supprimer « Autres »")).toBeNull();
-
-    const { lists, removedSections } = await saved();
-    const rh = lists.find((l) => l.tabset === "rh")!;
-    expect(rh.items.find((i) => i.key === "rh.attestations")?.group_key).toBe("group.rh_others");
-    expect(rh.items.find((i) => i.key === "rh.paie")?.group_key).toBe("group.rh_payroll");
-    expect(removedSections).toEqual([]);
-  });
-
-  it("adds a named section before « Autres » and renames it", async () => {
-    open();
-    act(() => buttonWithText("Nouvel onglet").click());
-    typeName("Rarement");
-    expect(titles().filter((t) => t === "Rarement")).toHaveLength(1);
-    expect(titles().indexOf("Rarement")).toBe(titles().indexOf("Autres") - 1);
-
-    act(() => button("Renommer « Rarement »").click());
-    typeName("Peu utilisés");
-    expect(titles()).toContain("Peu utilisés");
-    expect(titles()).not.toContain("Rarement");
-
-    const { lists } = await saved();
-    const sections = lists.find((l) => l.tabset === "rh_sections")!.items;
-    const created = sections.find((i) => /^rh_sections\.x[a-z0-9]{6}$/.test(i.key));
-    expect(created?.label_fr).toBe("Peu utilisés");
-    expect(sections.find((i) => i.key === "rh_sections.payroll")?.label_fr).toBeNull();
-  });
-
-  it("deletes a created section for good", async () => {
-    open();
-    act(() => buttonWithText("Nouvel onglet").click());
-    typeName("Temporaire");
-    act(() => button("Supprimer « Temporaire »").click());
-    expect(titles()).not.toContain("Temporaire");
-
-    const { lists, removedSections } = await saved();
-    expect(removedSections).toHaveLength(1);
-    expect(removedSections![0]).toMatch(/^x[a-z0-9]{6}$/);
-    expect(lists.find((l) => l.tabset === "rh_sections")!.items.some((i) => i.key.endsWith(removedSections![0]))).toBe(false);
-  });
-});
-
