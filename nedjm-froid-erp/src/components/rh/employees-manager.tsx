@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import { Columns3, DatabaseZap, UserPlus } from "lucide-react";
+import { Columns3, DatabaseZap, UserCheck, UserPlus } from "lucide-react";
 import { ToolbarSlot } from "@/components/layout/arrange";
 import {
   deleteHrEmployeeField,
@@ -109,6 +109,11 @@ export function EmployeesManager({
   const [dossierEmployee, setDossierEmployee] = useState<HrEmployeeFiche | null>(null);
   const [preview, setPreview] = useState<HrEmployeeFiche | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [activeOnly, setActiveOnly] = useState(false);
+  const shownRows = useMemo(
+    () => (activeOnly ? rows.filter((r) => r.status === "ACTIVE") : rows),
+    [rows, activeOnly],
+  );
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>(() =>
     startNew ? emptyValues(initialFields.filter((f) => f.is_active)) : {},
@@ -422,11 +427,23 @@ export function EmployeesManager({
         <RhAlert tone="success">{info}</RhAlert>
       ) : null}
 
-      <div className="flex items-center justify-between gap-3">
-        <Button type="button" variant="secondary" disabled={pending} onClick={() => setImportOpen(true)}>
-          <DatabaseZap aria-hidden />
-          Importer l&apos;ancienne base
-        </Button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="secondary" disabled={pending} onClick={() => setImportOpen(true)}>
+            <DatabaseZap aria-hidden />
+            Importer l&apos;ancienne base
+          </Button>
+          <Button
+            type="button"
+            variant={activeOnly ? "primary" : "secondary"}
+            aria-pressed={activeOnly}
+            onClick={() => setActiveOnly((on) => !on)}
+          >
+            <UserCheck aria-hidden />
+            Actifs seulement · النشطون فقط
+            {activeOnly ? ` (${shownRows.length})` : ""}
+          </Button>
+        </div>
         {view === "table" ? <EmployeeViewSwitch value={view} onChange={setView} /> : null}
       </div>
 
@@ -434,7 +451,7 @@ export function EmployeesManager({
         <>
           <DataTable
             key={urlQuery}
-            data={rows}
+            data={shownRows}
             columns={columns}
             getRowId={(r) => r.id}
             searchPlaceholder="Rechercher dans toutes les colonnes"
@@ -448,7 +465,7 @@ export function EmployeesManager({
       ) : (
         <EmployeesList
           key={urlQuery}
-          rows={rows}
+          rows={shownRows}
           assignments={assignments}
           fallback={fallbackText}
           initialQuery={urlQuery}
