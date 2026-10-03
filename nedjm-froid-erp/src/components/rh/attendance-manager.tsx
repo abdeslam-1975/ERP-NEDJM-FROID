@@ -536,6 +536,29 @@ export function AttendanceManager({
   const frozenMessage = attendanceFrozenMessage(periodStatus);
   const hasUnsaved = dirty || rowsDirty;
 
+  useEffect(() => {
+    if (!hasUnsaved) return;
+    const message = "Des modifications non validées seront perdues. Continuer ?";
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = message;
+    }
+    function onLinkClick(e: MouseEvent) {
+      const link = e.target instanceof Element ? e.target.closest("a[href]") : null;
+      if (!link || link.getAttribute("target") === "_blank") return;
+      if (!window.confirm(message)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("click", onLinkClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("click", onLinkClick, true);
+    };
+  }, [hasUnsaved]);
+
   function confirmDiscard() {
     return (
       !hasUnsaved ||
