@@ -267,7 +267,7 @@ export function BulletinsRegisterView({
 
 const DECISION_TEXT: Record<"D1" | "D3" | "D4", string> = {
   D4: "Générer la paie du mois (tous les chantiers). Une paie brouillon est créée ; rien n'est validé, payé ni déclaré.",
-  D3: "Recalculer la paie brouillon du mois (tous les chantiers) pour y inclure ce salarié.",
+  D3: "Recalculer la paie brouillon du mois avec les données actuelles (contrats, rubriques, pointage).",
   D1: "Des règles du mois attendent une approbation : la paie ne peut pas encore être générée. La demande (D1) est ouverte au Centre de décisions.",
 };
 
@@ -289,6 +289,7 @@ function NewBulletinDialog({
   const [justification, setJustification] = useState("");
   const [pending, start] = useTransition();
   const employee = employees.find((e) => e.id === employeeId);
+  const staleSlipId = decision?.stale_slip_id;
   const valid = Boolean(employee) && month >= 1 && month <= 12 && year >= 2000 && year <= 2100;
   const options = useMemo(
     () => employees.map((e) => ({ value: e.id, label: `${e.matricule} · ${e.name}`, keywords: e.name })),
@@ -333,6 +334,15 @@ function NewBulletinDialog({
           <Button variant="secondary" onClick={onClose}>
             {decision && !decision.can_decide ? "Fermer" : "Annuler"}
           </Button>
+          {staleSlipId && employee ? (
+            <Button
+              variant="secondary"
+              disabled={pending}
+              onClick={() => onReady({ slip_id: staleSlipId, year, month, employee })}
+            >
+              Afficher sans recalculer
+            </Button>
+          ) : null}
           {!decision ? (
             <Button disabled={pending || !valid} onClick={submit}>
               {pending ? "Recherche…" : "Établir le bulletin"}
@@ -353,6 +363,12 @@ function NewBulletinDialog({
               <p className="font-semibold">
                 Décision {decision.type_code} — {periodLabel(year, month)}
               </p>
+              {decision.stale_slip_id ? (
+                <p className="mt-1">
+                  Son bulletin brouillon a été calculé avant les dernières modifications (contrat, rubriques ou
+                  pointage) : il doit être recalculé pour être juste.
+                </p>
+              ) : null}
               <p className="mt-1">{DECISION_TEXT[decision.type_code]}</p>
               {!decision.can_decide && decision.type_code !== "D1" ? (
                 <p className="mt-1">

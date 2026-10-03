@@ -120,6 +120,8 @@ export type EmployeeBulletinStep =
       type_code: "D1" | "D3" | "D4";
       /** The requester may settle it here only as super admin (separation of duties). */
       can_decide: boolean;
+      /** Draft payslip computed before the latest changes; still viewable as is. */
+      stale_slip_id?: string;
     };
 
 const label = (year: number, month: number) => `${String(month).padStart(2, "0")}/${year}`;
@@ -127,14 +129,35 @@ const label = (year: number, month: number) => `${String(month).padStart(2, "0")
 async function employeeSlip(supabase: Awaited<ReturnType<typeof createClient>>, employeeId: string, year: number, month: number) {
   const { data, error } = await supabase
     .from("hr_payroll_slips")
-    .select("id, status_code, run:hr_payroll_runs!inner ( period_year, period_month )")
+    .select("id, status_code, run_id, run:hr_payroll_runs!inner ( status_code, site_id, period_year, period_month )")
     .eq("employee_id", employeeId)
     .eq("run.period_year", year)
     .eq("run.period_month", month)
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return data ? { id: data.id, status_code: String(data.status_code) } : null;
+  if (!data) return null;
+  const run = (Array.isArray(data.run) ? data.run[0] : data.run) as { status_code: string; site_id: string | null } | null;
+  return {
+    id: data.id,
+    status_code: String(data.status_code),
+    run_id: String(data.run_id),
+    run_status: run?.status_code,
+    run_site: run?.site_id ?? null,
+  };
+}
+
+/** Contract, attendance… of the employee (or of the whole run) changed after the draft was computed. */
+async function draftIsStale(supabase: Awaited<ReturnType<typeof createClient>>, runId: string, employeeId: string) {
+  const { data, error } = await supabase
+    .from("hr_payroll_input_changes")
+    .select("id")
+    .eq("run_id", runId)
+    .is("resolved_at", null)
+    .or(`employee_id.eq.${employeeId},employee_id.is.null`)
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return (data ?? []).length > 0;
 }
 
 /**
@@ -149,11 +172,32 @@ export async function requestEmployeeBulletin(input: unknown): Promise<ActionRes
   const ws = await getWorkspaceProfile();
   if (!ws) return { ok: false, error: "Session requise." };
   const supabase = await createClient();
+  let existing: Awaited<ReturnType<typeof employeeSlip>>;
+  let stale = false;
   try {
-    const existing = await employeeSlip(supabase, employee_id, year, month);
-    if (existing) return { ok: true, data: { kind: "slip", slip_id: existing.id, status_code: existing.status_code } };
+    existing = await employeeSlip(supabase, employee_id, year, month);
+    if (existing && normalizeRunStatus(existing.run_status) === "DRAFT") {
+      stale = await draftIsStale(supabase, existing.run_id, employee_id);
+    }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Lecture des bulletins impossible." };
+  }
+  if (existing && !stale) {
+    return { ok: true, data: { kind: "slip", slip_id: existing.id, status_code: existing.status_code } };
+  }
+  if (existing) {
+    const requested = await requestPayrollCalculation({ period_year: year, period_month: month, site_id: existing.run_site });
+    if (!requested.ok) return requested;
+    return {
+      ok: true,
+      data: {
+        kind: "decision",
+        decision_id: requested.data.decision_id,
+        type_code: requested.data.type_code,
+        can_decide: ws.isSuperAdmin && requested.data.type_code !== "D1",
+        stale_slip_id: existing.id,
+      },
+    };
   }
 
   const start = `${year}-${String(month).padStart(2, "0")}-01`;

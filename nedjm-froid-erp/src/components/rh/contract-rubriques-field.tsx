@@ -25,6 +25,16 @@ const PICKABLE_CLASSES = SALARY_CLASSES.map((c) =>
   c.id === RETENUE_CATEGORY ? { ...c, fr: "RETENUE DE GARANTIE" } : c,
 );
 
+function computeHint(line: SelectedSalaryLine) {
+  const value = line.amount.trim() || "0";
+  if (line.unit === "percent") return `Bulletin : ${value} % du salaire de base.`;
+  if (line.unit === "month") {
+    return `Bulletin : ${value} DA une seule fois par mois (Nbr = 1), quel que soit le nombre de jours. Pour un montant par jour, choisissez « Journalier *J ».`;
+  }
+  if (line.unit === "presence_day") return `Bulletin : ${value} DA × jours travaillés du mois (Nbr = jours de présence).`;
+  return `Bulletin : ${value} DA × jours payés du mois (Nbr = jours du mois, ex. 31 × ${value}).`;
+}
+
 export function ContractRubriquesField({
   rubriques,
   selected,
@@ -154,6 +164,7 @@ export function ContractRubriquesField({
                 >
                   <X className="size-4" aria-hidden />
                 </button>
+                <span className="text-xs text-foreground/60 sm:col-span-4">{computeHint(line)}</span>
               </div>
             );
           })}
