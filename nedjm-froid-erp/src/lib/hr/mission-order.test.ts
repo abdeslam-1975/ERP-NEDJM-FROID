@@ -85,6 +85,16 @@ describe("mission order print", () => {
     expect(html).toContain("IBM Plex Sans");
     expect(html).toContain('class="om-letterhead"');
     expect(html).not.toContain("Times New Roman");
+    expect(html).not.toContain("Fin de mission");
+  });
+
+  it("prints « Fin de mission » for an open order, in both layouts", () => {
+    const parsed = missionOrderFieldsSchema.safeParse({ ...sample, dateDepart: "2026-09-12", dateRetour: "" });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.dateRetour).toBeNull();
+    expect(buildMissionOrderHtml(parsed.data, "/hr-letterhead.png")).toContain("Fin de mission");
+    expect(buildMissionOrderHtml({ ...parsed.data, gabarit: "v1" }, "/hr-letterhead.png")).toContain("Fin de mission");
   });
 
   it("ticks the service vehicle box", () => {
@@ -175,9 +185,16 @@ describe("mission dates", () => {
     expect(missionDateIssue({ dateDepart: today, dateRetour: "2026-09-25" }, today)).toBeNull();
   });
 
-  it("requires both dates", () => {
+  it("requires the departure, the return stays open", () => {
     expect(missionDateIssue({ dateDepart: "", dateRetour: "2026-09-25" }, today)?.field).toBe("dateDepart");
-    expect(missionDateIssue({ dateDepart: today, dateRetour: "" }, today)?.field).toBe("dateRetour");
+    expect(missionDateIssue({ dateDepart: today, dateRetour: "" }, today)).toBeNull();
+  });
+
+  it("closes a saved open order with any return after the departure", () => {
+    const open = { dateDepart: "2026-09-01", dateRetour: "" };
+    expect(missionDateIssue({ ...open, dateRetour: "2026-09-10" }, today, open)).toBeNull();
+    expect(missionDateIssue({ ...open, dateRetour: "2026-09-01" }, today, open)?.field).toBe("dateRetour");
+    expect(missionDateBounds({ ...open }, today, open).minRetour).toBe("2026-09-02");
   });
 
   it("rejects a past departure", () => {

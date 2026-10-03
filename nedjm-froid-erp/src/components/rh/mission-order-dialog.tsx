@@ -443,7 +443,12 @@ export function MissionOrderDialog({
                 value={value.dateRetour}
                 onChange={(e) => set({ dateRetour: e.target.value })}
               />
-              {dateError("dateRetour")}
+              {dateError("dateRetour") ??
+                (value.dateRetour ? null : (
+                  <p className="mt-1 text-[11px] text-foreground/55">
+                    Vide = mission ouverte, imprimée « Fin de mission » · فارغ = مهمة مفتوحة
+                  </p>
+                ))}
             </RhField>
             {legacy ? (
               <RhField label="Heure de retour">

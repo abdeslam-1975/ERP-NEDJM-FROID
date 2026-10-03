@@ -1,5 +1,6 @@
 import {
   OM_ENTREPRISE,
+  OM_FIN_DE_MISSION,
   OM_GABARIT_ANCIEN,
   formatOmDate,
   omJoin,
@@ -7,6 +8,11 @@ import {
 } from "@/lib/hr/mission-order";
 
 type MissionPrintFields = MissionOrderFields & { numero?: string | null };
+
+function retourDate(fields: MissionPrintFields) {
+  if (fields.dateRetour) return formatOmDate(fields.dateRetour);
+  return fields.dateDepart ? OM_FIN_DE_MISSION : "";
+}
 
 function escapeHtml(value: string) {
   return value
@@ -150,7 +156,7 @@ function buildMissionOrderHtmlV2(fields: MissionPrintFields, letterheadUrl: stri
         rows: [
           sheetRow("Destination(s) :", text(omJoin(fields.dest1, fields.dest2)), "الوجهة :"),
           sheetRow('Départ :<span class="om-sub">(lieu et date)</span>', text(omJoin(fields.lieuDepart, formatOmDate(fields.dateDepart))), 'الذهاب :<span class="om-sub">(المكان والتاريخ)</span>'),
-          sheetRow('Retour :<span class="om-sub">(lieu et date)</span>', text(omJoin(fields.lieuRetour, formatOmDate(fields.dateRetour))), 'العودة :<span class="om-sub">(المكان والتاريخ)</span>'),
+          sheetRow('Retour :<span class="om-sub">(lieu et date)</span>', text(omJoin(fields.lieuRetour, retourDate(fields))), 'العودة :<span class="om-sub">(المكان والتاريخ)</span>'),
           sheetRow("Objet de la mission :", text(fields.motif), "سبب المهمة :"),
         ],
       },
@@ -501,7 +507,7 @@ function buildMissionOrderHtmlV1(fields: MissionPrintFields, letterheadUrl: stri
       <div class="om-row"><div class="om-fr">Se rendre à: 1<sup>er</sup> destination:</div><div class="om-val">${text(fields.dest1)}</div><div class="om-ar">يسافر إلى: الوجهة الأولى :</div></div>
       <div class="om-row"><div class="om-fr om-indent">2<sup>ème</sup> destination:</div><div class="om-val">${text(fields.dest2)}</div><div class="om-ar">الوجهة الثانية :</div></div>
       <div class="om-row"><div class="om-fr">Départ:<span class="om-sub">Lieu et date et heure:</span></div><div class="om-val">${text(omJoin(fields.lieuDepart, formatOmDate(fields.dateDepart), fields.heureDepart))}</div><div class="om-ar">الذهاب :<span class="om-sub">المكان والتاريخ والساعة :</span></div></div>
-      <div class="om-row"><div class="om-fr">Retour:<span class="om-sub">Lieu et date et heure:</span></div><div class="om-val">${text(omJoin(fields.lieuRetour, formatOmDate(fields.dateRetour), fields.heureRetour))}</div><div class="om-ar">العودة :<span class="om-sub">المكان والتاريخ والساعة :</span></div></div>
+      <div class="om-row"><div class="om-fr">Retour:<span class="om-sub">Lieu et date et heure:</span></div><div class="om-val">${text(omJoin(fields.lieuRetour, retourDate(fields), fields.dateRetour ? fields.heureRetour : null))}</div><div class="om-ar">العودة :<span class="om-sub">المكان والتاريخ والساعة :</span></div></div>
       <div class="om-row"><div class="om-fr">Motif du déplacement:</div><div class="om-val">${text(fields.motif)}</div><div class="om-ar">سبب السفر :</div></div>
     </div>
     <div class="om-box om-box-trans">

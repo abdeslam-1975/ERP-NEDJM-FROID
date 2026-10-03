@@ -176,6 +176,8 @@ type MissionDates = {
 
 /**
  * Departure must be today or later, return strictly after departure (hence in the future).
+ * An empty return leaves the mission open (« Fin de mission »); closing a saved open order
+ * only needs a return after the departure.
  * Dates already stored on an existing order are not re-checked against `today`,
  * so an ordre can still be completed (km, heures) after the mission started.
  */
@@ -189,11 +191,9 @@ export function missionDateIssue(
   if (!depart) {
     return { field: "dateDepart", message: "Date de départ obligatoire. · تاريخ الذهاب إجباري." };
   }
-  if (!retour) {
-    return { field: "dateRetour", message: "Date de retour obligatoire. · تاريخ العودة إجباري." };
-  }
   const departKept = Boolean(original) && (original?.dateDepart || "") === depart;
   const retourKept = Boolean(original) && (original?.dateRetour || "") === retour;
+  const closingOpen = Boolean(original) && !original?.dateRetour;
   if (departKept && retourKept) return null;
   if (!departKept && depart < today) {
     return {
@@ -202,7 +202,8 @@ export function missionDateIssue(
         "La date de départ doit être aujourd'hui ou une date future. · تاريخ الذهاب يجب أن يكون اليوم أو تاريخًا مستقبليًا.",
     };
   }
-  if (!retourKept && retour <= today) {
+  if (!retour) return null;
+  if (!retourKept && !closingOpen && retour <= today) {
     return {
       field: "dateRetour",
       message: "La date de retour doit être une date future. · تاريخ العودة يجب أن يكون تاريخًا مستقبليًا.",
@@ -223,9 +224,13 @@ export function missionDateBounds(value: MissionDates, today: string, original?:
   const minDepart = departKept ? undefined : today;
   const afterDepart = value.dateDepart ? addDaysIso(value.dateDepart, 1) : "";
   const tomorrow = addDaysIso(today, 1);
-  const minRetour = afterDepart > tomorrow ? afterDepart : tomorrow;
+  const closingOpen = Boolean(original) && !original?.dateRetour;
+  const minRetour = closingOpen ? afterDepart || undefined : afterDepart > tomorrow ? afterDepart : tomorrow;
   return { minDepart, minRetour };
 }
+
+/** Printed in place of the return date of an open-ended ordre de mission. */
+export const OM_FIN_DE_MISSION = "Fin de mission";
 
 export function missionPointageHref(input: {
   employeeId: string;

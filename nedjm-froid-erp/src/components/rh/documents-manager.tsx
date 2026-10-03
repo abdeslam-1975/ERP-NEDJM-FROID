@@ -43,6 +43,7 @@ import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
 import {
   OM_DONNEUR,
   OM_FAIT_A,
+  OM_FIN_DE_MISSION,
   formatEstablishmentDate,
   formatOmDate,
   missionOrderFieldsSchema,
@@ -627,7 +628,7 @@ export function DocumentsManager({
         <div className="min-w-0">
           <div className="truncate text-foreground/85">{info.getValue() || "—"}</div>
           <div className="whitespace-nowrap text-xs tabular-nums text-foreground/45">
-            {periodLabel(info.row.original.start_date, info.row.original.end_date)}
+            {periodLabel(info.row.original.start_date, info.row.original.end_date || (info.row.original.start_date ? OM_FIN_DE_MISSION : null))}
           </div>
         </div>
       ),
