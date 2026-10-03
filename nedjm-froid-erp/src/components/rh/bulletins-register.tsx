@@ -1,17 +1,20 @@
 import { BulletinsRegisterView } from "@/components/rh/bulletins-register-view";
-import { listPayslipRegister } from "@/lib/actions/hr-bulletin-register";
-import { listSites } from "@/lib/actions/sites";
+import { listBulletinEmployees, listPayslipRegister } from "@/lib/actions/hr-bulletin-register";
 import { listAllBulletinArchives } from "@/lib/hr/bulletin-archive";
 
 /** Register of the payslips already produced, shown in the Documents page. */
 export async function BulletinsRegister() {
-  const [rows, sites, archives] = await Promise.all([listPayslipRegister(), listSites(), listAllBulletinArchives()]);
+  const [rows, employees, archives] = await Promise.all([
+    listPayslipRegister(),
+    listBulletinEmployees(),
+    listAllBulletinArchives(),
+  ]);
   return (
     <BulletinsRegisterView
       rows={rows.ok ? rows.data : []}
-      sites={sites.ok ? sites.data.filter((s) => s.is_active) : []}
+      employees={employees.ok ? employees.data : []}
       archives={archives}
-      loadError={(!rows.ok && rows.error) || (!sites.ok && sites.error) || undefined}
+      loadError={(!rows.ok && rows.error) || (!employees.ok && employees.error) || undefined}
     />
   );
 }

@@ -3,15 +3,20 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, FileText, Plus, Printer } from "lucide-react";
-import { getPayslipBulletinHtml, type PayslipRegisterRow } from "@/lib/actions/hr-bulletin-register";
-import { requestPayrollCalculation } from "@/lib/actions/hr-ops";
+import {
+  decideEmployeeBulletin,
+  getPayslipBulletinHtml,
+  requestEmployeeBulletin,
+  type BulletinEmployee,
+  type EmployeeBulletinStep,
+  type PayslipRegisterRow,
+} from "@/lib/actions/hr-bulletin-register";
 import { runStatusLabel } from "@/lib/hr/payroll-run-status";
 import { bulletinArchiveKey } from "@/lib/hr/bulletin-archive-key";
 import { printHtml } from "@/components/rh/print-frame";
 import { Button } from "@/components/ui/button";
-import { RhAlert, RhChip, RhField, RhModal, RhPageHeader, RhTableWrap, bi, rhInput } from "@/components/rh/rh-ui";
-
-type SiteOpt = { id: string; name_fr: string };
+import { Combobox } from "@/components/ui/combobox";
+import { RhAlert, RhChip, RhField, RhModal, RhPageHeader, RhTableWrap, rhInput } from "@/components/rh/rh-ui";
 
 const PAGE = 50;
 
@@ -27,15 +32,15 @@ function statusTone(status: string) {
   return status === "LOCKED" ? "danger" : status === "VALIDATED" ? "success" : "neutral";
 }
 
-/** Payslips already produced, with « Nouveau bulletin » (the generation still goes through a decision). */
+/** Payslips already produced, with « Nouveau bulletin » per employee (the generation still goes through a decision). */
 export function BulletinsRegisterView({
   rows,
-  sites,
+  employees,
   archives,
   loadError,
 }: {
   rows: PayslipRegisterRow[];
-  sites: readonly SiteOpt[];
+  employees: readonly BulletinEmployee[];
   /** Archived bulletin PDFs, by `bulletinArchiveKey`. */
   archives: Record<string, string>;
   loadError?: string;
@@ -45,7 +50,7 @@ export function BulletinsRegisterView({
   const [period, setPeriod] = useState("");
   const [page, setPage] = useState(0);
   const [error, setError] = useState<string | null>(loadError ?? null);
-  const [viewing, setViewing] = useState<{ row: PayslipRegisterRow; html: string } | null>(null);
+  const [viewing, setViewing] = useState<{ title: string; subtitle: string; html: string } | null>(null);
   const [creating, setCreating] = useState(false);
   const [pending, start] = useTransition();
 
@@ -78,7 +83,7 @@ export function BulletinsRegisterView({
     <div className="space-y-5">
       <RhPageHeader
         title="Bulletins de paie"
-        description="Bulletins déjà établis, tous mois confondus. Un nouveau bulletin est calculé pour un chantier et un mois après décision au Centre de décisions."
+        description="Bulletins déjà établis, tous mois confondus. Un nouveau bulletin se demande par employé et par mois ; la paie du mois couvre tous les chantiers."
         actions={
           <Button onClick={() => setCreating(true)}>
             <Plus aria-hidden />
@@ -163,7 +168,15 @@ export function BulletinsRegisterView({
                         <Button
                           variant="secondary"
                           disabled={pending}
-                          onClick={() => withHtml(r, (html) => setViewing({ row: r, html }))}
+                          onClick={() =>
+                            withHtml(r, (html) =>
+                              setViewing({
+                                title: `Bulletin de paie ${periodLabel(r.period_year, r.period_month)}`,
+                                subtitle: `${r.matricule} · ${r.employee_name}`,
+                                html,
+                              }),
+                            )
+                          }
                         >
                           <Eye aria-hidden />
                           Afficher
@@ -204,8 +217,8 @@ export function BulletinsRegisterView({
       {viewing ? (
         <RhModal
           size="lg"
-          title={`Bulletin de paie ${periodLabel(viewing.row.period_year, viewing.row.period_month)}`}
-          subtitle={`${viewing.row.matricule} · ${viewing.row.employee_name}`}
+          title={viewing.title}
+          subtitle={viewing.subtitle}
           onClose={() => setViewing(null)}
           footer={
             <>
@@ -231,71 +244,157 @@ export function BulletinsRegisterView({
 
       {creating ? (
         <NewBulletinDialog
-          sites={sites}
+          employees={employees}
           onClose={() => setCreating(false)}
-          onRequested={(decisionId) => router.push(`/decisions/${decisionId}`)}
+          onReady={(slip) => {
+            setCreating(false);
+            router.refresh();
+            start(async () => {
+              const r = await getPayslipBulletinHtml({ slip_id: slip.slip_id, year: slip.year, month: slip.month });
+              if (!r.ok) return setError(r.error);
+              setViewing({
+                title: `Bulletin de paie ${periodLabel(slip.year, slip.month)}`,
+                subtitle: `${slip.employee.matricule} · ${slip.employee.name}`,
+                html: r.data.html,
+              });
+            });
+          }}
         />
       ) : null}
     </div>
   );
 }
 
+const DECISION_TEXT: Record<"D1" | "D3" | "D4", string> = {
+  D4: "Générer la paie du mois (tous les chantiers). Une paie brouillon est créée ; rien n'est validé, payé ni déclaré.",
+  D3: "Recalculer la paie brouillon du mois (tous les chantiers) pour y inclure ce salarié.",
+  D1: "Des règles du mois attendent une approbation : la paie ne peut pas encore être générée. La demande (D1) est ouverte au Centre de décisions.",
+};
+
 function NewBulletinDialog({
-  sites,
+  employees,
   onClose,
-  onRequested,
+  onReady,
 }: {
-  sites: readonly SiteOpt[];
+  employees: readonly BulletinEmployee[];
   onClose: () => void;
-  onRequested: (decisionId: string) => void;
+  onReady: (slip: { slip_id: string; year: number; month: number; employee: BulletinEmployee }) => void;
 }) {
   const now = new Date();
-  const [siteId, setSiteId] = useState(sites[0]?.id ?? "");
+  const [employeeId, setEmployeeId] = useState("");
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [error, setError] = useState<string | null>(null);
+  const [decision, setDecision] = useState<Extract<EmployeeBulletinStep, { kind: "decision" }> | null>(null);
+  const [justification, setJustification] = useState("");
   const [pending, start] = useTransition();
-  const valid = Boolean(siteId) && month >= 1 && month <= 12 && year >= 2000 && year <= 2100;
+  const employee = employees.find((e) => e.id === employeeId);
+  const valid = Boolean(employee) && month >= 1 && month <= 12 && year >= 2000 && year <= 2100;
+  const options = useMemo(
+    () => employees.map((e) => ({ value: e.id, label: `${e.matricule} · ${e.name}`, keywords: e.name })),
+    [employees],
+  );
 
   function submit() {
+    if (!employee) return;
     setError(null);
     start(async () => {
-      const r = await requestPayrollCalculation({ period_year: year, period_month: month, site_id: siteId });
-      if (r.ok) onRequested(r.data.decision_id);
-      else setError(r.error);
+      const r = await requestEmployeeBulletin({ employee_id: employee.id, year, month });
+      if (!r.ok) return setError(r.error);
+      if (r.data.kind === "slip") return onReady({ slip_id: r.data.slip_id, year, month, employee });
+      setDecision(r.data);
+      setJustification(`Bulletin de paie ${periodLabel(year, month)} de ${employee.matricule} ${employee.name}.`);
+    });
+  }
+
+  function decide() {
+    if (!employee || !decision) return;
+    setError(null);
+    start(async () => {
+      const r = await decideEmployeeBulletin({
+        employee_id: employee.id,
+        year,
+        month,
+        decision_id: decision.decision_id,
+        justification,
+      });
+      if (!r.ok) return setError(r.error);
+      onReady({ slip_id: r.data.slip_id, year, month, employee });
     });
   }
 
   return (
     <RhModal
       title="Nouveau bulletin de paie"
-      subtitle="Les bulletins d'un chantier pour un mois sont calculés après décision au Centre de décisions."
+      subtitle="Choisissez l'employé et le mois. La paie du mois couvre tous les chantiers où il a travaillé."
       onClose={onClose}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Annuler
+            {decision && !decision.can_decide ? "Fermer" : "Annuler"}
           </Button>
-          <Button disabled={pending || !valid} onClick={submit}>
-            Demander la génération
-          </Button>
+          {!decision ? (
+            <Button disabled={pending || !valid} onClick={submit}>
+              {pending ? "Recherche…" : "Établir le bulletin"}
+            </Button>
+          ) : decision.can_decide ? (
+            <Button disabled={pending || justification.trim().length < 10} onClick={decide}>
+              {pending ? "Calcul de la paie…" : decision.type_code === "D4" ? "Générer et afficher" : "Recalculer et afficher"}
+            </Button>
+          ) : null}
         </>
       }
     >
       <div className="space-y-3">
         {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
-        <RhField label="Chantier">
-          <select className={rhInput} value={siteId} onChange={(e) => setSiteId(e.target.value)}>
-            {sites.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name_fr}
-              </option>
-            ))}
-          </select>
+        {decision ? (
+          <>
+            <RhAlert tone={decision.can_decide ? "info" : "warning"}>
+              <p className="font-semibold">
+                Décision {decision.type_code} — {periodLabel(year, month)}
+              </p>
+              <p className="mt-1">{DECISION_TEXT[decision.type_code]}</p>
+              {!decision.can_decide && decision.type_code !== "D1" ? (
+                <p className="mt-1">
+                  Vous êtes à l&apos;origine de la demande : un autre décideur doit la trancher au Centre de décisions.
+                  Le bulletin apparaîtra ensuite dans cette liste.
+                </p>
+              ) : null}
+            </RhAlert>
+            {decision.can_decide ? (
+              <RhField label="Justification de la décision">
+                <textarea
+                  className={`${rhInput} min-h-20`}
+                  value={justification}
+                  onChange={(e) => setJustification(e.target.value)}
+                />
+              </RhField>
+            ) : null}
+          </>
+        ) : null}
+        <RhField label="Employé">
+          <Combobox
+            options={options}
+            value={employeeId}
+            onChange={(v) => {
+              setEmployeeId(v);
+              setDecision(null);
+            }}
+            placeholder="Matricule ou nom…"
+            disabled={pending}
+          />
         </RhField>
         <div className="grid gap-3 sm:grid-cols-2">
           <RhField label="Mois">
-            <select className={rhInput} value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+            <select
+              className={rhInput}
+              value={month}
+              disabled={pending}
+              onChange={(e) => {
+                setMonth(Number(e.target.value));
+                setDecision(null);
+              }}
+            >
               {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                 <option key={m} value={m}>
                   {String(m).padStart(2, "0")}
@@ -310,14 +409,17 @@ function NewBulletinDialog({
               min={2000}
               max={2100}
               value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
+              disabled={pending}
+              onChange={(e) => {
+                setYear(Number(e.target.value));
+                setDecision(null);
+              }}
             />
           </RhField>
         </div>
         <p className="text-xs text-foreground/60">
-          {bi(
-            "Si la paie de ce mois existe déjà en brouillon, la demande devient un recalcul. Une paie validée ou clôturée ne peut plus être recalculée.",
-          )}
+          Un bulletin déjà établi s&apos;affiche directement. Sinon la paie du mois est générée (ou recalculée si elle
+          est en brouillon) pour tous les chantiers, après décision. Une paie validée ou clôturée ne se recalcule pas.
         </p>
       </div>
     </RhModal>
