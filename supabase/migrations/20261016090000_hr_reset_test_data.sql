@@ -99,7 +99,8 @@ begin
       get diagnostics v_n = row_count;
       v_counts := v_counts || jsonb_build_object('hr_salary_assignments', v_n);
     end if;
-    execute format('delete from public.%I', v_table);
+    -- "where true": PostgREST sessions load pg_safeupdate, which rejects unqualified DELETE
+    execute format('delete from public.%I where true', v_table);
     get diagnostics v_n = row_count;
     v_counts := v_counts || jsonb_build_object(v_table, v_n);
   end loop;
