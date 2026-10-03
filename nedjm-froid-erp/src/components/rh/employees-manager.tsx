@@ -432,15 +432,16 @@ export function EmployeesManager({
         <RhAlert tone="success">{info}</RhAlert>
       ) : null}
 
+      <div className="flex items-center justify-between gap-3">
+        <Button type="button" variant="secondary" disabled={pending} onClick={() => setImportOpen(true)}>
+          <DatabaseZap aria-hidden />
+          Importer l&apos;ancienne base
+        </Button>
+        {view === "table" ? <EmployeeViewSwitch value={view} onChange={setView} /> : null}
+      </div>
+
       {view === "table" ? (
         <>
-          <div className="flex items-center justify-between gap-3">
-            <Button type="button" variant="secondary" disabled={pending} onClick={() => setImportOpen(true)}>
-              <DatabaseZap aria-hidden />
-              Importer l&apos;ancienne base
-            </Button>
-            <EmployeeViewSwitch value={view} onChange={setView} />
-          </div>
           <DataTable
             key={urlQuery}
             data={rows}
