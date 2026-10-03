@@ -485,6 +485,7 @@ export function DocumentsManager({
       employee_id: row.employee_id,
       status_code: row.status_code,
       leave: leaveOfCorrespondence(row),
+      saved: Object.keys(saved).length > 0,
     };
   }
 
@@ -970,6 +971,7 @@ export function DocumentsManager({
           error={titleError}
           sites={sites}
           catalogs={catalogs}
+          titles={leaveRows}
           value={titleForm}
           onChange={setTitleForm}
           onClose={() => {
@@ -978,6 +980,8 @@ export function DocumentsManager({
           }}
           onSubmit={saveTitle}
           onPrint={() => printTitle(titleForm)}
+          onNew={() => router.push("/rh/conges")}
+          onOpenTitle={openTitle}
         />
       ) : null}
     </div>
