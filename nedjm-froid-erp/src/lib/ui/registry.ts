@@ -40,6 +40,8 @@ export type UiItemDef = {
   group?: string;
   /** Side menu only: tabset whose first visible item replaces `href` when `href` itself is hidden. */
   childTabset?: string;
+  /** Side menu only: tabsets listed under the module in the per-account access screen (childTabset first). */
+  tabsets?: string[];
   /** HR module bar only: section (RH_SECTIONS) the tab is listed under. */
   section?: string;
   descriptionFr?: string;
@@ -139,17 +141,17 @@ export const UI_TABSETS: UiTabsetDef[] = [
     items: [
       { id: "home", labelFr: "Tableau de Bord", labelAr: "لوحة القيادة", href: "/", exact: true, icon: "home", group: "group.pilotage", locked: true },
       { id: "simulateur", labelFr: "Simulateur", labelAr: "المحاكي", href: "/simulateur", icon: "docs", group: "group.pilotage" },
-      { id: "decisions", labelFr: "Centre de décisions", labelAr: "مركز القرارات", href: "/decisions", icon: "shield", group: "group.pilotage" },
-      { id: "rh", labelFr: "Ressources Humaines", labelAr: "الموارد البشرية", href: "/rh", icon: "users", group: "group.rh", childTabset: "rh" },
+      { id: "decisions", labelFr: "Centre de décisions", labelAr: "مركز القرارات", href: "/decisions", icon: "shield", group: "group.pilotage", tabsets: ["decisions"] },
+      { id: "rh", labelFr: "Ressources Humaines", labelAr: "الموارد البشرية", href: "/rh", icon: "users", group: "group.rh", childTabset: "rh", tabsets: ["rh_settings", "rh_legal", "att_imports", "hr_attendance"] },
       { id: "chantiers", labelFr: "Chantiers", labelAr: "الورشات", href: "/referentiels/chantiers", icon: "site", group: "group.sites" },
       { id: "activites", labelFr: "Codes d'activité", labelAr: "رموز النشاط", href: "/referentiels/activites", icon: "site", group: "group.sites" },
-      { id: "clients", labelFr: "Clients", labelAr: "العملاء", href: "/referentiels/clients", icon: "users", group: "group.commercial" },
-      { id: "contrats", labelFr: "Contrats clients", labelAr: "عقود العملاء", href: "/referentiels/contrats", icon: "contract", group: "group.commercial" },
-      { id: "finance", labelFr: "Banque & Caisse", labelAr: "البنك والصندوق", href: "/finance", icon: "finance", group: "group.finance" },
-      { id: "achats", labelFr: "Achats", labelAr: "المشتريات", href: "/achats", icon: "cart", group: "group.finance" },
+      { id: "clients", labelFr: "Clients", labelAr: "العملاء", href: "/referentiels/clients", icon: "users", group: "group.commercial", tabsets: ["client_fiche"] },
+      { id: "contrats", labelFr: "Contrats clients", labelAr: "عقود العملاء", href: "/referentiels/contrats", icon: "contract", group: "group.commercial", tabsets: ["client_contract"] },
+      { id: "finance", labelFr: "Banque & Caisse", labelAr: "البنك والصندوق", href: "/finance", icon: "finance", group: "group.finance", tabsets: ["finance", "finance_settings"] },
+      { id: "achats", labelFr: "Achats", labelAr: "المشتريات", href: "/achats", icon: "cart", group: "group.finance", tabsets: ["purchases", "purchase_settings"] },
       { id: "utilisateurs", labelFr: "Utilisateurs", labelAr: "المستخدمون", href: "/parametres/utilisateurs", icon: "users", group: "group.admin" },
       { id: "roles", labelFr: "Rôles & droits", labelAr: "الأدوار", href: "/administration/roles", icon: "shield", group: "group.admin" },
-      { id: "parametres", labelFr: "Paramètres", labelAr: "إعدادات عامة", href: "/parametres", exact: true, icon: "settings", group: "group.admin", locked: true },
+      { id: "parametres", labelFr: "Paramètres", labelAr: "إعدادات عامة", href: "/parametres", exact: true, icon: "settings", group: "group.admin", locked: true, tabsets: ["settings"] },
     ],
   },
   {
@@ -201,6 +203,7 @@ export const UI_TABSETS: UiTabsetDef[] = [
     whereFr: "Cartes de la page Paramètres",
     items: [
       { id: "interface", labelFr: "Interface", labelAr: "الواجهة", href: "/parametres/interface", locked: true, superAdminOnly: true, descriptionFr: "Modules et onglets visibles par rôle, ordre, libellés et couleurs." },
+      { id: "acces", labelFr: "Accès par compte", labelAr: "صلاحيات الحسابات", href: "/parametres/acces", locked: true, superAdminOnly: true, descriptionFr: "Choisir un compte, ouvrir ses modules puis les onglets de chaque module." },
       { id: "utilisateurs", labelFr: "Utilisateurs", labelAr: "المستخدمون", href: "/parametres/utilisateurs", alias: true, descriptionFr: "Comptes, invitations, rôles et chantiers de chaque utilisateur." },
       { id: "roles", labelFr: "Rôles", labelAr: "الأدوار", href: "/administration/roles", alias: true, descriptionFr: "Rôles disponibles et leur niveau." },
       { id: "permissions", labelFr: "Matrice des permissions", labelAr: "مصفوفة الصلاحيات", href: "/administration/permissions", descriptionFr: "Droits lire / créer / modifier / supprimer / imprimer / exporter par rôle et par écran." },
@@ -524,4 +527,55 @@ export function keysOfTabset(tabset: string): string[] | null {
 
 export function isLockedKey(key: string): boolean {
   return Boolean(ITEM_INDEX.get(key)?.item.locked);
+}
+
+export type AccessTab = { key: string; labelFr: string; labelAr: string | null };
+export type AccessTabGroup = { tabset: string; titleFr: string; tabs: AccessTab[] };
+export type AccessModule = {
+  key: string;
+  labelFr: string;
+  labelAr: string | null;
+  /** Always open (home, settings hub): only its tabs are chosen. */
+  locked: boolean;
+  groups: AccessTabGroup[];
+};
+
+/** Modules of the side menu with their choosable tabs (locked, alias and super-admin-only tabs left out). */
+export const ACCESS_MODULES: AccessModule[] = (findTabset("nav")?.items ?? []).map((item) => {
+  const sets = [...new Set([item.childTabset, ...(item.tabsets ?? [])].filter((k): k is string => Boolean(k)))];
+  const groups = sets
+    .map((key) => findTabset(key))
+    .filter((t): t is UiTabsetDef => Boolean(t))
+    .map((t) => ({
+      tabset: t.key,
+      titleFr: t.titleFr,
+      tabs: t.items
+        .filter((i) => !i.locked && !i.alias && !i.superAdminOnly)
+        .map((i) => ({ key: itemKey(t.key, i.id), labelFr: i.labelFr, labelAr: i.labelAr ?? null })),
+    }))
+    .filter((g) => g.tabs.length > 0);
+  return {
+    key: itemKey("nav", item.id),
+    labelFr: item.labelFr,
+    labelAr: item.labelAr ?? null,
+    locked: Boolean(item.locked),
+    groups,
+  };
+});
+
+/** Every key the per-account access decides on. */
+export const ACCESS_KEYS: ReadonlySet<string> = new Set(
+  ACCESS_MODULES.flatMap((m) => [...(m.locked ? [] : [m.key]), ...m.groups.flatMap((g) => g.tabs.map((t) => t.key))]),
+);
+
+/** Keys hidden for an account with a custom access: everything in the scope it was not given, and the tabs of closed modules. */
+export function hiddenKeysForAccess(allowed: readonly string[]): string[] {
+  const open = new Set(allowed);
+  const hidden: string[] = [];
+  for (const m of ACCESS_MODULES) {
+    const moduleOpen = m.locked || open.has(m.key);
+    if (!moduleOpen) hidden.push(m.key);
+    for (const g of m.groups) for (const t of g.tabs) if (!moduleOpen || !open.has(t.key)) hidden.push(t.key);
+  }
+  return hidden;
 }
