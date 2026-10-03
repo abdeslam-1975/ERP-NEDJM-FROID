@@ -591,7 +591,10 @@ export function buildPayrollLines(input: {
   daysPaid: number;
   /** Days actually worked, récupération days excluded. */
   daysWorked: number;
-  /** Récupération (CRP) days: paid by the base salary, by CRP rubriques only otherwise. */
+  /**
+   * Récupération (CRP) days: paid by the base salary and the CRP rubriques only. Work rubriques
+   * (monthly and percent included) follow the worked share; class 5 retenues stay whole.
+   */
   daysCrp?: number;
   /** From paidMonthFraction: quantity of monthly and percent lines. */
   monthFraction: number;
@@ -607,6 +610,8 @@ export function buildPayrollLines(input: {
   const calendarDays = new Date(input.year, input.month, 0).getDate();
   const daysCrp = Math.max(0, input.daysCrp ?? 0);
   const workDaysPaid = Math.max(0, input.daysPaid - daysCrp);
+  const workShare = daysCrp > 0 && input.daysPaid > 0 ? workDaysPaid / input.daysPaid : 1;
+  const workMonthFraction = Math.round(input.monthFraction * workShare * 10_000) / 10_000;
   const workAssignments = input.assignments.filter((a) => !isCrpAssignment(a));
   const crpAssignments = input.assignments.filter(isCrpAssignment);
   let sort = 10;
@@ -650,7 +655,14 @@ export function buildPayrollLines(input: {
     const picked = resolvePermanentAssignment(rub.id, workAssignments, ctx);
     if (!picked) continue;
     const unit = picked.unit ?? rub.unit;
-    const qty = quantityForUnit(unit, workDaysPaid, input.daysWorked, input.monthFraction);
+    const retenue = rub.category === RETENUE_CATEGORY;
+    const qty = quantityForUnit(
+      unit,
+      workDaysPaid,
+      input.daysWorked,
+      retenue ? input.monthFraction : workMonthFraction,
+    );
+    if (daysCrp > 0 && !retenue && qty <= 0) continue;
     const amount = computeLineAmount({
       unit,
       unitAmount: picked.amount,

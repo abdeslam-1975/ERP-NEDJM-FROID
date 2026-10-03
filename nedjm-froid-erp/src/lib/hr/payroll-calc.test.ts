@@ -178,6 +178,44 @@ describe("payroll calc", () => {
     expect(build(0).some((l) => l.label_fr.includes("récupération"))).toBe(false);
   });
 
+  it("drops work rubriques (monthly and percent too) when the whole month is récupération", () => {
+    const ctr = { employee_id: null, site_id: null, contract_id: "c1", is_active: true } as const;
+    const nuisance: PayrollRubrique = { ...hygiene, id: "r-106", code: "106", category: "1" };
+    const garantie: PayrollRubrique = { ...hygiene, id: "r-921", code: "921", category: "5", nature: "retenue" };
+    const build = (daysCrp: number) =>
+      buildPayrollLines({
+        employeeId: "e1",
+        siteId: "s1",
+        contractId: "c1",
+        baseMonthly: 21000,
+        daysPaid: 31,
+        daysWorked: 31 - daysCrp,
+        daysCrp,
+        monthFraction: 1,
+        year: 2026,
+        month: 3,
+        rubriques: [nuisance, hygiene, garantie],
+        assignments: [
+          { ...ctr, rubrique_id: "r-106", amount: 10, unit: "percent" },
+          { ...ctr, rubrique_id: "r-303", amount: 157, unit: "month" },
+          { ...ctr, rubrique_id: "r-921", amount: 9000, unit: "month" },
+          { ...ctr, rubrique_id: "r-106", amount: 10, unit: "percent", period_scope: "CRP" },
+          { ...ctr, rubrique_id: "r-303", amount: 157, unit: "month", period_scope: "CRP" },
+        ],
+        exceptions: [],
+      });
+    const full = build(31);
+    expect(full.filter((l) => l.code === "106")).toHaveLength(1);
+    expect(full.filter((l) => l.code === "303")).toHaveLength(1);
+    expect(full.find((l) => l.code === "106")).toMatchObject({ amount: 2100 });
+    expect(full.find((l) => l.code === "106")?.label_fr).toContain("récupération");
+    expect(full.find((l) => l.code === "921")?.amount).toBe(-9000);
+    const split = build(10);
+    const work106 = split.find((l) => l.code === "106" && !l.label_fr.includes("récupération"));
+    const crp106 = split.find((l) => l.code === "106" && l.label_fr.includes("récupération"));
+    expect((work106?.amount ?? 0) + (crp106?.amount ?? 0)).toBeCloseTo(2100, 0);
+  });
+
   it("keeps a contract in payroll while it covers the month, including open-ended", () => {
     expect(contractCoversPeriod("2026-09-01", null, "2026-09-01", "2026-09-30")).toBe(true);
     expect(contractCoversPeriod("2026-08-01", "2026-08-31", "2026-09-01", "2026-09-30")).toBe(false);
