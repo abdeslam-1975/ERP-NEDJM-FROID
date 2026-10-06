@@ -1,15 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { buildMissionOrderHtml, missionReference } from "@/components/rh/mission-order-print";
+import { renderDocument } from "@/lib/doc/engine";
+import { SEED_COMPANY, SEED_LISTS } from "@/lib/doc/hr-docs.fixtures";
+import { seededTemplate } from "@/lib/doc/migration-templates";
 import {
   addDaysIso,
   missionDateBounds,
   missionDateIssue,
+  missionDocData,
+  missionDocType,
   missionOrderFieldsSchema,
   missionPayload,
   missionPointageHref,
+  missionReference,
   omJoin,
   pickMissionContract,
   type MissionContractHint,
+  type MissionOrderFields,
 } from "@/lib/hr/mission-order";
 
 const sample = {
@@ -47,7 +53,7 @@ describe("mission order fields", () => {
     const parsed = missionOrderFieldsSchema.safeParse(sample);
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
-    expect(missionPayload(parsed.data).lieuDepart).toBe("Hassi Messaoud");
+    expect(missionPayload(parsed.data, SEED_COMPANY).lieuDepart).toBe("Hassi Messaoud");
     expect(omJoin("Hassi Messaoud", "", "08:00")).toBe("Hassi Messaoud — 08:00");
   });
 
@@ -64,15 +70,24 @@ describe("mission order fields", () => {
 });
 
 describe("mission order print", () => {
+  const print = (
+    fields: MissionOrderFields & { numero?: string | null },
+    origin = "",
+    company = SEED_COMPANY,
+    lists = SEED_LISTS,
+  ) =>
+    renderDocument(
+      seededTemplate(missionDocType(fields)),
+      missionDocData(fields, company, "/hr-letterhead.png", lists),
+      origin,
+    );
+
   it("prints the sectioned sheet by default", () => {
     const parsed = missionOrderFieldsSchema.safeParse({ ...sample, codeAffectation: "ADM-01" });
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
     expect(parsed.data.gabarit).toBeNull();
-    const html = buildMissionOrderHtml(
-      { ...parsed.data, numero: "000004/26" },
-      "/hr-letterhead.png",
-    );
+    const html = print({ ...parsed.data, numero: "000004/26" });
     expect(html).toContain("NF/OM/0004/26");
     expect(html).toContain("I. IDENTIFICATION DU MISSIONNAIRE");
     expect(html).toContain("V. SIGNATURE DU MISSIONNAIRE");
@@ -93,17 +108,36 @@ describe("mission order print", () => {
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
     expect(parsed.data.dateRetour).toBeNull();
-    expect(buildMissionOrderHtml(parsed.data, "/hr-letterhead.png")).toContain("Fin de mission");
-    expect(buildMissionOrderHtml({ ...parsed.data, gabarit: "v1" }, "/hr-letterhead.png")).toContain("Fin de mission");
+    expect(print(parsed.data)).toContain("Fin de mission");
+    expect(print({ ...parsed.data, gabarit: "v1" })).toContain("Fin de mission");
+  });
+
+  it("prints the open return set in the company identity", () => {
+    const parsed = missionOrderFieldsSchema.parse({ ...sample, dateDepart: "2026-09-12", dateRetour: "" });
+    const html = print(parsed, "", { ...SEED_COMPANY, mission_open_return: "Jusqu'à nouvel ordre" });
+    expect(html).toContain("Jusqu'à nouvel ordre");
+    expect(html).not.toContain("Fin de mission");
   });
 
   it("ticks the service vehicle box", () => {
     const parsed = missionOrderFieldsSchema.safeParse({ ...sample, moyen: "Véhicule de service" });
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
-    const html = buildMissionOrderHtml(parsed.data, "/hr-letterhead.png");
+    const html = print(parsed.data);
     expect(html).toContain('om-check">✓</span><span>Véhicule de service');
     expect(html).toContain('om-check"></span><span>Tous moyens de transport');
+  });
+
+  it("ticks the service box for any transport mode flagged « vehicle »", () => {
+    const lists = {
+      ...SEED_LISTS,
+      transportModes: [
+        ...SEED_LISTS.transportModes,
+        { code: "PICKUP", fr: "Pick-up chantier", ar: "شاحنة", vehicle: true, active: true },
+      ],
+    };
+    const html = print(missionOrderFieldsSchema.parse({ ...sample, moyen: "Pick-up chantier" }), "", SEED_COMPANY, lists);
+    expect(html).toContain('om-check">✓</span><span>Véhicule de service');
   });
 
   it("loads its fonts from the app, not Google Fonts", () => {
@@ -111,30 +145,27 @@ describe("mission order print", () => {
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
     for (const gabarit of [null, "v1"] as const) {
-      const html = buildMissionOrderHtml({ ...parsed.data, gabarit }, "/hr-letterhead.png", "https://erp.test");
+      const html = print({ ...parsed.data, gabarit }, "https://erp.test");
       expect(html).not.toContain("fonts.googleapis.com");
-      expect(html).toContain('url("https://erp.test/fonts/om/');
+      expect(html).toContain('<base href="https://erp.test/">');
+      expect(html).toContain('url("/fonts/om/');
     }
   });
 
   it("keeps the reference readable for unusual numbers", () => {
-    expect(missionReference("000123/26")).toBe("NF/OM/0123/26");
-    expect(missionReference("012345/26")).toBe("NF/OM/12345/26");
-    expect(missionReference("")).toBe("");
-    expect(missionReference("BROUILLON")).toBe("NF/OM/BROUILLON");
+    expect(missionReference("000123/26", SEED_COMPANY)).toBe("NF/OM/0123/26");
+    expect(missionReference("012345/26", SEED_COMPANY)).toBe("NF/OM/12345/26");
+    expect(missionReference("", SEED_COMPANY)).toBe("");
+    expect(missionReference("BROUILLON", SEED_COMPANY)).toBe("NF/OM/BROUILLON");
+    expect(missionReference("000123/26", { doc_prefix: "" })).toBe("OM/0123/26");
   });
 
   it("keeps the legacy bilingual sheet on request", () => {
     const parsed = missionOrderFieldsSchema.safeParse({ ...sample, gabarit: "v1" });
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
-    expect(missionPayload(parsed.data).gabarit).toBe("v1");
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) return;
-    const html = buildMissionOrderHtml(
-      { ...parsed.data, numero: "000004/26" },
-      "/hr-letterhead.png",
-    );
+    expect(missionPayload(parsed.data, SEED_COMPANY).gabarit).toBe("v1");
+    const html = print({ ...parsed.data, numero: "000004/26" });
     expect(html).toContain("ORDRE DE MISSION");
     expect(html).toContain("أمر بمهمة");
     expect(html).toContain("Times New Roman");
@@ -148,6 +179,14 @@ describe("mission order print", () => {
     expect(html).toContain("E.U.R.L. NEDJM FROID");
     expect(html).toContain('class="om-letterhead"');
     expect(html).toContain("z-index: 0");
+  });
+
+  it("defaults the issuer and place to the company identity", () => {
+    const parsed = missionOrderFieldsSchema.safeParse({ ...sample, donneur: "", faitA: "" });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    const payload = missionPayload(parsed.data, { hr_service: "DRH", city_short: "ORN" });
+    expect([payload.donneur, payload.faitA]).toEqual(["DRH", "ORN"]);
   });
 });
 

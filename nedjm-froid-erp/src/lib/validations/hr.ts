@@ -293,6 +293,7 @@ export const hrFicheSettingsSchema = z.object({
       z.object({
         id: z.string().trim().min(1).max(40),
         title: z.string().trim().min(1).max(160),
+        title_ar: z.string().trim().max(160).default(""),
         rows: z.array(z.array(z.string().trim().min(1).max(40)).min(1).max(4)).max(30),
       }),
     )

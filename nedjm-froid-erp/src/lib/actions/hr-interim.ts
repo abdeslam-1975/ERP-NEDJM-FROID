@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireHrSalaryValues } from "@/lib/auth/require-roles";
 import { createClient } from "@/lib/supabase/server";
 import { getHrBulletinSettings } from "@/lib/actions/hr-bulletin";
+import { companyShortName } from "@/lib/doc/print-kit";
 import {
   buildInterimStatement,
   buildInterimStatementHtml,
@@ -337,6 +338,7 @@ export async function interimStatementHtml(id: string): Promise<ActionResult<str
   if (error) return { ok: false, error: error.message };
   if (!r) return { ok: false, error: "Relevé introuvable." };
   const settings = await getHrBulletinSettings();
+  const employerName = (settings.ok ? settings.data.employer_name : "") || (await companyShortName(supabase));
   const lines = (r.lines ?? []) as InterimLine[];
   const subtotal = Math.round(lines.reduce((s, l) => s + l.amount, 0) * 100) / 100;
   const agency = one(r.agency);
@@ -345,7 +347,7 @@ export async function interimStatementHtml(id: string): Promise<ActionResult<str
     data: buildInterimStatementHtml({
       statementNo: r.statement_no,
       period: `${String(r.period_month).padStart(2, "0")}/${r.period_year}`,
-      employerName: (settings.ok ? settings.data.employer_name : "") || "NEDJM FROID",
+      employerName,
       agency: { name: agency?.name ?? "", nif: agency?.nif, rc: agency?.rc, address: agency?.address },
       terms: { default_daily_rate: 0, markup_pct: Number(r.markup_pct), vat_pct: Number(r.vat_pct) },
       statement: {

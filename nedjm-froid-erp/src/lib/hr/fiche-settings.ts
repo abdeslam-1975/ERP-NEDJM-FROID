@@ -1,6 +1,7 @@
 export type FicheSection = {
   id: string;
   title: string;
+  title_ar: string;
   rows: string[][];
 };
 
@@ -54,6 +55,7 @@ export const DEFAULT_FICHE_SETTINGS: HrFicheSettings = {
     {
       id: "affiliation",
       title: "AFFILIATION & ADRESSE",
+      title_ar: "النسب والعنوان",
       rows: [
         ["father_name"],
         ["mother_name"],
@@ -64,6 +66,7 @@ export const DEFAULT_FICHE_SETTINGS: HrFicheSettings = {
     {
       id: "identite",
       title: "IDENTITÉ & ADMINISTRATIVE",
+      title_ar: "الهوية والوضعية الإدارية",
       rows: [
         ["id_type_code", "id_number"],
         ["id_issued_on", "id_expires_on"],
@@ -75,6 +78,7 @@ export const DEFAULT_FICHE_SETTINGS: HrFicheSettings = {
     {
       id: "pro",
       title: "SITUATION PROFESSIONNELLE & ÉTUDES",
+      title_ar: "الوضعية المهنية والدراسة",
       rows: [
         ["poste"],
         ["affectation"],
@@ -86,6 +90,7 @@ export const DEFAULT_FICHE_SETTINGS: HrFicheSettings = {
     {
       id: "contacts",
       title: "CONTACTS",
+      title_ar: "وسائل الاتصال",
       rows: [
         ["phone", "whatsapp"],
         ["email"],
@@ -116,6 +121,7 @@ export function asSections(value: unknown): FicheSection[] {
     return {
       id: String(row.id || `sec_${index + 1}`),
       title: String(row.title || ""),
+      title_ar: String(row.title_ar || ""),
       rows,
     };
   });

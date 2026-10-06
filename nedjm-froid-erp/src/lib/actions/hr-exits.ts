@@ -6,6 +6,8 @@ import { requireHrSalaryValues } from "@/lib/auth/require-roles";
 import { createClient } from "@/lib/supabase/server";
 import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
 import { listLeaveBalances } from "@/lib/actions/hr-leave";
+import { loadHrListItems } from "@/lib/doc/print-kit";
+import { EXIT_REASON_LIST, exitReasonOptions, type ExitReasonOption } from "@/lib/hr/hr-lists";
 import { normalizeSettlementLines, suggestSettlement, type SettlementLine } from "@/lib/hr/leave";
 import { SALARY_CATEGORIES, salaryAsOf, type SalaryVersion } from "@/lib/hr/payroll-calc";
 
@@ -52,7 +54,7 @@ const exitSchema = z.object({
   employee_id: z.string().uuid("Employé requis · اختر العامل"),
   contract_id: z.string().uuid().optional().nullable(),
   exit_date: z.string().regex(DATE, "Date de sortie invalide"),
-  reason_code: z.enum(["END_CDD", "RESIGNATION", "DISMISSAL", "ABANDON", "MUTUAL", "TRIAL_END", "RETIREMENT", "DEATH", "OTHER"]),
+  reason_code: z.string().trim().min(1, "Motif requis · السبب مطلوب").max(40),
   notes: z.string().trim().max(1000).optional().nullable(),
   leave_balance_days: z.coerce.number().min(-400).max(400).optional().nullable(),
   settlement_lines: z.array(lineSchema).max(30),
@@ -68,6 +70,14 @@ function revalidateExits() {
   revalidatePath("/rh/contrats");
   revalidatePath("/rh/employes");
   revalidatePath("/rh/paie");
+}
+
+/** Exit reasons of Paramètres RH › Listes et codes (archived ones included, for older exits). */
+export async function listExitReasons(): Promise<ActionResult<ExitReasonOption[]>> {
+  const supabase = await createClient();
+  const items = await loadHrListItems(supabase, [EXIT_REASON_LIST]);
+  if (!items.ok) return items;
+  return { ok: true, data: exitReasonOptions(items.data) };
 }
 
 export async function listExits(): Promise<ActionResult<ExitRow[]>> {

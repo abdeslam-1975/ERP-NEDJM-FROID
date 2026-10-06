@@ -7,19 +7,27 @@ import { archiveFileStem, hrPdfOptions, requestOrigin, uploadHrPdf } from "@/lib
 import { hrCorrespondenceSchema, hrFileSchema } from "@/lib/validations/hr";
 import {
   missionDateIssue,
+  missionDocData,
+  missionDocType,
   missionOrderFieldsSchema,
   missionPayload,
   pickMissionContract,
   todayIsoAlgiers,
   type MissionContractHint,
   type MissionOrderFields,
+  type SheetDefaults,
 } from "@/lib/hr/mission-order";
-import { leaveOfCorrespondence, leaveTitleFieldsSchema, leaveTitlePayload } from "@/lib/hr/leave-title";
+import {
+  leaveOfCorrespondence,
+  leaveTitleDocData,
+  leaveTitleFieldsSchema,
+  leaveTitlePayload,
+} from "@/lib/hr/leave-title";
 import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
+import { FICHE_DOC_TYPES, ficheHtml } from "@/lib/hr/employee-fiche-doc";
 import { HR_DOCS_BUCKET, hrFileDisplayUrl, hrFileHref } from "@/lib/hr/hr-file-url";
-import { buildMissionOrderHtml } from "@/components/rh/mission-order-print";
-import { buildLeaveTitleHtml } from "@/components/rh/leave-title-print";
-import { buildOfficialFicheHtml } from "@/components/rh/employee-fiche-print";
+import { loadCompanyProfile, loadHrListItems, loadPrintKit, printFromKit } from "@/lib/doc/print-kit";
+import { isAnnualLeave, LEAVE_KIND_LIST, leaveKindOptions } from "@/lib/hr/hr-lists";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { listCatalogItems } from "@/lib/actions/hr-catalogs";
 import { listSites } from "@/lib/actions/sites";
@@ -370,17 +378,21 @@ export async function archiveEmployeeFicheRenseignements(
       last_name: values.last_name,
       first_name: values.first_name,
     });
-    const html = buildOfficialFicheHtml(
+    const supabase = await createClient();
+    const kit = await loadPrintKit(supabase, FICHE_DOC_TYPES);
+    if (!kit.ok) return kit;
+    const html = ficheHtml(
+      kit.data,
       values,
       mergeAffectationCatalog(catalogs.data, sites.ok ? sites.data.filter((s) => s.is_active) : []),
       fields.data,
       settings.ok ? settings.data : DEFAULT_FICHE_SETTINGS,
       origin,
     );
+    if (!html.ok) return html;
 
     const path = `${employeeId.replace(/[^a-zA-Z0-9-]/g, "")}/FICHE_RENSEIGNEMENTS-${crypto.randomUUID()}.pdf`;
-    const supabase = await createClient();
-    const stored = await archivePrintPdf(supabase, html, origin, path);
+    const stored = await archivePrintPdf(supabase, html.data, origin, path);
     if (!stored.ok) return stored;
     const fileUrl = hrFileHref(path);
     const saved = await upsertHrFile({
@@ -479,16 +491,17 @@ async function archiveMissionOrderSnapshot(input: {
         error: checked.error.issues[0]?.message ?? "Données de mission invalides",
       };
     }
-    const html = buildMissionOrderHtml(
-      { ...checked.data, numero: input.number },
-      letterhead,
-      origin,
-    );
+    const fields = { ...checked.data, numero: input.number };
+    const type = missionDocType(fields);
+    const supabase = await createClient();
+    const kit = await loadPrintKit(supabase, [type]);
+    if (!kit.ok) return kit;
+    const html = printFromKit(kit.data, type, missionDocData(fields, kit.data.company, letterhead, kit.data.lists), origin);
+    if (!html.ok) return html;
     const safeNum = input.number.replace(/\//g, "-");
     const fileName = `OM_${archiveFileStem(safeNum, checked.data.matricule || "NA", checked.data.nom || "OM")}.pdf`;
     const path = `${input.employeeId.replace(/[^a-zA-Z0-9-]/g, "")}/OM_ARCHIVE-${safeNum}-${crypto.randomUUID()}.pdf`;
-    const supabase = await createClient();
-    const stored = await archivePrintPdf(supabase, html, origin, path);
+    const stored = await archivePrintPdf(supabase, html.data, origin, path);
     if (!stored.ok) return stored;
     const archiveUrl = hrFileHref(path);
     const filed = await upsertHrFile({
@@ -567,7 +580,9 @@ export async function saveLeaveTitle(input: {
   if (current.status_code === "CANCELLED") {
     return { ok: false, error: "Ce congé a été annulé. · هذه الإجازة ملغاة." };
   }
-  const titre = leaveTitlePayload(checked.data);
+  const company = await loadCompanyProfile(supabase);
+  if (!company.ok) return company;
+  const titre = leaveTitlePayload(checked.data, company.data);
   const payload = (current.payload ?? {}) as Record<string, unknown>;
   const { data: saved, error } = await supabase
     .from("hr_correspondences")
@@ -620,7 +635,9 @@ export async function createLeaveTitle(input: {
     return { ok: false, error: "Dates du congé requises (du … au …). · تواريخ الإجازة مطلوبة" };
   }
   const days = Number(String(input.request.days ?? "").replace(",", ".")) || calendarDays(start_date, end_date);
-  if (kind === "ANNUAL" && !input.confirmBalance) {
+  const kinds = await loadHrListItems(await createClient(), [LEAVE_KIND_LIST]);
+  if (!kinds.ok) return kinds;
+  if (isAnnualLeave(leaveKindOptions(kinds.data), kind) && !input.confirmBalance) {
     const balances = await listLeaveBalances({ employeeId: employee_id });
     const balance = balances.ok ? balances.data[0]?.balance : undefined;
     if (balance !== undefined && balance < days) return { ok: true, data: { status: "balance", balance, days } };
@@ -668,19 +685,31 @@ async function archiveLeaveTitle(input: {
   leave: ReturnType<typeof leaveOfCorrespondence>;
 }): Promise<ActionResult<{ archive_url: string; archive_path: string }>> {
   try {
-    const [settings, origin] = await Promise.all([getHrFicheSettings(), requestOrigin()]);
-    const html = buildLeaveTitleHtml(
-      { ...input.fields, matricule: input.fields.matricule || "—", nom: input.fields.nom || "—" },
-      input.leave,
-      input.number,
-      companyLetterheadUrl(settings.ok ? settings.data.letterhead_url : null, origin),
+    const supabase = await createClient();
+    const [settings, origin, kit] = await Promise.all([
+      getHrFicheSettings(),
+      requestOrigin(),
+      loadPrintKit(supabase, ["titre_conge"]),
+    ]);
+    if (!kit.ok) return kit;
+    const html = printFromKit(
+      kit.data,
+      "titre_conge",
+      leaveTitleDocData(
+        { ...input.fields, matricule: input.fields.matricule || "—", nom: input.fields.nom || "—" },
+        input.leave,
+        input.number,
+        kit.data.company,
+        companyLetterheadUrl(settings.ok ? settings.data.letterhead_url : null, origin),
+        kit.data.lists,
+      ),
       origin,
     );
+    if (!html.ok) return html;
     const safeNum = input.number.replace(/\//g, "-");
     const fileName = `TC_${archiveFileStem(safeNum, input.fields.matricule || "NA", input.fields.nom || "TC")}.pdf`;
     const path = `${input.employeeId.replace(/[^a-zA-Z0-9-]/g, "")}/LEAVE_ARCHIVE-${safeNum}-${crypto.randomUUID()}.pdf`;
-    const supabase = await createClient();
-    const stored = await archivePrintPdf(supabase, html, origin, path);
+    const stored = await archivePrintPdf(supabase, html.data, origin, path);
     if (!stored.ok) return stored;
     const archiveUrl = hrFileHref(path);
     const filed = await upsertHrFile({
@@ -758,7 +787,11 @@ export async function upsertHrCorrespondence(input: unknown): Promise<
   let startDate = p.start_date;
   let endDate = p.end_date;
 
+  let defaults: SheetDefaults = { hr_service: "", city_short: "" };
   if (isMission) {
+    const company = await loadCompanyProfile(supabase);
+    if (!company.ok) return company;
+    defaults = company.data;
     const checked = missionOrderFieldsSchema.safeParse(p.payload ?? {});
     if (!checked.success) {
       return { ok: false, error: checked.error.issues[0]?.message ?? "Données de mission invalides" };
@@ -790,7 +823,7 @@ export async function upsertHrCorrespondence(input: unknown): Promise<
   }
   const payload: Record<string, unknown> = {
     ...previous,
-    ...(fields ? missionPayload(fields) : (p.payload ?? {})),
+    ...(fields ? missionPayload(fields, defaults) : (p.payload ?? {})),
     ...(etabliPar ? { etabli_par: etabliPar } : {}),
   };
   const row = {
@@ -840,7 +873,7 @@ export async function upsertHrCorrespondence(input: unknown): Promise<
       correspondenceId: id,
       employeeId: p.employee_id,
       number,
-      fields: missionPayload(fields),
+      fields: missionPayload(fields, defaults),
     });
     if (archived.ok) archiveUrl = archived.data.archive_url;
     else archiveError = archived.error;

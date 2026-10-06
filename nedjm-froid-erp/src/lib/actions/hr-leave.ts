@@ -6,13 +6,9 @@ import { requireHrSalaryValues } from "@/lib/auth/require-roles";
 import { createClient } from "@/lib/supabase/server";
 import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
 import { legalVarsAsOf } from "@/lib/hr/legal-vars-as-of";
-import {
-  calendarDays,
-  computeLeaveBalance,
-  type LeaveBalance,
-  type LeaveKind,
-  type LeaveStatus,
-} from "@/lib/hr/leave";
+import { loadHrListItems } from "@/lib/doc/print-kit";
+import { calendarDays, computeLeaveBalance, type LeaveBalance, type LeaveStatus } from "@/lib/hr/leave";
+import { annualLeaveCodes, LEAVE_KIND_LIST, leaveKindOptions, type LeaveKindOption } from "@/lib/hr/hr-lists";
 import { todayIsoAlgiers } from "@/lib/hr/mission-order";
 
 export type ActionResult<T = void> =
@@ -30,7 +26,7 @@ export type LeaveRequestRow = {
   id: string;
   employee_id: string;
   employee_label: string;
-  kind: LeaveKind;
+  kind: string;
   start_date: string;
   end_date: string;
   days: number;
@@ -63,7 +59,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const requestSchema = z
   .object({
     employee_id: z.string().uuid("Employé requis · اختر العامل"),
-    kind: z.enum(["ANNUAL", "RECOVERY", "SICK", "UNPAID", "EXCEPTIONAL"]),
+    kind: z.string().trim().min(1, "Type de congé requis · نوع العطلة مطلوب").max(40),
     start_date: z.string().regex(DATE, "Date de début invalide"),
     end_date: z.string().regex(DATE, "Date de fin invalide"),
     days: z.coerce.number().min(0).max(366).optional(),
@@ -99,6 +95,14 @@ function revalidateLeave() {
   revalidatePath("/rh/presence");
   revalidatePath("/rh/documents");
   revalidatePath("/rh/paie");
+}
+
+/** Leave kinds of Paramètres RH › Listes et codes (archived ones included, for older requests). */
+export async function listLeaveKinds(): Promise<ActionResult<LeaveKindOption[]>> {
+  const supabase = await createClient();
+  const items = await loadHrListItems(supabase, [LEAVE_KIND_LIST]);
+  if (!items.ok) return items;
+  return { ok: true, data: leaveKindOptions(items.data) };
 }
 
 export async function listLeaveEmployees(): Promise<ActionResult<LeaveEmployee[]>> {
@@ -140,7 +144,7 @@ export async function listLeaveRequests(): Promise<ActionResult<LeaveRequestRow[
       id: r.id,
       employee_id: r.employee_id,
       employee_label: empLabel(one(r.employee)),
-      kind: r.kind as LeaveKind,
+      kind: r.kind,
       start_date: String(r.start_date).slice(0, 10),
       end_date: String(r.end_date).slice(0, 10),
       days: Number(r.days),
@@ -311,10 +315,19 @@ export async function listLeaveBalances(opts?: {
     reqQ = reqQ.eq("employee_id", opts.employeeId);
     adjQ = adjQ.eq("employee_id", opts.employeeId);
   }
-  const [emps, ctrs, reqs, adjs, vars] = await Promise.all([empQ, ctrQ, reqQ, adjQ, legalVarsAsOf(supabase, asOf)]);
+  const [emps, ctrs, reqs, adjs, vars, kinds] = await Promise.all([
+    empQ,
+    ctrQ,
+    reqQ,
+    adjQ,
+    legalVarsAsOf(supabase, asOf),
+    loadHrListItems(supabase, [LEAVE_KIND_LIST]),
+  ]);
   for (const r of [emps, ctrs, reqs, adjs]) {
     if (r.error) return { ok: false, error: r.error.message };
   }
+  if (!kinds.ok) return kinds;
+  const annualKinds = annualLeaveCodes(leaveKindOptions(kinds.data));
   const rate = vars.CONGE_JOURS_MOIS ?? 2.5;
   const contracts = (ctrs.data ?? [])
     .filter((c) => c.status !== "DRAFT" && c.status !== "CANCELLED")
@@ -329,7 +342,7 @@ export async function listLeaveBalances(opts?: {
   return {
     ok: true,
     data: (emps.data ?? []).map((e) => ({
-      ...computeLeaveBalance({ employeeId: e.id, contracts, requests, adjustments, asOf, ratePerMonth: rate }),
+      ...computeLeaveBalance({ employeeId: e.id, contracts, requests, adjustments, asOf, ratePerMonth: rate, annualKinds }),
       employee_label: empLabel(e),
       rate,
     })),

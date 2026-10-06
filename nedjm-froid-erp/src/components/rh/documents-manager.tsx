@@ -10,6 +10,7 @@ import {
   Eye,
   ExternalLink,
   FilePenLine,
+  FileStack,
   Pencil,
   Plane,
   Plus,
@@ -35,20 +36,26 @@ import {
 } from "@/lib/actions/hr-employees";
 import { valuesFromFicheRecord } from "@/lib/hr/employee-field-utils";
 import type { HrFicheSettings } from "@/lib/hr/fiche-settings";
-import { buildOfficialFicheHtml } from "@/components/rh/employee-fiche-print";
 import { EmployeeCardPreview } from "@/components/rh/employee-card-preview";
 import { EmployeeFicheWindow, ficheWindowValues } from "@/components/rh/employee-fiche-window";
 import { printHtml as printFrame } from "@/components/rh/print-frame";
+import { fetchPrintKit } from "@/components/doc/use-print-kit";
+import { printFromKit, type PrintKit } from "@/lib/doc/print-kit";
+import type { DocTypeId } from "@/lib/doc/registry";
 import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
+import type { HrCompanyProfile } from "@/lib/hr/company-profile";
+import { FICHE_DOC_TYPES, ficheHtml } from "@/lib/hr/employee-fiche-doc";
+import { activeOptions, leaveKindOptions } from "@/lib/hr/hr-lists";
 import {
-  OM_DONNEUR,
-  OM_FAIT_A,
-  OM_FIN_DE_MISSION,
   formatEstablishmentDate,
   formatOmDate,
+  missionDocData,
+  missionDocType,
   missionOrderFieldsSchema,
   missionPayload,
   missionPointageHref,
+  missionReference,
+  openReturnLabel,
   pickMissionContract,
   type MissionContractHint,
 } from "@/lib/hr/mission-order";
@@ -57,7 +64,9 @@ import {
   leaveDaysLabel,
   leaveNature,
   leaveOfCorrespondence,
+  leaveTitleDocData,
   leaveTitleFieldsSchema,
+  leaveTitleReference,
 } from "@/lib/hr/leave-title";
 import {
   MissionOrderDialog,
@@ -67,8 +76,6 @@ import {
 } from "@/components/rh/mission-order-dialog";
 import { LeaveTitleDialog, emptyLeaveTitleDraft, type LeaveTitleDraft } from "@/components/rh/leave-title-dialog";
 import { DocumentTypeCards } from "@/components/rh/document-type-cards";
-import { buildLeaveTitleHtml, leaveTitleReference } from "@/components/rh/leave-title-print";
-import { buildMissionOrderHtml, missionReference } from "@/components/rh/mission-order-print";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhChip, RhPanel, catalogOptions } from "@/components/rh/rh-ui";
@@ -208,7 +215,21 @@ function printHtml(html: string) {
   }
 }
 
-export type DocumentsTab = "fiches" | "contrats" | "missions" | "conges" | "bulletins";
+/** Prints a document from its approved template; resolves to the error message, if any. */
+async function printFromTemplate(
+  types: readonly DocTypeId[],
+  render: (kit: PrintKit, origin: string) => { ok: true; data: string } | { ok: false; error: string },
+  output: (html: string) => void = printHtml,
+): Promise<string | null> {
+  const kit = await fetchPrintKit(types);
+  if (!kit.ok) return kit.error;
+  const html = render(kit.data, window.location.origin);
+  if (!html.ok) return html.error;
+  output(html.data);
+  return null;
+}
+
+export type DocumentsTab = "fiches" | "contrats" | "missions" | "conges" | "bulletins" | "autres";
 
 /** Registers rendered by the page (server data), not by this component. */
 function isPageRegister(tab: DocumentsTab) {
@@ -229,6 +250,7 @@ export function DocumentsManager({
   catalogs,
   contracts,
   contractCount,
+  company,
   letterheadUrl = null,
   employeeFields,
   ficheCatalogs,
@@ -236,6 +258,8 @@ export function DocumentsManager({
   openMission = false,
   initialTab = "missions",
   register = null,
+  customRegister = null,
+  customCount = null,
   openTitleId,
   loadError,
 }: {
@@ -246,6 +270,8 @@ export function DocumentsManager({
   catalogs: CatalogItem[];
   contracts: MissionContractHint[];
   contractCount: number | null;
+  /** Company identity: document references and default « donneur d'ordre » / « fait à ». */
+  company: HrCompanyProfile;
   letterheadUrl?: string | null;
   employeeFields: HrEmployeeField[];
   /** Catalogues of the employee card (sites merged into the affectations). */
@@ -255,6 +281,9 @@ export function DocumentsManager({
   initialTab?: DocumentsTab;
   /** Contracts or payslips register of `initialTab`, rendered by the page. */
   register?: ReactNode;
+  /** Register of the documents created from the interface (« Autres documents »). */
+  customRegister?: ReactNode;
+  customCount?: number | null;
   /** LEAVE correspondence whose titre de congé opens on arrival. */
   openTitleId?: string;
   loadError?: string;
@@ -265,7 +294,8 @@ export function DocumentsManager({
     : undefined;
   const [tab, setTab] = useState<DocumentsTab>(titleOnArrival ? "conges" : initialTab);
   const [missionOpen, setMissionOpen] = useState(openMission);
-  const [missionForm, setMissionForm] = useState<MissionDraft>(emptyMissionDraft);
+  const emptyMission = () => emptyMissionDraft(company);
+  const [missionForm, setMissionForm] = useState<MissionDraft>(emptyMission);
   const [missionError, setMissionError] = useState<string | null>(null);
   const [titleForm, setTitleForm] = useState<LeaveTitleDraft | null>(() =>
     titleOnArrival ? titleDraftFromRow(titleOnArrival) : null,
@@ -290,7 +320,7 @@ export function DocumentsManager({
 
   function closeMission() {
     setMissionOpen(false);
-    setMissionForm(emptyMissionDraft());
+    setMissionForm(emptyMission());
     setMissionError(null);
     if (openMission) router.replace("/rh/documents");
   }
@@ -309,7 +339,7 @@ export function DocumentsManager({
             ? "Avion"
             : "");
     return {
-      ...emptyMissionDraft(),
+      ...emptyMission(),
       id: row.id,
       numero: row.number,
       employee_id: row.employee_id,
@@ -339,9 +369,9 @@ export function DocumentsManager({
       pieceDelivre: textPayload(row.payload, "pieceDelivre") || textPayload(row.payload, "id_issued_on"),
       pieceFonction: textPayload(row.payload, "pieceFonction") || textPayload(row.payload, "issuer_fonction"),
       pieceLieu: textPayload(row.payload, "pieceLieu") || textPayload(row.payload, "id_issued_place"),
-      donneur: textPayload(row.payload, "donneur") || textPayload(row.payload, "issuer_service") || emptyMissionDraft().donneur,
-      faitA: textPayload(row.payload, "faitA") || textPayload(row.payload, "done_at") || emptyMissionDraft().faitA,
-      dateDoc: textPayload(row.payload, "dateDoc") || textPayload(row.payload, "done_on") || emptyMissionDraft().dateDoc,
+      donneur: textPayload(row.payload, "donneur") || textPayload(row.payload, "issuer_service") || emptyMission().donneur,
+      faitA: textPayload(row.payload, "faitA") || textPayload(row.payload, "done_at") || emptyMission().faitA,
+      dateDoc: textPayload(row.payload, "dateDoc") || textPayload(row.payload, "done_on") || emptyMission().dateDoc,
       gabarit: textPayload(row.payload, "gabarit"),
       savedDateDepart: row.start_date ?? "",
       savedDateRetour: row.end_date ?? "",
@@ -358,13 +388,11 @@ export function DocumentsManager({
       setMissionError(checked.error.issues[0]?.message ?? "Données invalides");
       return;
     }
-    printHtml(
-      buildMissionOrderHtml(
-        { ...checked.data, numero: draft.numero },
-        companyLetterheadUrl(letterheadUrl, window.location.origin),
-        window.location.origin,
-      ),
-    );
+    const fields = { ...checked.data, numero: draft.numero };
+    const type = missionDocType(fields);
+    printFromTemplate([type], (kit, origin) =>
+      printFromKit(kit, type, missionDocData(fields, kit.company, companyLetterheadUrl(letterheadUrl, origin), kit.lists), origin),
+    ).then((problem) => problem && setMissionError(problem));
   }
 
   function openMissionRow(row: HrCorrespondenceRow) {
@@ -399,7 +427,7 @@ export function DocumentsManager({
         status_code: "ISSUED",
         start_date: checked.data.dateDepart,
         end_date: checked.data.dateRetour,
-        payload: missionPayload(checked.data),
+        payload: missionPayload(checked.data, company),
       });
       if (!r.ok) {
         setMissionError(r.error);
@@ -415,7 +443,7 @@ export function DocumentsManager({
         start_date: checked.data.dateDepart,
         end_date: checked.data.dateRetour,
         payload: {
-          ...missionPayload(checked.data),
+          ...missionPayload(checked.data, company),
           ...(r.data.archive_url ? { archive_url: r.data.archive_url } : {}),
         },
         created_at: new Date().toISOString(),
@@ -470,8 +498,8 @@ export function DocumentsManager({
       poste: contract?.poste_fr || emp?.fiche_poste || "",
       pieceType: idType?.label_fr || emp?.id_type_code || "",
       pieceNum: emp?.id_number || "",
-      donneur: OM_DONNEUR,
-      faitA: OM_FAIT_A,
+      donneur: company.hr_service,
+      faitA: company.city_short,
       dateDoc: (row.created_at ?? "").slice(0, 10),
     };
     const fields = Object.fromEntries(
@@ -494,7 +522,7 @@ export function DocumentsManager({
 
   function newTitle() {
     setTitleError(null);
-    setTitleForm(emptyLeaveTitleDraft());
+    setTitleForm(emptyLeaveTitleDraft(company, activeOptions(leaveKindOptions(catalogs))[0]?.code ?? ""));
   }
 
   function createTitle(draft: LeaveTitleDraft, confirmBalance = false) {
@@ -531,7 +559,7 @@ export function DocumentsManager({
       const { row, archive_error } = r.data;
       setCorrRows((prev) => [row, ...prev.filter((item) => item.id !== row.id)]);
       setInfo(
-        `Titre de congé ${leaveTitleReference(row.number)} enregistré${row.archive_url ? " et archivé en PDF" : ""}.${
+        `Titre de congé ${leaveTitleReference(row.number, company)} enregistré${row.archive_url ? " et archivé en PDF" : ""}.${
           archive_error ? ` Archive non créée : ${archive_error}` : ""
         } Jours proposés dans le pointage, à valider.`,
       );
@@ -554,15 +582,21 @@ export function DocumentsManager({
       setTitleError(checked.error.issues[0]?.message ?? "Données invalides");
       return;
     }
-    printHtml(
-      buildLeaveTitleHtml(
-        checked.data,
-        draft.leave,
-        draft.numero,
-        companyLetterheadUrl(letterheadUrl, window.location.origin),
-        window.location.origin,
+    printFromTemplate(["titre_conge"], (kit, origin) =>
+      printFromKit(
+        kit,
+        "titre_conge",
+        leaveTitleDocData(
+          checked.data,
+          draft.leave,
+          draft.numero,
+          kit.company,
+          companyLetterheadUrl(letterheadUrl, origin),
+          kit.lists,
+        ),
+        origin,
       ),
-    );
+    ).then((problem) => problem && setTitleError(problem));
   }
 
   function saveTitle() {
@@ -592,7 +626,7 @@ export function DocumentsManager({
       setPointageHref(null);
       setError(null);
       setInfo(
-        `Titre de congé ${leaveTitleReference(draft.numero)} enregistré${archive_url ? " et archivé en PDF" : ""}.${
+        `Titre de congé ${leaveTitleReference(draft.numero, company)} enregistré${archive_url ? " et archivé en PDF" : ""}.${
           archive_error ? ` Archive non créée : ${archive_error}` : ""
         }`,
       );
@@ -600,6 +634,7 @@ export function DocumentsManager({
     });
   }
 
+  const leaveKinds = leaveKindOptions(catalogs);
   const omRows = corrRows.filter((row) => row.type_code === "OM");
   const leaveRows = corrRows.filter((row) => row.type_code === "LEAVE");
   const archiveOf = new Map(
@@ -613,11 +648,11 @@ export function DocumentsManager({
   });
 
   const omColumns = [
-    corrCol.accessor((r) => missionReference(r.number), {
+    corrCol.accessor((r) => missionReference(r.number, company), {
       id: "reference",
       header: "Référence",
       cell: ({ row: { original: r } }) => (
-        <ReferenceCell reference={missionReference(r.number)} sub={`Établi le ${formatEstablishmentDate(r.created_at)}`} />
+        <ReferenceCell reference={missionReference(r.number, company)} sub={`Établi le ${formatEstablishmentDate(r.created_at)}`} />
       ),
     }),
     employeeColumn,
@@ -628,7 +663,10 @@ export function DocumentsManager({
         <div className="min-w-0">
           <div className="truncate text-foreground/85">{info.getValue() || "—"}</div>
           <div className="whitespace-nowrap text-xs tabular-nums text-foreground/45">
-            {periodLabel(info.row.original.start_date, info.row.original.end_date || (info.row.original.start_date ? OM_FIN_DE_MISSION : null))}
+            {periodLabel(
+              info.row.original.start_date,
+              info.row.original.end_date || (info.row.original.start_date ? openReturnLabel(company) || null : null),
+            )}
           </div>
         </div>
       ),
@@ -665,15 +703,15 @@ export function DocumentsManager({
   ];
 
   const leaveColumns = [
-    corrCol.accessor((r) => leaveTitleReference(r.number), {
+    corrCol.accessor((r) => leaveTitleReference(r.number, company), {
       id: "reference",
       header: "Référence",
       cell: ({ row: { original: r } }) => (
-        <ReferenceCell reference={leaveTitleReference(r.number)} sub={`Émis le ${formatEstablishmentDate(r.created_at)}`} />
+        <ReferenceCell reference={leaveTitleReference(r.number, company)} sub={`Émis le ${formatEstablishmentDate(r.created_at)}`} />
       ),
     }),
     employeeColumn,
-    corrCol.accessor((r) => leaveNature(leaveOfCorrespondence(r).kind).fr, {
+    corrCol.accessor((r) => leaveNature(leaveKinds, leaveOfCorrespondence(r).kind).fr, {
       id: "nature",
       header: "Nature",
       cell: (info) => <RhChip tone="brand">{info.getValue()}</RhChip>,
@@ -782,16 +820,12 @@ export function DocumentsManager({
 
   function printCard(employeeId: string) {
     loadCard(employeeId, (card) =>
-      printFrame(
-        buildOfficialFicheHtml(
-          valuesFromFicheRecord(card, employeeFields),
-          ficheCatalogs,
-          employeeFields,
-          ficheSettings,
-          window.location.origin,
-        ),
-        "hr-fiche-print-frame",
-      ),
+      printFromTemplate(
+        FICHE_DOC_TYPES,
+        (kit, origin) =>
+          ficheHtml(kit, valuesFromFicheRecord(card, employeeFields), ficheCatalogs, employeeFields, ficheSettings, origin),
+        (html) => printFrame(html, "hr-fiche-print-frame"),
+      ).then((problem) => problem && setError(problem)),
     );
   }
 
@@ -806,7 +840,7 @@ export function DocumentsManager({
 
   function newMission() {
     setMissionError(null);
-    setMissionForm(emptyMissionDraft());
+    setMissionForm(emptyMission());
     setMissionOpen(true);
   }
 
@@ -859,6 +893,15 @@ export function DocumentsManager({
             selected: tab === "bulletins",
             onSelect: () => selectTab("bulletins"),
           },
+          {
+            key: "autres",
+            title: "Autres documents",
+            icon: FileStack,
+            color: "#8b5cf6",
+            summary: countLabel(customCount, "document", "documents"),
+            selected: tab === "autres",
+            onSelect: () => selectTab("autres"),
+          },
         ]}
       />
       {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
@@ -888,6 +931,8 @@ export function DocumentsManager({
             Chargement du registre…
           </div>
         )
+      ) : tab === "autres" ? (
+        customRegister
       ) : tab === "missions" ? (
         <RegisterSection
           icon={Plane}
@@ -907,7 +952,7 @@ export function DocumentsManager({
             getRowId={(r) => r.id}
             searchPlaceholder="Référence, matricule, nom…"
             searchText={(r) =>
-              [r.number, missionReference(r.number), r.matricule, r.last_name, r.first_name, r.created_by_name]
+              [r.number, missionReference(r.number, company), r.matricule, r.last_name, r.first_name, r.created_by_name]
                 .filter(Boolean)
                 .join(" ")
             }
@@ -934,7 +979,7 @@ export function DocumentsManager({
             getRowId={(r) => r.id}
             searchPlaceholder="Référence, matricule, nom…"
             searchText={(r) =>
-              [r.number, leaveTitleReference(r.number), r.matricule, r.last_name, r.first_name]
+              [r.number, leaveTitleReference(r.number, company), r.matricule, r.last_name, r.first_name]
                 .filter(Boolean)
                 .join(" ")
             }
@@ -1014,13 +1059,14 @@ export function DocumentsManager({
           onPrint={() => printMission(missionForm)}
           onReset={() => {
             setMissionError(null);
-            setMissionForm(emptyMissionDraft());
+            setMissionForm(emptyMission());
           }}
           onOpenOrder={openMissionRow}
         />
       ) : null}
       {titleForm ? (
         <LeaveTitleDialog
+          company={company}
           pending={pending}
           error={titleError}
           employees={employees}

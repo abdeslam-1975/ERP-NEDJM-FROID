@@ -10,7 +10,8 @@ import {
   type ExitRow,
 } from "@/lib/actions/hr-exits";
 import type { LeaveEmployee } from "@/lib/actions/hr-leave";
-import { EXIT_REASONS, exitReasonLabel, type SettlementLine } from "@/lib/hr/leave";
+import type { SettlementLine } from "@/lib/hr/leave";
+import { activeOptions, listLabel, type ExitReasonOption } from "@/lib/hr/hr-lists";
 import { slashDateIso, type LetterKind } from "@/lib/hr/hr-letters";
 import { HrLetterDialog } from "@/components/rh/hr-letter-dialog";
 import { Button } from "@/components/ui/button";
@@ -48,12 +49,12 @@ type Draft = {
   base_monthly: number | null;
 };
 
-const emptyDraft = (): Draft => ({
+const emptyDraft = (reasonCode: string): Draft => ({
   id: null,
   employee_id: "",
   contract_id: null,
   exit_date: "",
-  reason_code: "END_CDD",
+  reason_code: reasonCode,
   notes: "",
   leave_balance_days: "",
   settlement_lines: [],
@@ -63,14 +64,18 @@ const emptyDraft = (): Draft => ({
 export function ExitsManager({
   initialRows,
   employees,
+  reasons,
   canEdit,
   loadError,
 }: {
   initialRows: ExitRow[];
   employees: LeaveEmployee[];
+  reasons: ExitReasonOption[];
   canEdit: boolean;
   loadError?: string;
 }) {
+  const reasonChoices = activeOptions(reasons);
+  const exitReasonLabel = (code: string) => listLabel(reasons, code);
   const [rows, setRows] = useState(initialRows);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [letter, setLetter] = useState<{ employeeId: string; kind: LetterKind } | null>(null);
@@ -277,7 +282,7 @@ export function ExitsManager({
           <Button
             onClick={() => {
               setFormError(null);
-              setDraft(emptyDraft());
+              setDraft(emptyDraft(reasonChoices[0]?.code ?? ""));
             }}
           >
             {bi("Nouvelle sortie", "خروج جديد")}
@@ -344,7 +349,10 @@ export function ExitsManager({
                   value={draft.reason_code}
                   onChange={(e) => setDraft({ ...draft, reason_code: e.target.value })}
                 >
-                  {EXIT_REASONS.map((r) => (
+                  {reasonChoices.some((r) => r.code === draft.reason_code) ? null : (
+                    <option value={draft.reason_code}>{exitReasonLabel(draft.reason_code).fr || "—"}</option>
+                  )}
+                  {reasonChoices.map((r) => (
                     <option key={r.code} value={r.code}>
                       {r.fr} · {r.ar}
                     </option>
@@ -369,10 +377,13 @@ export function ExitsManager({
                 </RhField>
               </div>
             </div>
-            {draft.reason_code === "ABANDON" && draft.employee_id ? (
+            {reasons.some((r) => r.notice && r.code === draft.reason_code) && draft.employee_id ? (
               <RhAlert tone="warning">
                 <span className="mr-2">
-                  {bi("Abandon de poste : envoyer d'abord deux mises en demeure.", "إهمال المنصب: يجب إرسال إعذارين.")}
+                  {bi(
+                    `${exitReasonLabel(draft.reason_code).fr} : envoyer d'abord deux mises en demeure.`,
+                    `${exitReasonLabel(draft.reason_code).ar}: يجب إرسال إعذارين.`,
+                  )}
                 </span>
                 <Button variant="secondary" onClick={() => setLetter({ employeeId: draft.employee_id, kind: "MED1" })}>
                   {bi("1ère mise en demeure", "الإعذار الأول")}

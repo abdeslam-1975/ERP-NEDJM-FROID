@@ -4,19 +4,17 @@ import { getHrEmployeeFiche } from "@/lib/actions/hr-employees";
 import { suggestExit } from "@/lib/actions/hr-exits";
 import { getHrFicheSettings } from "@/lib/actions/hr-fiche";
 import { getLetterContext } from "@/lib/actions/hr-letters";
+import { loadHrListItems, loadPrintKit } from "@/lib/doc/print-kit";
+import { LEAVE_KIND_LIST, leaveKindOptions, listLabel } from "@/lib/hr/hr-lists";
+import type { DocTypeId } from "@/lib/doc/registry";
+import { letterDocType } from "@/lib/hr/hr-letters";
 import { legalVarsAsOf } from "@/lib/hr/legal-vars-as-of";
 import { normalizeSettlementLines } from "@/lib/hr/leave";
-import {
-  OM_DONNEUR,
-  OM_FAIT_A,
-  OM_LIEU_DEPART,
-  pickMissionContract,
-  todayIsoAlgiers,
-} from "@/lib/hr/mission-order";
+import { pickMissionContract, todayIsoAlgiers } from "@/lib/hr/mission-order";
 import { loadPayrollSimulator } from "@/lib/hr/payroll-simulator-load";
 import type { createClient } from "@/lib/supabase/server";
 import { OM_FIELD_KEYS, type OmFieldKey, type OmSimData } from "@/lib/sim/documents";
-import { kindLabel, type LeaveSimData } from "@/lib/sim/leave";
+import type { LeaveSimData } from "@/lib/sim/leave";
 import type { SimRefOption, SimTargetId } from "@/lib/sim/targets-meta";
 import type { SimTargetData } from "@/lib/sim/targets";
 
@@ -77,11 +75,13 @@ async function load(
   }
 
   if (target === "titre_conge") {
+    const kit = await loadPrintKit(supabase, [letterDocType("LEAVE", "fr"), letterDocType("LEAVE", "ar")]);
+    if (!kit.ok) return kit;
     const leave = await loadLeave(supabase, employeeId, today);
     const approved = leave.requests.filter((r) => r.status === "APPROVED");
     const refs = approved.map((r) => ({
       value: r.id,
-      label: `${kindLabel(r.kind)} du ${frDate(r.start_date)} au ${frDate(r.end_date)} (${r.days} j)`,
+      label: `${listLabel(leave.kinds, r.kind).fr} du ${frDate(r.start_date)} au ${frDate(r.end_date)} (${r.days} j)`,
     }));
     const request = approved.find((r) => r.id === input.ref) ?? null;
     const ctx = await getLetterContext({
@@ -98,6 +98,7 @@ async function load(
           leave,
           letter: { ...ctx.data.values, kind: "LEAVE" },
           letterhead_url: ctx.data.letterhead_url,
+          kit: kit.data,
           request: request
             ? { id: request.id, kind: request.kind, start_date: request.start_date, end_date: request.end_date, days: request.days }
             : null,
@@ -120,13 +121,15 @@ async function load(
       .maybeSingle();
     if (error) return { ok: false, error: error.message };
     const exitDate = day(exitRow?.exit_date) ?? today;
-    const [leave, letter, suggestion] = await Promise.all([
+    const [leave, letter, suggestion, kit] = await Promise.all([
       loadLeave(supabase, employeeId, exitDate),
       getLetterContext({ employee_id: employeeId, kind: "STC" }),
       suggestExit({ employee_id: employeeId, exit_date: exitDate }),
+      loadPrintKit(supabase, [letterDocType("STC", "fr"), letterDocType("STC", "ar")]),
     ]);
     if (!letter.ok) return letter;
     if (!suggestion.ok) return suggestion;
+    if (!kit.ok) return kit;
     const paie = await loadPayrollSimulator(supabase, {
       year: Number(exitDate.slice(0, 4)),
       month: Number(exitDate.slice(5, 7)),
@@ -140,6 +143,7 @@ async function load(
           leave,
           letter: letter.data.values,
           letterhead_url: letter.data.letterhead_url,
+          kit: kit.data,
           exit: exitRow
             ? { date: exitDate, status: String(exitRow.status), lines: normalizeSettlementLines(exitRow.settlement_lines) }
             : null,
@@ -158,7 +162,7 @@ async function load(
 }
 
 async function loadLeave(supabase: Supabase, employeeId: string, asOf: string): Promise<LeaveSimData> {
-  const [emp, ctrs, reqs, adjs, vars] = await Promise.all([
+  const [emp, ctrs, reqs, adjs, vars, kinds] = await Promise.all([
     supabase.from("hr_employees").select("id, matricule, last_name, first_name").eq("id", employeeId).maybeSingle(),
     supabase
       .from("hr_contracts")
@@ -172,13 +176,16 @@ async function loadLeave(supabase: Supabase, employeeId: string, asOf: string): 
       .order("start_date"),
     supabase.from("hr_leave_adjustments").select("id, days, as_of, reason").eq("employee_id", employeeId).order("as_of"),
     legalVarsAsOf(supabase, asOf),
+    loadHrListItems(supabase, [LEAVE_KIND_LIST]),
   ]);
   for (const r of [emp, ctrs, reqs, adjs]) {
     if (r.error) throw new Error(r.error.message);
   }
+  if (!kinds.ok) throw new Error(kinds.error);
   if (!emp.data) throw new Error("Salarié introuvable.");
   return {
     employee: { id: emp.data.id, matricule: emp.data.matricule, name: `${emp.data.last_name} ${emp.data.first_name}`.trim() },
+    kinds: leaveKindOptions(kinds.data),
     as_of: asOf,
     rate: vars.CONGE_JOURS_MOIS ?? 2.5,
     contracts: (ctrs.data ?? [])
@@ -214,7 +221,7 @@ async function loadMission(
   ref: string | null,
   today: string,
 ): Promise<Result<SimLoaded>> {
-  const [orders, settings] = await Promise.all([
+  const [orders, settings, kit] = await Promise.all([
     supabase
       .from("hr_correspondences")
       .select("id, number, start_date, end_date, payload, status_code")
@@ -223,8 +230,11 @@ async function loadMission(
       .order("created_at", { ascending: false })
       .limit(50),
     getHrFicheSettings(),
+    loadPrintKit(supabase, ["ordre_mission", "ordre_mission_v1"]),
   ]);
   if (orders.error) return { ok: false, error: orders.error.message };
+  if (!kit.ok) return kit;
+  const company = kit.data.company;
   const rows = orders.data ?? [];
   const refs = rows.map((o) => ({
     value: o.id,
@@ -246,6 +256,7 @@ async function loadMission(
       fields,
       numero: picked.number ?? "",
       letterhead_url: letterhead,
+      kit: kit.data,
       today,
       original: { dateDepart: day(picked.start_date), dateRetour: day(picked.end_date) },
     };
@@ -278,17 +289,18 @@ async function loadMission(
         prenom: emp.first_name,
         affectation: site?.name_fr || emp.fiche_affectation || "",
         poste,
-        lieuDepart: OM_LIEU_DEPART,
+        lieuDepart: company.default_departure,
         pieceType: idType?.label_fr || emp.id_type_code || "",
         pieceNum: emp.id_number || "",
         pieceDelivre: (emp.id_issued_on || "").slice(0, 10),
         pieceLieu: emp.id_issued_by || "",
-        donneur: OM_DONNEUR,
-        faitA: OM_FAIT_A,
+        donneur: company.hr_service,
+        faitA: company.city_short,
         dateDoc: today,
       },
       numero: "",
       letterhead_url: letterhead,
+      kit: kit.data,
       today,
       original: null,
     };
@@ -320,8 +332,10 @@ async function loadContractDoc(supabase: Supabase, employeeId: string, ref: stri
     label: `${c.contract_number ?? "—"} · ${frDate(c.start_date)} → ${frDate(day(c.end_date))} · ${c.status}`,
   }));
   const chosen = list.find((c) => c.id === ref) ?? pickMissionContract(list, employeeId) ?? list[0];
-  const ctx = await getContractPrintContext(chosen.id);
+  const contractTypes: DocTypeId[] = ["contrat_cdd", "contrat_cdi"];
+  const [ctx, kit] = await Promise.all([getContractPrintContext(chosen.id), loadPrintKit(supabase, contractTypes)]);
   if (!ctx.ok) return ctx;
+  if (!kit.ok) return kit;
   const saved = (chosen.print_data ?? {}) as Record<string, unknown>;
   return {
     ok: true,
@@ -339,7 +353,7 @@ async function loadContractDoc(supabase: Supabase, employeeId: string, ref: stri
           },
           saved_keys: Object.keys(saved).filter((k) => typeof saved[k] === "string" && String(saved[k]).trim() !== ""),
           values: ctx.data.values,
-          template: ctx.data.template,
+          kit: kit.data,
         },
       },
       refs,

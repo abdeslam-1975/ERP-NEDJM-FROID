@@ -1,6 +1,8 @@
 /** Browser-side helpers of the document editor (the design view is a live DOM inside an iframe). */
 
 import { DOC_ATTR_PREFIX, DOC_EDITOR_MARKERS } from "@/lib/doc/engine";
+import { DOC_FONTS_STYLE_ID } from "@/lib/doc/fonts";
+import { PAGE_SETUP_STYLE_ID } from "@/lib/doc/page-setup";
 
 export const EDITOR_STYLE_ID = "nf-doc-editor-style";
 
@@ -29,6 +31,7 @@ function cleanElement(el: Element) {
 export function serializeDesign(doc: Document): string {
   const root = doc.documentElement.cloneNode(true) as HTMLElement;
   root.querySelector(`#${EDITOR_STYLE_ID}`)?.remove();
+  root.querySelector(`#${DOC_FONTS_STYLE_ID}`)?.remove();
   root.querySelectorAll("[data-doc-clone]").forEach((n) => n.remove());
   root.querySelectorAll("[data-field]").forEach((n) => {
     n.textContent = "";
@@ -190,14 +193,17 @@ export function escapeAttr(value: string) {
 }
 
 /** First <style> of the template (the document CSS edited in the side panel). */
+/** The page setup block of custom documents is rewritten from their settings, not edited as CSS. */
+const OWN_STYLE = `style:not(#${PAGE_SETUP_STYLE_ID}):not(#${DOC_FONTS_STYLE_ID})`;
+
 export function templateCss(html: string) {
   const doc = new DOMParser().parseFromString(html, "text/html");
-  return doc.head.querySelector("style")?.textContent ?? "";
+  return doc.head.querySelector(OWN_STYLE)?.textContent ?? "";
 }
 
 export function withTemplateCss(html: string, css: string) {
   const doc = new DOMParser().parseFromString(html, "text/html");
-  let style = doc.head.querySelector("style");
+  let style = doc.head.querySelector(OWN_STYLE);
   if (!style) {
     style = doc.createElement("style");
     doc.head.appendChild(style);

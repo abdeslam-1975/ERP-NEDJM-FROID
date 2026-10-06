@@ -6,9 +6,10 @@ import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import type { HrEmployeeFiche, HrEmployeeField } from "@/lib/actions/hr-employees";
 import { valuesFromFicheRecord } from "@/lib/hr/employee-field-utils";
 import { DEFAULT_FICHE_SETTINGS, type HrFicheSettings } from "@/lib/hr/fiche-settings";
-import { buildOfficialFicheHtml } from "@/components/rh/employee-fiche-print";
+import { FICHE_DOC_TYPES, ficheHtml } from "@/lib/hr/employee-fiche-doc";
+import { usePrintKit } from "@/components/doc/use-print-kit";
 import { printHtml } from "@/components/rh/print-frame";
-import { RhModal } from "@/components/rh/rh-ui";
+import { RhAlert, RhModal } from "@/components/rh/rh-ui";
 import { Button } from "@/components/ui/button";
 
 const A4_W = 794;
@@ -30,17 +31,16 @@ export function EmployeeCardPreview({
   onEdit: () => void;
   onClose: () => void;
 }) {
-  const html = useMemo(
+  const { kit, error } = usePrintKit(FICHE_DOC_TYPES);
+  const printed = useMemo(
     () =>
-      buildOfficialFicheHtml(
-        valuesFromFicheRecord(employee, fields),
-        catalogs,
-        fields,
-        fiche,
-        typeof window === "undefined" ? "" : window.location.origin,
-      ),
-    [employee, fields, catalogs, fiche],
+      kit
+        ? ficheHtml(kit, valuesFromFicheRecord(employee, fields), catalogs, fields, fiche, window.location.origin)
+        : null,
+    [kit, employee, fields, catalogs, fiche],
   );
+  const html = printed?.ok ? printed.data : "";
+  const problem = error ?? (printed && !printed.ok ? printed.error : null);
   const [box, setBox] = useState<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(0.6);
 
@@ -71,13 +71,18 @@ export function EmployeeCardPreview({
             <Pencil aria-hidden />
             Modifier
           </Button>
-          <Button onClick={() => printHtml(html, "hr-fiche-print-frame")}>
+          <Button disabled={!html} onClick={() => printHtml(html, "hr-fiche-print-frame")}>
             <Printer aria-hidden />
             Imprimer
           </Button>
         </>
       }
     >
+      {problem ? (
+        <div className="mb-3">
+          <RhAlert tone="danger">{problem}</RhAlert>
+        </div>
+      ) : null}
       <div ref={setBox} className="flex h-[calc(100dvh-12rem)] min-h-[24rem] items-start justify-center overflow-hidden rounded-xl bg-surface-muted/70 p-4">
         <div
           className="shrink-0 overflow-hidden rounded-sm bg-white shadow-[0_12px_40px_-12px_rgba(15,23,42,0.35)] ring-1 ring-black/5"

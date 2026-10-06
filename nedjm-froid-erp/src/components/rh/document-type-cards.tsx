@@ -17,7 +17,7 @@ export type DocumentTypeCard = {
 /** The HR documents, one compact card each: selecting a card shows its register below. */
 export function DocumentTypeCards({ cards }: { cards: DocumentTypeCard[] }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
       {cards.map(({ key, title, icon: Icon, color, summary, href, selected, onSelect }) => {
         const body = (
           <>

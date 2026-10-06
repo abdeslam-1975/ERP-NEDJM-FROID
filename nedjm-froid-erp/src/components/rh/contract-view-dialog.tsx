@@ -3,9 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pencil, Printer } from "lucide-react";
 import { getContractPrintContext, type ContractPrintContext } from "@/lib/actions/hr-contract-print";
-import { buildWorkContractHtml } from "@/components/rh/work-contract-print";
+import { usePrintKit } from "@/components/doc/use-print-kit";
+import { contractHtml } from "@/components/rh/contract-print-dialog";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhModal, bi } from "@/components/rh/rh-ui";
+
+const VIEW_DOC_TYPES = ["contrat_cdd", "contrat_cdi"] as const;
 
 /** The saved contract exactly as it prints, read-only, with Edit and Print. */
 export function ContractViewDialog({
@@ -38,16 +41,12 @@ export function ContractViewDialog({
     };
   }, [contractId]);
 
-  const html = useMemo(
-    () =>
-      context
-        ? buildWorkContractHtml(context.values, context.template).replace(
-            "</head>",
-            "<style>@media screen { body { padding: 28px 34px; } }</style></head>",
-          )
-        : "",
-    [context],
-  );
+  const { kit, error: kitError } = usePrintKit(VIEW_DOC_TYPES);
+  const printed = useMemo(() => (context && kit ? contractHtml(kit, context.values) : null), [context, kit]);
+  const html = printed?.ok
+    ? printed.data.replace("</head>", "<style>@media screen { body { padding: 28px 34px; } }</style></head>")
+    : "";
+  const shownError = error ?? kitError ?? (printed && !printed.ok ? printed.error : null);
 
   return (
     <RhModal
@@ -71,8 +70,8 @@ export function ContractViewDialog({
         </>
       }
     >
-      {error ? (
-        <RhAlert tone="danger">{error}</RhAlert>
+      {shownError ? (
+        <RhAlert tone="danger">{shownError}</RhAlert>
       ) : (
         <div className="h-[calc(100dvh-12rem)] min-h-[24rem] overflow-hidden rounded-xl bg-surface-muted/70 p-3">
           {html ? (

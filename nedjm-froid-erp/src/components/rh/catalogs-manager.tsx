@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import {
+  setCatalogItemActive,
   upsertCatalogItem,
   upsertCatalogKind,
   upsertLegend,
@@ -9,6 +10,7 @@ import {
   type CatalogKind,
   type LegendRow,
 } from "@/lib/actions/hr-catalogs";
+import { clearPrintKitCache } from "@/components/doc/use-print-kit";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { LegendCoefficientRequest } from "@/components/rh/legend-coefficient-request";
@@ -71,6 +73,7 @@ export function CatalogsManager({
     label_fr: "",
     extra: "{}",
     sort_order: 10,
+    is_active: true,
   });
   const [legOriginId, setLegOriginId] = useState("");
   const [legForm, setLegForm] = useState(emptyLegend);
@@ -79,6 +82,7 @@ export function CatalogsManager({
     () => rows.filter((r) => r.kind === kind),
     [rows, kind],
   );
+  const extraHint = kindList.find((k) => k.code === kind)?.extra_hint ?? null;
 
   const columns = useMemo(
     () => [
@@ -88,28 +92,61 @@ export function CatalogsManager({
         header: "AR",
         cell: (info) => <span dir="rtl">{info.getValue()}</span>,
       }),
+      col.accessor((r) => JSON.stringify(r.extra ?? {}), {
+        id: "extra",
+        header: "Extra",
+        meta: { className: "font-mono text-xs text-foreground/60" },
+        cell: (info) => (info.getValue() === "{}" ? "" : info.getValue()),
+      }),
+      col.accessor((r) => (r.is_active ? "Active" : "Archivée"), {
+        id: "status",
+        header: "Statut",
+        cell: (info) => <span className={info.row.original.is_active ? "" : "text-foreground/45"}>{info.getValue()}</span>,
+      }),
       col.display({
         id: "actions",
         header: "",
         enableSorting: false,
         enableHiding: false,
         cell: ({ row: { original: row } }) => (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() =>
-              setForm({
-                id: row.id,
-                code: row.code,
-                label_ar: row.label_ar,
-                label_fr: row.label_fr,
-                extra: JSON.stringify(row.extra ?? {}),
-                sort_order: row.sort_order,
-              })
-            }
-          >
-            Modifier
-          </Button>
+          <div className="flex justify-end gap-1 whitespace-nowrap">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setForm({
+                  id: row.id,
+                  code: row.code,
+                  label_ar: row.label_ar,
+                  label_fr: row.label_fr,
+                  extra: JSON.stringify(row.extra ?? {}),
+                  sort_order: row.sort_order,
+                  is_active: row.is_active,
+                })
+              }
+            >
+              Modifier
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setError(null);
+                start(async () => {
+                  const r = await setCatalogItemActive({ id: row.id, is_active: !row.is_active });
+                  if (!r.ok) {
+                    setError(r.error);
+                    return;
+                  }
+                  setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, is_active: !row.is_active } : x)));
+                  clearPrintKitCache();
+                  setInfo(row.is_active ? "Valeur archivée." : "Valeur réactivée.");
+                });
+              }}
+            >
+              {row.is_active ? "Archiver" : "Réactiver"}
+            </Button>
+          </div>
         ),
       }),
     ],
@@ -222,7 +259,7 @@ export function CatalogsManager({
           />
           <input
             className={rhInput}
-            placeholder='Extra JSON {"work_days":28}'
+            placeholder={extraHint ? "Extra JSON" : 'Extra JSON {"work_days":28}'}
             value={form.extra}
             onChange={(e) => setForm({ ...form, extra: e.target.value })}
           />
@@ -246,7 +283,7 @@ export function CatalogsManager({
                   label_fr: form.label_fr,
                   extra,
                   sort_order: form.sort_order,
-                  is_active: true,
+                  is_active: form.is_active,
                 });
                 if (!r.ok) {
                   setError(r.error);
@@ -263,10 +300,11 @@ export function CatalogsManager({
                     color_bg: null,
                     color_fg: null,
                     sort_order: form.sort_order,
-                    is_active: true,
+                    is_active: form.is_active,
                   };
                   return [...prev.filter((x) => x.id !== r.data.id), next];
                 });
+                clearPrintKitCache();
                 setForm({
                   id: "",
                   code: "",
@@ -274,6 +312,7 @@ export function CatalogsManager({
                   label_fr: "",
                   extra: "{}",
                   sort_order: 10,
+                  is_active: true,
                 });
                 setInfo("Valeur enregistrée.");
               });
@@ -282,6 +321,11 @@ export function CatalogsManager({
             Enregistrer
           </Button>
         </div>
+        {extraHint ? (
+          <p className="mt-2 font-mono text-xs text-foreground/60" dir="ltr">
+            {bi("Clés extra", "مفاتيح extra")} : {extraHint}
+          </p>
+        ) : null}
         <div className="mt-4">
           <DataTable
             data={filtered}

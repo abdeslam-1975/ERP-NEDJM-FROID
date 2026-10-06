@@ -9,12 +9,13 @@ import { bindMovementLabels } from "@/lib/doc/movement-labels";
  * - `data-if="expr"` keeps the element only when the expression is truthy;
  * - `data-each="expr"` repeats the element for every item (item keys, `$index`, `$first`, `$last`, `$item`);
  * - `data-attr-<name>="expr"` sets the attribute `<name>`;
- * - `data-bare` drops the element itself and keeps its content in the final output.
+ * - `data-bare` drops the element itself and keeps its content in the final output;
+ * - `data-ltr-numbers` keeps the numbers and dates of the element's text left-to-right (Arabic documents).
  */
 
 export type DocData = Record<string, unknown>;
 
-export const DOC_DIRECTIVES = ["data-field", "data-format", "data-if", "data-each", "data-bare"] as const;
+export const DOC_DIRECTIVES = ["data-field", "data-format", "data-if", "data-each", "data-bare", "data-ltr-numbers"] as const;
 export const DOC_ATTR_PREFIX = "data-attr-";
 /** Editor-only markers (never stored in a template). */
 export const DOC_EDITOR_MARKERS = ["data-doc-clone", "data-doc-empty", "data-doc-off", "data-doc-sel", "data-doc-chip"] as const;
@@ -30,6 +31,7 @@ export const DOC_FORMATS = [
   { id: "date", label: "Date (jj.mm.aaaa)" },
   { id: "date_slash", label: "Date (jj/mm/aaaa)" },
   { id: "upper", label: "MAJUSCULES" },
+  { id: "multiline", label: "Texte sur plusieurs lignes" },
 ] as const;
 
 export function escapeHtml(value: string) {
@@ -485,14 +487,45 @@ function renderNode(node: HTMLElement, attrs: RawAttrs, scopes: Scopes, design: 
   const field = attrValue(current, "data-field");
   if (field != null) {
     const format = attrValue(current, "data-format") ?? "";
-    node.childNodes = [new TextNode(escapeHtml(formatValue(evalExpr(field, scopes), format)), node)];
+    const text = escapeHtml(formatValue(evalExpr(field, scopes), format));
+    node.childNodes = [new TextNode(format === "multiline" ? text.replace(/\r?\n/g, "<br>") : text, node)];
     writeAttrs(node, design ? withMarker(out, "contenteditable", "false") : out);
   } else {
     writeAttrs(node, out);
     renderChildren(node, scopes, design);
   }
+  if (!design && current.some(([k]) => k.toLowerCase() === "data-ltr-numbers")) isolateNumbers(node);
   if (!design && current.some(([k]) => k.toLowerCase() === "data-bare")) return node.childNodes;
   return [node];
+}
+
+const NUMBER_RUN = /&#?\w+;|\d[\d\s.,/]*\d/g;
+const NO_ISOLATION = new Set(["style", "script", "title", "bdi"]);
+
+/** Wraps grouped numbers / dates of the text in `<bdi dir="ltr">` (entities are left untouched). */
+function isolateNumbers(el: HTMLElement) {
+  const next: Node[] = [];
+  for (const child of el.childNodes) {
+    if (child instanceof HTMLElement) {
+      if (!NO_ISOLATION.has(child.rawTagName?.toLowerCase() ?? "")) isolateNumbers(child);
+      next.push(child);
+      continue;
+    }
+    if (!(child instanceof TextNode) || !/\d/.test(child.rawText)) {
+      next.push(child);
+      continue;
+    }
+    const raw = child.rawText.replace(NUMBER_RUN, (m) => (m.startsWith("&") ? m : `<bdi dir="ltr">${m}</bdi>`));
+    if (raw === child.rawText) {
+      next.push(child);
+      continue;
+    }
+    for (const node of parseTemplate(raw).childNodes) {
+      node.parentNode = el;
+      next.push(node);
+    }
+  }
+  el.childNodes = next;
 }
 
 /** Renders a template for print (`design` keeps the editing markers). */
@@ -502,5 +535,16 @@ export function renderTemplate(html: string, data: DocData, options: RenderOptio
   bindMovementLabels(root);
   renderChildren(root, [data], Boolean(options.design));
   return root.toString();
+}
+
+/**
+ * Renders a template for print; with `origin`, relative asset URLs of the template (fonts, images)
+ * resolve against it, so print frames and server-side PDFs load them.
+ */
+export function renderDocument(html: string, data: DocData, origin = "") {
+  const out = renderTemplate(html, data);
+  if (!origin) return out;
+  const base = `<base href="${escapeHtml(origin.replace(/\/+$/, ""))}/">`;
+  return /<head[^>]*>/i.test(out) ? out.replace(/<head([^>]*)>/i, `<head$1>${base}`) : `${base}${out}`;
 }
 

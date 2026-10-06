@@ -1,10 +1,11 @@
-import { buildHrLetterHtml } from "@/components/rh/hr-letter-print";
+import { printFromKit, type PrintKit } from "@/lib/doc/print-kit";
 import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
-import type { LetterValues } from "@/lib/hr/hr-letters";
-import { calendarDays, leaveKindLabel, returnDate, suggestSettlement, type SettlementLine } from "@/lib/hr/leave";
+import { letterDocData, letterDocType, type LetterValues } from "@/lib/hr/hr-letters";
+import { activeOptions, isAnnualLeave, listLabel } from "@/lib/hr/hr-lists";
+import { calendarDays, returnDate, suggestSettlement, type SettlementLine } from "@/lib/hr/leave";
 import type { SimulatorData } from "@/lib/hr/payroll-simulator-load";
 import type { SimContext, SimEnv, SimFigure, SimOutput, SimVarDef } from "@/lib/sim/core";
-import { LEAVE_KIND_OPTIONS, leaveBalanceFromCtx, type LeaveSimData } from "@/lib/sim/leave";
+import { leaveBalanceFromCtx, leaveKindSimOptions, type LeaveSimData } from "@/lib/sim/leave";
 import { runPaie } from "@/lib/sim/paie";
 
 export const LETTER_PAGE_WIDTH = 800;
@@ -48,8 +49,13 @@ export function letterFromCtx(ctx: SimContext, v: LetterValues, skip: readonly L
   return out;
 }
 
-function letterHtml(v: LetterValues, letterheadUrl: string | null, env: SimEnv) {
-  return buildHrLetterHtml(v, companyLetterheadUrl(letterheadUrl, env.origin));
+/** Printed letter and the template data, so the simulator can open the letter's template editor. */
+function letterDoc(v: LetterValues, letterheadUrl: string | null, kit: PrintKit, env: SimEnv, warnings: string[]) {
+  const type = letterDocType(v.kind, v.lang);
+  const data = letterDocData(v, kit.company, companyLetterheadUrl(letterheadUrl, env.origin));
+  const printed = printFromKit(kit, type, data, env.origin);
+  if (!printed.ok) warnings.push(printed.error);
+  return { html: printed.ok ? printed.data : null, doc: { type, data } };
 }
 
 // ---------------------------------------------------------------------------
@@ -60,6 +66,7 @@ export type TitreSimData = {
   leave: LeaveSimData;
   letter: LetterValues;
   letterhead_url: string | null;
+  kit: PrintKit;
   request: { id: string; kind: string; start_date: string; end_date: string; days: number } | null;
 };
 
@@ -68,13 +75,14 @@ const G_TITRE = "Titre de congé";
 export function titreDefaults(d: TitreSimData) {
   const start = d.request?.start_date ?? d.leave.as_of;
   const end = d.request?.end_date ?? start;
-  return { kind: d.request?.kind ?? "ANNUAL", start, end, days: d.request?.days ?? calendarDays(start, end) };
+  const kind = d.request?.kind ?? activeOptions(d.leave.kinds)[0]?.code ?? "";
+  return { kind, start, end, days: d.request?.days ?? calendarDays(start, end) };
 }
 
 export function titreVariables(d: TitreSimData): SimVarDef[] {
   const def = titreDefaults(d);
   return [
-    { id: "titre.type", label: "Type de congé", group: G_TITRE, kind: "select", base: def.kind, options: LEAVE_KIND_OPTIONS },
+    { id: "titre.type", label: "Type de congé", group: G_TITRE, kind: "select", base: def.kind, options: leaveKindSimOptions(d.leave.kinds) },
     { id: "titre.du", label: "Du", group: G_TITRE, kind: "date", base: def.start },
     { id: "titre.au", label: "Au", group: G_TITRE, kind: "date", base: def.end },
     { id: "titre.jours", label: "Nombre de jours", group: G_TITRE, kind: "days", base: def.days, derived: true },
@@ -97,7 +105,7 @@ export function titreOutput(d: TitreSimData, ctx: SimContext, env: SimEnv): SimO
   if (!from || !to || to < from) warnings.push("Dates du congé incohérentes : « au » doit suivre « du ».");
 
   let balance: number | null = null;
-  if (kind === "ANNUAL" && to) {
+  if (isAnnualLeave(d.leave.kinds, kind) && to) {
     balance = ctx.deriveNum("titre.solde", () =>
       leaveBalanceFromCtx(ctx, d.leave, to, {
         exclude: d.request?.id ?? null,
@@ -107,7 +115,7 @@ export function titreOutput(d: TitreSimData, ctx: SimContext, env: SimEnv): SimO
     if (balance < 0) warnings.push(`Solde négatif après ce congé : ${balance} j.`);
   }
 
-  const label = leaveKindLabel(kind);
+  const label = listLabel(d.leave.kinds, kind);
   const v: LetterValues = {
     ...letterFromCtx(ctx, d.letter),
     kind: "LEAVE",
@@ -121,7 +129,7 @@ export function titreOutput(d: TitreSimData, ctx: SimContext, env: SimEnv): SimO
   };
   const figures: SimFigure[] = [{ key: "days", label: "Jours de congé", value: days, format: "days", emphasis: true }];
   if (balance != null) figures.push({ key: "balance", label: "Solde restant", value: balance, format: "days", goodWhenUp: true });
-  return { html: letterHtml(v, d.letterhead_url, env), pageWidth: LETTER_PAGE_WIDTH, figures, warnings };
+  return { ...letterDoc(v, d.letterhead_url, d.kit, env, warnings), pageWidth: LETTER_PAGE_WIDTH, figures, warnings };
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +140,7 @@ export type StcSimData = {
   leave: LeaveSimData;
   letter: LetterValues;
   letterhead_url: string | null;
+  kit: PrintKit;
   exit: { date: string; status: string; lines: SettlementLine[] } | null;
   base_monthly: number;
   /** Payroll inputs of the exit month (null when the employee has no payable contract then). */
@@ -223,5 +232,5 @@ export function stcOutput(d: StcSimData, ctx: SimContext, env: SimEnv): SimOutpu
   ];
   if (net != null) figures.push({ key: "net", label: "Net du mois", value: net, format: "money" });
   figures.push({ key: "amount", label: "Solde de tout compte", value: amount, format: "money", emphasis: true, goodWhenUp: true });
-  return { html: letterHtml(v, d.letterhead_url, env), pageWidth: LETTER_PAGE_WIDTH, figures, warnings };
+  return { ...letterDoc(v, d.letterhead_url, d.kit, env, warnings), pageWidth: LETTER_PAGE_WIDTH, figures, warnings };
 }

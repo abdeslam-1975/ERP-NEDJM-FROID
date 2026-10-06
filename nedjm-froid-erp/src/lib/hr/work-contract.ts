@@ -1,141 +1,9 @@
-/** Work contract (عقد عمل) printing: template, pre-filled values and Arabic formatting. */
+/** Work contract (عقد عمل) printing: pre-filled values, template data and Arabic formatting. */
 
-export type ContractArticle = {
-  key: string;
-  body: string;
-  /** Only printed for fixed-term contracts. */
-  cdd_only?: boolean;
-};
-
-export type ContractTemplate = {
-  title_cdd: string;
-  title_cdi: string;
-  legal_intro: string;
-  opening_cdd: string;
-  opening_cdi: string;
-  employer_block: string;
-  cdd_reason_intro: string;
-  cdd_reasons: string[];
-  articles: ContractArticle[];
-  note: string;
-  closing: string;
-  sig_employee: string;
-  sig_employer: string;
-  copies: string;
-};
-
-export const CONTRACT_PLACEHOLDERS = [
-  ["{essai}", "Période d'essai"],
-  ["{preavis}", "Préavis"],
-  ["{net}", "Net à payer"],
-  ["{net_lettres}", "Net en lettres"],
-  ["{recup}", "Indemnité récupération"],
-  ["{recup_lettres}", "Récupération en lettres"],
-  ["{retenue}", "Retenue / jour d'absence"],
-  ["{retenue_lettres}", "Retenue en lettres"],
-] as const;
-
-export const DEFAULT_CONTRACT_TEMPLATE: ContractTemplate = {
-  title_cdd: "عقد عمل محدد المدة",
-  title_cdi: "عقد عمل غير محدد المدة",
-  legal_intro:
-    "تطبيقًا للإجراءات المنصوص عليها في القانون رقم : 11/90 المؤرخ في 21 أفريل 1990 المتعلق بعلاقات العمل.",
-  opening_cdd: "يبرم هذا العقد المحدد المدة بين:",
-  opening_cdi: "يبرم هذا العقد غير المحدد المدة بين:",
-  employer_block:
-    'السيّد : **توزاري السعيد** مسير مؤسسة نجم التبريد الكائن مقرها بـ: تجزئة التعاونية العقارية رقم "01" 19 مارس 1962 حاسي مسعود ولاية ورقلة، وهذا بموجب تعديل القانون الأساسي المؤرخ في 2019/11/28 تحت رقم الفهرس 2019/951: بمكتب الأستاذ معماش النجاعي موثق بحي زادي مسعود عمارة س رقم 105 الطابق الأول بسطيف.',
-  cdd_reason_intro:
-    "يوظف السيد (ة) المذكور أعلاه في المنصب المتاح وهذا لأجل أحد الأسباب المذكورة في المادة 12 من القانون: 11/90 المتعلق بعلاقات العمل وهي:",
-  cdd_reasons: [
-    "عندما يوظف العامل(ة) عمل مرتبط بعقود وأشغال أو خدمات غير متجددة.",
-    "عندما يتعلق الأمر باستخلاف عامل مثبت في منصب تغيب عنه مؤقتاً.",
-    "عندما يتطلب الأمر من الهيئة المستخدمة إجراء أشغال ذات طابع منقطع.",
-    "عندما يبرر ذلك بتزايد العمل أو أسباب موسمية.",
-    "عندما يتعلق الأمر بنشاطات أو أشغال ذات مدة محدودة.",
-  ],
-  articles: [
-    {
-      key: "essai",
-      body: "يخضع العامل (ة) لفترة تجريبية قدرها {essai}، من خلالها يمكن للطرفين فسخ العقد دون إشعار مسبق ولا تعويض، ولا تدخل في حساب المدة كل العطل المرضية مهما كانت طبيعتها.",
-    },
-    {
-      key: "horaire",
-      body: "يؤدي العامل (ة) عمله حسب التوقيت المعتمد في الورشة (التي ينتمي إليها) والمتمثل في أربعة أسابيع عمل فعلي في مقابل ثلاثة أسابيع عطلة تعويضية وأسبوع عطلة سنوية.",
-    },
-    {
-      key: "fin",
-      cdd_only: true,
-      body: "ينتهي العقد خلال الفترة المتفق عليها ويمكن تجديده بطلب من المستخدِم (L'employeur).",
-    },
-    {
-      key: "preavis",
-      body: "إنّ مدّة الإخطار المسبق يجب أن لا تقل عن {preavis} وفي حالة التّخلي عن المنصب دون ذلك من غير القوة القاهرة (أسباب قوية ومقنعة) يتحمل العامل (ة) كل الخسائر المترتبة وإن لزم يتابع قضائيا.",
-    },
-    {
-      key: "salaire",
-      body: "يستفيد العامل (ة) مقابل عمله أجرا قدره **{net} دج** ({net_lettres}) دينار جزائري الأجر الصافي (Net\u00a0à\u00a0Payer) عن كل شهر عمل فعلي.",
-    },
-    {
-      key: "recup",
-      body: "يستفيد العامل خلال العطلة التعويضية متوسط **{recup} دج** ({recup_lettres}) دينار جزائري تحسب على أساس عدد أيام عطلته كالتالي: {recup} دج تُقسّم على عدد أيام الشهر وتُضرب في عدد أيام العطلة.",
-    },
-    {
-      key: "absence",
-      body: "يخضع العامل (ة) لاقتطاع قدره **{retenue} دج** ({retenue_lettres}) دينار جزائري عن كل يوم غياب غير مبرر، وفي حال وجود تبرير يسلم إلى الإدارة في غضون 24 ساعة الموالية للغياب، وإن كان طبيا يصادق عليه من قبل صندوق الضمان الاجتماعي.",
-    },
-    {
-      key: "reglement",
-      body: "يخضع العامل (ة) لأحكام هذا العقد ولقوانين النظام الداخلي للمؤسسة المؤرخ في 2010/05/03 والمصادق عليه من طرف السلطات المعنية والممثلة في محكمة المقر ومفتشية العمل لدائرة حاسي مسعود.",
-    },
-    {
-      key: "source",
-      body: "يعد النظام الداخلي للمؤسسة المصدر الأساسي لهذا العقد وفي حال وجود أي إشكال أو تصادم في هذا الأخير فلا بد من الرجوع والعودة إلى النظام الداخلي للمؤسسة.",
-    },
-  ],
-  note: 'إن النظام الداخلي متوفر ومنشور على مستوى حرم المؤسسة "قاعدة الحياة" وجميع الورشات وتسلَّم نسخة من هذا الأخير لكل عامل من عمال المؤسسة.',
-  closing: "إطلع المعني على مواد العقد ووافق عليه.",
-  sig_employee: "توقيع المعني وبصمته",
-  sig_employer: "توقيع الهيئة المستخدمة",
-  copies: "يوقع العقد في ثلاث نسخ أصلية:\n- نسخة للعامل.\n- نسختين لإدارة المؤسسة.",
-};
-
-function str(v: unknown, fallback: string) {
-  return typeof v === "string" ? v : fallback;
-}
-
-/** Stored template merged over the defaults (missing keys keep the PDF wording). */
-export function normalizeContractTemplate(raw: unknown): ContractTemplate {
-  const src = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-  const d = DEFAULT_CONTRACT_TEMPLATE;
-  const reasons = Array.isArray(src.cdd_reasons)
-    ? src.cdd_reasons.filter((r): r is string => typeof r === "string")
-    : d.cdd_reasons;
-  const articles = Array.isArray(src.articles)
-    ? src.articles
-        .filter((a): a is Record<string, unknown> => !!a && typeof a === "object")
-        .map((a, i) => ({
-          key: str(a.key, `art${i + 1}`),
-          body: str(a.body, ""),
-          cdd_only: a.cdd_only === true,
-        }))
-    : d.articles;
-  return {
-    title_cdd: str(src.title_cdd, d.title_cdd),
-    title_cdi: str(src.title_cdi, d.title_cdi),
-    legal_intro: str(src.legal_intro, d.legal_intro),
-    opening_cdd: str(src.opening_cdd, d.opening_cdd),
-    opening_cdi: str(src.opening_cdi, d.opening_cdi),
-    employer_block: str(src.employer_block, d.employer_block),
-    cdd_reason_intro: str(src.cdd_reason_intro, d.cdd_reason_intro),
-    cdd_reasons: reasons,
-    articles,
-    note: str(src.note, d.note),
-    closing: str(src.closing, d.closing),
-    sig_employee: str(src.sig_employee, d.sig_employee),
-    sig_employer: str(src.sig_employer, d.sig_employer),
-    copies: str(src.copies, d.copies),
-  };
-}
+import { parse } from "node-html-parser";
+import type { DocData } from "@/lib/doc/engine";
+import type { HrCompanyProfile } from "@/lib/hr/company-profile";
+import type { ContractTypeDefaults } from "@/lib/hr/hr-lists";
 
 export type ContractPrintValues = {
   numero: string;
@@ -229,13 +97,16 @@ function amountText(n: number | null | undefined) {
   return n == null || !Number.isFinite(Number(n)) || Number(n) === 0 ? "" : String(Number(n));
 }
 
-/** Fields pre-filled from the contract and employee file; values saved at the last print win. */
-export function contractPrintDefaults(src: ContractPrintSource): ContractPrintValues {
+/**
+ * Fields pre-filled from the contract, its type (Paramètres RH › Listes et codes: CDI flag, essai,
+ * préavis, motif du CDD) and the employee file; values saved at the last print win.
+ */
+export function contractPrintDefaults(src: ContractPrintSource, type: ContractTypeDefaults): ContractPrintValues {
   const e = src.employee;
   const nameAr = [clean(e.last_name_ar), clean(e.first_name_ar)].filter(Boolean).join(" ");
   const base: ContractPrintValues = {
     numero: clean(src.contract_number),
-    is_cdi: (src.contract_type_code ?? "").toUpperCase() === "CDI",
+    is_cdi: type.cdi,
     nom: nameAr || `${clean(e.last_name)} ${clean(e.first_name)}`.trim(),
     matricule: clean(e.matricule),
     birth_date: clean(e.birth_date),
@@ -251,9 +122,9 @@ export function contractPrintDefaults(src: ContractPrintSource): ContractPrintVa
     poste: clean(src.poste_ar) || clean(src.poste_fr),
     start_date: src.start_date.slice(0, 10),
     end_date: src.end_date ? src.end_date.slice(0, 10) : "",
-    cdd_reason: 5,
-    essai: "شهرا واحدا",
-    preavis: "ثلاثة أشهر",
+    cdd_reason: type.cdd_reason,
+    essai: type.essai,
+    preavis: type.preavis,
     net: amountText(src.salaire_net_ref_monthly),
     recup: amountText(src.salaire_net_recup_monthly),
     retenue: "",
@@ -407,44 +278,52 @@ export function arabicAmountWords(value: string | number): string {
   return cents ? `${words} و${arabicNumberWords(cents)} سنتيم` : words;
 }
 
-const ORDINALS = [
-  "الأولى",
-  "الثانية",
-  "الثالثة",
-  "الرابعة",
-  "الخامسة",
-  "السادسة",
-  "السابعة",
-  "الثامنة",
-  "التاسعة",
-  "العاشرة",
-  "الحادية عشر",
-  "الثانية عشر",
-  "الثالثة عشر",
-  "الرابعة عشر",
-  "الخامسة عشر",
-  "السادسة عشر",
-  "السابعة عشر",
-  "الثامنة عشر",
-  "التاسعة عشر",
-  "العشرون",
-];
-
-export function articleTitle(index: number) {
-  return `المادة ${ORDINALS[index] ?? String(index + 1)}`;
+export function contractDocType(v: Pick<ContractPrintValues, "is_cdi">) {
+  return v.is_cdi ? "contrat_cdi" : "contrat_cdd";
 }
 
-/** Placeholders of an article body replaced by the contract values. */
-export function fillContractText(body: string, v: ContractPrintValues) {
-  const map: Record<string, string> = {
-    "{essai}": v.essai,
-    "{preavis}": v.preavis,
-    "{net}": v.net ? formatDzd(v.net) : "..........",
-    "{net_lettres}": arabicAmountWords(v.net) || "..........",
-    "{recup}": v.recup ? formatDzd(v.recup) : "..........",
-    "{recup_lettres}": arabicAmountWords(v.recup) || "..........",
-    "{retenue}": v.retenue ? formatDzd(v.retenue) : "..........",
-    "{retenue_lettres}": arabicAmountWords(v.retenue) || "..........",
+/** Values printed by the contract templates (empty values print as a dotted blank). */
+export function contractDocData(v: ContractPrintValues, company: HrCompanyProfile): DocData {
+  const date = (iso: string, long = false) => (iso.trim() ? (long ? arabicLongDate(iso) : slashDate(iso)) : "");
+  const amount = (raw: string) => (raw ? formatDzd(raw) : "..........");
+  const words = (raw: string) => arabicAmountWords(raw) || "..........";
+  return {
+    company,
+    numero: v.numero.trim(),
+    nom: v.nom.trim(),
+    matricule: v.matricule.trim(),
+    birth_date: date(v.birth_date, true),
+    birth_place: v.birth_place.trim(),
+    father: v.father.trim(),
+    mother: v.mother.trim(),
+    marital: v.marital.trim(),
+    id_piece: v.id_piece,
+    id_number: v.id_number.trim(),
+    id_issued_on: date(v.id_issued_on),
+    id_issued_by: v.id_issued_by.trim(),
+    address: v.address.trim(),
+    poste: v.poste.trim(),
+    start_date: date(v.start_date),
+    end_date: date(v.end_date),
+    cdd_reason: v.cdd_reason,
+    essai: v.essai,
+    preavis: v.preavis,
+    net: amount(v.net),
+    net_words: words(v.net),
+    recup: amount(v.recup),
+    recup_words: words(v.recup),
+    retenue: amount(v.retenue),
+    retenue_words: words(v.retenue),
   };
-  return body.replace(/\{[a-z_]+\}/g, (token) => map[token] ?? token);
 }
+
+/** CDD reasons as listed (`ul.reasons > li`) in the contract template, in order. */
+export function contractCddReasons(template: string): string[] {
+  return parse(template)
+    .querySelectorAll("ul.reasons > li")
+    .map((li) => {
+      li.querySelectorAll(".num, .box").forEach((n) => n.remove());
+      return li.textContent.replace(/\s+/g, " ").trim();
+    });
+}
+

@@ -1,13 +1,24 @@
 import { describe, expect, it } from "vitest";
+import { renderDocument } from "@/lib/doc/engine";
+import { SEED_COMPANY } from "@/lib/doc/hr-docs.fixtures";
+import { seededTemplate } from "@/lib/doc/migration-templates";
 import {
-  defaultLetterBody,
+  defaultLetterBody as bodyFromTemplate,
   emptyLetterValues,
   frenchAmountWords,
   frenchNumberWords,
-  letterParagraphs,
+  letterBodyParagraphs,
+  letterDocData,
+  letterDocType,
   normalizeLetterValues,
+  type LetterValues,
 } from "@/lib/hr/hr-letters";
-import { buildHrLetterHtml } from "@/components/rh/hr-letter-print";
+
+const defaultLetterBody = (v: LetterValues) =>
+  bodyFromTemplate(seededTemplate(letterDocType(v.kind, v.lang)), letterDocData(v, SEED_COMPANY, ""));
+
+const buildHrLetterHtml = (v: LetterValues, letterhead: string) =>
+  renderDocument(seededTemplate(letterDocType(v.kind, v.lang)), letterDocData(v, SEED_COMPANY, letterhead));
 
 describe("frenchNumberWords", () => {
   it.each([
@@ -61,7 +72,11 @@ describe("letters", () => {
   });
 
   it("uses typed text when provided", () => {
-    expect(letterParagraphs({ ...v, body: "Ligne 1\n\nLigne 2" })).toEqual(["Ligne 1", "Ligne 2"]);
+    expect(letterBodyParagraphs("Ligne 1\n\nLigne 2")).toEqual(["Ligne 1", "Ligne 2"]);
+    expect(letterDocData({ ...v, body: "Ligne 1\n\nLigne 2" }, SEED_COMPANY, "").custom_body).toEqual([
+      "Ligne 1",
+      "Ligne 2",
+    ]);
   });
 
   it("writes the receipt amount in words", () => {

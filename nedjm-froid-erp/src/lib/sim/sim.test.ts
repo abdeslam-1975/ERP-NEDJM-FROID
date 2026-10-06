@@ -5,6 +5,8 @@ import { computeLeaveBalance } from "@/lib/hr/leave";
 import { initialScenario, runScenario } from "@/lib/hr/payroll-simulator";
 import { simData } from "@/lib/hr/payroll-simulator.fixture";
 import { seededTemplate } from "@/lib/doc/migration-templates";
+import { SEED_COMPANY, SEED_LISTS } from "@/lib/doc/hr-docs.fixtures";
+import type { PrintKit } from "@/lib/doc/print-kit";
 import { influenceOf, SimContext, trackedRecord, type SimOverrides, type SimVarDef } from "@/lib/sim/core";
 import type { OmSimData } from "@/lib/sim/documents";
 import type { LeaveSimData } from "@/lib/sim/leave";
@@ -12,6 +14,14 @@ import { leaveBalanceFromCtx } from "@/lib/sim/leave";
 import { linkedVariables, runSimulation, simVariables, type SimTargetData } from "@/lib/sim/targets";
 
 const env = { origin: "" };
+
+const kit: PrintKit = {
+  company: SEED_COMPANY,
+  templates: Object.fromEntries(
+    (["lettre_leave_fr", "lettre_leave_ar", "ordre_mission", "ordre_mission_v1"] as const).map((t) => [t, seededTemplate(t)]),
+  ),
+  lists: SEED_LISTS,
+};
 
 function setup(data: SimTargetData) {
   const defs = simVariables(data, env);
@@ -129,6 +139,7 @@ describe("fiche de paie element", () => {
 
 const leave: LeaveSimData = {
   employee: { id: "e1", matricule: "M001", name: "TEST" },
+  kinds: SEED_LISTS.leaveKinds,
   as_of: "2026-09-28",
   rate: 2.5,
   contracts: [
@@ -151,6 +162,7 @@ describe("congés", () => {
       adjustments: leave.adjustments.map((a) => ({ ...a, employee_id: "e1" })),
       asOf: "2026-09-28",
       ratePerMonth: 2.5,
+      annualKinds: ["ANNUAL"],
     });
     expect(figure({}, "balance")).toBe(expected.balance);
     expect(figure({ "conge.demande.q2.statut": "APPROVED" }, "balance")).toBe(expected.balance - 5);
@@ -164,6 +176,7 @@ describe("congés", () => {
       leave,
       letter: { ...emptyLetterValues("LEAVE"), nom_fr: "TEST" },
       letterhead_url: null,
+      kit,
       request: { id: "q1", kind: "ANNUAL", start_date: "2026-03-01", end_date: "2026-03-10", days: 10 },
     };
     const { run, map } = setup(data);
@@ -188,6 +201,7 @@ describe("ordre de mission", () => {
       fields: { ...fields, matricule: "M001", nom: "TEST", dateDepart: "2026-10-01", dateRetour: "2026-10-05" },
       numero: "",
       letterhead_url: null,
+      kit,
       today: "2026-09-28",
       original: null,
     };

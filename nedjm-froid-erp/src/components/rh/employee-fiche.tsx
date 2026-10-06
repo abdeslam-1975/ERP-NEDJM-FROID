@@ -14,7 +14,8 @@ import {
   RhModal,
   rhInput,
 } from "@/components/rh/rh-ui";
-import { buildOfficialFicheHtml } from "@/components/rh/employee-fiche-print";
+import { fetchPrintKit } from "@/components/doc/use-print-kit";
+import { FICHE_DOC_TYPES, ficheHtml } from "@/lib/hr/employee-fiche-doc";
 import { EmployeeDocumentsUpload } from "@/components/rh/employee-documents-upload";
 import { DEFAULT_FICHE_SETTINGS, type HrFicheSettings } from "@/lib/hr/fiche-settings";
 import {
@@ -89,6 +90,7 @@ export function EmployeeFicheDialog({
   onSearch: (query: string) => void;
 }) {
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [printError, setPrintError] = useState<string | null>(null);
   const [fieldHint, setFieldHint] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -127,15 +129,14 @@ export function EmployeeFicheDialog({
   }
 
   function printFiche() {
-    printHtml(
-      buildOfficialFicheHtml(
-        values,
-        catalogs,
-        fields,
-        fiche ?? DEFAULT_FICHE_SETTINGS,
-        window.location.origin,
-      ),
-    );
+    setPrintError(null);
+    void fetchPrintKit(FICHE_DOC_TYPES).then((kit) => {
+      const html = kit.ok
+        ? ficheHtml(kit.data, values, catalogs, fields, fiche ?? DEFAULT_FICHE_SETTINGS, window.location.origin)
+        : kit;
+      if (html.ok) printHtml(html.data);
+      else setPrintError(html.error);
+    });
   }
 
   return (
@@ -334,9 +335,9 @@ export function EmployeeFicheDialog({
           <RhAlert tone="warning">{fieldHint}</RhAlert>
         </div>
       ) : null}
-      {formError ? (
+      {formError || printError ? (
         <div className="mt-2">
-          <RhAlert tone="danger">{formError}</RhAlert>
+          <RhAlert tone="danger">{formError ?? printError}</RhAlert>
         </div>
       ) : null}
     </RhModal>

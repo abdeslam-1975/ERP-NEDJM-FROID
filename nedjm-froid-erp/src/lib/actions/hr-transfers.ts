@@ -6,6 +6,7 @@ import { requireHrSalaryValues } from "@/lib/auth/require-roles";
 import { createClient } from "@/lib/supabase/server";
 import { listPayrollSlips } from "@/lib/actions/hr-ops";
 import { getHrBulletinSettings } from "@/lib/actions/hr-bulletin";
+import { companyShortName } from "@/lib/doc/print-kit";
 import {
   buildReconciliationCsv,
   buildTransferFile,
@@ -289,7 +290,7 @@ export async function createTransferBatch(input: {
   const batchNo = numbered.data;
 
   const settings = await getHrBulletinSettings();
-  const employerName = (settings.ok ? settings.data.employer_name : "") || "NEDJM FROID";
+  const employerName = (settings.ok ? settings.data.employer_name : "") || (await companyShortName(supabase));
   const mm = String(input.month).padStart(2, "0");
   const file = buildTransferFile({
     mode: input.mode,

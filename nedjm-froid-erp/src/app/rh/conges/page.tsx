@@ -4,6 +4,7 @@ import {
   listLeaveAdjustments,
   listLeaveBalances,
   listLeaveEmployees,
+  listLeaveKinds,
   listLeaveRequests,
 } from "@/lib/actions/hr-leave";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
@@ -12,15 +13,16 @@ import { HR_SALARY_VALUE_ROLES, workspaceHasRole } from "@/lib/auth/require-role
 export const dynamic = "force-dynamic";
 
 export default async function LeavePage() {
-  const [requests, balances, adjustments, employees, workspace] = await Promise.all([
+  const [requests, balances, adjustments, employees, kinds, workspace] = await Promise.all([
     listLeaveRequests(),
     listLeaveBalances(),
     listLeaveAdjustments(),
     listLeaveEmployees(),
+    listLeaveKinds(),
     getWorkspaceProfile(),
   ]);
   const canDecide = workspace ? workspaceHasRole(workspace, HR_SALARY_VALUE_ROLES) : false;
-  const loadError = [requests, balances, adjustments, employees].find((r) => !r.ok);
+  const loadError = [requests, balances, adjustments, employees, kinds].find((r) => !r.ok);
   return (
     <RhShell title="Congés & absences">
       <LeaveManager
@@ -28,6 +30,7 @@ export default async function LeavePage() {
         initialBalances={balances.ok ? balances.data : []}
         initialAdjustments={adjustments.ok ? adjustments.data : []}
         employees={employees.ok ? employees.data : []}
+        leaveKinds={kinds.ok ? kinds.data : []}
         canDecide={canDecide}
         canRequest={Boolean(workspace)}
         loadError={loadError && !loadError.ok ? loadError.error : undefined}

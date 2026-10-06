@@ -14,7 +14,9 @@ import {
   type LetterLang,
   type LetterValues,
 } from "@/lib/hr/hr-letters";
-import { leaveKindLabel, normalizeSettlementLines, returnDate } from "@/lib/hr/leave";
+import { loadHrListItems } from "@/lib/doc/print-kit";
+import { isAnnualLeave, LEAVE_KIND_LIST, leaveKindOptions, listLabel } from "@/lib/hr/hr-lists";
+import { normalizeSettlementLines, returnDate } from "@/lib/hr/leave";
 import { pickMissionContract, todayIsoAlgiers, type MissionContractHint } from "@/lib/hr/mission-order";
 
 export type ActionResult<T = void> =
@@ -167,18 +169,23 @@ export async function getLetterContext(input: {
   let correspondence_id: string | null = null;
   if (input.kind === "LEAVE") {
     if (!input.leave_request_id) return { ok: false, error: "Demande de congé requise." };
-    const { data: req, error } = await supabase
-      .from("hr_leave_requests")
-      .select("kind, start_date, end_date, days, status, correspondence_id, corr:hr_correspondences ( number )")
-      .eq("id", input.leave_request_id)
-      .maybeSingle();
+    const [{ data: req, error }, kindItems] = await Promise.all([
+      supabase
+        .from("hr_leave_requests")
+        .select("kind, start_date, end_date, days, status, correspondence_id, corr:hr_correspondences ( number )")
+        .eq("id", input.leave_request_id)
+        .maybeSingle(),
+      loadHrListItems(supabase, [LEAVE_KIND_LIST]),
+    ]);
     if (error) return { ok: false, error: error.message };
+    if (!kindItems.ok) return kindItems;
     if (!req) return { ok: false, error: "Demande introuvable." };
+    const kinds = leaveKindOptions(kindItems.data);
     if (req.status !== "APPROVED") {
       return { ok: false, error: "Seul un congé approuvé peut être imprimé. · يجب اعتماد العطلة أولاً" };
     }
     const corr = Array.isArray(req.corr) ? req.corr[0] : req.corr;
-    const kindLabel = leaveKindLabel(req.kind);
+    const kindLabel = listLabel(kinds, req.kind);
     const end = String(req.end_date).slice(0, 10);
     v.numero = corr?.number ?? "";
     v.leave_kind_fr = kindLabel.fr;
@@ -187,7 +194,7 @@ export async function getLetterContext(input: {
     v.leave_to = end;
     v.leave_days = String(Number(req.days));
     v.leave_return = returnDate(end);
-    if (req.kind === "ANNUAL") {
+    if (isAnnualLeave(kinds, req.kind)) {
       const bal = await listLeaveBalances({ employeeId: input.employee_id, asOf: end });
       if (bal.ok && bal.data[0]) v.leave_balance = String(bal.data[0].balance);
     }

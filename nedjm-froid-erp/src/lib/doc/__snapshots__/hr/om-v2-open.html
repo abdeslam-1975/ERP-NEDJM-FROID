@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>ORDRE DE MISSION 000005/26</title>
+<style>
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url("/fonts/om/ibm-plex-sans-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url("/fonts/om/ibm-plex-sans-latin-ext.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/om/ibm-plex-sans-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/om/ibm-plex-sans-arabic-400.woff2") format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/om/ibm-plex-sans-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/om/ibm-plex-sans-arabic-500.woff2") format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/om/ibm-plex-sans-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/om/ibm-plex-sans-arabic-600.woff2") format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC; }
+@font-face { font-family: "Noto Naskh Arabic"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/om/noto-naskh-arabic-700.woff2") format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC; }
+@page { size: A4 portrait; margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #fff; color: #111; }
+#om-print-view {
+display: flex;
+flex-direction: column;
+width: 210mm;
+height: 297mm;
+position: relative;
+overflow: hidden;
+padding: 33mm 13mm 28mm 13mm;
+font-family: "IBM Plex Sans", "IBM Plex Sans Arabic", "Segoe UI", sans-serif;
+color: #111;
+background: #fff;
+}
+.om-letterhead {
+position: absolute;
+inset: 0;
+width: 210mm;
+height: 297mm;
+object-fit: fill;
+z-index: 0;
+pointer-events: none;
+}
+.om-head, .om-stack, .om-foot { position: relative; z-index: 1; }
+.om-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 3.5mm; }
+.om-ref { font-size: 13px; font-weight: 500; }
+.om-ref b { font-weight: 600; margin-left: 2mm; letter-spacing: .4px; }
+.om-title { display: inline-flex; flex-direction: column; color: #0d0d0d; }
+.om-title-ar { font-family: "Noto Naskh Arabic", "IBM Plex Sans Arabic", serif; font-size: 58px; font-weight: 700; line-height: 1.2; direction: rtl; text-align: center; white-space: nowrap; }
+/* Zero width + full min-width: the Arabic word alone sets the block width. */
+.om-title-fr { display: flex; justify-content: space-between; width: 0; min-width: 100%; font-size: 12.5px; font-weight: 600; line-height: 1; margin-top: .8mm; padding-top: 1.6mm; border-top: 1.2pt solid #0d0d0d; }
+.om-stack { flex: 1 1 auto; display: flex; flex-direction: column; gap: 2.5mm; min-height: 0; }
+.om-block { display: flex; flex-direction: column; }
+.om-id { flex: 1.15 1 0; }
+.om-trip { flex: 1 1 0; }
+.om-trans { flex: 1.3 1 0; }
+.om-sec { display: flex; align-items: center; gap: 3mm; padding: 1.5mm 0 1mm; font-size: 11.5px; font-weight: 600; letter-spacing: 1.6px; }
+.om-rule { flex: 1; border-top: .8pt solid #111; }
+.om-rows { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; padding: 0 1mm; }
+.om-row { display: grid; grid-template-columns: 34% 32% 34%; align-items: center; column-gap: 2.5mm; min-height: 7mm; }
+.om-fr { text-align: left; font-weight: 400; font-size: 12px; line-height: 1.3; color: #333; }
+.om-ar { text-align: right; font-weight: 400; font-size: 13px; line-height: 1.35; direction: rtl; color: #333; font-family: "IBM Plex Sans Arabic", sans-serif; }
+.om-val { text-align: center; font-size: 13px; font-weight: 600; line-height: 1.3; padding: 0 1.5mm; }
+.om-val:empty::before { content: ""; display: block; margin: 0 4mm; border-bottom: 1pt dotted #8a8a8a; height: 3.5mm; }
+.om-sub { display: block; font-weight: 400; font-size: 10.5px; margin-top: .3mm; color: #666; }
+.om-indent { padding-left: 6mm; }
+.om-modes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2mm; padding: 1.5mm 1mm; }
+.om-mode { display: flex; align-items: center; gap: 2mm; font-size: 12px; color: #333; }
+.om-check { width: 4.2mm; height: 4.2mm; border: .8pt solid #111; border-radius: 1mm; display: grid; place-items: center; font-size: 11px; font-weight: 600; line-height: 1; flex: 0 0 auto; color: #111; }
+.om-mode small { display: block; direction: rtl; font-size: 12px; text-align: left; font-family: "IBM Plex Sans Arabic", sans-serif; }
+.om-sign { flex: 1.45 1 0; display: grid; grid-template-columns: 1fr auto 1fr; column-gap: 5mm; min-height: 0; }
+.om-col { display: flex; flex-direction: column; min-width: 0; }
+.om-divider { border-left: .8pt solid #111; margin-top: 1.5mm; }
+.om-kv { display: grid; grid-template-columns: 24mm 1fr; align-items: baseline; gap: 2mm; min-height: 7.5mm; padding: 0 1mm; }
+.om-kv .om-val { text-align: left; font-size: 12px; padding: 0; }
+.om-kv .om-val:empty::before { margin: 0 8mm 0 0; }
+.om-visa { flex: 1; align-items: start; padding-top: 1.5mm; }
+.om-sign .om-row { grid-template-columns: 33% 37% 30%; padding: 0 1mm; }
+.om-sign .om-fr { font-size: 11.5px; }
+.om-sign .om-ar { font-size: 12.5px; }
+.om-sign .om-row .om-val { font-size: 12px; }
+.om-declare { margin: 2.5mm 1mm 0; font-size: 11.5px; line-height: 1.55; color: #333; font-style: italic; }
+.om-foot { display: grid; grid-template-columns: 1fr 1fr; column-gap: 10mm; align-items: end; font-size: 12px; color: #333; padding: 2.5mm 1mm 0; border-top: .8pt solid #111; margin-top: 2mm; }
+.om-foot-line { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 3mm; }
+.om-foot .om-val { color: #111; }
+.om-foot .om-ar { font-size: 13px; }
+@media print {
+html, body, .om-letterhead {
+-webkit-print-color-adjust: exact;
+print-color-adjust: exact;
+}
+}
+</style>
+</head>
+<body>
+<div id="om-print-view">
+<img class="om-letterhead" src="/hr-letterhead.png" alt="">
+<div class="om-head">
+<div class="om-ref">Réf :<b>NF/OM/0005/26</b>
+</div>
+<div class="om-title">
+<div class="om-title-ar">أمر بمهمة</div>
+<div class="om-title-fr" aria-label="ORDRE DE MISSION">
+<span>O</span>
+<span>R</span>
+<span>D</span>
+<span>R</span>
+<span>E</span>
+<span>
+</span>
+<span>D</span>
+<span>E</span>
+<span>
+</span>
+<span>M</span>
+<span>I</span>
+<span>S</span>
+<span>S</span>
+<span>I</span>
+<span>O</span>
+<span>N</span>
+</div>
+</div>
+</div>
+<div class="om-stack">
+<section class="om-block om-id">
+<div class="om-sec">
+<span>I. IDENTIFICATION DU MISSIONNAIRE</span>
+<span class="om-rule">
+</span>
+</div>
+<div class="om-rows">
+<div class="om-row">
+<div class="om-fr">Matricule :</div>
+<div class="om-val">05/26</div>
+<div class="om-ar">الرقم التسلسلي :</div>
+</div>
+<div class="om-row">
+<div class="om-fr">Nom et Prénom :</div>
+<div class="om-val">TAHRI CHAHINAZ</div>
+<div class="om-ar">الاسم واللقب :</div>
+</div>
+<div class="om-row">
+<div class="om-fr">Affectation :</div>
+<div class="om-val">ADMINISTRATION</div>
+<div class="om-ar">التعيين :</div>
+</div>
+<div class="om-row">
+<div class="om-fr">Code affectation :</div>
+<div class="om-val">ADM-01</div>
+<div class="om-ar">رمز التعيين :</div>
+</div>
+<div class="om-row">
+<div class="om-fr">Fonction :</div>
+<div class="om-val">Ingenieur</div>
+<div class="om-ar">الوظيفة :</div>
+</div>
+</div>
+</section>
+<section class="om-block om-trip">
+<div class="om-sec">
+<span>II. ITINÉRAIRE DE LA MISSION</span>
+<span class="om-rule">
+</span>
+</div>
+<div class="om-rows">
+<div class="om-row">
+<div class="om-fr">Destination(s) :</div>
+<div class="om-val">Ouargla — Touggourt</div>
+<div class="om-ar">الوجهة :</div>
+</div>
+<div class="om-row">
+<div class="om-fr">Départ :<span class="om-sub">(lieu et date)</span>
+</div>
+<div class="om-val">Hassi Messaoud — 12/09/2026</div>
+<div class="om-ar">الذهاب :<span class="om-sub">(المكان والتاريخ)</span>
+</div>
+</div>
+<div class="om-row">
+<div class="om-fr">Retour :<span class="om-sub">(lieu et date)</span>
+</div>
+<div class="om-val">Hassi Messaoud — Fin de mission</div>
+<div class="om-ar">العودة :<span class="om-sub">(المكان والتاريخ)</span>
+</div>
+</div>
+<div class="om-row">
+<div class="om-fr">Objet de la mission :</div>
+<div class="om-val">Installation chambre froide &lt;client&gt; &amp; co</div>
+<div class="om-ar">سبب المهمة :</div>
+</div>
+</div>
+</section>
+<section class="om-block om-trans">
+<div class="om-sec">
+<span>III. MODE DE TRANSPORT</span>
+<span class="om-rule">
+</span>
+</div>
+<div class="om-modes">
+<div class="om-mode">
+<span class="om-check">✓</span>
+<span>Tous moyens de transport<small>جميع وسائل النقل</small>
+</span>
+</div>
+<div class="om-mode">
+<span class="om-check">
+</span>
+<span>Véhicule de service<small>سيارة المصلحة</small>
+</span>
+</div>
+</div>
+<div class="om-rows">
+<div class="om-row">
+<div class="om-fr">Modèle :</div>
+<div class="om-val">Toyota Hilux</div>
+<div class="om-ar">النوع :</div>
+</div>
+<div class="om-row">
+<div class="om-fr">Immatriculation :</div>
+<div class="om-val">12345-120-30</div>
+<div class="om-ar">لوح الترقيم :</div>
+</div>
+<div class="om-row">
+<div class="om-fr">Kilométrage : au départ :</div>
+<div class="om-val">10500 km</div>
+<div class="om-ar">حساب العداد : عند الذهاب :</div>
+</div>
+<div class="om-row">
+<div class="om-fr">
+<span class="om-indent">au retour :</span>
+</div>
+<div class="om-val">10980 km</div>
+<div class="om-ar">عند العودة :</div>
+</div>
+</div>
+</section>
+<section class="om-sign">
+<div class="om-col">
+<div class="om-sec">
+<span>IV. VALIDATION</span>
+<span class="om-rule">
+</span>
+</div>
+<div class="om-kv">
+<span class="om-fr">Établi par :</span>
+<span class="om-val">Service RH</span>
+</div>
+<div class="om-kv">
+<span class="om-fr">Fonction :</span>
+<span class="om-val">Ingenieur</span>
+</div>
+<div class="om-kv om-visa">
+<span class="om-fr">Visa :</span>
+</div>
+</div>
+<div class="om-divider">
+</div>
+<div class="om-col">
+<div class="om-sec">
+<span>V. SIGNATURE DU MISSIONNAIRE</span>
+<span class="om-rule">
+</span>
+</div>
+<div class="om-row">
+<div class="om-fr">Pièce d'identité :</div>
+<div class="om-val">CNI</div>
+<div class="om-ar">وثيقة التعريف :</div>
+</div>
+<div class="om-row">
+<div class="om-fr">N° :</div>
+<div class="om-val">123456789</div>
+<div class="om-ar">رقم :</div>
+</div>
+<p class="om-declare">Je déclare avoir lu et pris connaissance des conditions de la présente mission et les accepter.</p>
+</div>
+</section>
+</div>
+<div class="om-foot">
+<div class="om-foot-line">
+<span>Le :</span>
+<span class="om-val">11/09/2026</span>
+<span class="om-ar">بتاريخ :</span>
+</div>
+<div class="om-foot-line">
+<span>Fait à :</span>
+<span class="om-val">HMD</span>
+<span class="om-ar">حرر في :</span>
+</div>
+</div>
+</div>
+</body>
+</html>

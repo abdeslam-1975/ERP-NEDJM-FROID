@@ -41,7 +41,8 @@ import {
 } from "@/lib/actions/hr-contract-print";
 import { contractTypeAllowsFixedIrg } from "@/lib/hr/compliance";
 import { contractPrintDefaults, type ContractPrintSource } from "@/lib/hr/work-contract";
-import { buildWorkContractHtml } from "@/components/rh/work-contract-print";
+import { contractTypeDefaults } from "@/lib/hr/hr-lists";
+import { usePrintKit } from "@/components/doc/use-print-kit";
 import { gridAsOf } from "@/lib/hr/payroll-calc";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
@@ -57,7 +58,7 @@ import {
   catalogOptions,
   rhInput,
 } from "@/components/rh/rh-ui";
-import { ContractPrintDialog } from "@/components/rh/contract-print-dialog";
+import { ContractPrintDialog, contractHtml } from "@/components/rh/contract-print-dialog";
 import { ContractViewDialog } from "@/components/rh/contract-view-dialog";
 import { WorkRegimeField } from "@/components/rh/work-regime-field";
 import { ContractRubriquesField } from "@/components/rh/contract-rubriques-field";
@@ -81,6 +82,8 @@ const STATUS_OPTIONS = [
   { value: "SUSPENDED", label: "Suspendu", dot: "bg-amber-500", tone: "warning" },
   { value: "ENDED", label: "Clôturé", dot: "bg-red-500", tone: "danger" },
 ] as const;
+
+const CONTRACT_DOC_TYPES = ["contrat_cdd", "contrat_cdi"] as const;
 
 const EMPTY_PRINT_EMPLOYEE: ContractPrintSource["employee"] = {
   matricule: "",
@@ -229,7 +232,6 @@ export function ContractsManager({
   assignments,
   complianceOptions,
   isSuperAdmin = false,
-  canEditSalaryValues = false,
   canEditCompliance = false,
   postes = [],
   agencies = [],
@@ -248,7 +250,6 @@ export function ContractsManager({
   assignments: SalaryAssignment[];
   complianceOptions: ContractComplianceOptions;
   isSuperAdmin?: boolean;
-  canEditSalaryValues?: boolean;
   canEditCompliance?: boolean;
   loadError?: string;
 }) {
@@ -320,8 +321,9 @@ export function ContractsManager({
     };
   }, [open, previewEmployee, previewContract]);
 
-  const previewHtml = useMemo(() => {
-    if (!open || !preview) return "";
+  const { kit: printKit, error: kitError } = usePrintKit(CONTRACT_DOC_TYPES);
+  const printedPreview = useMemo(() => {
+    if (!open || !preview || !printKit) return null;
     const current = preview.key === previewKey;
     const values = contractPrintDefaults({
       contract_number: current ? preview.contract_number : null,
@@ -334,12 +336,14 @@ export function ContractsManager({
       salaire_net_recup_monthly: form.salaire_net_recup_monthly ? Number(form.salaire_net_recup_monthly) : null,
       print_data: { ...(current ? preview.print_data : {}), retenue: form.retenue.trim() },
       employee: (current && preview.employee) || EMPTY_PRINT_EMPLOYEE,
-    });
-    return buildWorkContractHtml(values, preview.template).replace(
-      "</head>",
-      "<style>@media screen { body { padding: 28px 34px; } }</style></head>",
-    );
-  }, [open, preview, previewKey, form]);
+    }, contractTypeDefaults(catalogs, form.contract_type_code));
+    return contractHtml(printKit, values);
+  }, [open, preview, printKit, previewKey, form, catalogs]);
+  const previewHtml = printedPreview?.ok
+    ? printedPreview.data.replace("</head>", "<style>@media screen { body { padding: 28px 34px; } }</style></head>")
+    : "";
+  const previewProblem =
+    previewError ?? kitError ?? (printedPreview && !printedPreview.ok ? printedPreview.error : null);
   const employeeOptions = useMemo(
     () =>
       employees.map((e) => ({
@@ -1304,7 +1308,7 @@ export function ContractsManager({
                       />
                     ) : (
                       <p className="p-6 text-center text-sm text-foreground/60">
-                        {previewError ?? "Chargement de l'aperçu…"}
+                        {previewProblem ?? "Chargement de l'aperçu…"}
                       </p>
                     )}
                   </div>
@@ -1335,7 +1339,6 @@ export function ContractsManager({
       {printId ? (
         <ContractPrintDialog
           contractId={printId}
-          canEditTemplate={canEditSalaryValues}
           onClose={() => setPrintId(null)}
           onArchived={(url) => setArchives((prev) => ({ ...prev, [printId]: url }))}
         />

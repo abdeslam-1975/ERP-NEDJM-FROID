@@ -2,15 +2,18 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { getLetterContext, issueLetter } from "@/lib/actions/hr-letters";
+import { printFromKit, type PrintKit } from "@/lib/doc/print-kit";
 import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
 import {
   defaultLetterBody,
+  letterDocData,
+  letterDocType,
   letterKindLabel,
   type LetterKind,
   type LetterLang,
   type LetterValues,
 } from "@/lib/hr/hr-letters";
-import { buildHrLetterHtml } from "@/components/rh/hr-letter-print";
+import { usePrintKit } from "@/components/doc/use-print-kit";
 import { printHtml } from "@/components/rh/print-frame";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhField, RhModal, bi, rhInput } from "@/components/rh/rh-ui";
@@ -114,8 +117,20 @@ export function HrLetterDialog({
     };
   }, [employeeId, kind, leaveRequestId, correspondenceId]);
 
-  const letterheadUrl = typeof window === "undefined" ? "" : companyLetterheadUrl(letterhead, window.location.origin);
-  const html = useMemo(() => (values ? buildHrLetterHtml(values, letterheadUrl) : ""), [values, letterheadUrl]);
+  const docTypes = useMemo(() => [letterDocType(kind, "fr"), letterDocType(kind, "ar")], [kind]);
+  const { kit, error: kitError } = usePrintKit(docTypes);
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  const letterheadUrl = companyLetterheadUrl(letterhead, origin);
+  const render = (v: LetterValues, k: PrintKit) =>
+    printFromKit(k, letterDocType(v.kind, v.lang), letterDocData(v, k.company, letterheadUrl), origin);
+  const preview = values && kit ? render(values, kit) : null;
+  const html = preview?.ok ? preview.data : "";
+  const shownError = error ?? kitError ?? (preview && !preview.ok ? preview.error : null);
+
+  function startCustomText(v: LetterValues, k: PrintKit) {
+    const template = k.templates[letterDocType(v.kind, v.lang)] ?? "";
+    set("body", defaultLetterBody(template, letterDocData(v, k.company, letterheadUrl)).join("\n\n"));
+  }
 
   function set<K extends keyof LetterValues>(key: K, value: LetterValues[K]) {
     setValues((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -126,7 +141,7 @@ export function HrLetterDialog({
   }
 
   function print() {
-    if (!values) return;
+    if (!values || !kit) return;
     setError(null);
     start(async () => {
       const r = await issueLetter({ employee_id: employeeId, values, correspondence_id: corrId });
@@ -138,7 +153,9 @@ export function HrLetterDialog({
       setValues(next);
       setCorrId(r.data.id);
       onIssued?.(r.data.numero);
-      printHtml(buildHrLetterHtml(next, letterheadUrl), "hr-letter-print-frame");
+      const doc = render(next, kit);
+      if (doc.ok) printHtml(doc.data, "hr-letter-print-frame");
+      else setError(doc.error);
     });
   }
 
@@ -152,19 +169,19 @@ export function HrLetterDialog({
           <Button variant="secondary" onClick={onClose}>
             {bi("Fermer", "إغلاق")}
           </Button>
-          <Button disabled={pending || !values} onClick={print}>
+          <Button disabled={pending || !values || !kit} onClick={print}>
             {kind === "LEAVE" ? bi("Imprimer", "طباعة") : bi("Enregistrer et imprimer", "حفظ وطباعة")}
           </Button>
         </>
       }
     >
-      {error ? (
+      {shownError ? (
         <div className="mb-3">
-          <RhAlert tone="danger">{error}</RhAlert>
+          <RhAlert tone="danger">{shownError}</RhAlert>
         </div>
       ) : null}
       {!values ? (
-        error ? null : <p className="text-sm text-foreground/55">{bi("Chargement…", "جارٍ التحميل…")}</p>
+        shownError ? null : <p className="text-sm text-foreground/55">{bi("Chargement…", "جارٍ التحميل…")}</p>
       ) : (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
           <div className="space-y-3">
@@ -254,7 +271,8 @@ export function HrLetterDialog({
               <input
                 type="checkbox"
                 checked={customText}
-                onChange={(e) => set("body", e.target.checked ? defaultLetterBody(values).join("\n\n") : "")}
+                disabled={!kit}
+                onChange={(e) => (e.target.checked && kit ? startCustomText(values, kit) : set("body", ""))}
               />
               {bi("Modifier le texte librement", "تعديل النص")}
             </label>

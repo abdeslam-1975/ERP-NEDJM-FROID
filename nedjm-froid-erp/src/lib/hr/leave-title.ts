@@ -1,6 +1,9 @@
 import { z } from "zod";
-import { leaveKindLabel, returnDate } from "@/lib/hr/leave";
-import { OM_DONNEUR, OM_FAIT_A } from "@/lib/hr/mission-order";
+import type { DocData } from "@/lib/doc/engine";
+import { documentReference, type HrCompanyProfile } from "@/lib/hr/company-profile";
+import { listLabel, type LeaveKindOption, type PrintLists } from "@/lib/hr/hr-lists";
+import { returnDate } from "@/lib/hr/leave";
+import { formatOmDate, sheetDocData, type SheetDefaults } from "@/lib/hr/mission-order";
 
 const optText = (max: number) =>
   z
@@ -48,11 +51,14 @@ export type LeaveTitleLeave = {
   jours: number;
 };
 
-export function leaveTitlePayload(fields: LeaveTitleFields): Record<LeaveTitleFieldKey, string | null> {
+export function leaveTitlePayload(
+  fields: LeaveTitleFields,
+  defaults: SheetDefaults,
+): Record<LeaveTitleFieldKey, string | null> {
   return {
     ...fields,
-    donneur: fields.donneur ?? OM_DONNEUR,
-    faitA: fields.faitA ?? OM_FAIT_A,
+    donneur: fields.donneur ?? (defaults.hr_service || null),
+    faitA: fields.faitA ?? (defaults.city_short || null),
   };
 }
 
@@ -73,9 +79,8 @@ export function leaveOfCorrespondence(row: {
   };
 }
 
-export function leaveNature(kind: string) {
-  const label = leaveKindLabel(kind);
-  return { fr: label.fr, ar: label.ar };
+export function leaveNature(kinds: readonly LeaveKindOption[], kind: string) {
+  return listLabel(kinds, kind);
 }
 
 export function leaveReprise(dateFin: string) {
@@ -86,4 +91,35 @@ export function leaveDaysLabel(jours: number) {
   if (!jours) return "";
   const value = String(jours).replace(".", ",");
   return `${value} ${jours > 1 ? "jours" : "jour"}`;
+}
+
+/** "000005/26" → "NF/CNG/0005/26". */
+export function leaveTitleReference(numero: string | null | undefined, company: Pick<HrCompanyProfile, "doc_prefix">) {
+  return documentReference(company.doc_prefix, "CNG", numero);
+}
+
+export function leaveTitleDocData(
+  fields: LeaveTitleFields,
+  leave: LeaveTitleLeave,
+  numero: string | null | undefined,
+  company: HrCompanyProfile,
+  letterheadUrl: string,
+  lists: PrintLists,
+): DocData {
+  const periode =
+    leave.dateDebut && leave.dateFin ? `Du ${formatOmDate(leave.dateDebut)} au ${formatOmDate(leave.dateFin)}` : "";
+  const nature = leaveNature(lists.leaveKinds, leave.kind);
+  return {
+    ...sheetDocData(fields, company, letterheadUrl, lists),
+    numero: numero ?? "",
+    reference: leaveTitleReference(numero, company),
+    doc_title: `TITRE DE CONGÉ ${numero ?? ""}`.trim(),
+    nature: nature.fr,
+    nature_ar: nature.ar,
+    date_debut: formatOmDate(leave.dateDebut),
+    date_fin: formatOmDate(leave.dateFin),
+    periode,
+    jours: leaveDaysLabel(leave.jours),
+    reprise: formatOmDate(leaveReprise(leave.dateFin)),
+  };
 }

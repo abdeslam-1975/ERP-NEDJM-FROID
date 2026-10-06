@@ -1,20 +1,7 @@
 /** Leave balances and end-of-employment settlement (pure helpers). */
 import { isSalaryCategory, type SalaryCategory } from "@/lib/hr/payroll-calc";
 
-export type LeaveKind = "ANNUAL" | "RECOVERY" | "SICK" | "UNPAID" | "EXCEPTIONAL";
 export type LeaveStatus = "SUBMITTED" | "APPROVED" | "REJECTED" | "CANCELLED";
-
-export const LEAVE_KINDS: { code: LeaveKind; fr: string; ar: string; legend: string }[] = [
-  { code: "ANNUAL", fr: "Congé annuel", ar: "عطلة سنوية", legend: "CA" },
-  { code: "RECOVERY", fr: "Récupération", ar: "عطلة تعويضية", legend: "CRP" },
-  { code: "SICK", fr: "Congé maladie", ar: "عطلة مرضية", legend: "CM" },
-  { code: "UNPAID", fr: "Congé sans solde", ar: "عطلة بدون أجر", legend: "CSS" },
-  { code: "EXCEPTIONAL", fr: "Absence autorisée payée", ar: "غياب مرخص مدفوع", legend: "AOP" },
-];
-
-export function leaveKindLabel(kind: string) {
-  return LEAVE_KINDS.find((k) => k.code === kind) ?? { code: kind, fr: kind, ar: kind, legend: "" };
-}
 
 const DAY_MS = 86_400_000;
 
@@ -84,7 +71,10 @@ export type LeaveBalance = {
   balance: number;
 };
 
-/** Annual leave balance: adjustments + accrued (rate × months worked) − approved annual leave. */
+/**
+ * Annual leave balance: adjustments + accrued (rate × months worked) − approved annual leave.
+ * `annualKinds`: leave kinds counted in the balance (flag « annual » of the leave_kind list).
+ */
 export function computeLeaveBalance(input: {
   employeeId: string;
   contracts: ContractSpan[];
@@ -92,12 +82,13 @@ export function computeLeaveBalance(input: {
   adjustments: { employee_id: string; days: number }[];
   asOf: string;
   ratePerMonth: number;
+  annualKinds: readonly string[];
 }): LeaveBalance {
   const own = <T extends { employee_id: string }>(rows: T[]) => rows.filter((r) => r.employee_id === input.employeeId);
   const months = monthsWorked(own(input.contracts), input.asOf);
   const accrued = Math.round(months * input.ratePerMonth * 10) / 10;
   const adjustments = own(input.adjustments).reduce((s, a) => s + Number(a.days), 0);
-  const annual = own(input.requests).filter((r) => r.kind === "ANNUAL");
+  const annual = own(input.requests).filter((r) => input.annualKinds.includes(r.kind));
   const taken = annual.filter((r) => r.status === "APPROVED").reduce((s, r) => s + Number(r.days), 0);
   const pending = annual.filter((r) => r.status === "SUBMITTED").reduce((s, r) => s + Number(r.days), 0);
   return {
@@ -114,22 +105,6 @@ export function computeLeaveBalance(input: {
 // ---------------------------------------------------------------------------
 // End of employment
 // ---------------------------------------------------------------------------
-
-export const EXIT_REASONS: { code: string; fr: string; ar: string }[] = [
-  { code: "END_CDD", fr: "Fin de contrat (CDD)", ar: "انتهاء مدة العقد" },
-  { code: "RESIGNATION", fr: "Démission", ar: "استقالة" },
-  { code: "DISMISSAL", fr: "Licenciement", ar: "تسريح" },
-  { code: "ABANDON", fr: "Abandon de poste", ar: "إهمال المنصب" },
-  { code: "MUTUAL", fr: "Rupture à l'amiable", ar: "فسخ بالتراضي" },
-  { code: "TRIAL_END", fr: "Fin de période d'essai", ar: "إنهاء فترة التجربة" },
-  { code: "RETIREMENT", fr: "Retraite", ar: "تقاعد" },
-  { code: "DEATH", fr: "Décès", ar: "وفاة" },
-  { code: "OTHER", fr: "Autre", ar: "أخرى" },
-];
-
-export function exitReasonLabel(code: string) {
-  return EXIT_REASONS.find((r) => r.code === code) ?? { code, fr: code, ar: code };
-}
 
 export type SettlementLine = {
   code: string;

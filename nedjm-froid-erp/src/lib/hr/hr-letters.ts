@@ -1,5 +1,8 @@
 /** HR letters (attestation, certificat, solde de tout compte, mises en demeure, titre de congé). */
 
+import { parse } from "node-html-parser";
+import { renderTemplate, type DocData } from "@/lib/doc/engine";
+import type { HrCompanyProfile } from "@/lib/hr/company-profile";
 import { arabicAmountWords } from "@/lib/hr/work-contract";
 
 export type LetterKind = "ATTEST" | "CERTIF" | "STC" | "MED1" | "MED2" | "LEAVE";
@@ -13,9 +16,6 @@ export const LETTER_KINDS: { code: LetterKind; fr: string; ar: string }[] = [
   { code: "MED2", fr: "Mise en demeure (2ème et dernière)", ar: "إعذار ثانٍ وأخير" },
   { code: "LEAVE", fr: "Titre de congé", ar: "سند عطلة" },
 ];
-
-export const LETTER_COMPANY = { fr: "E.U.R.L. NEDJM FROID", ar: "مؤسسة نجم التبريد" };
-export const LETTER_PLACE = { fr: "Hassi Messaoud", ar: "حاسي مسعود" };
 
 export function letterKindLabel(code: string) {
   return LETTER_KINDS.find((k) => k.code === code) ?? { code, fr: code, ar: code };
@@ -199,64 +199,65 @@ export function parseAmount(raw: string): number {
 }
 
 // ---------------------------------------------------------------------------
-// Texts
+// Printed document: one template per kind and language (Paramètres RH › Documents)
 // ---------------------------------------------------------------------------
 
-export function letterTitle(v: Pick<LetterValues, "kind" | "lang">) {
-  const fr: Record<LetterKind, string> = {
-    ATTEST: "ATTESTATION DE TRAVAIL",
-    CERTIF: "CERTIFICAT DE TRAVAIL",
-    STC: "REÇU POUR SOLDE DE TOUT COMPTE",
-    MED1: "MISE EN DEMEURE",
-    MED2: "MISE EN DEMEURE",
-    LEAVE: "TITRE DE CONGÉ",
-  };
-  const ar: Record<LetterKind, string> = {
-    ATTEST: "إفادة عمل",
-    CERTIF: "شهادة عمل",
-    STC: "وصل تصفية كل حساب",
-    MED1: "إعذار",
-    MED2: "إعذار",
-    LEAVE: "سند عطلة",
-  };
-  return v.lang === "ar" ? ar[v.kind] : fr[v.kind];
+export type LetterDocType = `lettre_${Lowercase<LetterKind>}_${LetterLang}`;
+
+export function letterDocType(kind: LetterKind, lang: LetterLang): LetterDocType {
+  return `lettre_${kind.toLowerCase() as Lowercase<LetterKind>}_${lang}`;
 }
 
-export function letterSubtitle(v: Pick<LetterValues, "kind" | "lang">) {
-  if (v.kind === "MED1") return v.lang === "ar" ? "(الإعذار الأول)" : "(Première mise en demeure)";
-  if (v.kind === "MED2") return v.lang === "ar" ? "(الإعذار الثاني والأخير)" : "(Deuxième et dernière mise en demeure)";
-  return "";
+/** Paragraphs typed by the user (blank line between paragraphs). */
+export function letterBodyParagraphs(body: string): string[] {
+  return (body ?? "")
+    .trim()
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
 }
 
-/** Text placeholders filled by {@link fillLetter}. */
-function letterVars(v: LetterValues): Record<string, string> {
+/** Values printed by the letter templates; empty values print as dotted blanks. */
+export function letterDocData(v: LetterValues, company: HrCompanyProfile, letterheadUrl: string): DocData {
   const f = v.sex === "F";
   const ar = v.lang === "ar";
   const amount = parseAmount(v.amount);
   const val = (frV: string, arV: string) => (ar ? arV || frV : frV || arV) || "……………";
+  const date = (iso: string) => slashDateIso(iso) || "……………";
   return {
-    company: ar ? LETTER_COMPANY.ar : LETTER_COMPANY.fr,
+    letterhead: letterheadUrl,
+    company,
+    numero: v.numero || "……",
+    numero_raw: v.numero,
+    matricule: v.matricule,
+    matricule_txt: v.matricule || "……",
+    date_doc: slashDateIso(v.date_doc),
     civ: ar ? (f ? "السيدة" : "السيد") : f ? "Madame" : "Monsieur",
     civ_short: f ? "Mme" : "M.",
     nom: val(v.nom_fr, v.nom_ar),
-    matricule: v.matricule || "……",
-    birth_date: slashDateIso(v.birth_date) || "……………",
+    birth_date: date(v.birth_date),
     birth_place: val(v.birth_place_fr, v.birth_place_ar),
     poste: val(v.poste_fr, v.poste_ar),
-    start: slashDateIso(v.start_date) || "……………",
-    end: slashDateIso(v.end_date) || "……………",
+    recipient_address: ar ? v.address_ar || v.address_fr : v.address_fr || v.address_ar,
+    start: date(v.start_date),
+    end: date(v.end_date),
     leave_kind: val(v.leave_kind_fr, v.leave_kind_ar),
-    from: slashDateIso(v.leave_from) || "……………",
-    to: slashDateIso(v.leave_to) || "……………",
+    from: date(v.leave_from),
+    to: date(v.leave_to),
     days: v.leave_days || "……",
-    return: slashDateIso(v.leave_return) || "……………",
-    since: slashDateIso(v.absence_since) || "……………",
+    reprise: date(v.leave_return),
+    leave_balance: v.leave_balance,
+    since: date(v.absence_since),
     delai: v.delai || "08",
     ref: v.ref_numero || "……………",
-    ref_date: slashDateIso(v.ref_date) || "……………",
+    ref_date: date(v.ref_date),
     amount: formatAmount(amount),
     amount_words: ar ? arabicAmountWords(amount) : frenchAmountWords(amount),
-    // Gender agreement.
+    lines: v.lines.map((l) => ({
+      label: ar ? l.label_ar || l.label_fr : l.label_fr || l.label_ar,
+      amount: formatAmount(l.amount),
+    })),
+    custom_body: letterBodyParagraphs(v.body),
     e: f ? "e" : "",
     ne: f ? "née" : "né",
     il: f ? "Elle" : "Il",
@@ -273,137 +274,12 @@ function letterVars(v: LetterValues): Record<string, string> {
   };
 }
 
-const TEXTS: Record<LetterKind, Record<LetterLang, string[]>> = {
-  ATTEST: {
-    fr: [
-      "Nous soussignés, {company}, attestons par la présente que {civ} {nom}, {ne} le {birth_date} à {birth_place}, est employé{e} au sein de notre entreprise en qualité de {poste}, depuis le {start} à ce jour.",
-      "La présente attestation est délivrée à l'intéressé{e}, sur sa demande, pour servir et valoir ce que de droit.",
-    ],
-    ar: [
-      "نحن الموقعين أدناه، {company}، نشهد بأن {civ} {nom} {a_ne} بتاريخ {birth_date} بـ {birth_place}، {a_works} لدى مؤسستنا بصفة {poste} منذ {start} إلى يومنا هذا.",
-      "سلمت هذه الإفادة لـ{a_concerned} بناءً على طلب{a_her} لاستعمالها في حدود ما يسمح به القانون.",
-    ],
-  },
-  CERTIF: {
-    fr: [
-      "Nous soussignés, {company}, certifions que {civ} {nom}, {ne} le {birth_date} à {birth_place}, a été employé{e} au sein de notre entreprise en qualité de {poste}, du {start} au {end}.",
-      "{il} nous quitte libre de tout engagement.",
-      "Le présent certificat est délivré à l'intéressé{e} pour servir et valoir ce que de droit.",
-    ],
-    ar: [
-      "نحن الموقعين أدناه، {company}، نشهد بأن {civ} {nom} {a_ne} بتاريخ {birth_date} بـ {birth_place}، قد {a_worked} لدى مؤسستنا بصفة {poste} من {start} إلى {end}.",
-      "وقد {a_left} مؤسستنا {a_free} من كل التزام.",
-      "سلمت هذه الشهادة لـ{a_concerned} لاستعمالها في حدود ما يسمح به القانون.",
-    ],
-  },
-  STC: {
-    fr: [
-      "Je soussigné{e} {civ} {nom}, matricule {matricule}, ayant occupé le poste de {poste} du {start} au {end}, reconnais avoir reçu de {company} la somme de {amount} DA ({amount_words}), pour solde de tout compte, en paiement des salaires, accessoires de salaire et indemnités de toute nature dus au titre de l'exécution et de la cessation de mon contrat de travail.",
-      "Le présent reçu est établi en deux exemplaires, dont un m'a été remis.",
-    ],
-    ar: [
-      "أنا {a_signed} أدناه {civ} {nom}، رقم التسجيل {matricule}، {a_who} منصب {poste} من {start} إلى {end}، أقر بأنني استلمت من {company} مبلغ {amount} دج ({amount_words})، تصفيةً لكل حساب، مقابل الأجور وملحقاتها والتعويضات بجميع أنواعها المستحقة بعنوان تنفيذ عقد عملي وإنهائه.",
-      "حرر هذا الوصل في نسختين، سلمت لي نسخة منهما.",
-    ],
-  },
-  MED1: {
-    fr: [
-      "{civ},",
-      "Nous avons constaté votre absence de votre poste de travail ({poste}) depuis le {since}, sans autorisation ni justification à ce jour.",
-      "Par la présente, nous vous mettons en demeure de rejoindre votre poste de travail ou de justifier votre absence dans un délai de {delai} jours à compter de la réception de la présente.",
-      "À défaut, nous serons dans l'obligation de prendre à votre encontre les mesures prévues par le règlement intérieur et la législation en vigueur.",
-      "Veuillez agréer, {civ}, nos salutations distinguées.",
-    ],
-    ar: [
-      "{civ}،",
-      "لقد لاحظنا غيابك عن منصب عملك ({poste}) منذ {since} دون ترخيص أو مبرر إلى يومنا هذا.",
-      "وعليه، نعذرك بموجب هذه الرسالة بضرورة الالتحاق بمنصب عملك أو تبرير غيابك في أجل أقصاه {delai} أيام ابتداءً من تاريخ استلامك لهذا الإعذار.",
-      "وفي حالة عدم الامتثال، سنضطر إلى اتخاذ الإجراءات المنصوص عليها في النظام الداخلي والتشريع المعمول به.",
-      "تقبلوا منا فائق التقدير والاحترام.",
-    ],
-  },
-  MED2: {
-    fr: [
-      "{civ},",
-      "Malgré notre première mise en demeure n° {ref} du {ref_date}, restée sans suite, vous n'avez toujours pas rejoint votre poste de travail ({poste}), que vous avez quitté depuis le {since}.",
-      "Nous vous mettons en demeure, pour la deuxième et dernière fois, de reprendre votre travail dans un délai de {delai} jours à compter de la réception de la présente.",
-      "Passé ce délai, votre absence sera considérée comme un abandon de poste et entraînera votre licenciement pour faute grave, sans préavis ni indemnités, conformément à la réglementation en vigueur.",
-      "Veuillez agréer, {civ}, nos salutations distinguées.",
-    ],
-    ar: [
-      "{civ}،",
-      "رغم إعذارنا الأول رقم {ref} المؤرخ في {ref_date} الذي بقي دون رد، لم {a_join} بعد بمنصب عملك ({poste}) الذي تغيبت عنه منذ {since}.",
-      "وعليه، نعذرك للمرة الثانية والأخيرة بضرورة الالتحاق بمنصب عملك في أجل أقصاه {delai} أيام ابتداءً من تاريخ استلامك لهذا الإعذار.",
-      "وبانقضاء هذا الأجل، يعتبر غيابك إهمالاً للمنصب ويترتب عنه تسريحك بسبب خطأ جسيم دون مهلة إشعار ولا تعويض، طبقاً للتنظيم المعمول به.",
-      "تقبلوا منا فائق التقدير والاحترام.",
-    ],
-  },
-  LEAVE: {
-    fr: [
-      "Il est accordé à {civ} {nom}, matricule {matricule}, {poste}, un congé de {days} jour(s) ({leave_kind}), du {from} au {to} inclus.",
-      "L'intéressé{e} devra reprendre son poste de travail le {return}.",
-    ],
-    ar: [
-      "تمنح لـ{civ} {nom}، رقم التسجيل {matricule}، {poste}، {leave_kind} مدتها {days} يوماً، من {from} إلى {to} (مدمج).",
-      "وعلى {a_concerned} الالتحاق بمنصب عمل{a_her} يوم {return}.",
-    ],
-  },
-};
-
-export function fillLetter(text: string, vars: Record<string, string>) {
-  return text.replace(/\{(\w+)\}/g, (m, key: string) => (key in vars ? vars[key] : m));
-}
-
-/** Generated paragraphs, one string per paragraph. */
-export function defaultLetterBody(v: LetterValues): string[] {
-  const vars = letterVars(v);
-  return TEXTS[v.kind][v.lang].map((p) => fillLetter(p, vars));
-}
-
-export function letterParagraphs(v: LetterValues): string[] {
-  const own = v.body.trim();
-  if (!own) return defaultLetterBody(v);
-  return own
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
+/** Paragraphs of the template's standard text (marked `data-letter-body`), to start a free text from. */
+export function defaultLetterBody(template: string, data: DocData): string[] {
+  const html = renderTemplate(template, { ...data, custom_body: [] }, { design: true });
+  return parse(html)
+    .querySelectorAll("[data-letter-body] p")
+    .map((p) => p.text.replace(/\s+/g, " ").trim())
     .filter(Boolean);
 }
 
-/** Recipient block for mises en demeure. */
-export function letterRecipient(v: LetterValues) {
-  if (v.kind !== "MED1" && v.kind !== "MED2") return null;
-  const vars = letterVars(v);
-  const address = v.lang === "ar" ? v.address_ar || v.address_fr : v.address_fr || v.address_ar;
-  return {
-    name: `${vars.civ} ${vars.nom}`,
-    address,
-    object:
-      v.lang === "ar"
-        ? "الموضوع : غياب غير مبرر — إعذار بالالتحاق بمنصب العمل"
-        : "Objet : Absence irrégulière — Mise en demeure de reprendre le travail",
-    mode: v.lang === "ar" ? "رسالة موصى عليها مع إشعار بالاستلام" : "Lettre recommandée avec accusé de réception",
-  };
-}
-
-/** Detail rows printed under the text (titre de congé). */
-export function leaveDetailRows(v: LetterValues): [string, string][] {
-  if (v.kind !== "LEAVE") return [];
-  const vars = letterVars(v);
-  const ar = v.lang === "ar";
-  const rows: [string, string][] = [
-    [ar ? "طبيعة العطلة" : "Nature du congé", vars.leave_kind],
-    [ar ? "من" : "Du", vars.from],
-    [ar ? "إلى" : "Au", vars.to],
-    [ar ? "عدد الأيام" : "Nombre de jours", vars.days],
-    [ar ? "تاريخ الاستئناف" : "Date de reprise", vars.return],
-  ];
-  if (v.leave_balance) rows.push([ar ? "الرصيد المتبقي" : "Reliquat après congé", `${v.leave_balance} ${ar ? "يوم" : "j"}`]);
-  return rows;
-}
-
-export function letterSignatures(v: Pick<LetterValues, "kind" | "lang">): string[] {
-  const ar = v.lang === "ar";
-  if (v.kind === "STC") return ar ? ["إمضاء العامل (قرئ وصودق عليه)", "المستخدم"] : ["Le salarié (lu et approuvé)", "L'employeur"];
-  if (v.kind === "LEAVE") return ar ? ["المعني(ة)", "المديرية"] : ["L'intéressé(e)", "La Direction"];
-  return [ar ? "المسير" : "Le Gérant"];
-}

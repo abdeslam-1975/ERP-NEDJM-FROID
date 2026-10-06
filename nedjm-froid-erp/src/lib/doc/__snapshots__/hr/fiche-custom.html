@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>FICHE PERSONNELLE 05/26</title>
+<style>
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url("/fonts/om/ibm-plex-sans-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400 600; font-display: swap; src: url("/fonts/om/ibm-plex-sans-latin-ext.woff2") format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/om/ibm-plex-sans-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 400; font-display: swap; src: url("/fonts/om/ibm-plex-sans-arabic-400.woff2") format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/om/ibm-plex-sans-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 500; font-display: swap; src: url("/fonts/om/ibm-plex-sans-arabic-500.woff2") format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/om/ibm-plex-sans-latin.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-style: normal; font-weight: 600; font-display: swap; src: url("/fonts/om/ibm-plex-sans-arabic-600.woff2") format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC; }
+@font-face { font-family: "Noto Naskh Arabic"; font-style: normal; font-weight: 700; font-display: swap; src: url("/fonts/om/noto-naskh-arabic-700.woff2") format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1, U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC; }
+@page { size: A4 portrait; margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #fff; color: #111; }
+#om-print-view {
+display: flex;
+flex-direction: column;
+width: 210mm;
+height: 297mm;
+position: relative;
+overflow: hidden;
+padding: 33mm 13mm 26mm 13mm;
+font-family: "IBM Plex Sans", "IBM Plex Sans Arabic", "Segoe UI", sans-serif;
+color: #111;
+background: #fff;
+}
+.om-letterhead {
+position: absolute;
+inset: 0;
+width: 210mm;
+height: 297mm;
+object-fit: fill;
+z-index: 0;
+pointer-events: none;
+}
+.om-head, .om-stack, .om-foot { position: relative; z-index: 1; }
+.om-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 3mm; }
+.om-ref { font-size: 13px; font-weight: 500; }
+.om-ref b { font-weight: 600; margin-left: 2mm; letter-spacing: .4px; }
+.om-title { display: inline-flex; flex-direction: column; color: #0d0d0d; }
+.om-title-ar { font-family: "Noto Naskh Arabic", "IBM Plex Sans Arabic", serif; font-size: 46px; font-weight: 700; line-height: 1.2; direction: rtl; text-align: center; white-space: nowrap; }
+/* Zero width + full min-width: the Arabic word alone sets the block width. */
+.om-title-fr { display: flex; justify-content: space-between; width: 0; min-width: 100%; font-size: 11.5px; font-weight: 600; line-height: 1; margin-top: .8mm; padding-top: 1.6mm; border-top: 1.2pt solid #0d0d0d; }
+.om-stack { flex: 1 1 auto; display: flex; flex-direction: column; gap: 1.6mm; min-height: 0; }
+.om-block { display: flex; flex-direction: column; min-height: 0; }
+.om-sec { display: flex; align-items: center; gap: 3mm; padding: 1.2mm 0 .8mm; font-size: 11px; font-weight: 600; letter-spacing: 1.4px; }
+.om-rule { flex: 1; border-top: .8pt solid #111; }
+.fx-sec-ar { font-family: "IBM Plex Sans Arabic", sans-serif; font-size: 12.5px; letter-spacing: 0; direction: rtl; }
+.om-rows { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; padding: 0 1mm; }
+.fx-id { display: grid; grid-template-columns: 1fr 27mm; column-gap: 5mm; flex: 1; min-height: 0; }
+.fx-photo { align-self: center; width: 27mm; height: 34mm; border: .8pt solid #111; border-radius: 1mm; object-fit: cover; display: grid; place-items: center; text-align: center; font-size: 10px; line-height: 1.4; color: #888; }
+.fx-line { display: grid; column-gap: 6mm; }
+.fx-line.cols-1 { grid-template-columns: 1fr; }
+.fx-line.cols-2 { grid-template-columns: 1fr 1fr; }
+.fx-line.cols-3 { grid-template-columns: repeat(3, 1fr); }
+.fx-line.cols-4 { grid-template-columns: repeat(4, 1fr); }
+.fx-cell { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 2mm; min-height: 6mm; min-width: 0; }
+.om-fr { text-align: left; font-weight: 400; font-size: 11px; line-height: 1.25; color: #333; white-space: nowrap; }
+.om-ar { text-align: right; font-weight: 400; font-size: 12px; line-height: 1.3; direction: rtl; color: #333; font-family: "IBM Plex Sans Arabic", sans-serif; white-space: nowrap; }
+.om-val { text-align: center; font-size: 12px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.om-val:empty::before { content: ""; display: block; margin: 0 1mm; border-bottom: 1pt dotted #8a8a8a; height: 3.2mm; }
+.om-sign { flex: 0 0 38mm; margin-top: 1.5mm; display: grid; grid-template-columns: 1fr auto 1fr; column-gap: 5mm; min-height: 0; }
+.om-col { display: flex; flex-direction: column; min-width: 0; }
+.om-divider { border-left: .8pt solid #111; margin-top: 1.5mm; }
+.om-declare { margin: 1.5mm 1mm 0; font-size: 11px; line-height: 1.5; color: #333; font-style: italic; }
+.om-declare-ar { margin: .5mm 1mm 0; font-size: 12px; line-height: 1.5; color: #333; direction: rtl; text-align: right; font-family: "IBM Plex Sans Arabic", sans-serif; }
+.fx-admin { margin: 1.5mm 1mm 0; font-size: 11.5px; line-height: 1.5; color: #333; }
+.fx-admin b { font-weight: 600; color: #111; }
+.fx-visa { margin: auto 1mm 0; font-size: 11px; color: #333; }
+.om-foot { display: grid; grid-template-columns: 1fr 1fr; column-gap: 10mm; align-items: end; font-size: 12px; color: #333; padding: 2.5mm 1mm 0; border-top: .8pt solid #111; margin-top: 2mm; }
+.om-foot-line { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 3mm; }
+.om-foot .om-val { color: #111; }
+.om-foot .om-ar { font-size: 13px; }
+@media print {
+html, body, .om-letterhead {
+-webkit-print-color-adjust: exact;
+print-color-adjust: exact;
+}
+}
+</style>
+</head>
+<body>
+<div id="om-print-view">
+<img class="om-letterhead" src="/hr-letterhead.png" alt="">
+<div class="om-head">
+<div class="om-ref">Matricule :<b>05/26</b>
+</div>
+<div class="om-title">
+<div class="om-title-ar">بطاقة المعلومات</div>
+<div class="om-title-fr" aria-label="FICHE PERSONNELLE">
+<span>F</span>
+<span>I</span>
+<span>C</span>
+<span>H</span>
+<span>E</span>
+<span>
+</span>
+<span>P</span>
+<span>E</span>
+<span>R</span>
+<span>S</span>
+<span>O</span>
+<span>N</span>
+<span>N</span>
+<span>E</span>
+<span>L</span>
+<span>L</span>
+<span>E</span>
+</div>
+</div>
+</div>
+<div class="om-stack">
+<section class="om-block" style="flex: 6 1 0">
+<div class="om-sec">
+<span>I. IDENTIFICATION DE L'EMPLOYÉ(E)</span>
+<span class="om-rule">
+</span>
+<span class="fx-sec-ar">هوية العامل(ة)</span>
+</div>
+<div class="fx-id">
+<div class="om-rows">
+<div class="fx-line cols-2">
+<div class="fx-cell">
+<span class="om-fr">Nom :</span>
+<span class="om-val">TAHRI</span>
+<span class="om-ar">اللقب :</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">Prénom :</span>
+<span class="om-val">Chahinaz</span>
+<span class="om-ar">الاسم :</span>
+</div>
+</div>
+<div class="fx-line cols-2">
+<div class="fx-cell">
+<span class="om-fr">Date de naissance :</span>
+<span class="om-val">03/04/1995</span>
+<span class="om-ar">تاريخ الميلاد :</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">Lieu de naissance :</span>
+<span class="om-val">Ouargla</span>
+<span class="om-ar">مكان الميلاد :</span>
+</div>
+</div>
+<div class="fx-line cols-2">
+<div class="fx-cell">
+<span class="om-fr">Commune de naissance :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">birth_act_no :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+<div class="fx-line cols-2">
+<div class="fx-cell">
+<span class="om-fr">Nationalité :</span>
+<span class="om-val">Algérienne</span>
+<span class="om-ar">الجنسية :</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">Sexe :</span>
+<span class="om-val">Féminin</span>
+<span class="om-ar">الجنس :</span>
+</div>
+</div>
+<div class="fx-line cols-2">
+<div class="fx-cell">
+<span class="om-fr">Situation familiale :</span>
+<span class="om-val">Marié(e)</span>
+<span class="om-ar">الحالة العائلية :</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">blood_code :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+</div>
+<div class="fx-photo">Photo<br>صورة</div>
+</div>
+</section>
+<section class="om-block" style="flex: 4 1 0">
+<div class="om-sec">
+<span>II. AFFILIATION &amp; ADRESSE</span>
+<span class="om-rule">
+</span>
+<span class="fx-sec-ar">النسب والعنوان</span>
+</div>
+<div class="om-rows">
+<div class="fx-line cols-1">
+<div class="fx-cell">
+<span class="om-fr">Prénom du père :</span>
+<span class="om-val">Ahmed &lt;x&gt;</span>
+<span class="om-ar">اسم الأب :</span>
+</div>
+</div>
+<div class="fx-line cols-1">
+<div class="fx-cell">
+<span class="om-fr">mother_name :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+<div class="fx-line cols-3">
+<div class="fx-cell">
+<span class="om-fr">commune :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">wilaya_code :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">postal_code :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+<div class="fx-line cols-1">
+<div class="fx-cell">
+<span class="om-fr">Adresse :</span>
+<span class="om-val">Cité 5 juillet</span>
+<span class="om-ar">العنوان :</span>
+</div>
+</div>
+</div>
+</section>
+<section class="om-block" style="flex: 5 1 0">
+<div class="om-sec">
+<span>III. IDENTITÉ &amp; ADMINISTRATIVE</span>
+<span class="om-rule">
+</span>
+<span class="fx-sec-ar">الهوية والوضعية الإدارية</span>
+</div>
+<div class="om-rows">
+<div class="fx-line cols-2">
+<div class="fx-cell">
+<span class="om-fr">id_type_code :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">id_number :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+<div class="fx-line cols-2">
+<div class="fx-cell">
+<span class="om-fr">id_issued_on :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">id_expires_on :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+<div class="fx-line cols-1">
+<div class="fx-cell">
+<span class="om-fr">id_issued_by :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+<div class="fx-line cols-2">
+<div class="fx-cell">
+<span class="om-fr">nin :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">nss :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+<div class="fx-line cols-1">
+<div class="fx-cell">
+<span class="om-fr">account_no :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+</div>
+</section>
+<section class="om-block" style="flex: 5 1 0">
+<div class="om-sec">
+<span>IV. SITUATION PROFESSIONNELLE &amp; ÉTUDES</span>
+<span class="om-rule">
+</span>
+<span class="fx-sec-ar">الوضعية المهنية والدراسة</span>
+</div>
+<div class="om-rows">
+<div class="fx-line cols-1">
+<div class="fx-cell">
+<span class="om-fr">poste :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+<div class="fx-line cols-1">
+<div class="fx-cell">
+<span class="om-fr">affectation :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+<div class="fx-line cols-2">
+<div class="fx-cell">
+<span class="om-fr">hired_at :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">declaration_date :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+<div class="fx-line cols-2">
+<div class="fx-cell">
+<span class="om-fr">level_code :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">diploma_fr :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+<div class="fx-line cols-2">
+<div class="fx-cell">
+<span class="om-fr">Expérience :</span>
+<span class="om-val">4 Ans</span>
+<span class="om-ar">الخبرة :</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">languages :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+</div>
+</section>
+<section class="om-block" style="flex: 2 1 0">
+<div class="om-sec">
+<span>V. CONTACTS</span>
+<span class="om-rule">
+</span>
+<span class="fx-sec-ar">وسائل الاتصال</span>
+</div>
+<div class="om-rows">
+<div class="fx-line cols-2">
+<div class="fx-cell">
+<span class="om-fr">Téléphone :</span>
+<span class="om-val">+213 0550123456</span>
+<span class="om-ar">الهاتف :</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">whatsapp :</span>
+<span class="om-val">
+</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+<div class="fx-line cols-1">
+<div class="fx-cell">
+<span class="om-fr">Email :</span>
+<span class="om-val">c.tahri@example.dz</span>
+<span class="om-ar">
+</span>
+</div>
+</div>
+</div>
+</section>
+<section class="om-block" style="flex: 1 1 0">
+<div class="om-sec">
+<span>VI. DIVERS</span>
+<span class="om-rule">
+</span>
+</div>
+<div class="om-rows">
+<div class="fx-line cols-2">
+<div class="fx-cell">
+<span class="om-fr">Email :</span>
+<span class="om-val">c.tahri@example.dz</span>
+<span class="om-ar">
+</span>
+</div>
+<div class="fx-cell">
+<span class="om-fr">Téléphone :</span>
+<span class="om-val">+213 0550123456</span>
+<span class="om-ar">الهاتف :</span>
+</div>
+</div>
+</div>
+</section>
+<section class="om-sign">
+<div class="om-col">
+<div class="om-sec">
+<span>VII. L'EMPLOYÉ(E)</span>
+<span class="om-rule">
+</span>
+<span class="fx-sec-ar">العامل(ة)</span>
+</div>
+<p class="om-declare">Je certifie l'exactitude des renseignements ci-dessus.</p>
+<p class="om-declare-ar">أشهد بصحة المعلومات المذكورة أعلاه.</p>
+<div class="fx-visa">Signature :</div>
+</div>
+<div class="om-divider">
+</div>
+<div class="om-col">
+<div class="om-sec">
+<span>VIII. L'ADMINISTRATION</span>
+<span class="om-rule">
+</span>
+<span class="fx-sec-ar">الإدارة</span>
+</div>
+<div class="fx-admin">
+
+Administration
+</div>
+<div class="fx-visa">Visa :</div>
+</div>
+</section>
+</div>
+<div class="om-foot">
+<div class="om-foot-line">
+<span>Le :</span>
+<span class="om-val">06/10/2026</span>
+<span class="om-ar">بتاريخ :</span>
+</div>
+<div class="om-foot-line">
+<span>Fait à :</span>
+<span class="om-val">HMD</span>
+<span class="om-ar">حرر في :</span>
+</div>
+</div>
+</div>
+</body>
+</html>

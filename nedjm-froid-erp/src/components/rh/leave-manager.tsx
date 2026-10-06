@@ -15,7 +15,8 @@ import {
   type LeaveEmployee,
   type LeaveRequestRow,
 } from "@/lib/actions/hr-leave";
-import { LEAVE_KINDS, calendarDays, leaveKindLabel, type LeaveKind } from "@/lib/hr/leave";
+import { calendarDays } from "@/lib/hr/leave";
+import { activeOptions, isAnnualLeave, type LeaveKindOption } from "@/lib/hr/hr-lists";
 import { slashDateIso } from "@/lib/hr/hr-letters";
 import { HrLetterDialog } from "@/components/rh/hr-letter-dialog";
 import { Button } from "@/components/ui/button";
@@ -63,6 +64,7 @@ export function LeaveManager({
   initialBalances,
   initialAdjustments,
   employees,
+  leaveKinds,
   canDecide,
   canRequest,
   loadError,
@@ -71,6 +73,7 @@ export function LeaveManager({
   initialBalances: LeaveBalanceRow[];
   initialAdjustments: LeaveAdjustmentRow[];
   employees: LeaveEmployee[];
+  leaveKinds: LeaveKindOption[];
   canDecide: boolean;
   canRequest: boolean;
   loadError?: string;
@@ -85,9 +88,12 @@ export function LeaveManager({
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [printRow, setPrintRow] = useState<LeaveRequestRow | null>(null);
+  const kindChoices = activeOptions(leaveKinds);
+  const kindOf = (code: string) =>
+    leaveKinds.find((k) => k.code === code) ?? { code, fr: code, ar: code, legend: "", annual: false, active: false };
   const emptyDraft = {
     employee_id: "",
-    kind: "ANNUAL" as LeaveKind,
+    kind: kindChoices[0]?.code ?? "",
     start_date: "",
     end_date: "",
     days: "",
@@ -134,7 +140,7 @@ export function LeaveManager({
     if (status !== "APPROVED") {
       note = window.prompt(bi("Motif (facultatif)", "السبب"), "") ?? null;
       if (note === null && status === "REJECTED") return;
-    } else if (row.kind === "ANNUAL") {
+    } else if (isAnnualLeave(leaveKinds, row.kind)) {
       const bal = balanceOf.get(row.employee_id);
       if (bal && bal.balance < row.days) {
         const ok = window.confirm(
@@ -195,14 +201,14 @@ export function LeaveManager({
         </>
       ),
     }),
-    requestCol.accessor((r) => leaveKindLabel(r.kind).fr, {
+    requestCol.accessor((r) => kindOf(r.kind).fr, {
       id: "kind",
       header: bi("Nature", "النوع"),
       cell: ({ row }) => {
-        const k = leaveKindLabel(row.original.kind);
+        const k = kindOf(row.original.kind);
         return (
           <>
-            {k.fr} <span className="text-xs text-foreground/50">({k.legend})</span>
+            {k.fr} {k.legend ? <span className="text-xs text-foreground/50">({k.legend})</span> : null}
             {row.original.cnas_ref ? (
               <div className="text-xs text-foreground/55">CNAS : {row.original.cnas_ref}</div>
             ) : null}
@@ -373,11 +379,12 @@ export function LeaveManager({
                   <select
                     className={rhInput}
                     value={draft.kind}
-                    onChange={(e) => setDraft({ ...draft, kind: e.target.value as LeaveKind })}
+                    onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
                   >
-                    {LEAVE_KINDS.map((k) => (
+                    {kindChoices.map((k) => (
                       <option key={k.code} value={k.code}>
-                        {k.fr} · {k.ar} ({k.legend})
+                        {k.fr} · {k.ar}
+                        {k.legend ? ` (${k.legend})` : ""}
                       </option>
                     ))}
                   </select>

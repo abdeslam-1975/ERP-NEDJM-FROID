@@ -1,8 +1,11 @@
-import { computeLeaveBalance, LEAVE_KINDS, monthsWorked, type LeaveBalance } from "@/lib/hr/leave";
+import { computeLeaveBalance, monthsWorked, type LeaveBalance } from "@/lib/hr/leave";
+import { annualLeaveCodes, isAnnualLeave, listLabel, type LeaveKindOption } from "@/lib/hr/hr-lists";
 import type { SimContext, SimOption, SimOutput, SimVarDef } from "@/lib/sim/core";
 
 export type LeaveSimData = {
   employee: { id: string; matricule: string; name: string };
+  /** Leave kinds of Paramètres RH › Listes et codes. */
+  kinds: LeaveKindOption[];
   /** Reference date of the balance (today by default). */
   as_of: string;
   /** Legal CONGE_JOURS_MOIS (days accrued per month worked). */
@@ -35,7 +38,9 @@ const STATUS_OPTIONS: SimOption[] = [
   { value: "CANCELLED", label: "Annulée" },
 ];
 
-export const LEAVE_KIND_OPTIONS: SimOption[] = LEAVE_KINDS.map((k) => ({ value: k.code, label: k.fr }));
+export function leaveKindSimOptions(kinds: readonly LeaveKindOption[]): SimOption[] {
+  return kinds.map((k) => ({ value: k.code, label: k.fr }));
+}
 
 function frDate(iso: string | null) {
   if (!iso) return "…";
@@ -43,8 +48,8 @@ function frDate(iso: string | null) {
   return `${d}/${m}/${y}`;
 }
 
-export function kindLabel(code: string) {
-  return LEAVE_KINDS.find((k) => k.code === code)?.fr ?? code;
+function kindLabel(kinds: readonly LeaveKindOption[], code: string) {
+  return listLabel(kinds, code).fr;
 }
 
 /** Variables of the annual leave balance: rate, contract spans, requests and adjustments. */
@@ -61,11 +66,11 @@ export function leaveVariables(d: LeaveSimData): SimVarDef[] {
     );
   }
   for (const r of d.requests) {
-    const name = `${kindLabel(r.kind)} du ${frDate(r.start_date)} au ${frDate(r.end_date)}`;
+    const name = `${kindLabel(d.kinds, r.kind)} du ${frDate(r.start_date)} au ${frDate(r.end_date)}`;
     defs.push(
       { id: `conge.demande.${r.id}.jours`, label: `${name} · jours`, group: G.requests, kind: "days", base: r.days },
       { id: `conge.demande.${r.id}.statut`, label: `${name} · statut`, group: G.requests, kind: "select", base: r.status, options: STATUS_OPTIONS },
-      { id: `conge.demande.${r.id}.type`, label: `${name} · type`, group: G.requests, kind: "select", base: r.kind, options: LEAVE_KIND_OPTIONS },
+      { id: `conge.demande.${r.id}.type`, label: `${name} · type`, group: G.requests, kind: "select", base: r.kind, options: leaveKindSimOptions(d.kinds) },
     );
   }
   for (const a of d.adjustments) {
@@ -118,6 +123,7 @@ export function leaveBalanceFromCtx(
     adjustments,
     asOf,
     ratePerMonth: ctx.num(LEAVE_RATE_ID, 2.5),
+    annualKinds: annualLeaveCodes(d.kinds),
   });
 }
 
@@ -164,8 +170,8 @@ export function soldeOutput(d: LeaveSimData, ctx: SimContext): SimOutput {
       const kind = ctx.str(`conge.demande.${r.id}.type`, r.kind);
       const status = ctx.str(`conge.demande.${r.id}.statut`, r.status);
       const days = ctx.num(`conge.demande.${r.id}.jours`, r.days);
-      const counted = kind === "ANNUAL" && status === "APPROVED";
-      return `<tr class="${counted ? "" : "muted"}"><td>${esc(kindLabel(kind))}</td><td>${frDate(r.start_date)} → ${frDate(r.end_date)}</td><td>${esc(STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status)}</td><td class="n">${days}</td></tr>`;
+      const counted = isAnnualLeave(d.kinds, kind) && status === "APPROVED";
+      return `<tr class="${counted ? "" : "muted"}"><td>${esc(kindLabel(d.kinds, kind))}</td><td>${frDate(r.start_date)} → ${frDate(r.end_date)}</td><td>${esc(STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status)}</td><td class="n">${days}</td></tr>`;
     })
     .join("");
 

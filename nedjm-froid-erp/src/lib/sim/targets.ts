@@ -72,7 +72,7 @@ export function simRun(d: SimTargetData, ctx: SimContext, env: SimEnv): SimOutpu
     case "ordre_mission":
       return omOutput(d.om, ctx, env);
     case "contrat_travail":
-      return contractDocOutput(d.doc, ctx);
+      return contractDocOutput(d.doc, ctx, env);
   }
 }
 

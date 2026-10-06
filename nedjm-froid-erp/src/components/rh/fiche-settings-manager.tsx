@@ -23,7 +23,8 @@ import {
   rhTd,
   rhTh,
 } from "@/components/rh/rh-ui";
-import { buildOfficialFicheHtml } from "@/components/rh/employee-fiche-print";
+import { fetchPrintKit } from "@/components/doc/use-print-kit";
+import { FICHE_DOC_TYPES, ficheHtml } from "@/lib/hr/employee-fiche-doc";
 import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import type { FicheSection, HrFicheSettings } from "@/lib/hr/fiche-settings";
 import { DocumentRequirementsManager } from "@/components/rh/document-requirements-manager";
@@ -322,6 +323,7 @@ export function FicheSettingsManager({
                 {
                   id: `sec_${Date.now()}`,
                   title: "NOUVELLE SECTION",
+                  title_ar: "",
                   rows: [[fieldRows.find((f) => f.is_active)?.code || "email"]],
                 },
               ])
@@ -338,6 +340,14 @@ export function FicheSettingsManager({
                   className={rhInput}
                   value={section.title}
                   onChange={(e) => setSection(sIndex, { title: e.target.value })}
+                />
+              </RhField>
+              <RhField label="Titre arabe · العنوان">
+                <input
+                  dir="rtl"
+                  className={rhInput}
+                  value={section.title_ar}
+                  onChange={(e) => setSection(sIndex, { title_ar: e.target.value })}
                 />
               </RhField>
               <Button
@@ -606,17 +616,16 @@ export function FicheSettingsManager({
         </Button>
         <Button
           variant="secondary"
-          onClick={() =>
-            printHtml(
-              buildOfficialFicheHtml(
-                sampleValues,
-                catalogs,
-                fieldRows,
-                form,
-                window.location.origin,
-              ),
-            )
-          }
+          onClick={() => {
+            setError(null);
+            void fetchPrintKit(FICHE_DOC_TYPES).then((kit) => {
+              const html = kit.ok
+                ? ficheHtml(kit.data, sampleValues, catalogs, fieldRows, form, window.location.origin)
+                : kit;
+              if (html.ok) printHtml(html.data);
+              else setError(html.error);
+            });
+          }}
         >
           Aperçu impression
         </Button>

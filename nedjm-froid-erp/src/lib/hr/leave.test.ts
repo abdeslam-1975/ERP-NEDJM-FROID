@@ -46,8 +46,25 @@ describe("computeLeaveBalance", () => {
       adjustments: [{ employee_id: "e", days: 4 }],
       asOf: "2026-06-30",
       ratePerMonth: 2.5,
+      annualKinds: ["ANNUAL"],
     });
     expect(b).toMatchObject({ months: 6, accrued: 15, adjustments: 4, taken: 10, pending: 3, balance: 9 });
+  });
+
+  it("counts every leave kind flagged « annual » in the list", () => {
+    const b = computeLeaveBalance({
+      employeeId: "e",
+      contracts: [{ employee_id: "e", start_date: "2026-01-01", end_date: null }],
+      requests: [
+        { employee_id: "e", kind: "ANNUAL", status: "APPROVED", days: 10 },
+        { employee_id: "e", kind: "CONGE_FRACTIONNE", status: "APPROVED", days: 2 },
+      ],
+      adjustments: [],
+      asOf: "2026-06-30",
+      ratePerMonth: 2.5,
+      annualKinds: ["ANNUAL", "CONGE_FRACTIONNE"],
+    });
+    expect(b).toMatchObject({ taken: 12, balance: 3 });
   });
 });
 

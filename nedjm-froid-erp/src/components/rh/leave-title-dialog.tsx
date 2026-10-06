@@ -4,17 +4,24 @@ import { useState } from "react";
 import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import type { HrCorrespondenceRow } from "@/lib/actions/hr-documents";
 import type { HrEmployeeRow } from "@/lib/actions/hr-employees";
-import { LEAVE_KINDS, calendarDays } from "@/lib/hr/leave";
+import { calendarDays } from "@/lib/hr/leave";
+import type { HrCompanyProfile } from "@/lib/hr/company-profile";
+import { activeOptions, leaveKindOptions, transportModeOptions } from "@/lib/hr/hr-lists";
 import {
   LEAVE_TITLE_FIELD_KEYS,
   leaveDaysLabel,
   leaveNature,
   leaveReprise,
+  leaveTitleReference,
   type LeaveTitleFieldKey,
   type LeaveTitleLeave,
 } from "@/lib/hr/leave-title";
-import { OM_DONNEUR, OM_FAIT_A, OM_MOYENS, formatOmDate, todayIsoAlgiers, type MissionContractHint } from "@/lib/hr/mission-order";
-import { leaveTitleReference } from "@/components/rh/leave-title-print";
+import {
+  formatOmDate,
+  todayIsoAlgiers,
+  type MissionContractHint,
+  type SheetDefaults,
+} from "@/lib/hr/mission-order";
 import { employeeIdentity, findEmployees, withCurrent } from "@/components/rh/mission-order-dialog";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhField, RhModal, catalogOptions, rhInput } from "@/components/rh/rh-ui";
@@ -32,18 +39,19 @@ export type LeaveTitleDraft = Record<LeaveTitleFieldKey, string> & {
   saved: boolean;
 };
 
-export function emptyLeaveTitleDraft(): LeaveTitleDraft {
+/** `kind`: leave kind preselected for a new title (first of the leave_kind list). */
+export function emptyLeaveTitleDraft(defaults: SheetDefaults, kind: string): LeaveTitleDraft {
   const fields = Object.fromEntries(LEAVE_TITLE_FIELD_KEYS.map((key) => [key, ""])) as Record<LeaveTitleFieldKey, string>;
   return {
     ...fields,
-    donneur: OM_DONNEUR,
-    faitA: OM_FAIT_A,
+    donneur: defaults.hr_service,
+    faitA: defaults.city_short,
     dateDoc: todayIsoAlgiers(),
     id: "",
     numero: "",
     employee_id: "",
     status_code: "",
-    leave: { kind: "ANNUAL", dateDebut: "", dateFin: "", jours: 0 },
+    leave: { kind, dateDebut: "", dateFin: "", jours: 0 },
     daysText: "",
     saved: false,
   };
@@ -52,6 +60,7 @@ export function emptyLeaveTitleDraft(): LeaveTitleDraft {
 type SiteOpt = { id: string; name_fr: string };
 
 export function LeaveTitleDialog({
+  company,
   pending,
   error,
   employees,
@@ -67,6 +76,7 @@ export function LeaveTitleDialog({
   onReset,
   onOpenTitle,
 }: {
+  company: HrCompanyProfile;
   pending: boolean;
   error: string | null;
   employees: HrEmployeeRow[];
@@ -101,11 +111,14 @@ export function LeaveTitleDialog({
   const isNew = !value.id;
   const jobs = catalogOptions(catalogs, "job_title").map((item) => item.label_fr);
   const affectations = sites.map((site) => site.name_fr);
-  const nature = leaveNature(value.leave.kind);
+  const leaveKinds = leaveKindOptions(catalogs);
+  const kindChoices = activeOptions(leaveKinds);
+  const transportChoices = activeOptions(transportModeOptions(catalogs)).map((m) => m.fr);
+  const nature = leaveNature(leaveKinds, value.leave.kind);
   const { dateDebut, dateFin } = value.leave;
   const reprise = formatOmDate(leaveReprise(dateFin));
   const cancelled = value.status_code === "CANCELLED";
-  const reference = leaveTitleReference(value.numero) || value.numero;
+  const reference = leaveTitleReference(value.numero, company) || value.numero;
   const calendar = dateDebut && dateFin && dateFin >= dateDebut ? calendarDays(dateDebut, dateFin) : 0;
 
   function setLeave(patch: Partial<LeaveTitleLeave>) {
@@ -162,7 +175,7 @@ export function LeaveTitleDialog({
       const name = `${row.last_name} ${row.first_name}`.trim().toUpperCase() || row.employee_name.toUpperCase();
       return (
         row.number.toUpperCase() === needle ||
-        leaveTitleReference(row.number).toUpperCase() === needle ||
+        leaveTitleReference(row.number, company).toUpperCase() === needle ||
         row.matricule.toUpperCase() === needle ||
         name === needle ||
         name.includes(needle)
@@ -318,9 +331,11 @@ export function LeaveTitleDialog({
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <RhField label="Nature du congé — طبيعة الإجازة">
                 <select className={rhInput} value={value.leave.kind} onChange={(e) => setLeave({ kind: e.target.value })}>
-                  {LEAVE_KINDS.map((k) => (
+                  {value.leave.kind ? null : <option value="" />}
+                  {kindChoices.map((k) => (
                     <option key={k.code} value={k.code}>
-                      {k.fr} ({k.legend})
+                      {k.fr}
+                      {k.legend ? ` (${k.legend})` : ""}
                     </option>
                   ))}
                 </select>
@@ -382,7 +397,7 @@ export function LeaveTitleDialog({
             <RhField label="Moyen de transport">
               <select className={rhInput} value={value.moyen} onChange={(e) => set({ moyen: e.target.value })}>
                 <option value="" />
-                {withCurrent([...OM_MOYENS], value.moyen).map((item) => (
+                {withCurrent(transportChoices, value.moyen).map((item) => (
                   <option key={item}>{item}</option>
                 ))}
               </select>

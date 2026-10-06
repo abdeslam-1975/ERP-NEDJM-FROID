@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { RhAlert } from "@/components/rh/rh-ui";
 import { printHtml } from "@/components/rh/print-frame";
 import { DocFrame } from "@/components/sim/doc-frame";
+import { clearPrintKitCache } from "@/components/doc/use-print-kit";
 import {
   AdvancedPanel,
   FieldsPanel,
@@ -45,7 +46,8 @@ import {
   templateCss,
   withTemplateCss,
 } from "@/lib/doc/design-dom";
-import { DOC_TYPES, type DocTypeId } from "@/lib/doc/registry";
+import { withFontFaces } from "@/lib/doc/fonts";
+import { DOC_TYPES, type DocMeta, type DocTypeId } from "@/lib/doc/registry";
 
 type Mode = "design" | "preview" | "source";
 type Tab = "style" | "fields" | "advanced" | "versions";
@@ -73,18 +75,31 @@ function blockOf(el: HTMLElement) {
 
 export function DocEditor({
   docType,
+  meta: metaProp,
   data,
   pageWidth,
+  fonts = FONTS,
+  fontCss = "",
   onClose,
   onApproved,
 }: {
-  docType: DocTypeId;
+  /** Built-in document, or `custom_<code>` with its `meta`. */
+  docType: string;
+  meta?: DocMeta;
   data: DocData;
   pageWidth: number;
+  /** CSS font stacks of the « Police » menus. */
+  fonts?: readonly string[];
+  /** @font-face rules added to every view of the document. */
+  fontCss?: string;
   onClose: () => void;
   onApproved: () => void;
 }) {
-  const meta = DOC_TYPES[docType];
+  const meta = metaProp ?? DOC_TYPES[docType as DocTypeId];
+  const view = useCallback(
+    (template: string, design = false) => withFontFaces(renderTemplate(template, data, { design }), fontCss),
+    [data, fontCss],
+  );
   const frameRef = useRef<HTMLIFrameElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const htmlRef = useRef("");
@@ -220,7 +235,7 @@ export function DocEditor({
     if (!frame || !doc || !win) return;
     const scroll = win.scrollY;
     doc.open();
-    doc.write(renderTemplate(htmlRef.current, data, { design: true }));
+    doc.write(view(htmlRef.current, true));
     doc.close();
     installEditorStyle(doc);
     if (canEdit) {
@@ -287,7 +302,7 @@ export function DocEditor({
       window.clearTimeout(syncTimer.current);
       liveRef.current = false;
     };
-  }, [renderKey, data, mode, canEdit, commit, select, move]);
+  }, [renderKey, view, mode, canEdit, commit, select, move]);
 
   /** Runs a DOM edit on the design view, then records it. */
   const edit = (fn: (doc: Document, win: Window, el: HTMLElement | null) => void | "rebuild") => {
@@ -431,6 +446,7 @@ export function DocEditor({
       setSavedHtml(null);
       setNote("");
       setFlash({ tone: "success", text: `Version ${r.data.version} approuvée : elle est utilisée pour toutes les impressions.` });
+      clearPrintKitCache();
       onApproved();
     });
 
@@ -468,7 +484,7 @@ export function DocEditor({
     onClose();
   };
 
-  const previewHtml = useMemo(() => (mode === "preview" && html ? renderTemplate(html, data) : ""), [mode, html, data]);
+  const previewHtml = useMemo(() => (mode === "preview" && html ? view(html) : ""), [mode, html, view]);
   const css = useMemo(() => (tab === "advanced" && html ? templateCss(html) : ""), [tab, html]);
   const locked = !canEdit || mode !== "design" || pending;
   const scale = Math.min(1, Math.max(0.35, (box.width - 8) / pageWidth));
@@ -503,7 +519,7 @@ export function DocEditor({
             ["source", "Code"],
           ]}
         />
-        <Button variant="ghost" className="h-8 px-2.5 text-xs" disabled={!html} onClick={() => printHtml(renderTemplate(htmlRef.current, data))}>
+        <Button variant="ghost" className="h-8 px-2.5 text-xs" disabled={!html} onClick={() => printHtml(view(htmlRef.current))}>
           Imprimer l’essai
         </Button>
         {canEdit ? (
@@ -562,7 +578,7 @@ export function DocEditor({
             aria-label="Police"
           >
             <option value="">Police…</option>
-            {FONTS.map((f) => (
+            {fonts.map((f) => (
               <option key={f} value={f}>
                 {f.split(",")[0].replace(/"/g, "")}
               </option>
@@ -775,6 +791,7 @@ export function DocEditor({
               <StylePanel
                 sel={sel}
                 disabled={locked}
+                fonts={fonts}
                 onStyle={setStyle}
                 onClear={() =>
                   edit((_d, _w, el) => {

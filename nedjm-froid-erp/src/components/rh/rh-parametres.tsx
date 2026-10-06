@@ -17,9 +17,11 @@ import type { HrBulletinSettings, BulletinLegalRates } from "@/lib/hr/bulletin-s
 import { BulletinSettingsManager } from "@/components/rh/bulletin-settings-manager";
 import { AttendanceColumnsManager } from "@/components/rh/attendance-columns-manager";
 import type { AttendanceColumnsAdmin } from "@/lib/actions/hr-attendance-sheet";
+import type { HrCompanyProfile } from "@/lib/hr/company-profile";
+import { HrDocumentsSettings, type CustomDocsSettings } from "@/components/rh/hr-documents-settings";
 import { RhAlert, RhPage, RhTabs } from "@/components/rh/rh-ui";
 
-type RhSettingsTab = "salary" | "legal" | "fiche" | "catalogs" | "bulletin" | "attendance";
+type RhSettingsTab = "salary" | "legal" | "fiche" | "catalogs" | "bulletin" | "documents" | "attendance";
 
 const LEGAL_SECTIONS: LegalSection[] = ["cnas", "cacobatph", "irg", "other"];
 
@@ -42,6 +44,8 @@ export function RhParametres({
   bulletinTemplate = "",
   legalRates,
   attendanceAdmin,
+  company = null,
+  customDocs = { defs: [], canEdit: false, fonts: [] },
   loadError,
 }: {
   kinds: CatalogKind[];
@@ -63,6 +67,10 @@ export function RhParametres({
   bulletinTemplate?: string;
   legalRates?: BulletinLegalRates;
   attendanceAdmin?: AttendanceColumnsAdmin | null;
+  /** Company identity of the HR documents; null when it could not be read. */
+  company?: { profile: HrCompanyProfile; canEdit: boolean } | null;
+  /** Documents created from the interface and their fonts. */
+  customDocs?: CustomDocsSettings;
   loadError?: string;
 }) {
   const searchParams = useSearchParams();
@@ -72,6 +80,7 @@ export function RhParametres({
     { id: "fiche", label: "Modèle de fiche" },
     { id: "catalogs", label: "Listes et codes" },
     { id: "bulletin", label: "Modèle de bulletin" },
+    ...(company ? [{ id: "documents" as const, label: "Documents" }] : []),
     ...(isSuperAdmin && attendanceAdmin
       ? [{ id: "attendance" as const, label: "Feuille de présence" }]
       : []),
@@ -109,6 +118,16 @@ export function RhParametres({
           fields={fields}
           catalogs={items}
           isSuperAdmin={isSuperAdmin}
+        />
+      ) : tab === "documents" && company ? (
+        <HrDocumentsSettings
+          company={company.profile}
+          canEdit={company.canEdit}
+          fiche={fiche}
+          fields={fields}
+          catalogs={items}
+          kinds={kinds}
+          custom={customDocs}
         />
       ) : tab === "attendance" && attendanceAdmin ? (
         <AttendanceColumnsManager initial={attendanceAdmin} />

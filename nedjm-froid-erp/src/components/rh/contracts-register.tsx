@@ -8,7 +8,6 @@ import { listAgencies } from "@/lib/actions/hr-interim";
 import { listContractComplianceOptions } from "@/lib/actions/hr-compliance";
 import { getComplianceAccess } from "@/lib/auth/compliance-access";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
-import { HR_SALARY_VALUE_ROLES, workspaceHasRole } from "@/lib/auth/require-roles";
 import { listContractArchives } from "@/lib/hr/contract-archive";
 
 /** Register of work contracts, shown in the Documents page. */
@@ -69,7 +68,6 @@ export async function ContractsRegister() {
         .filter((a) => a.is_active)
         .map((a) => ({ id: a.id, label: `${a.code} · ${a.name}`, default_daily_rate: a.default_daily_rate }))}
       isSuperAdmin={workspace?.isSuperAdmin ?? false}
-      canEditSalaryValues={workspace ? workspaceHasRole(workspace, HR_SALARY_VALUE_ROLES) : false}
       loadError={
         (!contracts.ok && contracts.error) ||
         lookups.error ||

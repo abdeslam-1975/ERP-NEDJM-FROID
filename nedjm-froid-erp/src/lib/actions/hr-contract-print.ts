@@ -2,22 +2,22 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireHrSalaryValues } from "@/lib/auth/require-roles";
 import { createClient } from "@/lib/supabase/server";
 import { getHrEmployeeFiche } from "@/lib/actions/hr-employees";
 import { upsertHrFile } from "@/lib/actions/hr-documents";
+import { loadHrListItems, loadPrintKit, printFromKit } from "@/lib/doc/print-kit";
+import { CONTRACT_TYPE_LIST, contractTypeDefaults, type ContractTypeDefaults } from "@/lib/hr/hr-lists";
 import { contractArchiveType } from "@/lib/hr/contract-archive";
 import { hrFileHref } from "@/lib/hr/hr-file-url";
 import { htmlToPdf } from "@/lib/pdf/html-to-pdf";
 import { archiveFileStem, archiveFolder, hrPdfOptions, requestOrigin, uploadHrPdf } from "@/lib/pdf/print-archive";
-import { buildWorkContractHtml } from "@/components/rh/work-contract-print";
 import {
+  contractDocData,
+  contractDocType,
   contractPrintDataToSave,
   contractPrintDefaults,
-  normalizeContractTemplate,
   type ContractPrintSource,
   type ContractPrintValues,
-  type ContractTemplate,
 } from "@/lib/hr/work-contract";
 
 export type ActionResult<T = void> =
@@ -26,23 +26,12 @@ export type ActionResult<T = void> =
 
 export type ContractPrintContext = {
   values: ContractPrintValues;
-  template: ContractTemplate;
 };
-
-async function loadTemplate(supabase: Awaited<ReturnType<typeof createClient>>) {
-  const { data, error } = await supabase
-    .from("hr_contract_print_template")
-    .select("content")
-    .eq("id", "default")
-    .maybeSingle();
-  if (error) return { ok: false as const, error: error.message };
-  return { ok: true as const, data: normalizeContractTemplate(data?.content ?? null) };
-}
 
 async function loadSource(
   supabase: Awaited<ReturnType<typeof createClient>>,
   contractId: string,
-): Promise<ActionResult<ContractPrintSource>> {
+): Promise<ActionResult<{ source: ContractPrintSource; type: ContractTypeDefaults }>> {
   const { data: ctr, error } = await supabase
     .from("hr_contracts")
     .select(
@@ -52,22 +41,29 @@ async function loadSource(
     .maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (!ctr) return { ok: false, error: "Contrat introuvable." };
-  const employee = await loadEmployee(supabase, ctr.employee_id);
+  const [employee, types] = await Promise.all([
+    loadEmployee(supabase, ctr.employee_id),
+    loadHrListItems(supabase, [CONTRACT_TYPE_LIST]),
+  ]);
   if (!employee.ok) return employee;
+  if (!types.ok) return types;
   return {
     ok: true,
     data: {
-      contract_number: ctr.contract_number,
-      contract_type_code: ctr.contract_type_code,
-      poste_ar: ctr.poste_ar,
-      poste_fr: ctr.poste_fr,
-      start_date: String(ctr.start_date),
-      end_date: ctr.end_date ? String(ctr.end_date) : null,
-      salaire_net_ref_monthly: ctr.salaire_net_ref_monthly == null ? null : Number(ctr.salaire_net_ref_monthly),
-      salaire_net_recup_monthly:
-        ctr.salaire_net_recup_monthly == null ? null : Number(ctr.salaire_net_recup_monthly),
-      print_data: (ctr.print_data ?? {}) as Record<string, unknown>,
-      employee: employee.data,
+      type: contractTypeDefaults(types.data, ctr.contract_type_code),
+      source: {
+        contract_number: ctr.contract_number,
+        contract_type_code: ctr.contract_type_code,
+        poste_ar: ctr.poste_ar,
+        poste_fr: ctr.poste_fr,
+        start_date: String(ctr.start_date),
+        end_date: ctr.end_date ? String(ctr.end_date) : null,
+        salaire_net_ref_monthly: ctr.salaire_net_ref_monthly == null ? null : Number(ctr.salaire_net_ref_monthly),
+        salaire_net_recup_monthly:
+          ctr.salaire_net_recup_monthly == null ? null : Number(ctr.salaire_net_recup_monthly),
+        print_data: (ctr.print_data ?? {}) as Record<string, unknown>,
+        employee: employee.data,
+      },
     },
   };
 }
@@ -121,7 +117,6 @@ export type ContractPreviewContext = {
   employee: ContractPrintSource["employee"] | null;
   contract_number: string | null;
   print_data: Record<string, unknown>;
-  template: ContractTemplate;
 };
 
 /** What the contract form needs to draw the document live, before or after the contract is saved. */
@@ -133,23 +128,20 @@ export async function getContractPreviewContext(input: {
   if (input.employee_id && !uuid.safeParse(input.employee_id).success) return { ok: false, error: "Employé invalide." };
   if (input.contract_id && !uuid.safeParse(input.contract_id).success) return { ok: false, error: "Contrat invalide." };
   const supabase = await createClient();
-  const [employee, contract, template] = await Promise.all([
+  const [employee, contract] = await Promise.all([
     input.employee_id ? loadEmployee(supabase, input.employee_id) : null,
     input.contract_id
       ? supabase.from("hr_contracts").select("contract_number, print_data").eq("id", input.contract_id).maybeSingle()
       : null,
-    loadTemplate(supabase),
   ]);
   if (employee && !employee.ok) return employee;
   if (contract?.error) return { ok: false, error: contract.error.message };
-  if (!template.ok) return template;
   return {
     ok: true,
     data: {
       employee: employee?.data ?? null,
       contract_number: contract?.data?.contract_number ?? null,
       print_data: (contract?.data?.print_data ?? {}) as Record<string, unknown>,
-      template: template.data,
     },
   };
 }
@@ -189,10 +181,9 @@ export async function getContractPrintContext(
 ): Promise<ActionResult<ContractPrintContext>> {
   if (!z.string().uuid().safeParse(contractId).success) return { ok: false, error: "Contrat invalide." };
   const supabase = await createClient();
-  const [source, template] = await Promise.all([loadSource(supabase, contractId), loadTemplate(supabase)]);
+  const source = await loadSource(supabase, contractId);
   if (!source.ok) return source;
-  if (!template.ok) return template;
-  return { ok: true, data: { values: contractPrintDefaults(source.data), template: template.data } };
+  return { ok: true, data: { values: contractPrintDefaults(source.data.source, source.data.type) } };
 }
 
 const valuesSchema = z.object({
@@ -233,7 +224,7 @@ export async function saveContractPrint(input: {
   const supabase = await createClient();
   const source = await loadSource(supabase, input.contract_id);
   if (!source.ok) return source;
-  const fileDefaults = contractPrintDefaults({ ...source.data, print_data: {} });
+  const fileDefaults = contractPrintDefaults({ ...source.data.source, print_data: {} }, source.data.type);
   const print_data = contractPrintDataToSave(values, fileDefaults);
 
   const update: Record<string, unknown> = { print_data };
@@ -277,8 +268,13 @@ export async function archiveContractPrint(contractId: string): Promise<ActionRe
     if (!ctr) return { ok: false, error: "Contrat introuvable." };
     const [context, origin] = await Promise.all([getContractPrintContext(contractId), requestOrigin()]);
     if (!context.ok) return context;
-    const { values, template } = context.data;
-    const pdf = await htmlToPdf(buildWorkContractHtml(values, template), hrPdfOptions(supabase, origin));
+    const { values } = context.data;
+    const type = contractDocType(values);
+    const kit = await loadPrintKit(supabase, [type]);
+    if (!kit.ok) return kit;
+    const html = printFromKit(kit.data, type, contractDocData(values, kit.data.company), origin);
+    if (!html.ok) return html;
+    const pdf = await htmlToPdf(html.data, hrPdfOptions(supabase, origin));
     const safeNum = (values.numero || "SN").replace(/\//g, "-");
     const path = `${archiveFolder(ctr.employee_id)}/CONTRAT-${safeNum}-${crypto.randomUUID()}.pdf`;
     const uploadError = await uploadHrPdf(supabase, path, pdf);
@@ -298,39 +294,4 @@ export async function archiveContractPrint(contractId: string): Promise<ActionRe
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Échec de l'archivage du contrat." };
   }
-}
-
-const templateSchema = z.object({
-  title_cdd: z.string().max(200),
-  title_cdi: z.string().max(200),
-  legal_intro: z.string().max(2000),
-  opening_cdd: z.string().max(500),
-  opening_cdi: z.string().max(500),
-  employer_block: z.string().max(4000),
-  cdd_reason_intro: z.string().max(2000),
-  cdd_reasons: z.array(z.string().max(1000)).max(20),
-  articles: z
-    .array(z.object({ key: z.string().max(40), body: z.string().max(4000), cdd_only: z.boolean().optional() }))
-    .max(20),
-  note: z.string().max(4000),
-  closing: z.string().max(500),
-  sig_employee: z.string().max(200),
-  sig_employer: z.string().max(200),
-  copies: z.string().max(1000),
-});
-
-export async function saveContractTemplate(input: unknown): Promise<ActionResult<ContractTemplate>> {
-  const gate = await requireHrSalaryValues();
-  if (!gate.ok) return gate;
-  const parsed = templateSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("hr_contract_print_template")
-    .upsert({ id: "default", content: parsed.data }, { onConflict: "id" })
-    .select("content")
-    .maybeSingle();
-  if (error) return { ok: false, error: error.message };
-  if (!data) return { ok: false, error: "Enregistrement refusé (droits)." };
-  return { ok: true, data: normalizeContractTemplate(data.content) };
 }

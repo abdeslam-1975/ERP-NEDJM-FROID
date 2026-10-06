@@ -5,22 +5,12 @@ import { Button } from "@/components/ui/button";
 import { simSelectClass } from "@/components/sim/sim-fields";
 import { DOC_FORMATS, checkExpr } from "@/lib/doc/engine";
 import { describeElement, rgbToHex } from "@/lib/doc/design-dom";
-import type { DocTypeMeta } from "@/lib/doc/registry";
+import { SYSTEM_FONTS } from "@/lib/doc/fonts";
+import type { DocMeta } from "@/lib/doc/registry";
 import type { DocTemplateRow } from "@/lib/actions/doc-templates";
 import { foldSearch } from "@/lib/sim/core";
 
-export const FONTS = [
-  "Arial, Helvetica, sans-serif",
-  "\"Times New Roman\", Times, serif",
-  "Georgia, serif",
-  "Tahoma, sans-serif",
-  "Verdana, sans-serif",
-  "Calibri, Carlito, sans-serif",
-  "Cambria, Caladea, serif",
-  "\"Courier New\", monospace",
-  "Amiri, \"Traditional Arabic\", serif",
-  "Cairo, Tahoma, sans-serif",
-];
+export const FONTS = SYSTEM_FONTS;
 
 type StyleProp = { prop: string; label: string; kind: "text" | "select" | "color"; options?: string[]; hint?: string };
 
@@ -96,11 +86,14 @@ const label = "block text-[11px] font-medium text-foreground/55";
 export function StylePanel({
   sel,
   disabled,
+  fonts = FONTS,
   onStyle,
   onClear,
 }: {
   sel: SelInfo | null;
   disabled: boolean;
+  /** CSS font stacks offered for « Police ». */
+  fonts?: readonly string[];
   onStyle: (prop: string, value: string) => void;
   onClear: () => void;
 }) {
@@ -124,7 +117,7 @@ export function StylePanel({
                   onChange={(e) => onStyle(p.prop, e.target.value)}
                 >
                   <option value="">Hérité ({v.computed.split(",")[0].replace(/"/g, "")})</option>
-                  {p.options!.map((o) => (
+                  {(p.prop === "font-family" ? fonts : p.options!).map((o) => (
                     <option key={o} value={o}>
                       {o.split(",")[0].replace(/"/g, "")}
                     </option>
@@ -179,7 +172,7 @@ export function FieldsPanel({
   disabled,
   onInsert,
 }: {
-  meta: DocTypeMeta;
+  meta: DocMeta;
   disabled: boolean;
   onInsert: (path: string, format: string, label: string, within?: string) => void;
 }) {
@@ -242,7 +235,7 @@ export function AdvancedPanel({
   onCss,
 }: {
   sel: SelInfo | null;
-  meta: DocTypeMeta;
+  meta: DocMeta;
   disabled: boolean;
   css: string;
   onApply: (values: AdvancedValues) => void;
@@ -265,7 +258,7 @@ function ElementProps({
   onApply,
 }: {
   sel: SelInfo;
-  meta: DocTypeMeta;
+  meta: DocMeta;
   disabled: boolean;
   onApply: (values: AdvancedValues) => void;
 }) {
@@ -332,7 +325,7 @@ function ElementProps({
         <select className={`${simSelectClass} mt-0.5`} value={v.each} disabled={disabled} onChange={(e) => setV({ ...v, each: e.target.value })}>
           <option value="">— pas de répétition —</option>
           {v.each && ![meta.pageList, ...meta.lists.map((l) => l.path)].includes(v.each) ? <option value={v.each}>{v.each}</option> : null}
-          <option value={meta.pageList}>Page imprimée ({meta.pageList})</option>
+          {meta.pageList ? <option value={meta.pageList}>Page imprimée ({meta.pageList})</option> : null}
           {meta.lists.map((l) => (
             <option key={l.path} value={l.path}>
               {l.label}

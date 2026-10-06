@@ -9,6 +9,8 @@ import { listHrContracts } from "@/lib/actions/hr-contracts";
 import { listSites } from "@/lib/actions/sites";
 import { listSalaryAssignments, listSalaryRubriques } from "@/lib/actions/hr-salary";
 import { getHrFicheSettings } from "@/lib/actions/hr-fiche";
+import { getHrCompanyProfile } from "@/lib/actions/hr-company";
+import { listCustomDocDefs, listDocFonts } from "@/lib/actions/hr-custom-docs";
 import { loadPayrollBulletinContext } from "@/lib/actions/hr-bulletin";
 import { loadAttendanceColumnsAdmin } from "@/lib/actions/hr-attendance-sheet";
 import { listPostes } from "@/lib/actions/hr-postes";
@@ -36,6 +38,9 @@ export default async function RhParametresPage() {
     irg,
     postes,
     legal,
+    company,
+    customDefs,
+    docFonts,
   ] = await Promise.all([
     loadHrLookups(),
     listHrEmployeeFields(),
@@ -51,6 +56,9 @@ export default async function RhParametresPage() {
     loadPayrollIrgScales({ year: now.getFullYear(), month: now.getMonth() + 1 }),
     listPostes(),
     loadLegalSettings(),
+    getHrCompanyProfile(),
+    listCustomDocDefs(),
+    listDocFonts(),
   ]);
   const salaryError =
     (!rubriques.ok && rubriques.error) ||
@@ -104,10 +112,18 @@ export default async function RhParametresPage() {
         bulletinTemplate={bulletin.template}
         legalRates={bulletin.legalRates}
         attendanceAdmin={attendanceAdmin.ok ? attendanceAdmin.data : null}
+        company={company.ok ? company.data : null}
+        customDocs={{
+          defs: customDefs.ok ? customDefs.data.defs : [],
+          canEdit: customDefs.ok ? customDefs.data.canEdit : false,
+          fonts: docFonts.ok ? docFonts.data : [],
+          error: (!customDefs.ok ? customDefs.error : undefined) || (!docFonts.ok ? docFonts.error : undefined),
+        }}
         loadError={
           lookups.error ||
           (!fields.ok ? fields.error : undefined) ||
           (!fiche.ok ? fiche.error : undefined) ||
+          (!company.ok ? company.error : undefined) ||
           salaryError ||
           bulletin.error
         }

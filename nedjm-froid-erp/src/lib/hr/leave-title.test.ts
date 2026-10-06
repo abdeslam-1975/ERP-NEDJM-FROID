@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { buildLeaveTitleHtml, leaveTitleReference } from "@/components/rh/leave-title-print";
-import { buildMissionOrderHtml } from "@/components/rh/mission-order-print";
+import { renderDocument } from "@/lib/doc/engine";
+import { SEED_COMPANY, SEED_LISTS } from "@/lib/doc/hr-docs.fixtures";
+import { seededTemplate } from "@/lib/doc/migration-templates";
 import {
   leaveDaysLabel,
   leaveOfCorrespondence,
+  leaveTitleDocData,
   leaveTitleFieldsSchema,
   leaveTitlePayload,
+  leaveTitleReference,
+  type LeaveTitleFields,
+  type LeaveTitleLeave,
 } from "@/lib/hr/leave-title";
-import { missionOrderFieldsSchema } from "@/lib/hr/mission-order";
+import { missionDocData, missionOrderFieldsSchema } from "@/lib/hr/mission-order";
+
+const buildLeaveTitleHtml = (f: LeaveTitleFields, l: LeaveTitleLeave, numero: string, letterhead: string, origin: string) =>
+  renderDocument(seededTemplate("titre_conge"), leaveTitleDocData(f, l, numero, SEED_COMPANY, letterhead, SEED_LISTS), origin);
 
 const fields = {
   matricule: "05/26",
@@ -37,8 +45,8 @@ const leave = leaveOfCorrespondence({
 
 describe("titre de congé", () => {
   it("formats the NF/CNG reference", () => {
-    expect(leaveTitleReference("000012/26")).toBe("NF/CNG/0012/26");
-    expect(leaveTitleReference("")).toBe("");
+    expect(leaveTitleReference("000012/26", SEED_COMPANY)).toBe("NF/CNG/0012/26");
+    expect(leaveTitleReference("", SEED_COMPANY)).toBe("");
   });
 
   it("reads the leave stored on the correspondence", () => {
@@ -49,7 +57,7 @@ describe("titre de congé", () => {
 
   it("defaults the issuer and place like the ordre de mission", () => {
     const parsed = leaveTitleFieldsSchema.parse(fields);
-    expect(leaveTitlePayload(parsed)).toMatchObject({ donneur: "Service RH", faitA: "HMD" });
+    expect(leaveTitlePayload(parsed, SEED_COMPANY)).toMatchObject({ donneur: "Service RH", faitA: "HMD" });
   });
 
   it("changes only sections II and V of the sectioned sheet", () => {
@@ -75,14 +83,18 @@ describe("titre de congé", () => {
     expect(html).not.toContain("ITINÉRAIRE");
     expect(html).not.toContain("MISSIONNAIRE");
 
-    const om = buildMissionOrderHtml(missionOrderFieldsSchema.parse(fields), "/hr-letterhead.png", "https://erp.test");
+    const om = renderDocument(
+      seededTemplate("ordre_mission"),
+      missionDocData({ ...missionOrderFieldsSchema.parse(fields), numero: null }, SEED_COMPANY, "/hr-letterhead.png", SEED_LISTS),
+      "https://erp.test",
+    );
     const styles = (doc: string) => doc.slice(doc.indexOf("<style>"), doc.indexOf("</style>"));
     expect(styles(html)).toBe(styles(om));
   });
 
   it("sets the Arabic title in Noto Naskh and spreads the French title letter by letter", () => {
     const html = buildLeaveTitleHtml(leaveTitleFieldsSchema.parse(fields), leave, "000012/26", "/hr-letterhead.png", "https://erp.test");
-    expect(html).toContain('url("https://erp.test/fonts/om/noto-naskh-arabic-700.woff2")');
+    expect(html).toContain('url("/fonts/om/noto-naskh-arabic-700.woff2")');
     expect(html).toContain(
       '<div class="om-title-fr" aria-label="TITRE DE CONGÉ"><span>T</span><span>I</span><span>T</span><span>R</span><span>E</span><span>&nbsp;</span>',
     );

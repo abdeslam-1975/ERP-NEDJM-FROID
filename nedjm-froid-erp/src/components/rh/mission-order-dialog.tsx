@@ -5,17 +5,15 @@ import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import type { HrCorrespondenceRow } from "@/lib/actions/hr-documents";
 import type { HrEmployeeRow } from "@/lib/actions/hr-employees";
 import {
-  OM_DONNEUR,
-  OM_FAIT_A,
   OM_GABARIT_ANCIEN,
-  OM_LIEU_DEPART,
-  OM_MOYENS,
   missionDateBounds,
   missionDateIssue,
   pickMissionContract,
   todayIsoAlgiers,
   type MissionContractHint,
+  type MissionDefaults,
 } from "@/lib/hr/mission-order";
+import { activeOptions, transportModeOptions } from "@/lib/hr/hr-lists";
 import { catalogOptions } from "@/components/rh/rh-ui";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhField, RhModal, rhInput } from "@/components/rh/rh-ui";
@@ -66,7 +64,7 @@ export function missionDraftDateIssue(draft: MissionDraft, today = todayIsoAlgie
   );
 }
 
-export const emptyMissionDraft = (): MissionDraft => ({
+export const emptyMissionDraft = (defaults: MissionDefaults): MissionDraft => ({
   numero: "",
   employee_id: "",
   site_id: "",
@@ -78,7 +76,7 @@ export const emptyMissionDraft = (): MissionDraft => ({
   poste: "",
   dest1: "",
   dest2: "",
-  lieuDepart: OM_LIEU_DEPART,
+  lieuDepart: defaults.default_departure,
   dateDepart: "",
   heureDepart: "",
   lieuRetour: "",
@@ -95,8 +93,8 @@ export const emptyMissionDraft = (): MissionDraft => ({
   pieceDelivre: "",
   pieceFonction: "",
   pieceLieu: "",
-  donneur: OM_DONNEUR,
-  faitA: OM_FAIT_A,
+  donneur: defaults.hr_service,
+  faitA: defaults.city_short,
   dateDoc: todayIsoAlgiers(),
   gabarit: "",
 });
@@ -189,6 +187,7 @@ export function MissionOrderDialog({
   const set = (patch: Partial<MissionDraft>) => onChange({ ...value, ...patch });
   const jobs = catalogOptions(catalogs, "job_title").map((item) => item.label_fr);
   const affectations = sites.map((site) => site.name_fr);
+  const transportChoices = activeOptions(transportModeOptions(catalogs)).map((m) => m.fr);
   const legacy = value.gabarit === OM_GABARIT_ANCIEN;
   const today = todayIsoAlgiers();
   const saved = value.id ? { dateDepart: value.savedDateDepart, dateRetour: value.savedDateRetour } : null;
@@ -485,7 +484,7 @@ export function MissionOrderDialog({
             <RhField label="Moyen de transport">
               <select className={rhInput} value={value.moyen} onChange={(e) => set({ moyen: e.target.value })}>
                 <option value="" />
-                {withCurrent([...OM_MOYENS], value.moyen).map((item) => (
+                {withCurrent(transportChoices, value.moyen).map((item) => (
                   <option key={item}>{item}</option>
                 ))}
               </select>

@@ -1,20 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { archiveContractPrint, getContractPrintContext, saveContractPrint } from "@/lib/actions/hr-contract-print";
+import { printFromKit, type PrintKit } from "@/lib/doc/print-kit";
 import {
-  archiveContractPrint,
-  getContractPrintContext,
-  saveContractPrint,
-  saveContractTemplate,
-} from "@/lib/actions/hr-contract-print";
-import {
-  CONTRACT_PLACEHOLDERS,
-  DEFAULT_CONTRACT_TEMPLATE,
-  articleTitle,
+  contractCddReasons,
+  contractDocData,
+  contractDocType,
   type ContractPrintValues,
-  type ContractTemplate,
 } from "@/lib/hr/work-contract";
-import { buildWorkContractHtml } from "@/components/rh/work-contract-print";
+import { usePrintKit } from "@/components/doc/use-print-kit";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhField, RhModal, bi, rhInput } from "@/components/rh/rh-ui";
 
@@ -72,22 +67,26 @@ const FIELDS: FieldDef[] = [
   { key: "retenue", label: "Retenue / jour d'absence (DA) · اقتطاع الغياب" },
 ];
 
+const CONTRACT_DOC_TYPES = ["contrat_cdd", "contrat_cdi"] as const;
+
+/** The contract as printed by its approved template (CDD or CDI). */
+export function contractHtml(kit: PrintKit, values: ContractPrintValues) {
+  return printFromKit(kit, contractDocType(values), contractDocData(values, kit.company), window.location.origin);
+}
+
 export function ContractPrintDialog({
   contractId,
-  canEditTemplate,
   onClose,
   onNumbered,
   onArchived,
 }: {
   contractId: string;
-  canEditTemplate: boolean;
   onClose: () => void;
   onNumbered?: (numero: string) => void;
   onArchived?: (url: string) => void;
 }) {
   const [values, setValues] = useState<ContractPrintValues | null>(null);
-  const [template, setTemplate] = useState<ContractTemplate | null>(null);
-  const [editingTemplate, setEditingTemplate] = useState(false);
+  const { kit, error: kitError } = usePrintKit(CONTRACT_DOC_TYPES);
   const [error, setError] = useState<string | null>(null);
   const [archive, setArchive] = useState<{ state: "running" | "done"; url?: string } | null>(null);
   const [pending, start] = useTransition();
@@ -96,27 +95,25 @@ export function ContractPrintDialog({
     let cancelled = false;
     getContractPrintContext(contractId).then((r) => {
       if (cancelled) return;
-      if (r.ok) {
-        setValues(r.data.values);
-        setTemplate(r.data.template);
-      } else setError(r.error);
+      if (r.ok) setValues(r.data.values);
+      else setError(r.error);
     });
     return () => {
       cancelled = true;
     };
   }, [contractId]);
 
-  const html = useMemo(
-    () => (values && template ? buildWorkContractHtml(values, template) : ""),
-    [values, template],
-  );
+  const preview = useMemo(() => (values && kit ? contractHtml(kit, values) : null), [values, kit]);
+  const html = preview?.ok ? preview.data : "";
+  const reasons = useMemo(() => contractCddReasons(kit?.templates.contrat_cdd ?? ""), [kit]);
+  const shownError = error ?? kitError ?? (preview && !preview.ok ? preview.error : null);
 
   function set<K extends keyof ContractPrintValues>(key: K, value: ContractPrintValues[K]) {
     setValues((prev) => (prev ? { ...prev, [key]: value } : prev));
   }
 
   function print() {
-    if (!values || !template) return;
+    if (!values || !kit) return;
     setError(null);
     setArchive(null);
     start(async () => {
@@ -128,7 +125,12 @@ export function ContractPrintDialog({
       const next = { ...values, numero: r.data.numero };
       setValues(next);
       onNumbered?.(r.data.numero);
-      printHtml(buildWorkContractHtml(next, template));
+      const printed = contractHtml(kit, next);
+      if (!printed.ok) {
+        setError(printed.error);
+        return;
+      }
+      printHtml(printed.data);
       setArchive({ state: "running" });
       void archiveContractPrint(contractId).then((a) => {
         if (a.ok) {
@@ -147,30 +149,24 @@ export function ContractPrintDialog({
     : [];
 
   return (
-    <>
     <RhModal
       size="xl"
       title={bi("Imprimer le contrat de travail", "طباعة عقد العمل")}
       onClose={onClose}
       footer={
         <>
-          {canEditTemplate && template ? (
-            <Button variant="secondary" onClick={() => setEditingTemplate(true)}>
-              {bi("Modifier le modèle (articles)", "تعديل النموذج")}
-            </Button>
-          ) : null}
           <Button variant="secondary" onClick={onClose}>
             {bi("Fermer", "إغلاق")}
           </Button>
-          <Button disabled={pending || !values} onClick={print}>
+          <Button disabled={pending || !values || !kit} onClick={print}>
             {bi("Enregistrer et imprimer", "حفظ وطباعة")}
           </Button>
         </>
       }
     >
-      {error ? (
+      {shownError ? (
         <div className="mb-3">
-          <RhAlert tone="danger">{error}</RhAlert>
+          <RhAlert tone="danger">{shownError}</RhAlert>
         </div>
       ) : null}
       {archive ? (
@@ -189,8 +185,8 @@ export function ContractPrintDialog({
           </RhAlert>
         </div>
       ) : null}
-      {!values || !template ? (
-        error ? null : <p className="text-sm text-foreground/55">{bi("Chargement…", "جارٍ التحميل…")}</p>
+      {!values || !kit ? (
+        shownError ? null : <p className="text-sm text-foreground/55">{bi("Chargement…", "جارٍ التحميل…")}</p>
       ) : (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
           <div className="space-y-3">
@@ -223,7 +219,7 @@ export function ContractPrintDialog({
                     value={values.cdd_reason}
                     onChange={(e) => set("cdd_reason", Number(e.target.value))}
                   >
-                    {template.cdd_reasons.map((r, i) => (
+                    {reasons.map((r, i) => (
                       <option key={i} value={i + 1}>
                         {i + 1}- {r}
                       </option>
@@ -253,178 +249,6 @@ export function ContractPrintDialog({
           </div>
         </div>
       )}
-    </RhModal>
-    {editingTemplate && template ? (
-      <ContractTemplateEditor
-        template={template}
-        onClose={() => setEditingTemplate(false)}
-        onSaved={(t) => {
-          setTemplate(t);
-          setEditingTemplate(false);
-        }}
-      />
-    ) : null}
-    </>
-  );
-}
-
-function ContractTemplateEditor({
-  template,
-  onClose,
-  onSaved,
-}: {
-  template: ContractTemplate;
-  onClose: () => void;
-  onSaved: (t: ContractTemplate) => void;
-}) {
-  const [draft, setDraft] = useState<ContractTemplate>(template);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, start] = useTransition();
-  const area = `${rhInput} h-auto min-h-[5.5rem] py-2 leading-7`;
-
-  function save() {
-    setError(null);
-    start(async () => {
-      const r = await saveContractTemplate(draft);
-      if (!r.ok) setError(r.error);
-      else onSaved(r.data);
-    });
-  }
-
-  const text = (key: keyof ContractTemplate, label: string, rows = 3) => (
-    <RhField label={label}>
-      <textarea
-        dir="rtl"
-        rows={rows}
-        className={area}
-        value={draft[key] as string}
-        onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
-      />
-    </RhField>
-  );
-
-  return (
-    <RhModal
-      size="lg"
-      title={bi("Modèle du contrat de travail", "نموذج عقد العمل")}
-      onClose={onClose}
-      footer={
-        <>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              if (window.confirm(bi("Revenir au texte d'origine ?", "الرجوع إلى النص الأصلي؟"))) {
-                setDraft(DEFAULT_CONTRACT_TEMPLATE);
-              }
-            }}
-          >
-            {bi("Texte d'origine", "النص الأصلي")}
-          </Button>
-          <Button variant="secondary" onClick={onClose}>
-            {bi("Annuler", "إلغاء")}
-          </Button>
-          <Button disabled={pending} onClick={save}>
-            {bi("Enregistrer le modèle", "حفظ النموذج")}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-3">
-        {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
-        <RhAlert tone="info">
-          {bi(
-            `Variables : ${CONTRACT_PLACEHOLDERS.map(([k, l]) => `${k} = ${l}`).join(" · ")}. Texte **entre deux étoiles** = gras.`,
-            "",
-          )}
-        </RhAlert>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {text("title_cdd", "Titre CDD", 1)}
-          {text("title_cdi", "Titre CDI", 1)}
-        </div>
-        {text("legal_intro", "Préambule légal")}
-        <div className="grid gap-3 sm:grid-cols-2">
-          {text("opening_cdd", "Phrase d'ouverture CDD", 2)}
-          {text("opening_cdi", "Phrase d'ouverture CDI", 2)}
-        </div>
-        {text("employer_block", "L'employeur (من جهة)", 5)}
-        {text("cdd_reason_intro", "Article 2 (CDD) : introduction")}
-        {draft.cdd_reasons.map((r, i) => (
-          <RhField key={`reason-${i}`} label={`Motif ${i + 1}`}>
-            <input
-              dir="rtl"
-              className={rhInput}
-              value={r}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  cdd_reasons: draft.cdd_reasons.map((x, j) => (j === i ? e.target.value : x)),
-                })
-              }
-            />
-          </RhField>
-        ))}
-        {draft.articles.map((a, i) => (
-          <div key={`art-${i}`} className="rounded-xl border border-border/70 p-3">
-            <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-sm font-semibold">
-              <span>
-                {bi(`Article suivant n° ${i + 1}`, "")} ({articleTitle(i + 2)} en CDD)
-              </span>
-              <span className="flex items-center gap-3">
-                <label className="flex items-center gap-1 text-xs font-normal">
-                  <input
-                    type="checkbox"
-                    checked={a.cdd_only === true}
-                    onChange={(e) =>
-                      setDraft({
-                        ...draft,
-                        articles: draft.articles.map((x, j) => (j === i ? { ...x, cdd_only: e.target.checked } : x)),
-                      })
-                    }
-                  />
-                  {bi("CDD seulement", "")}
-                </label>
-                <button
-                  type="button"
-                  className="text-xs text-red-600 hover:underline"
-                  onClick={() => setDraft({ ...draft, articles: draft.articles.filter((_, j) => j !== i) })}
-                >
-                  {bi("Supprimer", "حذف")}
-                </button>
-              </span>
-            </div>
-            <textarea
-              dir="rtl"
-              rows={3}
-              className={area}
-              value={a.body}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  articles: draft.articles.map((x, j) => (j === i ? { ...x, body: e.target.value } : x)),
-                })
-              }
-            />
-          </div>
-        ))}
-        <Button
-          variant="secondary"
-          onClick={() =>
-            setDraft({
-              ...draft,
-              articles: [...draft.articles, { key: `art${draft.articles.length + 1}`, body: "", cdd_only: false }],
-            })
-          }
-        >
-          {bi("Ajouter un article", "إضافة مادة")}
-        </Button>
-        {text("note", "Remarque (ملاحظة)")}
-        {text("closing", "Phrase finale", 1)}
-        <div className="grid gap-3 sm:grid-cols-2">
-          {text("sig_employee", "Signature employé", 1)}
-          {text("sig_employer", "Signature employeur", 1)}
-        </div>
-        {text("copies", "Exemplaires (1re ligne à droite, lignes suivantes à gauche)", 3)}
-      </div>
     </RhModal>
   );
 }

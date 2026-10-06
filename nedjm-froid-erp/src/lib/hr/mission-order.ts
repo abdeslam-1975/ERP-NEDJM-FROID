@@ -1,4 +1,7 @@
 import { z } from "zod";
+import type { DocData } from "@/lib/doc/engine";
+import { documentReference, type HrCompanyProfile } from "@/lib/hr/company-profile";
+import { transportBox, type PrintLists } from "@/lib/hr/hr-lists";
 
 const optText = (max: number) =>
   z
@@ -14,13 +17,6 @@ const optDate = z
   .optional()
   .transform((v) => (v ? v : null));
 
-export const OM_LIEU_DEPART = "Hassi Messaoud";
-export const OM_DONNEUR = "Service RH";
-export const OM_FAIT_A = "HMD";
-export const OM_ENTREPRISE = "E.U.R.L. NEDJM FROID";
-export const OM_MOYEN_TOUS = "Tous moyens de transport";
-export const OM_MOYEN_SERVICE = "Véhicule de service";
-export const OM_MOYENS = [OM_MOYEN_TOUS, OM_MOYEN_SERVICE] as const;
 /** Print layout kept for orders that must still use the legacy boxed sheet. */
 export const OM_GABARIT_ANCIEN = "v1";
 
@@ -98,7 +94,11 @@ export function pickMissionContract<T extends MissionContractHint>(
   return [...pool].sort((a, b) => b.start_date.localeCompare(a.start_date))[0] ?? null;
 }
 
-export function missionPayload(fields: MissionOrderFields): Record<string, string | null> {
+/** Issuer and place printed when the order leaves them empty. */
+export type SheetDefaults = Pick<HrCompanyProfile, "hr_service" | "city_short">;
+export type MissionDefaults = SheetDefaults & Pick<HrCompanyProfile, "default_departure">;
+
+export function missionPayload(fields: MissionOrderFields, defaults: SheetDefaults): Record<string, string | null> {
   return {
     matricule: fields.matricule,
     nom: fields.nom,
@@ -125,8 +125,8 @@ export function missionPayload(fields: MissionOrderFields): Record<string, strin
     pieceDelivre: fields.pieceDelivre,
     pieceFonction: fields.pieceFonction,
     pieceLieu: fields.pieceLieu,
-    donneur: fields.donneur ?? OM_DONNEUR,
-    faitA: fields.faitA ?? OM_FAIT_A,
+    donneur: fields.donneur ?? (defaults.hr_service || null),
+    faitA: fields.faitA ?? (defaults.city_short || null),
     dateDoc: fields.dateDoc,
     gabarit: fields.gabarit,
   };
@@ -230,7 +230,9 @@ export function missionDateBounds(value: MissionDates, today: string, original?:
 }
 
 /** Printed in place of the return date of an open-ended ordre de mission. */
-export const OM_FIN_DE_MISSION = "Fin de mission";
+export function openReturnLabel(company: Pick<HrCompanyProfile, "mission_open_return">) {
+  return company.mission_open_return.trim();
+}
 
 export function missionPointageHref(input: {
   employeeId: string;
@@ -245,4 +247,92 @@ export function missionPointageHref(input: {
 
 export function omJoin(...parts: Array<string | null | undefined>) {
   return parts.filter((part) => part && String(part).trim() !== "").join(" — ");
+}
+
+export type SheetDocFields = Pick<
+  MissionOrderFields,
+  | "matricule"
+  | "nom"
+  | "prenom"
+  | "affectation"
+  | "codeAffectation"
+  | "poste"
+  | "moyen"
+  | "modele"
+  | "immat"
+  | "kmDepart"
+  | "kmRetour"
+  | "pieceType"
+  | "pieceNum"
+  | "pieceFonction"
+  | "donneur"
+  | "faitA"
+  | "dateDoc"
+>;
+
+/** Values shared by the ordre de mission and the titre de congé templates. */
+export function sheetDocData(
+  fields: SheetDocFields,
+  company: HrCompanyProfile,
+  letterheadUrl: string,
+  lists: PrintLists,
+): DocData {
+  const km = (value: string | null) => (value ? `${value} km` : "");
+  const mode = transportBox(lists.transportModes, fields.moyen);
+  return {
+    letterhead: letterheadUrl,
+    company,
+    matricule: fields.matricule,
+    nom_complet: `${fields.nom} ${fields.prenom ?? ""}`.trim().toUpperCase(),
+    affectation: fields.affectation,
+    code_affectation: fields.codeAffectation,
+    poste: fields.poste,
+    moyen: fields.moyen,
+    mode_tous: mode === "tous" ? "✓" : "",
+    mode_service: mode === "service" ? "✓" : "",
+    modele: fields.modele,
+    immat: fields.immat,
+    km_depart: km(fields.kmDepart),
+    km_retour: km(fields.kmRetour),
+    piece_type: fields.pieceType,
+    piece_num: fields.pieceNum,
+    piece_fonction: fields.pieceFonction,
+    donneur: fields.donneur,
+    fait_a: fields.faitA || company.city_short,
+    date_doc: formatOmDate(fields.dateDoc),
+  };
+}
+
+export function missionReference(numero: string | null | undefined, company: Pick<HrCompanyProfile, "doc_prefix">) {
+  return documentReference(company.doc_prefix, "OM", numero);
+}
+
+export function missionDocType(fields: Pick<MissionOrderFields, "gabarit">) {
+  return fields.gabarit === OM_GABARIT_ANCIEN ? "ordre_mission_v1" : "ordre_mission";
+}
+
+export function missionDocData(
+  fields: MissionOrderFields & { numero?: string | null },
+  company: HrCompanyProfile,
+  letterheadUrl: string,
+  lists: PrintLists,
+): DocData {
+  const retour = fields.dateRetour ? formatOmDate(fields.dateRetour) : fields.dateDepart ? openReturnLabel(company) : "";
+  const numero = fields.numero ?? "";
+  return {
+    ...sheetDocData(fields, company, letterheadUrl, lists),
+    numero,
+    reference: missionReference(numero, company),
+    doc_title: `ORDRE DE MISSION ${numero}`.trim(),
+    dest1: fields.dest1,
+    dest2: fields.dest2,
+    destinations: omJoin(fields.dest1, fields.dest2),
+    depart: omJoin(fields.lieuDepart, formatOmDate(fields.dateDepart)),
+    retour: omJoin(fields.lieuRetour, retour),
+    depart_heure: omJoin(fields.lieuDepart, formatOmDate(fields.dateDepart), fields.heureDepart),
+    retour_heure: omJoin(fields.lieuRetour, retour, fields.dateRetour ? fields.heureRetour : null),
+    motif: fields.motif,
+    piece_delivre: formatOmDate(fields.pieceDelivre),
+    piece_lieu: fields.pieceLieu,
+  };
 }

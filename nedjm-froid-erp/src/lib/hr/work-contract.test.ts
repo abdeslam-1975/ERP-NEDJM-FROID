@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { SEED_COMPANY, SEED_LIST_ITEMS } from "@/lib/doc/hr-docs.fixtures";
+import { seededTemplate } from "@/lib/doc/migration-templates";
+import { contractTypeDefaults } from "@/lib/hr/hr-lists";
 import {
   arabicAmountWords,
   arabicLongDate,
   arabicNumberWords,
-  articleTitle,
+  contractCddReasons,
+  contractDocData,
+  contractDocType,
   contractPrintDataToSave,
   contractPrintDefaults,
-  fillContractText,
   formatDzd,
-  normalizeContractTemplate,
-  DEFAULT_CONTRACT_TEMPLATE,
   type ContractPrintSource,
 } from "@/lib/hr/work-contract";
 
@@ -44,6 +46,8 @@ const source: ContractPrintSource = {
   },
 };
 
+const cdd = contractTypeDefaults(SEED_LIST_ITEMS, "CDD");
+
 describe("arabicNumberWords", () => {
   it.each([
     [1, "واحد"],
@@ -73,21 +77,30 @@ describe("formatting", () => {
   it("formats dates and amounts like the paper contract", () => {
     expect(arabicLongDate("1991-12-28")).toBe("28 ديسمبر 1991");
     expect(formatDzd("210000")).toBe("210 000.00");
-    expect(articleTitle(0)).toBe("المادة الأولى");
-    expect(articleTitle(10)).toBe("المادة الحادية عشر");
   });
 
-  it("fills article placeholders", () => {
-    const v = contractPrintDefaults(source);
-    const salary = DEFAULT_CONTRACT_TEMPLATE.articles.find((a) => a.key === "salaire")!;
-    expect(fillContractText(salary.body, v)).toContain("210 000.00 دج** (مائتان وعشرة آلاف)");
-    expect(fillContractText("{retenue} {retenue_lettres}", v)).toBe(".......... ..........");
+  it("gives the templates formatted amounts, words and dotted blanks", () => {
+    const v = contractPrintDefaults(source, cdd);
+    const data = contractDocData(v, SEED_COMPANY);
+    expect(contractDocType(v)).toBe("contrat_cdd");
+    expect(data.net).toBe("210 000.00");
+    expect(data.net_words).toBe("مائتان وعشرة آلاف");
+    expect(data.birth_date).toBe("28 ديسمبر 1991");
+    expect([data.retenue, data.retenue_words]).toEqual(["..........", ".........."]);
+  });
+});
+
+describe("contractCddReasons", () => {
+  it("reads the five reasons of article 12 from the seeded CDD template", () => {
+    const reasons = contractCddReasons(seededTemplate("contrat_cdd"));
+    expect(reasons).toHaveLength(5);
+    expect(reasons[0]).toBe("عندما يوظف العامل(ة) عمل مرتبط بعقود وأشغال أو خدمات غير متجددة.");
   });
 });
 
 describe("contractPrintDefaults", () => {
   it("prefers Arabic fields and falls back to Latin", () => {
-    const v = contractPrintDefaults(source);
+    const v = contractPrintDefaults(source, cdd);
     expect(v.nom).toBe("الشين أبوبكر");
     expect(v.birth_place).toBe("TAHIR");
     expect(v.id_piece).toBe("ب.ت.و");
@@ -95,24 +108,24 @@ describe("contractPrintDefaults", () => {
     expect(v.is_cdi).toBe(false);
   });
 
+  it("takes essai, préavis, motif and the CDI flag from the contract type", () => {
+    expect([cdd.essai, cdd.preavis, cdd.cdd_reason, cdd.cdi]).toEqual(["شهرا واحدا", "ثلاثة أشهر", 5, false]);
+    const cdi = contractPrintDefaults(source, contractTypeDefaults(SEED_LIST_ITEMS, "cdi"));
+    expect(cdi.is_cdi).toBe(true);
+    expect(contractDocType(cdi)).toBe("contrat_cdi");
+    const custom = contractPrintDefaults(source, { cdi: false, essai: "ستة أشهر", preavis: "شهر", cdd_reason: 2 });
+    expect([custom.essai, custom.preavis, custom.cdd_reason]).toEqual(["ستة أشهر", "شهر", 2]);
+    expect(contractTypeDefaults(SEED_LIST_ITEMS, "INCONNU")).toEqual({ cdi: false, essai: "", preavis: "", cdd_reason: 1 });
+  });
+
   it("applies saved print values and stores only the differences", () => {
-    const fileDefaults = contractPrintDefaults(source);
+    const fileDefaults = contractPrintDefaults(source, cdd);
     const edited = { ...fileDefaults, birth_place: "الطاهير", retenue: "7000", cdd_reason: 3 };
     const saved = contractPrintDataToSave(edited, fileDefaults);
     expect(saved).toEqual({ cdd_reason: 3, birth_place: "الطاهير", retenue: "7000" });
-    const again = contractPrintDefaults({ ...source, print_data: saved });
+    const again = contractPrintDefaults({ ...source, print_data: saved }, cdd);
     expect(again.birth_place).toBe("الطاهير");
     expect(again.cdd_reason).toBe(3);
     expect(again.nom).toBe("الشين أبوبكر");
-  });
-});
-
-describe("normalizeContractTemplate", () => {
-  it("keeps defaults for missing keys", () => {
-    const t = normalizeContractTemplate({ closing: "X", articles: [{ body: "A" }] });
-    expect(t.closing).toBe("X");
-    expect(t.title_cdd).toBe(DEFAULT_CONTRACT_TEMPLATE.title_cdd);
-    expect(t.articles).toEqual([{ key: "art1", body: "A", cdd_only: false }]);
-    expect(normalizeContractTemplate(null)).toEqual(DEFAULT_CONTRACT_TEMPLATE);
   });
 });
