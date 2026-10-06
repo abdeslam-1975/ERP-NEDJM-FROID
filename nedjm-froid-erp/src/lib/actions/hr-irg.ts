@@ -111,8 +111,8 @@ async function parentDraft(
 
 function revalidateIrg() {
   revalidatePath("/rh");
-  revalidatePath("/rh/legal");
-  revalidatePath("/rh/parametres");
+  revalidatePath("/parametres/rh/cotisations");
+  revalidatePath("/parametres/rh");
   revalidatePath("/rh/paie");
   revalidatePath("/rh/paie/irg");
   revalidatePath("/rh/paie/fiscal");

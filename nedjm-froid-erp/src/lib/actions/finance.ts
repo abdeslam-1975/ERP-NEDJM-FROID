@@ -144,7 +144,7 @@ export type FinanceHubData = {
 
 function refreshFinance() {
   revalidatePath("/finance");
-  revalidatePath("/finance/parametres");
+  revalidatePath("/parametres/finance");
   revalidatePath("/referentiels/contrats");
 }
 

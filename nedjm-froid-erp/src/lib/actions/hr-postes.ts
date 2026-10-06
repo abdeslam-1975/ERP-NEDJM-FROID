@@ -66,7 +66,7 @@ const gridSchema = z.object({
 function revalidatePostes() {
   revalidatePath("/rh/postes");
   revalidatePath("/rh/contrats");
-  revalidatePath("/rh/parametres");
+  revalidatePath("/parametres/rh/rubriques");
 }
 
 export async function listPostes(): Promise<ActionResult<PosteRow[]>> {

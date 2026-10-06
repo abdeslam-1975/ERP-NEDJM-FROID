@@ -35,6 +35,11 @@ export type UiItemDef = {
   alias?: boolean;
   /** Never hidden (home page, settings hub, interface screen). */
   locked?: boolean;
+  /**
+   * Lives in the settings center (Paramètres): left out of its menu or module bar, while its key still decides
+   * who sees it there and blocks its route.
+   */
+  inSettings?: boolean;
   icon?: UiIcon;
   /** Side menu only: default group. */
   group?: string;
@@ -44,7 +49,6 @@ export type UiItemDef = {
   tabsets?: string[];
   /** HR module bar only: section (RH_SECTIONS) the tab is listed under. */
   section?: string;
-  descriptionFr?: string;
   superAdminOnly?: boolean;
 };
 
@@ -142,15 +146,15 @@ export const UI_TABSETS: UiTabsetDef[] = [
       { id: "home", labelFr: "Tableau de Bord", labelAr: "لوحة القيادة", href: "/", exact: true, icon: "home", group: "group.pilotage", locked: true },
       { id: "simulateur", labelFr: "Simulateur", labelAr: "المحاكي", href: "/simulateur", icon: "docs", group: "group.pilotage" },
       { id: "decisions", labelFr: "Centre de décisions", labelAr: "مركز القرارات", href: "/decisions", icon: "shield", group: "group.pilotage", tabsets: ["decisions"] },
-      { id: "rh", labelFr: "Ressources Humaines", labelAr: "الموارد البشرية", href: "/rh", icon: "users", group: "group.rh", childTabset: "rh", tabsets: ["rh_settings", "rh_legal", "att_imports", "hr_attendance"] },
+      { id: "rh", labelFr: "Ressources Humaines", labelAr: "الموارد البشرية", href: "/rh", routes: ["/parametres/rh"], icon: "users", group: "group.rh", childTabset: "rh", tabsets: ["rh_settings", "rh_legal", "att_imports", "hr_attendance"] },
       { id: "chantiers", labelFr: "Chantiers", labelAr: "الورشات", href: "/referentiels/chantiers", icon: "site", group: "group.sites" },
       { id: "activites", labelFr: "Codes d'activité", labelAr: "رموز النشاط", href: "/referentiels/activites", icon: "site", group: "group.sites" },
       { id: "clients", labelFr: "Clients", labelAr: "العملاء", href: "/referentiels/clients", icon: "users", group: "group.commercial", tabsets: ["client_fiche"] },
       { id: "contrats", labelFr: "Contrats clients", labelAr: "عقود العملاء", href: "/referentiels/contrats", icon: "contract", group: "group.commercial", tabsets: ["client_contract"] },
-      { id: "finance", labelFr: "Banque & Caisse", labelAr: "البنك والصندوق", href: "/finance", icon: "finance", group: "group.finance", tabsets: ["finance", "finance_settings"] },
-      { id: "achats", labelFr: "Achats", labelAr: "المشتريات", href: "/achats", icon: "cart", group: "group.finance", tabsets: ["purchases", "purchase_settings"] },
-      { id: "utilisateurs", labelFr: "Utilisateurs", labelAr: "المستخدمون", href: "/parametres/utilisateurs", icon: "users", group: "group.admin" },
-      { id: "roles", labelFr: "Rôles & droits", labelAr: "الأدوار", href: "/administration/roles", icon: "shield", group: "group.admin" },
+      { id: "finance", labelFr: "Banque & Caisse", labelAr: "البنك والصندوق", href: "/finance", routes: ["/parametres/finance"], icon: "finance", group: "group.finance", tabsets: ["finance", "finance_settings"] },
+      { id: "achats", labelFr: "Achats", labelAr: "المشتريات", href: "/achats", routes: ["/parametres/achats"], icon: "cart", group: "group.finance", tabsets: ["purchases", "purchase_settings"] },
+      { id: "utilisateurs", labelFr: "Utilisateurs", labelAr: "المستخدمون", href: "/parametres/utilisateurs", icon: "users", group: "group.admin", inSettings: true },
+      { id: "roles", labelFr: "Rôles & droits", labelAr: "الأدوار", href: "/administration/roles", icon: "shield", group: "group.admin", inSettings: true },
       { id: "parametres", labelFr: "Paramètres", labelAr: "إعدادات عامة", href: "/parametres", exact: true, icon: "settings", group: "group.admin", locked: true, tabsets: ["settings"] },
     ],
   },
@@ -185,13 +189,13 @@ export const UI_TABSETS: UiTabsetDef[] = [
         routes: ["/rh/contrats", "/rh/paie/bulletins"],
         section: "documents",
       },
-      { id: "legal", labelFr: "Cotisations & impôts", href: "/rh/legal", exact: true, section: "legal" },
+      { id: "legal", labelFr: "Cotisations & impôts", href: "/parametres/rh/cotisations", section: "legal", inSettings: true },
       { id: "legal_propositions", labelFr: "Propositions légales", href: "/rh/legal/propositions", section: "legal" },
       { id: "legal_documents", labelFr: "Documents juridiques", href: "/rh/legal/documents", section: "legal" },
       { id: "legal_extraction", labelFr: "Extraction IA", href: "/rh/legal/extraction-ia", section: "legal" },
       { id: "legal_veille", labelFr: "Veille juridique", href: "/rh/legal/veille", section: "legal" },
       { id: "qualite", labelFr: "Qualité des données", href: "/rh/qualite-donnees", section: "overview" },
-      { id: "parametres", labelFr: "Paramètres", href: "/rh/parametres", section: "settings" },
+      { id: "parametres", labelFr: "Paramètres", href: "/parametres/rh", section: "settings" },
     ],
   },
   {
@@ -199,20 +203,15 @@ export const UI_TABSETS: UiTabsetDef[] = [
     level: "C",
     titleFr: "Page Paramètres",
     titleAr: "صفحة الإعدادات",
-    whereFr: "Cartes de la page Paramètres",
+    whereFr: "Centre des paramètres",
     items: [
-      { id: "interface", labelFr: "Interface", labelAr: "الواجهة", href: "/parametres/interface", locked: true, superAdminOnly: true, descriptionFr: "Modules et onglets visibles par rôle, ordre, libellés et couleurs." },
-      { id: "acces", labelFr: "Accès par compte", labelAr: "صلاحيات الحسابات", href: "/parametres/acces", locked: true, superAdminOnly: true, descriptionFr: "Choisir un compte, ouvrir ses modules puis les onglets de chaque module." },
-      { id: "utilisateurs", labelFr: "Utilisateurs", labelAr: "المستخدمون", href: "/parametres/utilisateurs", alias: true, descriptionFr: "Comptes, invitations, rôles et chantiers de chaque utilisateur." },
-      { id: "roles", labelFr: "Rôles", labelAr: "الأدوار", href: "/administration/roles", alias: true, descriptionFr: "Rôles disponibles et leur niveau." },
-      { id: "permissions", labelFr: "Matrice des permissions", labelAr: "مصفوفة الصلاحيات", href: "/administration/permissions", descriptionFr: "Droits lire / créer / modifier / supprimer / imprimer / exporter par rôle et par écran." },
-      { id: "periodes", labelFr: "Clôture des périodes", labelAr: "إقفال الفترات", href: "/administration/periodes", descriptionFr: "Verrouillage des mois clôturés." },
-      { id: "audit", labelFr: "Journal d'audit", labelAr: "سجل التدقيق", href: "/administration/audit", descriptionFr: "Historique des modifications." },
-      { id: "rh_parametres", labelFr: "Paramètres RH", labelAr: "إعدادات الموارد البشرية", href: "/rh/parametres", alias: true, descriptionFr: "Rubriques de salaire, cotisations & impôts, modèle de fiche, listes et codes, bulletin." },
-      { id: "rh_legal", labelFr: "Cotisations & impôts", labelAr: "الاشتراكات والضرائب", href: "/rh/legal", alias: true, descriptionFr: "CNAS, CACOBATPH, barème IRG, SNMG et variables légales." },
-      { id: "legendes", labelFr: "Légendes de présence", labelAr: "رموز الحضور", href: "/referentiels/legendes", descriptionFr: "Codes du pointage et leurs coefficients." },
-      { id: "finance_parametres", labelFr: "Paramètres finance", labelAr: "إعدادات المالية", href: "/finance/parametres", descriptionFr: "Comptes, TVA, modes de paiement, catégories, clôtures." },
-      { id: "achats_parametres", labelFr: "Paramètres achats", labelAr: "إعدادات المشتريات", href: "/achats/parametres", descriptionFr: "Profils d'impression, types de situation, timbre, numérotation." },
+      { id: "interface", labelFr: "Interface", labelAr: "الواجهة", href: "/parametres/interface", locked: true, superAdminOnly: true },
+      { id: "acces", labelFr: "Accès par compte", labelAr: "صلاحيات الحسابات", href: "/parametres/acces", locked: true, superAdminOnly: true },
+      { id: "permissions", labelFr: "Matrice des permissions", labelAr: "مصفوفة الصلاحيات", href: "/administration/permissions" },
+      { id: "periodes", labelFr: "Clôture des périodes", labelAr: "إقفال الفترات", href: "/administration/periodes" },
+      { id: "audit", labelFr: "Journal d'audit", labelAr: "سجل التدقيق", href: "/administration/audit" },
+      { id: "finance_parametres", labelFr: "Paramètres finance", labelAr: "إعدادات المالية", href: "/parametres/finance" },
+      { id: "achats_parametres", labelFr: "Paramètres achats", labelAr: "إعدادات المشتريات", href: "/parametres/achats" },
     ],
   },
   {
@@ -220,14 +219,14 @@ export const UI_TABSETS: UiTabsetDef[] = [
     level: "C",
     titleFr: "Paramètres RH",
     titleAr: "إعدادات الموارد البشرية",
-    whereFr: "RH → Paramètres",
+    whereFr: "Paramètres → Ressources humaines",
     items: [
-      { id: "salary", labelFr: "Rubriques de salaire" },
-      { id: "legal", labelFr: "Cotisations & impôts" },
-      { id: "fiche", labelFr: "Modèle de fiche" },
-      { id: "catalogs", labelFr: "Listes et codes" },
-      { id: "bulletin", labelFr: "Modèle de bulletin" },
-      { id: "attendance", labelFr: "Feuille de présence" },
+      { id: "salary", labelFr: "Rubriques de salaire", href: "/parametres/rh/rubriques" },
+      { id: "legal", labelFr: "Cotisations & impôts", href: "/parametres/rh/cotisations" },
+      { id: "fiche", labelFr: "Modèle de fiche", href: "/parametres/rh/fiche" },
+      { id: "catalogs", labelFr: "Listes et codes", href: "/parametres/rh/listes" },
+      { id: "bulletin", labelFr: "Modèle de bulletin", href: "/parametres/rh/bulletin" },
+      { id: "attendance", labelFr: "Feuille de présence", href: "/parametres/rh/presence" },
     ],
   },
   {
@@ -235,7 +234,7 @@ export const UI_TABSETS: UiTabsetDef[] = [
     level: "C",
     titleFr: "Cotisations & impôts",
     titleAr: "الاشتراكات والضرائب",
-    whereFr: "RH → Cotisations & impôts",
+    whereFr: "Paramètres → Cotisations & impôts",
     items: [
       { id: "cnas", labelFr: "CNAS" },
       { id: "cacobatph", labelFr: "CACOBATPH" },
@@ -248,7 +247,7 @@ export const UI_TABSETS: UiTabsetDef[] = [
     level: "C",
     titleFr: "Rubriques de salaire",
     titleAr: "بنود الأجر",
-    whereFr: "RH → Paramètres → Rubriques de salaire",
+    whereFr: "Paramètres → Rubriques de salaire",
     items: [
       { id: "dict", labelFr: "Dictionnaire" },
       { id: "values", labelFr: "Valeurs" },

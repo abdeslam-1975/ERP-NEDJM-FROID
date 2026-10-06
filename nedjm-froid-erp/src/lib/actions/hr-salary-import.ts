@@ -27,7 +27,7 @@ async function requireSuperAdmin(): Promise<ActionResult<true>> {
 }
 
 function revalidate() {
-  revalidatePath("/rh/parametres");
+  revalidatePath("/parametres/rh/rubriques");
   revalidatePath("/rh/paie");
 }
 

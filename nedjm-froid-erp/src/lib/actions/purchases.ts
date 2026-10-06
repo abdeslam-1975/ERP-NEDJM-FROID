@@ -233,7 +233,7 @@ type RawOrderLine = PurchasingLine & {
 
 function refreshPurchases() {
   revalidatePath("/achats");
-  revalidatePath("/achats/parametres");
+  revalidatePath("/parametres/achats");
   revalidatePath("/finance");
 }
 

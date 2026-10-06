@@ -112,7 +112,7 @@ Chaque document reçoit une référence unique jamais réutilisée et une copie 
     body: `Attestations de travail et de salaire générées à la demande pour un employé, avec numéro unique.`,
   },
   {
-    path: "/rh/legal",
+    path: "/parametres/rh/cotisations",
     title: "Cotisations & impôts",
     body: `Variables légales datées : taux CNAS, CACOBATPH, barème IRG, SNMG, droits à congé. Une nouvelle valeur s'applique à partir de sa date d'effet sans modifier les paies passées.
 « Extraction IA » propose des valeurs à partir d'un texte juridique ; chaque proposition cite l'extrait source et doit être validée avant d'être appliquée.`,
@@ -123,9 +123,9 @@ Chaque document reçoit une référence unique jamais réutilisée et une copie 
     body: `Contrôle du référentiel et des affectations datées : chantiers sans wilaya codée (la wilaya détermine la zone IRG) et contrats qui ne commencent pas le 1er du mois. Rien n'est corrigé d'office : chaque point est confirmé ou soumis à décision.`,
   },
   {
-    path: "/rh/parametres",
+    path: "/parametres/rh",
     title: "Paramètres RH",
-    body: `Rubriques de salaire, cotisations & impôts, modèle de fiche employé (champs, ordre, obligatoires), listes et codes (catalogues), légendes de présence et mise en page du bulletin.`,
+    body: `Tous les réglages RH sont dans Paramètres → Ressources humaines, une section chacun : rubriques de salaire, modèle de bulletin, cotisations & impôts, modèle de fiche employé (champs, ordre, obligatoires), listes et codes (dont les légendes de présence), feuille de présence et modèles de documents. Les pages de travail y renvoient directement.`,
   },
   {
     path: "/simulateur",

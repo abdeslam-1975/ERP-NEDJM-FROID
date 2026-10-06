@@ -106,7 +106,7 @@ export function SlipTraceDialog({
         <RhAlert tone="warning">
           {unverified.length} règle(s) appliquée(s) sont des valeurs reprises jamais vérifiées. Faites-les approuver
           depuis{" "}
-          <Link href="/rh/legal" className="underline">
+          <Link href="/parametres/rh/cotisations" className="underline">
             Cotisations &amp; impôts
           </Link>{" "}
           avant de vous y fier.

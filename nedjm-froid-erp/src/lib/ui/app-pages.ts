@@ -1,3 +1,5 @@
+import { SETTINGS_GROUPS } from "@/lib/ui/settings-center";
+
 export type AppPage = { href: string; fr: string; ar: string; keywords?: string };
 
 /** Pages reachable from the global search and the HR assistant; each one is filtered with `isPathBlocked`. */
@@ -34,9 +36,7 @@ export const APP_PAGES: AppPage[] = [
       "contrat de travail bulletin de paie kashf ajr كشف الاجر العقود ordre de mission titre de conge fiche de renseignements",
   },
   { href: "/rh/attestations", fr: "Attestations", ar: "الشهادات" },
-  { href: "/rh/legal", fr: "Cotisations & impôts", ar: "الاشتراكات والضرائب", keywords: "cnas irg cacobatph regime" },
   { href: "/rh/qualite-donnees", fr: "Qualité des données", ar: "جودة البيانات" },
-  { href: "/rh/parametres", fr: "Paramètres RH", ar: "إعدادات الموارد البشرية", keywords: "rubriques" },
   { href: "/referentiels/clients", fr: "Clients", ar: "العملاء", keywords: "fiche client nif" },
   { href: "/referentiels/contrats", fr: "Contrats clients", ar: "عقود العملاء", keywords: "commercial" },
   { href: "/referentiels/chantiers", fr: "Chantiers", ar: "الورشات", keywords: "sites" },
@@ -46,4 +46,10 @@ export const APP_PAGES: AppPage[] = [
   { href: "/parametres/utilisateurs", fr: "Utilisateurs", ar: "المستخدمون" },
   { href: "/administration/roles", fr: "Rôles & droits", ar: "الأدوار" },
   { href: "/parametres", fr: "Paramètres", ar: "إعدادات عامة" },
+  // Sections open to every role (the others are found from the settings center itself).
+  ...SETTINGS_GROUPS.flatMap((g) =>
+    g.sections
+      .filter((s) => !s.roles && !s.superAdminOnly)
+      .map((s) => ({ href: s.href, fr: `Paramètres — ${s.labelFr}`, ar: s.labelAr, keywords: s.keywords })),
+  ),
 ];

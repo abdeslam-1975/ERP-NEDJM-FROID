@@ -106,6 +106,15 @@ describe("resolveTabset / applyTabs", () => {
     expect(resolveTabset({ ...layout({ hidden }), unrestricted: true }, "nav").some((i) => i.key === "nav.finance")).toBe(true);
   });
 
+  it("leaves the items living in the settings center out of menus and bars, not out of the settings screen", () => {
+    const nav = resolveTabset(DEFAULT_LAYOUT, "nav").map((i) => i.key);
+    expect(nav).not.toContain("nav.utilisateurs");
+    expect(nav).not.toContain("nav.roles");
+    expect(resolveTabset(DEFAULT_LAYOUT, "rh").map((i) => i.key)).not.toContain("rh.legal");
+    expect(resolveTabset(DEFAULT_LAYOUT, "rh", { includeHidden: true }).map((i) => i.key)).toContain("rh.legal");
+    expect(resolveNav(DEFAULT_LAYOUT).flatMap((g) => g.items.map((i) => i.key))).not.toContain("nav.roles");
+  });
+
   it("keeps dynamic counters when a tab is renamed", () => {
     expect(relabel("Lots (3)", "Lots", "Séries")).toBe("Séries (3)");
     const data = layout({
@@ -158,7 +167,16 @@ describe("isPathBlocked", () => {
 
   it("does not block a route through an alias link", () => {
     expect(isPathBlocked(layout({ hidden: ["rh.simulateur"] }), "/simulateur")).toBe(false);
-    expect(isPathBlocked(layout({ hidden: ["settings.utilisateurs"] }), "/parametres/utilisateurs")).toBe(false);
+  });
+
+  it("blocks the settings of a hidden module and keeps hiding a settings tab effective", () => {
+    expect(isPathBlocked(layout({ hidden: ["nav.rh"] }), "/parametres/rh/fiche")).toBe(true);
+    expect(isPathBlocked(layout({ hidden: ["nav.finance"] }), "/parametres/finance")).toBe(true);
+    expect(isPathBlocked(layout({ hidden: ["nav.achats"] }), "/parametres/achats")).toBe(true);
+    expect(isPathBlocked(layout({ hidden: ["rh.legal"] }), "/parametres/rh/cotisations")).toBe(true);
+    expect(isPathBlocked(layout({ hidden: ["rh.legal"] }), "/parametres/rh/fiche")).toBe(false);
+    expect(isPathBlocked(layout({ hidden: ["rh_settings.salary"] }), "/parametres/rh/rubriques")).toBe(true);
+    expect(isPathBlocked(layout({ hidden: ["nav.utilisateurs"] }), "/parametres/utilisateurs")).toBe(true);
   });
 
   it("keeps home and settings open", () => {

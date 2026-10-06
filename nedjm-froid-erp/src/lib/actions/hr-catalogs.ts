@@ -62,8 +62,8 @@ function revalidateHr() {
   revalidatePath("/rh/documents");
   revalidatePath("/rh/presence");
   revalidatePath("/rh/paie");
-  revalidatePath("/rh/parametres");
-  revalidatePath("/referentiels/legendes");
+  revalidatePath("/parametres/rh");
+  revalidatePath("/parametres/rh/listes");
 }
 
 export async function listCatalogKinds(): Promise<ActionResult<CatalogKind[]>> {
@@ -339,7 +339,7 @@ export async function requestLegendCoefficientChange(
   if (error) return { ok: false, error: error.message };
   if (typeof data !== "string") return { ok: false, error: "Demande non enregistrée." };
   revalidatePath("/decisions");
-  revalidatePath("/referentiels/legendes");
+  revalidatePath("/parametres/rh/listes");
   return { ok: true, data: { decision_id: data } };
 }
 

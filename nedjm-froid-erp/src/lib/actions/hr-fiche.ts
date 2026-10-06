@@ -20,7 +20,7 @@ function revalidateHr() {
   revalidatePath("/rh");
   revalidatePath("/rh/employes");
   revalidatePath("/rh/documents");
-  revalidatePath("/rh/parametres");
+  revalidatePath("/parametres/rh/fiche");
   revalidatePath("/rh/paie");
   revalidatePath("/rh/paie/bulletins");
 }

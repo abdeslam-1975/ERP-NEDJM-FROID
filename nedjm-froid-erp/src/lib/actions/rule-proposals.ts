@@ -58,8 +58,8 @@ const monthStart = z
   .refine((v) => isIsoDay(v) && v.endsWith("-01"), "Choisissez un mois (la règle s'applique au 1er du mois).");
 
 function revalidateRules() {
-  revalidatePath("/rh/legal");
-  revalidatePath("/rh/parametres");
+  revalidatePath("/parametres/rh/cotisations");
+  revalidatePath("/parametres/rh");
   revalidatePath("/rh/legal/propositions");
   revalidatePath("/referentiels/irg");
   revalidatePath("/rh/paie/irg");

@@ -1300,7 +1300,7 @@ export function AttendanceManager({
                   <Icon d={ICONS.inbox} className="h-4 w-4 text-foreground/50" />
                   Imports d&apos;archives
                 </Link>
-                <Link className={MENU_ITEM} href="/rh/parametres" onClick={close}>
+                <Link className={MENU_ITEM} href="/parametres/rh/listes" onClick={close}>
                   <Icon d={ICONS.settings} className="h-4 w-4 text-foreground/50" />
                   Paramètres
                 </Link>

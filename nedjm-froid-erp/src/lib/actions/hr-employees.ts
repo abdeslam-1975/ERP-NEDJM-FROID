@@ -109,7 +109,7 @@ function revalidateHr() {
   revalidatePath("/rh/contrats");
   revalidatePath("/rh/documents");
   revalidatePath("/referentiels/contrats");
-  revalidatePath("/rh/parametres");
+  revalidatePath("/parametres/rh/fiche");
 }
 
 function asAttrs(value: unknown): Record<string, unknown> {

@@ -156,9 +156,9 @@ export function CatalogsManager({
   return (
     <div className="space-y-5">
       <RhPageHeader
-        title={bi("Paramètres RH", "إعدادات الموارد البشرية")}
+        title={bi("Listes et codes", "القوائم والرموز")}
         description={bi(
-          "Les listes et codes s’ajoutent ici. Rien n’est figé dans le programme.",
+          "Les listes de la fiche employé et les légendes du pointage s’ajoutent ici. Rien n’est figé dans le programme.",
           "القوائم والرموز تُضاف من هنا. لا تُثبَّت في البرنامج.",
         )}
       />

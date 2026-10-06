@@ -51,7 +51,7 @@ function mapColumn(row: Record<string, unknown>): AttendanceColumn {
 
 function revalidateSheet() {
   revalidatePath("/rh/presence");
-  revalidatePath("/rh/parametres");
+  revalidatePath("/parametres/rh/presence");
 }
 
 export async function listAttendanceColumns(): Promise<ActionResult<AttendanceColumn[]>> {

@@ -72,7 +72,7 @@ const ASSETS_BUCKET = DOC_ASSETS_BUCKET;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function revalidate() {
-  revalidatePath("/rh/parametres");
+  revalidatePath("/parametres/rh/documents");
   revalidatePath("/rh/documents");
 }
 
@@ -116,7 +116,7 @@ async function approvedTemplate(db: Db, docType: string) {
     .limit(1)
     .maybeSingle();
   if (error) return { ok: false as const, error: error.message };
-  if (!data) return { ok: false as const, error: "Ce document n'a pas encore de modèle approuvé : approuvez-le dans Paramètres RH › Documents." };
+  if (!data) return { ok: false as const, error: "Ce document n'a pas encore de modèle approuvé : approuvez-le dans Paramètres › Modèles de documents." };
   return { ok: true as const, data: data as { html: string; version: number } };
 }
 

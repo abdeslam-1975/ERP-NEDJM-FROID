@@ -1,10 +1,6 @@
-import PlaceholderScreen from "@/components/layout/placeholder-screen";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return (
-    <PlaceholderScreen
-      title="Légendes de présence"
-      description="P, MS, CRP, AN, CM, AOP — coefficient et effet pass-through AN."
-    />
-  );
+/** The presence legends live in Paramètres → Listes et codes. */
+export default function LegacyLegendsPage() {
+  redirect("/parametres/rh/listes");
 }

@@ -96,7 +96,7 @@ export function FinanceHub({
             </p>
           </div>
           <Button asChild variant="ghost" className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white">
-            <a href="/finance/parametres">Paramètres</a>
+            <a href="/parametres/finance">Paramètres</a>
           </Button>
         </div>
       </div>

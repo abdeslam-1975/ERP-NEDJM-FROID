@@ -72,8 +72,8 @@ function revalidateAi() {
   revalidatePath("/rh/legal/extraction-ia");
   revalidatePath("/rh/legal/documents");
   revalidatePath("/rh/legal/propositions");
-  revalidatePath("/rh/legal");
-  revalidatePath("/rh/parametres");
+  revalidatePath("/parametres/rh/cotisations");
+  revalidatePath("/parametres/rh");
   revalidatePath("/decisions");
 }
 

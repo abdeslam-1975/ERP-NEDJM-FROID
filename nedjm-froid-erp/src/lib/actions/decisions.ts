@@ -491,15 +491,15 @@ export async function decideDecision(input: unknown): Promise<ActionResult<Decid
     if (applied) {
       revalidatePath("/rh/contrats");
       revalidatePath("/rh/qualite-donnees");
-      revalidatePath("/rh/legal");
-      revalidatePath("/rh/parametres");
+      revalidatePath("/parametres/rh/cotisations");
+      revalidatePath("/parametres/rh");
       revalidatePath("/rh/legal/propositions");
       revalidatePath("/referentiels/irg");
       revalidatePath("/rh/paie/irg");
       revalidatePath("/rh/paie/bulletins");
       revalidatePath("/rh/presence");
       revalidatePath("/rh/presence/imports");
-      revalidatePath("/referentiels/legendes");
+      revalidatePath("/parametres/rh/listes");
     }
     revalidatePath("/rh/paie/preparation");
     revalidatePath("/rh/legal/extraction-ia");

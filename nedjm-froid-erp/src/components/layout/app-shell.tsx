@@ -6,12 +6,14 @@ import { ArrangeBar } from "@/components/layout/arrange";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { UiLayoutProvider } from "@/components/layout/ui-layout-context";
+import { SettingsFrame } from "@/components/settings/settings-frame";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { listMyNotifications } from "@/lib/actions/decisions";
 import { PATHNAME_HEADER } from "@/lib/supabase/middleware";
 import { designCss } from "@/lib/ui/design";
 import { getUiLayout } from "@/lib/ui/layout";
 import { isPathBlocked, themeCss } from "@/lib/ui/resolve";
+import { isSettingsPath, resolveSettingsGroups } from "@/lib/ui/settings-center";
 
 export async function AppShell({
   title,
@@ -39,6 +41,10 @@ export async function AppShell({
   if (pathname && isPathBlocked(layout, pathname)) {
     redirect("/?error=hidden");
   }
+  const settingsGroups =
+    pathname && isSettingsPath(pathname)
+      ? resolveSettingsGroups(layout, { isSuperAdmin: workspace.isSuperAdmin, roleCodes: workspace.roles.map((r) => r.roleCode) })
+      : null;
   const notifications = await listMyNotifications().catch(() => null);
   const css = designCss(layout.design, layout.prefs) + themeCss(layout.theme);
   const primaryRole = workspace.roles.find((r) => r.siteId === null) ?? workspace.roles[0] ?? null;
@@ -77,7 +83,13 @@ export async function AppShell({
               notifications={notifications?.ok ? notifications.data.rows : []}
             />
             <main className="flex-1 px-4 pt-7 pb-8 sm:px-6">
-              <PageTransition>{children}</PageTransition>
+              {settingsGroups ? (
+                <SettingsFrame groups={settingsGroups}>
+                  <PageTransition>{children}</PageTransition>
+                </SettingsFrame>
+              ) : (
+                <PageTransition>{children}</PageTransition>
+              )}
             </main>
           </div>
         </div>

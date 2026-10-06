@@ -122,9 +122,9 @@ export type LegalPeriod = {
 
 function revalidateLegal() {
   revalidatePath("/rh");
-  revalidatePath("/rh/legal");
+  revalidatePath("/parametres/rh/cotisations");
   revalidatePath("/rh/contrats");
-  revalidatePath("/rh/parametres");
+  revalidatePath("/parametres/rh");
   revalidatePath("/rh/paie");
   revalidatePath("/rh/paie/irg");
   revalidatePath("/rh/paie/social");

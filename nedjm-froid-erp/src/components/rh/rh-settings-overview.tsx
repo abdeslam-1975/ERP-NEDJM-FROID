@@ -1,11 +1,10 @@
 import Link from "next/link";
 import {
   ChevronRight,
+  FileText,
   HardHat,
   Landmark,
-  ListChecks,
   Percent,
-  Scale,
   ShieldCheck,
   SlidersHorizontal,
   BriefcaseBusiness,
@@ -49,7 +48,7 @@ function da(value: number) {
   return Math.round(value).toLocaleString("fr-FR");
 }
 
-/** Key figures of the HR settings (rates, IRG scale, what is configured) above the detailed tabs. */
+/** Key figures of the HR settings (rates, IRG scale, what is configured), each linked to the section editing it. */
 export function RhSettingsOverview({
   rates,
   brackets,
@@ -67,22 +66,22 @@ export function RhSettingsOverview({
   ].filter((c) => c.value !== null && c.value !== undefined);
   const maxRate = Math.max(0.0001, ...brackets.map((b) => b.rate));
   const configured = [
-    { label: "Rubriques de salaire", value: counts.rubriques },
-    { label: "Listes et codes", value: counts.lists },
-    { label: "Champs de la fiche employé", value: counts.fields },
-    { label: "Légendes de pointage", value: counts.legends },
+    { label: "Rubriques de salaire", value: counts.rubriques, href: "/parametres/rh/rubriques" },
+    { label: "Listes et codes", value: counts.lists, href: "/parametres/rh/listes" },
+    { label: "Champs de la fiche employé", value: counts.fields, href: "/parametres/rh/fiche" },
+    { label: "Légendes de pointage", value: counts.legends, href: "/parametres/rh/listes" },
   ];
   const links: { icon: LucideIcon; title: string; detail: string; href: string }[] = [
     { icon: HardHat, title: "Chantiers", detail: `${counts.sites} site${counts.sites > 1 ? "s" : ""}`, href: "/referentiels/chantiers" },
     { icon: BriefcaseBusiness, title: "Postes & grille", detail: "Postes et salaires", href: "/rh/postes" },
-    { icon: Scale, title: "Cotisations & impôts", detail: "CNAS, IRG, régimes", href: "/rh/parametres?tab=legal" },
+    { icon: FileText, title: "Modèles de documents", detail: "Lettres, ordres, contrats", href: "/parametres/rh/documents" },
     { icon: ShieldCheck, title: "Qualité des données", detail: "Fiches à compléter", href: "/rh/qualite-donnees" },
   ];
 
   return (
     <div className="ui-stagger grid grid-cols-12 gap-5">
-      <section className={cn(RH_CARD, "col-span-12 p-6 md:col-span-6 xl:col-span-4")}>
-        <Head icon={Percent} title="Cotisations sociales" href="/rh/parametres?tab=legal&section=cnas" />
+      <section className={cn(RH_CARD, "col-span-12 p-6 md:col-span-6 2xl:col-span-4")}>
+        <Head icon={Percent} title="Cotisations sociales" href="/parametres/rh/cotisations?tab=cnas" />
         {contributions.length ? (
           contributions.map((c) => (
             <div key={c.label} className="flex items-center justify-between border-b border-border/60 py-3 last:border-0">
@@ -95,15 +94,15 @@ export function RhSettingsOverview({
         )}
       </section>
 
-      <section className={cn(RH_CARD, "col-span-12 p-6 md:col-span-6 xl:col-span-4")}>
-        <Head icon={Landmark} title="Barème IRG mensuel" href="/rh/parametres?tab=legal&section=irg" />
+      <section className={cn(RH_CARD, "col-span-12 p-6 md:col-span-6 2xl:col-span-4")}>
+        <Head icon={Landmark} title="Barème IRG mensuel" href="/parametres/rh/cotisations?tab=irg" />
         {brackets.length ? (
           brackets.map((b, i) => (
             <div key={b.min_annual} className="flex items-center gap-3 py-2">
-              <span className="flex-1 text-sm tabular-nums text-foreground/55">
+              <span className="text-sm whitespace-nowrap tabular-nums text-foreground/55">
                 {b.max_annual === null ? `> ${da(b.min_annual / 12)}` : `${da(b.min_annual / 12)} – ${da(b.max_annual / 12)}`} DA
               </span>
-              <div className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-muted">
+              <div className="h-1.5 min-w-6 flex-1 overflow-hidden rounded-full bg-surface-muted">
                 <div
                   className="ui-grow-x h-full rounded-full bg-brand"
                   style={{ width: `${(b.rate / maxRate) * 100}%`, opacity: 0.35 + (i / Math.max(1, brackets.length - 1)) * 0.65 }}
@@ -117,17 +116,21 @@ export function RhSettingsOverview({
         )}
       </section>
 
-      <section className={cn(RH_CARD, "col-span-12 p-6 xl:col-span-4")}>
+      <section className={cn(RH_CARD, "col-span-12 p-6 2xl:col-span-4")}>
         <Head icon={SlidersHorizontal} title="Paramétrage" />
         {configured.map((c) => (
-          <div key={c.label} className="flex items-center justify-between border-b border-border/60 py-3 last:border-0">
-            <span className="text-sm text-foreground">{c.label}</span>
+          <Link
+            key={c.label}
+            href={c.href}
+            className="group flex items-center justify-between border-b border-border/60 py-3 last:border-0"
+          >
+            <span className="text-sm text-foreground group-hover:text-brand">{c.label}</span>
             <span className="text-sm font-semibold tabular-nums text-foreground/70">{c.value}</span>
-          </div>
+          </Link>
         ))}
       </section>
 
-      <div className="col-span-12 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="col-span-12 grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
         {links.map(({ icon, title, detail, href }) => (
           <Link key={href} href={href} className={cn(RH_CARD, "ui-lift group flex items-center gap-4 p-5")}>
             <Tile icon={icon} className="h-10 w-10 rounded-[0.8rem]" />
@@ -138,11 +141,6 @@ export function RhSettingsOverview({
             <ChevronRight className="h-4 w-4 text-foreground/30 transition group-hover:translate-x-0.5 group-hover:text-brand" aria-hidden />
           </Link>
         ))}
-      </div>
-
-      <div className="col-span-12 flex items-center gap-3 pt-2">
-        <Tile icon={ListChecks} />
-        <h3 className="font-semibold text-foreground">Configuration détaillée</h3>
       </div>
     </div>
   );

@@ -452,7 +452,7 @@ function SuggestionCard({
       {s.kind === "IRG_BAREME" ? (
         <p className="mt-2 text-xs text-foreground/60">
           Lecture seule : un barème IRG se saisit à la main dans un brouillon de barème (
-          <Link href="/rh/legal" className="text-brand hover:underline">
+          <Link href="/parametres/rh/cotisations" className="text-brand hover:underline">
             Cotisations &amp; impôts
           </Link>
           ), puis suit l&apos;approbation habituelle.

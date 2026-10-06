@@ -172,7 +172,7 @@ export function preparationChecks(p: MonthPreparation): PreparationCheck[] {
       detail: legacy
         ? `Aucune règle en attente. ${plural(legacy, "valeur en vigueur héritée", "valeurs en vigueur héritées")} sans proposition approuvée : avertissement seulement.`
         : "Aucune règle en attente ; toutes les valeurs en vigueur sont vérifiées.",
-      href: legacy ? "/rh/legal" : undefined,
+      href: legacy ? "/parametres/rh/cotisations" : undefined,
     });
   }
 

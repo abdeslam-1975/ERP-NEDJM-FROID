@@ -23,7 +23,7 @@ export type { BulletinLegalRates, HrBulletinSettings };
 
 function revalidateBulletin() {
   revalidatePath("/rh");
-  revalidatePath("/rh/parametres");
+  revalidatePath("/parametres/rh/bulletin");
   revalidatePath("/rh/paie");
   revalidatePath("/rh/paie/bulletins");
   revalidatePath("/rh/paie/fiscal");

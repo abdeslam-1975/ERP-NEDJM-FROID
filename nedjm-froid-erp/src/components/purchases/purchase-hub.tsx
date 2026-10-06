@@ -147,7 +147,7 @@ export function PurchaseHub({
           </p>
         </div>
         <Button asChild variant="secondary">
-          <a href="/achats/parametres">Paramètres documentaires</a>
+          <a href="/parametres/achats">Paramètres documentaires</a>
         </Button>
       </header>
       {error && <Notice tone="error">{error}</Notice>}

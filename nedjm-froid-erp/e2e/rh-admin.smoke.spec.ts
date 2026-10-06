@@ -84,7 +84,7 @@ test.describe("@smoke rh & administration", () => {
     test(`${persona} : unité 05 (cotisations & impôts) modifiable`, async ({ page }) => {
       test.skip(!requirePersona(persona), `Définir ${persona}_EMAIL / ${persona}_PASSWORD`);
       await loginAsPersona(page, persona);
-      await page.goto("/rh/legal");
+      await page.goto("/parametres/rh/cotisations");
       await expect(page.getByRole("heading", { level: 2, name: /cotisations & impôts/i })).toBeVisible();
       await expect(page.getByRole("button", { name: /^modifier$/i }).first()).toBeVisible();
       await expect(page.getByRole("button", { name: /ajouter un régime/i })).toBeVisible();
@@ -99,7 +99,7 @@ test.describe("@smoke rh & administration", () => {
   test("READ_ONLY : intérim, coûts, rôles et unité 05 interdits", async ({ page }) => {
     test.skip(!requirePersona("E2E_READ_ONLY"), "Définir E2E_READ_ONLY_EMAIL / E2E_READ_ONLY_PASSWORD");
     await loginAsPersona(page, "E2E_READ_ONLY");
-    for (const p of ["/rh/interim", "/rh/couts", "/administration/roles", "/rh/legal"]) {
+    for (const p of ["/rh/interim", "/rh/couts", "/administration/roles", "/parametres/rh/cotisations"]) {
       await page.goto(p);
       await expect(page).toHaveURL(/error=forbidden/);
     }

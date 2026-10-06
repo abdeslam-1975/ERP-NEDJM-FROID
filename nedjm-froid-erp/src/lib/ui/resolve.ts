@@ -111,6 +111,7 @@ export type ResolvedItem = UiItemDef & {
   labelArShown: string | null;
 };
 
+/** `includeHidden`: every item, also those hidden for the user and those living in the settings center. */
 export function resolveTabset(data: UiLayoutData, tabsetKey: string, opts: { includeHidden?: boolean } = {}): ResolvedItem[] {
   const tabset = findTabset(tabsetKey);
   if (!tabset) return [];
@@ -126,7 +127,7 @@ export function resolveTabset(data: UiLayoutData, tabsetKey: string, opts: { inc
         sort: sortValue(data, key, index),
       };
     })
-    .filter((item) => opts.includeHidden || !isKeyHidden(data, item.key))
+    .filter((item) => opts.includeHidden || (!item.inSettings && !isKeyHidden(data, item.key)))
     .sort((a, b) => a.sort - b.sort)
     .map(({ sort, ...item }) => {
       void sort;

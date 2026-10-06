@@ -53,7 +53,7 @@ export type SalaryAssignment = {
 
 function revalidateSalary() {
   revalidatePath("/rh");
-  revalidatePath("/rh/parametres");
+  revalidatePath("/parametres/rh/rubriques");
   revalidatePath("/rh/paie");
   revalidatePath("/rh/contrats");
   revalidatePath("/rh/employes");

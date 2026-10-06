@@ -38,8 +38,8 @@ async function perm(supabase: Supabase, screen: string, action: "read" | "create
 function revalidateDocuments() {
   revalidatePath("/rh/legal/documents");
   revalidatePath("/rh/legal/propositions");
-  revalidatePath("/rh/legal");
-  revalidatePath("/rh/parametres");
+  revalidatePath("/parametres/rh/cotisations");
+  revalidatePath("/parametres/rh");
   revalidatePath("/decisions");
 }
 

@@ -479,7 +479,7 @@ export function DecisionDetailView({ decision: d }: { decision: DecisionDetail }
                   d.type_code === "D1"
                     ? `/rh/paie/preparation?mois=${d.period_year}-${String(d.period_month ?? 1).padStart(2, "0")}`
                     : d.type_code === "D14"
-                      ? "/referentiels/legendes"
+                      ? "/parametres/rh/listes"
                       : d.type_code === "D15"
                         ? `/rh/legal/extraction-ia?document=${d.legal_entry_path?.document_id ?? ""}`
                       : d.type_code === "D13"

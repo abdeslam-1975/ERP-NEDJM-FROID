@@ -373,7 +373,7 @@ export function CustomDocsRegister({
           </span>
           <div className="min-w-0">
             <h3 className="font-display text-base font-semibold tracking-tight text-foreground">Autres documents</h3>
-            <p className="text-sm text-foreground/55">Documents créés dans Paramètres RH › Documents : numérotés, imprimés et archivés en PDF.</p>
+            <p className="text-sm text-foreground/55">Documents créés dans Paramètres › Modèles de documents : numérotés, imprimés et archivés en PDF.</p>
           </div>
         </div>
         <Button disabled={!defs.length} onClick={() => setOpen(true)}>
@@ -388,8 +388,8 @@ export function CustomDocsRegister({
         {!defs.length && !error ? (
           <RhAlert tone="info">
             Aucun document prêt à imprimer. Créez-en un et approuvez son modèle dans{" "}
-            <Link href="/rh/parametres?tab=documents" className="font-semibold underline">
-              Paramètres RH › Documents
+            <Link href="/parametres/rh/documents" className="font-semibold underline">
+              Paramètres › Modèles de documents
             </Link>
             .
           </RhAlert>

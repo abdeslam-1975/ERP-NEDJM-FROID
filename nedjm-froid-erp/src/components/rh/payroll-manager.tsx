@@ -435,12 +435,12 @@ export function PayrollManager({
                 ["fiches", "/rh/paie", "Fiches"],
                 ["social", "/rh/paie/social", "Social"],
                 ["fiscal", "/rh/paie/fiscal", "Fiscal"],
-                ["legal", "/rh/legal", bi("Cotisations & impôts", "الاشتراكات والضرائب")],
+                ["legal", "/parametres/rh/cotisations", bi("Cotisations & impôts", "الاشتراكات والضرائب")],
                 ["simulator", "/simulateur?cible=paie", "Simulateur"],
                 ["exceptions", "/rh/paie/exceptions", bi("Exceptions", "استثناءات")],
                 ["advances", "/rh/paie/avances", bi("Avances & prêts", "التسبيقات والقروض")],
                 ["transfers", "/rh/paie/virements", "Virements"],
-                ["rubrics", "/rh/parametres", "Rubriques"],
+                ["rubrics", "/parametres/rh/rubriques", "Rubriques"],
               ] as const
             ).map(([id, href, label]) => (
               <ToolbarSlot key={id} id={id}>
@@ -501,7 +501,7 @@ export function PayrollManager({
             </summary>
             <p className="mt-1 text-xs">
               {unverifiedKeys.join(", ")} —{" "}
-              <Link href="/rh/legal" className="underline">
+              <Link href="/parametres/rh/cotisations" className="underline">
                 {bi("faire approuver ces valeurs", "اعتماد هذه القيم")}
               </Link>
             </p>
