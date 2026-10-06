@@ -6,6 +6,7 @@ import { ArrangeBar } from "@/components/layout/arrange";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { UiLayoutProvider } from "@/components/layout/ui-layout-context";
+import { ViewAsBanner } from "@/components/layout/view-as-banner";
 import { SettingsFrame } from "@/components/settings/settings-frame";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { listMyNotifications } from "@/lib/actions/decisions";
@@ -94,6 +95,7 @@ export async function AppShell({
           </div>
         </div>
         <ArrangeBar />
+        {workspace.viewAs ? <ViewAsBanner viewAs={workspace.viewAs} /> : null}
       </AppProviders>
     </UiLayoutProvider>
   );

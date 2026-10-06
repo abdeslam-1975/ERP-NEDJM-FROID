@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
+import { cookies } from "next/headers";
+import { VIEW_AS_COOKIE, getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { PERM_FIELDS } from "@/lib/auth/rbac-fields";
 import {
   NON_DELEGABLE_SCREENS,
@@ -202,6 +203,32 @@ export async function saveRoleRights(input: { role_id: string; payload: RoleRigh
     if (error) return { ok: false, error: error.message };
   }
 
+  revalidatePath("/", "layout");
+  return { ok: true, data: undefined };
+}
+
+export async function startViewAs(roleId: string): Promise<ActionResult> {
+  const ws = await getWorkspaceProfile();
+  if (!ws) return { ok: false, error: "Session expirée." };
+  if (!ws.isSuperAdmin && !ws.viewAs) return { ok: false, error: "Réservé au SUPER_ADMIN." };
+  if (!UUID_RE.test(roleId)) return { ok: false, error: "Rôle invalide." };
+  const supabase = await createClient();
+  const { data: role, error } = await supabase.from("sys_roles").select("code, is_active").eq("id", roleId).maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!role || !role.is_active || role.code === "SUPER_ADMIN") return { ok: false, error: "Rôle introuvable ou inactif." };
+  (await cookies()).set(VIEW_AS_COOKIE, roleId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 4 * 60 * 60,
+  });
+  revalidatePath("/", "layout");
+  return { ok: true, data: undefined };
+}
+
+export async function stopViewAs(): Promise<ActionResult> {
+  (await cookies()).delete(VIEW_AS_COOKIE);
   revalidatePath("/", "layout");
   return { ok: true, data: undefined };
 }

@@ -36,7 +36,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/sonner";
-import { saveRoleRights, type RoleRightsData, type RoleRightsRole } from "@/lib/actions/role-rights";
+import { saveRoleRights, startViewAs, type RoleRightsData, type RoleRightsRole } from "@/lib/actions/role-rights";
 import { PERM_FIELDS, type PermField } from "@/lib/auth/rbac-fields";
 import {
   ACTION_LABELS,
@@ -229,7 +229,7 @@ function Stat({ icon: Icon, value, label, warm }: { icon: LucideIcon; value: Rea
 
 /* —— the page —— */
 
-export function RoleRightsManager({ data }: { data: RoleRightsData }) {
+export function RoleRightsManager({ data, initialRoleId }: { data: RoleRightsData; initialRoleId?: string }) {
   const router = useRouter();
   const tree = useMemo(() => buildRightsTree(data.screens), [data.screens]);
   const index = useMemo(() => indexTree(tree), [tree]);
@@ -246,14 +246,13 @@ export function RoleRightsManager({ data }: { data: RoleRightsData }) {
     setStates(statesOf(data));
   }
 
-  const [roleId, setRoleId] = useState(data.roles[0]?.id ?? "");
+  const [roleId, setRoleId] = useState(() => data.roles.find((r) => r.id === initialRoleId)?.id ?? data.roles[0]?.id ?? "");
   const [path, setPath] = useState<string[]>([]);
   const [direction, setDirection] = useState<"in" | "back">("in");
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -370,6 +369,26 @@ export function RoleRightsManager({ data }: { data: RoleRightsData }) {
       setSaved((prev) => ({ ...prev, [roleRef.id]: snapshot }));
       setSummaryOpen(false);
       toast.success("Droits enregistrés", { description: `${roleRef.label} : les comptes concernés les ont dès leur prochaine action.` });
+      router.refresh();
+    });
+  }
+
+  function viewAsRole() {
+    if (!role) return;
+    if (changes.length) {
+      toast.warning("Enregistrez d'abord vos modifications", {
+        description: "L'aperçu montre les droits enregistrés du rôle.",
+      });
+      return;
+    }
+    const target = role;
+    startTransition(async () => {
+      const res = await startViewAs(target.id);
+      if (!res.ok) {
+        toast.error("Aperçu impossible", { description: res.error });
+        return;
+      }
+      router.push("/");
       router.refresh();
     });
   }
@@ -563,10 +582,12 @@ export function RoleRightsManager({ data }: { data: RoleRightsData }) {
             </div>
           ) : null}
         </div>
-        <Button variant="secondary" className="h-12 rounded-2xl" onClick={() => setPreviewOpen(true)}>
-          <Eye className="text-brand" aria-hidden />
-          Voir comme {role.label}
-        </Button>
+        {canEdit ? (
+          <Button variant="secondary" className="h-12 rounded-2xl" disabled={pending} onClick={viewAsRole}>
+            <Eye className="text-brand" aria-hidden />
+            Voir comme {role.label}
+          </Button>
+        ) : null}
       </div>
 
       {newNodes.length && canEdit ? (
@@ -703,16 +724,6 @@ export function RoleRightsManager({ data }: { data: RoleRightsData }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <PreviewDialog
-        open={previewOpen}
-        onOpenChange={setPreviewOpen}
-        roleLabel={role.label}
-        tree={tree}
-        state={state}
-        seen={seen}
-        sitesOnly={state.sitesOnly}
-      />
     </div>
   );
 }
@@ -1233,129 +1244,5 @@ function NodeRow({
       )}
       <ChevronRight className={cn("size-[18px] text-foreground/30", !enter && "invisible")} aria-hidden />
     </div>
-  );
-}
-
-/* —— « Voir comme ce rôle » —— */
-
-function PreviewDialog({
-  open: dialogOpen,
-  onOpenChange,
-  roleLabel,
-  tree,
-  state,
-  seen,
-  sitesOnly,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  roleLabel: string;
-  tree: RightsNode[];
-  state: RoleRightsState;
-  seen: ReadonlySet<string>;
-  sitesOnly: boolean;
-}) {
-  const open = (n: RightsNode) => isOpen(n, state, seen);
-  const modules = tree.filter(open);
-  const [picked, setPicked] = useState<string | null>(null);
-  const shownModule = modules.find((m) => m.key === picked) ?? modules.find((m) => m.children.some(open) && !m.locked) ?? modules[0];
-  const tabs = shownModule ? shownModule.children.filter((k) => k.kind !== "right" && open(k)) : [];
-  const withInside = tabs.filter((t) => t.children.length > 0);
-
-  return (
-    <Dialog open={dialogOpen} onOpenChange={onOpenChange}>
-      <DialogContent showClose={false} className="max-w-5xl gap-0 overflow-hidden p-0">
-        <DialogTitle className="sr-only">Aperçu du rôle {roleLabel}</DialogTitle>
-        <DialogDescription className="sr-only">Modules, onglets et boutons visibles pour ce rôle.</DialogDescription>
-        <div className="flex items-center gap-3 bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white">
-          <Eye className="size-[18px]" aria-hidden />
-          <span className="flex-1">
-            Aperçu : le logiciel tel que le voit « {roleLabel} »{sitesOnly ? " · ses chantiers seulement" : ""} — rien n&apos;est modifiable ici
-          </span>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="rounded-lg bg-white/95 px-3 py-1.5 text-xs font-bold text-orange-800 hover:bg-white"
-          >
-            Quitter l&apos;aperçu
-          </button>
-        </div>
-        <div className="flex max-h-[70vh] min-h-[420px]">
-          <aside className="w-52 shrink-0 space-y-0.5 overflow-y-auto bg-gradient-to-b from-[#1f3f9e] to-[#16307a] p-3 text-[13px] text-blue-50">
-            {modules.map((m) => {
-              const Icon = m.icon ? MODULE_ICONS[m.icon] : LayoutGrid;
-              return (
-                <button
-                  key={m.key}
-                  type="button"
-                  onClick={() => setPicked(m.key)}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left",
-                    shownModule?.key === m.key ? "bg-white/15 font-semibold text-white" : "hover:bg-white/10",
-                  )}
-                >
-                  <Icon className="size-4 opacity-85" aria-hidden />
-                  {m.label}
-                </button>
-              );
-            })}
-          </aside>
-          <div className="min-w-0 flex-1 overflow-y-auto bg-background p-6">
-            {shownModule ? (
-              <>
-                <h3 className="font-display text-xl font-semibold">{shownModule.label}</h3>
-                {shownModule.children.length ? (
-                  <>
-                    <p className="text-sm text-foreground/55">
-                      Onglets visibles ({tabs.length} sur {shownModule.children.filter((k) => k.kind !== "right").length})
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {tabs.map((t, i) => (
-                        <span
-                          key={t.key}
-                          className={cn(
-                            "rounded-lg border px-2.5 py-1 text-xs",
-                            i === 0 ? "border-brand bg-brand font-semibold text-white" : "border-border/80 bg-surface",
-                          )}
-                        >
-                          {t.label}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      {withInside.map((t) => (
-                        <div key={t.key} className="rounded-2xl border border-border/80 bg-surface p-4 shadow-sm">
-                          <p className="text-sm font-semibold">{t.label}</p>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {t.children.filter(open).map((b) => (
-                              <span key={b.key} className="rounded-lg bg-brand px-2.5 py-1 text-xs font-semibold text-white">
-                                {b.label}
-                              </span>
-                            ))}
-                          </div>
-                          {t.children.some((b) => !open(b)) ? (
-                            <p className="mt-2 text-xs text-foreground/50">
-                              Masqués :{" "}
-                              {t.children
-                                .filter((b) => !open(b))
-                                .map((b) => b.label)
-                                .join(" · ")}
-                            </p>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <p className="mt-2 text-sm text-foreground/55">Page sans onglets.</p>
-                )}
-              </>
-            ) : (
-              <p className="text-sm text-foreground/55">Aucun module ouvert pour ce rôle.</p>
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }

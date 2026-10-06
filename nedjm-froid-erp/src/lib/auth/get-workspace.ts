@@ -8,6 +8,10 @@ import type {
 } from "@/lib/auth/types";
 
 export const ACTIVE_SITE_COOKIE = "nf_active_site_id";
+/** Role a super admin is browsing as. Ignored for any other account, so it can only narrow access. */
+export const VIEW_AS_COOKIE = "nf_view_as_role";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type RoleJoin = {
   id: string;
@@ -152,7 +156,7 @@ export const getWorkspaceProfile = cache(async function getWorkspaceProfile(): P
     accessibleSites[0] ??
     null;
 
-  return {
+  const base: WorkspaceProfile = {
     id: profile.id,
     email: profile.email,
     fullName: profile.full_name,
@@ -164,4 +168,38 @@ export const getWorkspaceProfile = cache(async function getWorkspaceProfile(): P
     activeSite,
     hasGlobalScope,
   };
+  const viewAsId = isSuperAdmin ? cookieStore.get(VIEW_AS_COOKIE)?.value : undefined;
+  return viewAsId && UUID_RE.test(viewAsId) ? viewAsRole(supabase, base, viewAsId) : base;
 });
+
+async function viewAsRole(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  base: WorkspaceProfile,
+  roleId: string,
+): Promise<WorkspaceProfile> {
+  const { data: role } = await supabase
+    .from("sys_roles")
+    .select("id, code, label_fr, hierarchy_level, require_mfa, is_active")
+    .eq("id", roleId)
+    .maybeSingle();
+  if (!role || !role.is_active || role.code === "SUPER_ADMIN") return base;
+  return {
+    ...base,
+    isSuperAdmin: false,
+    roles: [
+      {
+        assignmentId: "view-as",
+        roleId: role.id,
+        roleCode: role.code,
+        roleLabelFr: role.label_fr,
+        hierarchyLevel: role.hierarchy_level,
+        requireMfa: role.require_mfa,
+        siteId: null,
+        siteCode: null,
+        siteNameFr: null,
+        siteNameAr: null,
+      },
+    ],
+    viewAs: { roleId: role.id, roleCode: role.code, roleLabel: role.label_fr },
+  };
+}

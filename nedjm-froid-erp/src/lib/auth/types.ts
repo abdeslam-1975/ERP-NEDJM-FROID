@@ -33,4 +33,8 @@ export type WorkspaceProfile = {
   activeSite: WorkspaceSite | null;
   /** true when user has a global (site_id NULL) role grant. */
   hasGlobalScope: boolean;
+  /** A super admin browsing as one role (« Voir comme ce rôle »): roles and isSuperAdmin are those of the role. */
+  viewAs?: WorkspaceViewAs | null;
 };
+
+export type WorkspaceViewAs = { roleId: string; roleCode: string; roleLabel: string };

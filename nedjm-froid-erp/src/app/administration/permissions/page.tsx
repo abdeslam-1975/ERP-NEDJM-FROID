@@ -7,13 +7,17 @@ import { requireRoles } from "@/lib/auth/require-roles";
 
 export const dynamic = "force-dynamic";
 
-export default async function RoleRightsPage() {
+export default async function RoleRightsPage({ searchParams }: { searchParams: Promise<{ role?: string }> }) {
   const workspace = await requireRoles(["SUPER_ADMIN", "GERANT"]);
-  const data = await loadRoleRights();
+  const [data, { role }] = await Promise.all([loadRoleRights(), searchParams]);
   return (
     <AppShell title="Droits par rôle">
       <div className="space-y-4">
-        {data.ok ? <RoleRightsManager data={data.data} /> : <RhAlert tone="danger">{data.error}</RhAlert>}
+        {data.ok ? (
+          <RoleRightsManager data={data.data} initialRoleId={role} />
+        ) : (
+          <RhAlert tone="danger">{data.error}</RhAlert>
+        )}
         {workspace.isSuperAdmin ? (
           <p className="text-xs text-foreground/55">
             Un compte précis peut recevoir d&apos;autres modules que son rôle :{" "}
