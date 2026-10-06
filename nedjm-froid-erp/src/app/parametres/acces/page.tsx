@@ -7,7 +7,12 @@ import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 
 export const dynamic = "force-dynamic";
 
-export default async function UserAccessPage() {
+export default async function UserAccessPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ user?: string }>;
+}) {
+  const { user } = await searchParams;
   const workspace = await getWorkspaceProfile();
   if (!workspace) redirect("/login");
   if (!workspace.isSuperAdmin) redirect("/?error=forbidden");
@@ -21,7 +26,7 @@ export default async function UserAccessPage() {
           title="Accès par compte · صلاحيات الحسابات"
           description="Choisissez le compte, ouvrez ses modules (tous fermés au départ), puis cochez les onglets de chaque module ouvert."
         />
-        {data.ok ? <UserAccessManager users={data.data} /> : <RhAlert tone="danger">{data.error}</RhAlert>}
+        {data.ok ? <UserAccessManager users={data.data} initialUserId={user} /> : <RhAlert tone="danger">{data.error}</RhAlert>}
       </div>
     </AppShell>
   );

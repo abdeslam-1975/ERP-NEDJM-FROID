@@ -27,11 +27,23 @@ function Switch({ on, disabled, onChange, label }: { on: boolean; disabled?: boo
   );
 }
 
-export function UserAccessManager({ users: initialUsers }: { users: AccessUser[] }) {
+export function UserAccessManager({
+  users: initialUsers,
+  initialUserId,
+}: {
+  users: AccessUser[];
+  initialUserId?: string;
+}) {
+  const initial = initialUsers.find((u) => u.id === initialUserId) ?? null;
   const [users, setUsers] = useState(initialUsers);
-  const [userId, setUserId] = useState("");
-  const [allowed, setAllowed] = useState<Set<string>>(new Set());
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [userId, setUserId] = useState(initial?.id ?? "");
+  const [allowed, setAllowed] = useState<Set<string>>(() => new Set(initial?.allowed ?? []));
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () =>
+      new Set(
+        ACCESS_MODULES.filter((m) => !m.locked && (initial?.allowed ?? []).includes(m.key)).map((m) => m.key),
+      ),
+  );
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState<{ tone: "danger" | "success"; text: string } | null>(null);
   const [pending, start] = useTransition();

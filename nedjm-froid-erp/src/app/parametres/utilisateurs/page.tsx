@@ -28,6 +28,7 @@ export default async function UtilisateursPage() {
         roles={metaRes.ok ? metaRes.data.roles : []}
         sites={metaRes.ok ? metaRes.data.sites : []}
         isSuperAdmin={workspace.isSuperAdmin}
+        currentUserId={workspace.id}
         loadError={loadError}
       />
     </AppShell>
