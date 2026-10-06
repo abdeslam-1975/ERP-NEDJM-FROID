@@ -2,12 +2,11 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { FilePlus2, PenTool, Settings2 } from "lucide-react";
+import { ClipboardList, FileCheck, FileStack, Mail, PenTool, Plus, Settings2, type LucideIcon } from "lucide-react";
 import type { CatalogKind } from "@/lib/actions/hr-catalogs";
 import type { HrEmployeeField } from "@/lib/actions/hr-employees";
 import { listCustomDocDefs, setCustomDocDefActive, type CustomDocRow } from "@/lib/actions/hr-custom-docs";
 import {
-  CUSTOM_DOC_FAMILIES,
   CUSTOM_DOC_LANGS,
   CUSTOM_DOC_LISTS,
   CUSTOM_DOC_SOURCES,
@@ -22,20 +21,24 @@ import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
 import type { HrCompanyProfile } from "@/lib/hr/company-profile";
 import { DocEditor } from "@/components/doc/doc-editor";
 import { CustomDocWizard } from "@/components/rh/custom-doc-wizard";
+import { DocCard } from "@/components/rh/doc-card";
 import { Button } from "@/components/ui/button";
-import { RhAlert, RhChip, RhPanel, RhSectionTitle } from "@/components/rh/rh-ui";
+import { RhAlert, RhChip } from "@/components/rh/rh-ui";
 
 const label = <T extends { id: string; fr: string }>(list: readonly T[], id: string) => list.find((x) => x.id === id)?.fr ?? id;
+
+const FAMILY_LOOK: Record<CustomDocDef["family"], { icon: LucideIcon; color: string }> = {
+  lettres: { icon: Mail, color: "#3b82f6" },
+  fiches: { icon: ClipboardList, color: "#8b5cf6" },
+  contrats: { icon: FileCheck, color: "#14b8a6" },
+  autres: { icon: FileStack, color: "#f59e0b" },
+};
 
 function status(def: CustomDocRow) {
   if (!def.is_active) return <RhChip tone="neutral">Archivé</RhChip>;
   if (def.approved_version == null) return <RhChip tone="warning">À approuver</RhChip>;
-  return (
-    <span className="flex flex-wrap gap-1">
-      <RhChip tone="success">Version {def.approved_version}</RhChip>
-      {def.has_draft ? <RhChip tone="brand">Modifications en attente</RhChip> : null}
-    </span>
-  );
+  if (def.has_draft) return <RhChip tone="brand">Brouillon en cours</RhChip>;
+  return <RhChip tone="success">Version {def.approved_version}</RhChip>;
 }
 
 export function CustomDocsManager({
@@ -114,77 +117,72 @@ export function CustomDocsManager({
   }
 
   return (
-    <RhPanel>
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <RhSectionTitle>Documents créés depuis l’interface</RhSectionTitle>
-          <p className="text-sm text-foreground/60">
-            Créez un nouveau document (attestation, lettre, formulaire…) : nom, données reprises, champs à saisir, format de page,
-            papier à en-tête, police et numérotation. Concevez ensuite son modèle, puis approuvez-le : il apparaît alors dans
-            « Documents RH › Nouveau document ».
-          </p>
-        </div>
+    <div className="space-y-4">
+      <p className="max-w-4xl text-sm text-foreground/60">
+        Créez votre document (attestation, lettre, formulaire…) en quelques étapes, concevez son modèle puis approuvez-le : il
+        apparaît alors dans « Documents RH › Autres documents ».
+      </p>
+      {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
+      {info ? <RhAlert tone="success">{info}</RhAlert> : null}
+      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
         {canEdit ? (
-          <Button onClick={() => setWizard({ def: null })}>
-            <FilePlus2 aria-hidden />
-            Créer un document
-          </Button>
+          <li>
+            <button
+              type="button"
+              onClick={() => setWizard({ def: null })}
+              className="group flex h-full min-h-[15rem] w-full flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-violet-300 bg-violet-50/50 p-5 text-center transition hover:-translate-y-0.5 hover:border-violet-500 hover:bg-violet-50 dark:border-violet-500/40 dark:bg-violet-500/5"
+            >
+              <span className="flex size-14 items-center justify-center rounded-2xl bg-violet-500 text-white shadow-md transition group-hover:scale-110">
+                <Plus className="size-7" aria-hidden />
+              </span>
+              <span className="font-display text-[15px] font-semibold text-foreground">Créer un document</span>
+              <span className="text-xs text-foreground/55">Nom, données, champs, page, en-tête, police, numérotation</span>
+            </button>
+          </li>
         ) : null}
-      </div>
-      {error ? (
-        <div className="mb-3">
-          <RhAlert tone="danger">{error}</RhAlert>
-        </div>
-      ) : null}
-      {info ? (
-        <div className="mb-3">
-          <RhAlert tone="success">{info}</RhAlert>
-        </div>
-      ) : null}
-      {shown.length ? (
-        <ul className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {shown.map((def) => (
-            <li key={def.id} className={`flex flex-col gap-2 rounded-xl border border-border/70 bg-surface px-3.5 py-3 ${def.is_active ? "" : "opacity-60"}`}>
-              <div className="flex items-start justify-between gap-2">
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold">{def.name_fr}</span>
-                  {def.name_ar ? (
-                    <span className="block truncate text-xs text-foreground/55" dir="rtl">
-                      {def.name_ar}
-                    </span>
-                  ) : null}
-                </span>
-                {status(def)}
-              </div>
-              <p className="text-xs text-foreground/55">
-                {label(CUSTOM_DOC_FAMILIES, def.family)} · {label(CUSTOM_DOC_SOURCES, def.source)} · {label(CUSTOM_DOC_LANGS, def.lang)} ·{" "}
-                {def.page.size} {def.page.orientation === "landscape" ? "paysage" : ""} · {def.page.font_family || "police par défaut"}
-              </p>
-              <div className="mt-auto flex flex-wrap gap-1.5">
-                <Button size="sm" onClick={() => setDesigning(def)}>
-                  <PenTool aria-hidden />
-                  {canEdit ? "Concevoir" : "Voir"}
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => setWizard({ def })}>
-                  <Settings2 aria-hidden />
-                  Paramètres
-                </Button>
-                {canEdit ? (
-                  <Button size="sm" variant="ghost" disabled={pending} onClick={() => toggle(def)}>
-                    {def.is_active ? "Archiver" : "Réactiver"}
+        {shown.map((def) => {
+          const look = FAMILY_LOOK[def.family];
+          return (
+            <DocCard
+              key={def.id}
+              title={def.name_fr}
+              subtitle={def.name_ar || undefined}
+              icon={look.icon}
+              color={look.color}
+              badge={status(def)}
+              rtl={def.lang === "ar"}
+              landscape={def.page.orientation === "landscape"}
+              dimmed={!def.is_active}
+              meta={`${label(CUSTOM_DOC_SOURCES, def.source)} · ${label(CUSTOM_DOC_LANGS, def.lang).split(" (")[0]} · ${def.page.size} · ${def.page.font_family || "police par défaut"}`}
+              onOpen={() => setDesigning(def)}
+              openLabel={canEdit ? "Concevoir le modèle" : "Voir le modèle"}
+              actions={
+                <>
+                  <Button size="sm" className="flex-1" onClick={() => setDesigning(def)}>
+                    <PenTool aria-hidden />
+                    {canEdit ? "Concevoir" : "Voir"}
                   </Button>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : (
+                  <Button size="sm" variant="secondary" onClick={() => setWizard({ def })} title="Paramètres" aria-label="Paramètres">
+                    <Settings2 aria-hidden />
+                  </Button>
+                  {canEdit ? (
+                    <Button size="sm" variant="ghost" disabled={pending} onClick={() => toggle(def)}>
+                      {def.is_active ? "Archiver" : "Réactiver"}
+                    </Button>
+                  ) : null}
+                </>
+              }
+            />
+          );
+        })}
+      </ul>
+      {!shown.length && !canEdit ? (
         <p className="rounded-xl border border-dashed border-border/70 px-4 py-8 text-center text-sm text-foreground/55">
-          Aucun document créé pour l’instant. Cliquez sur « Créer un document » pour commencer.
+          Aucun document créé pour l’instant.
         </p>
-      )}
+      ) : null}
       {defs.some((d) => !d.is_active) ? (
-        <label className="mt-3 flex items-center gap-2 text-xs text-foreground/60">
+        <label className="flex items-center gap-2 text-xs text-foreground/60">
           <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
           Afficher les documents archivés
         </label>
@@ -209,6 +207,6 @@ export function CustomDocsManager({
           }}
         />
       ) : null}
-    </RhPanel>
+    </div>
   );
 }

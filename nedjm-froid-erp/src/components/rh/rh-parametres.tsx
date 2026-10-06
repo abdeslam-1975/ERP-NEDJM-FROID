@@ -19,6 +19,7 @@ import { AttendanceColumnsManager } from "@/components/rh/attendance-columns-man
 import type { AttendanceColumnsAdmin } from "@/lib/actions/hr-attendance-sheet";
 import type { HrCompanyProfile } from "@/lib/hr/company-profile";
 import { HrDocumentsSettings, type CustomDocsSettings } from "@/components/rh/hr-documents-settings";
+import type { DocTemplateSummary } from "@/lib/actions/doc-templates";
 import { RhAlert, RhPage, RhTabs } from "@/components/rh/rh-ui";
 
 type RhSettingsTab = "salary" | "legal" | "fiche" | "catalogs" | "bulletin" | "documents" | "attendance";
@@ -46,6 +47,7 @@ export function RhParametres({
   attendanceAdmin,
   company = null,
   customDocs = { defs: [], canEdit: false, fonts: [] },
+  templateSummaries = {},
   loadError,
 }: {
   kinds: CatalogKind[];
@@ -71,6 +73,8 @@ export function RhParametres({
   company?: { profile: HrCompanyProfile; canEdit: boolean } | null;
   /** Documents created from the interface and their fonts. */
   customDocs?: CustomDocsSettings;
+  /** Approved version / pending draft of every document template. */
+  templateSummaries?: Record<string, DocTemplateSummary>;
   loadError?: string;
 }) {
   const searchParams = useSearchParams();
@@ -128,6 +132,7 @@ export function RhParametres({
           catalogs={items}
           kinds={kinds}
           custom={customDocs}
+          summaries={templateSummaries}
         />
       ) : tab === "attendance" && attendanceAdmin ? (
         <AttendanceColumnsManager initial={attendanceAdmin} />

@@ -11,6 +11,7 @@ import { listSalaryAssignments, listSalaryRubriques } from "@/lib/actions/hr-sal
 import { getHrFicheSettings } from "@/lib/actions/hr-fiche";
 import { getHrCompanyProfile } from "@/lib/actions/hr-company";
 import { listCustomDocDefs, listDocFonts } from "@/lib/actions/hr-custom-docs";
+import { listDocTemplateSummaries } from "@/lib/actions/doc-templates";
 import { loadPayrollBulletinContext } from "@/lib/actions/hr-bulletin";
 import { loadAttendanceColumnsAdmin } from "@/lib/actions/hr-attendance-sheet";
 import { listPostes } from "@/lib/actions/hr-postes";
@@ -41,6 +42,7 @@ export default async function RhParametresPage() {
     company,
     customDefs,
     docFonts,
+    templateSummaries,
   ] = await Promise.all([
     loadHrLookups(),
     listHrEmployeeFields(),
@@ -59,6 +61,7 @@ export default async function RhParametresPage() {
     getHrCompanyProfile(),
     listCustomDocDefs(),
     listDocFonts(),
+    listDocTemplateSummaries(),
   ]);
   const salaryError =
     (!rubriques.ok && rubriques.error) ||
@@ -119,6 +122,7 @@ export default async function RhParametresPage() {
           fonts: docFonts.ok ? docFonts.data : [],
           error: (!customDefs.ok ? customDefs.error : undefined) || (!docFonts.ok ? docFonts.error : undefined),
         }}
+        templateSummaries={templateSummaries.ok ? templateSummaries.data : {}}
         loadError={
           lookups.error ||
           (!fields.ok ? fields.error : undefined) ||

@@ -57,6 +57,25 @@ export async function getPrintKit(docTypes: DocTypeId[]): Promise<ActionResult<P
   return loadPrintKit(supabase, docTypes);
 }
 
+export type DocTemplateSummary = { version: number | null; approved_at: string | null; has_draft: boolean };
+
+/** Approved version and pending draft of every template, for the documents settings cards. */
+export async function listDocTemplateSummaries(): Promise<ActionResult<Record<string, DocTemplateSummary>>> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("doc_templates").select("doc_type, status, version, approved_at");
+  if (error) return { ok: false, error: error.message };
+  const out: Record<string, DocTemplateSummary> = {};
+  for (const row of (data ?? []) as { doc_type: string; status: string; version: number | null; approved_at: string | null }[]) {
+    const s = (out[row.doc_type] ??= { version: null, approved_at: null, has_draft: false });
+    if (row.status === "draft") s.has_draft = true;
+    else if ((row.version ?? 0) > (s.version ?? 0)) {
+      s.version = row.version;
+      s.approved_at = row.approved_at;
+    }
+  }
+  return { ok: true, data: out };
+}
+
 export async function getDocTemplateState(docType: string): Promise<ActionResult<DocTemplateState>> {
   if (!isTemplateType(docType)) return { ok: false, error: "Document inconnu." };
   const supabase = await createClient();
