@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
-import { unseenKeys } from "@/lib/auth/role-rights";
+import { closedByRights, unseenKeys } from "@/lib/auth/role-rights";
 import { EMPTY_USER_PREFS, parseDesign, parseUserPrefs } from "@/lib/ui/design";
 import { ACCESS_KEYS, hiddenKeysForAccess } from "@/lib/ui/registry";
 import {
@@ -14,6 +14,10 @@ import {
   type UiPersonalOrder,
   type UiTheme,
 } from "@/lib/ui/resolve";
+
+function screenCodes(screen: { code: string } | { code: string }[] | null): string[] {
+  return (Array.isArray(screen) ? screen : screen ? [screen] : []).map((s) => s.code);
+}
 
 type PersonalRow = { item_key: string; sort_order: number; group_key: string | null; label_fr?: string | null };
 
@@ -38,7 +42,7 @@ export const getUiLayout = cache(async function getUiLayout(): Promise<UiLayoutD
   const supabase = await createClient();
   const roleIds = [...new Set(workspace.roles.map((r) => r.roleId))];
   try {
-    const [hiddenRes, accessRes, overridesRes, themeRes, prefsRes, personalRes, seenRes] = await Promise.all([
+    const [hiddenRes, accessRes, overridesRes, themeRes, prefsRes, personalRes, seenRes, readableRes] = await Promise.all([
       workspace.isSuperAdmin || !roleIds.length
         ? Promise.resolve({ data: [] as { role_id: string; item_key: string }[], error: null })
         : supabase.from("sys_ui_role_hidden").select("role_id, item_key").in("role_id", roleIds),
@@ -53,6 +57,9 @@ export const getUiLayout = cache(async function getUiLayout(): Promise<UiLayoutD
       workspace.isSuperAdmin
         ? Promise.resolve({ data: [] as { item_key: string }[], error: null })
         : supabase.from("sys_ui_catalog_seen").select("item_key"),
+      workspace.isSuperAdmin || !roleIds.length
+        ? Promise.resolve({ data: null, error: null })
+        : supabase.from("sys_permissions").select("screen:sys_screens(code)").in("role_id", roleIds).eq("can_read", true),
     ]);
     const overrides: Record<string, UiOverride> = {};
     if (!overridesRes.error) {
@@ -80,7 +87,11 @@ export const getUiLayout = cache(async function getUiLayout(): Promise<UiLayoutD
           app_subtitle: raw.app_subtitle?.trim() || null,
         }
       : EMPTY_THEME;
-    const roleHidden = hiddenRes.error ? [] : hiddenKeysForRoles(hiddenRes.data ?? [], roleIds);
+    const readable = readableRes.error || !readableRes.data ? null : new Set(readableRes.data.flatMap((r) => screenCodes(r.screen)));
+    const roleHidden = [
+      ...(hiddenRes.error ? [] : hiddenKeysForRoles(hiddenRes.data ?? [], roleIds)),
+      ...(readable ? closedByRights(readable) : []),
+    ];
     const unseen = seenRes.error ? [] : unseenKeys(new Set((seenRes.data ?? []).map((r) => r.item_key)));
     const access = accessRes.error ? null : accessRes.data;
     return {

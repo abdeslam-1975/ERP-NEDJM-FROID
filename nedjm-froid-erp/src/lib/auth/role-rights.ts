@@ -274,6 +274,13 @@ export function unseenKeys(seen: ReadonlySet<string>): string[] {
   return [...RIGHTS_ITEM_KEYS].filter((key) => !seen.has(key));
 }
 
+/** Catalogue keys needing a screen none of the user's roles may read: shown « Fermé » in Droits par rôle, so hidden. */
+export function closedByRights(readable: ReadonlySet<string>): string[] {
+  return flatten(buildCatalogTree())
+    .filter((n) => !n.locked && n.screens.some((s) => !readable.has(s)))
+    .flatMap((n) => withTwins(n.key));
+}
+
 /* —— state of one role —— */
 
 export type RoleRightsState = {

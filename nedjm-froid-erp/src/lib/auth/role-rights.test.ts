@@ -6,6 +6,7 @@ import {
   buildRightsTree,
   cloneState,
   closeNode,
+  closedByRights,
   describeChanges,
   flatten,
   indexTree,
@@ -62,6 +63,17 @@ describe("rights tree", () => {
 
   it("points every dependency to a node of the tree", () => {
     for (const n of all) for (const r of n.requires) expect(index.byKey.has(r), `${n.key} → ${r}`).toBe(true);
+  });
+
+  it("hides in the app what Droits par rôle shows closed for lack of « Voir »", () => {
+    const closed = closedByRights(new Set(["hr_hub", "employees"]));
+    expect(closed).toEqual(expect.arrayContaining(["rh.paie", "rh.virements", "rh_settings.legal", "rh.legal"]));
+    expect(closed).not.toContain("nav.rh");
+    expect(closed).not.toContain("rh.employes");
+    const s = state({ perms: { hr_hub: { ...NO_RIGHTS, can_read: true }, employees: { ...NO_RIGHTS, can_read: true } } });
+    for (const n of all.filter((n) => n.kind !== "right" && !n.locked)) {
+      expect(closed.includes(n.key), n.key).toBe(!isOpen(n, s, none));
+    }
   });
 
   it("treats keys added after the last review as new", () => {
