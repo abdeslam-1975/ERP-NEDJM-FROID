@@ -1,7 +1,6 @@
 import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import type { HrEmployeeField } from "@/lib/actions/hr-employees";
 import { EMPTY_COMPANY_PROFILE, type HrCompanyProfile } from "@/lib/hr/company-profile";
-import { emptyLetterValues, type LetterKind, type LetterLang, type LetterValues } from "@/lib/hr/hr-letters";
 import { printListsFrom, type HrListItem, type PrintLists } from "@/lib/hr/hr-lists";
 import type { LeaveTitleFields, LeaveTitleLeave } from "@/lib/hr/leave-title";
 import type { MissionOrderFields } from "@/lib/hr/mission-order";
@@ -61,73 +60,6 @@ export const SEED_LIST_ITEMS: HrListItem[] = [
 
 export const SEED_LISTS: PrintLists = printListsFrom(SEED_LIST_ITEMS);
 
-const person: Partial<LetterValues> = {
-  numero: "000123/26",
-  nom_fr: "BEN ALI KARIM",
-  nom_ar: "بن علي كريم",
-  matricule: "042/24",
-  birth_date: "1990-05-12",
-  birth_place_fr: "Oran",
-  birth_place_ar: "وهران",
-  address_fr: "Cité 20 août, Oran",
-  address_ar: "حي 20 أوت، وهران",
-  poste_fr: "Soudeur <qualifié> & \"chef\"",
-  poste_ar: "لحام",
-  start_date: "2024-03-01",
-  end_date: "2026-08-31",
-  date_doc: "2026-10-06",
-};
-
-function letter(kind: LetterKind, lang: LetterLang, extra: Partial<LetterValues> = {}): LetterValues {
-  return { ...emptyLetterValues(kind, lang), ...person, ...extra };
-}
-
-const KINDS: LetterKind[] = ["ATTEST", "CERTIF", "STC", "MED1", "MED2", "LEAVE"];
-
-const perKind: Record<LetterKind, Partial<LetterValues>> = {
-  ATTEST: {},
-  CERTIF: {},
-  STC: {
-    amount: "123456.78",
-    lines: [
-      { label_fr: "Indemnité compensatrice de congé (12 j)", label_ar: "تعويض العطلة (12 يوم)", amount: 45000 },
-      { label_fr: "Salaire du mois", label_ar: "", amount: 78456.78 },
-    ],
-  },
-  MED1: { absence_since: "2026-09-20", delai: "08" },
-  MED2: { absence_since: "2026-09-20", delai: "08", ref_numero: "000098/26", ref_date: "2026-09-25" },
-  LEAVE: {
-    leave_kind_fr: "Congé annuel",
-    leave_kind_ar: "عطلة سنوية",
-    leave_from: "2026-10-10",
-    leave_to: "2026-10-30",
-    leave_days: "21",
-    leave_return: "2026-10-31",
-    leave_balance: "9",
-  },
-};
-
-export const LETTER_FIXTURES: { name: string; values: LetterValues }[] = [
-  ...KINDS.flatMap((kind) =>
-    (["fr", "ar"] as const).flatMap((lang) => [
-      { name: `${kind.toLowerCase()}-${lang}-m`, values: letter(kind, lang, perKind[kind]) },
-      { name: `${kind.toLowerCase()}-${lang}-f`, values: letter(kind, lang, { ...perKind[kind], sex: "F" }) },
-    ]),
-  ),
-  { name: "attest-fr-empty", values: emptyLetterValues("ATTEST", "fr") },
-  { name: "med2-ar-empty", values: emptyLetterValues("MED2", "ar") },
-  { name: "stc-fr-nolines", values: letter("STC", "fr", { amount: "1000" }) },
-  { name: "leave-fr-nobalance", values: letter("LEAVE", "fr", { ...perKind.LEAVE, leave_balance: "" }) },
-  {
-    name: "certif-fr-body",
-    values: letter("CERTIF", "fr", { body: "Premier paragraphe libre.\n\nSecond paragraphe du 12/05/2026." }),
-  },
-  {
-    name: "attest-ar-body",
-    values: letter("ATTEST", "ar", { body: "فقرة حرة أولى.\n\nفقرة ثانية بتاريخ 12/05/2026 بمبلغ 45 000,00." }),
-  },
-];
-
 export const MISSION_BASE: MissionOrderFields = {
   matricule: "05/26",
   nom: "TAHRI",
@@ -157,7 +89,6 @@ export const MISSION_BASE: MissionOrderFields = {
   donneur: "Service RH",
   faitA: "HMD",
   dateDoc: "2026-09-11",
-  gabarit: null,
 };
 
 const missionEmpty: MissionOrderFields = {
@@ -194,9 +125,6 @@ export const MISSION_FIXTURES: { name: string; fields: MissionOrderFields & { nu
   { name: "om-v2-full", fields: { ...MISSION_BASE, numero: "000004/26" } },
   { name: "om-v2-open", fields: { ...MISSION_BASE, dateRetour: null, moyen: "Taxi", numero: "000005/26" } },
   { name: "om-v2-empty", fields: { ...missionEmpty, numero: null } },
-  { name: "om-v1-full", fields: { ...MISSION_BASE, gabarit: "v1", numero: "000004/26" } },
-  { name: "om-v1-open", fields: { ...MISSION_BASE, gabarit: "v1", dateRetour: null, numero: "000006/26" } },
-  { name: "om-v1-empty", fields: { ...missionEmpty, gabarit: "v1", numero: null } },
 ];
 
 const leaveFields: LeaveTitleFields = {
@@ -328,7 +256,6 @@ const contractBase: ContractPrintValues = {
 export const CONTRACT_FIXTURES: { name: string; values: ContractPrintValues }[] = [
   { name: "contrat-cdd", values: contractBase },
   { name: "contrat-cdd-reason2", values: { ...contractBase, cdd_reason: 2 } },
-  { name: "contrat-cdi", values: { ...contractBase, is_cdi: true, end_date: "", numero: "2026/015" } },
   {
     name: "contrat-cdd-blank",
     values: {

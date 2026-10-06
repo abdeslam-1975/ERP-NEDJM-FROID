@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { archiveContractPrint, getContractPrintContext, saveContractPrint } from "@/lib/actions/hr-contract-print";
 import { printFromKit, type PrintKit } from "@/lib/doc/print-kit";
 import {
+  CONTRACT_DOC_TYPE,
   contractCddReasons,
   contractDocData,
-  contractDocType,
+  contractPrintError,
   type ContractPrintValues,
 } from "@/lib/hr/work-contract";
 import { usePrintKit } from "@/components/doc/use-print-kit";
@@ -67,11 +68,13 @@ const FIELDS: FieldDef[] = [
   { key: "retenue", label: "Retenue / jour d'absence (DA) · اقتطاع الغياب" },
 ];
 
-const CONTRACT_DOC_TYPES = ["contrat_cdd", "contrat_cdi"] as const;
+export const CONTRACT_DOC_TYPES = [CONTRACT_DOC_TYPE] as const;
 
-/** The contract as printed by its approved template (CDD or CDI). */
+/** The contract as printed by its approved template. */
 export function contractHtml(kit: PrintKit, values: ContractPrintValues) {
-  return printFromKit(kit, contractDocType(values), contractDocData(values, kit.company), window.location.origin);
+  const blocked = contractPrintError(values);
+  if (blocked) return { ok: false as const, error: blocked };
+  return printFromKit(kit, CONTRACT_DOC_TYPE, contractDocData(values, kit.company), window.location.origin);
 }
 
 export function ContractPrintDialog({
@@ -158,7 +161,7 @@ export function ContractPrintDialog({
           <Button variant="secondary" onClick={onClose}>
             {bi("Fermer", "إغلاق")}
           </Button>
-          <Button disabled={pending || !values || !kit} onClick={print}>
+          <Button disabled={pending || !values || !kit || values.is_cdi} onClick={print}>
             {bi("Enregistrer et imprimer", "حفظ وطباعة")}
           </Button>
         </>
@@ -202,17 +205,7 @@ export function ContractPrintDialog({
               </RhAlert>
             ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
-              <RhField label={bi("Type · النوع", "")}>
-                <select
-                  className={rhInput}
-                  value={values.is_cdi ? "CDI" : "CDD"}
-                  onChange={(e) => set("is_cdi", e.target.value === "CDI")}
-                >
-                  <option value="CDD">عقد عمل محدد المدة (CDD)</option>
-                  <option value="CDI">عقد عمل غير محدد المدة (CDI)</option>
-                </select>
-              </RhField>
-              {!values.is_cdi ? (
+              <div className="sm:col-span-2">
                 <RhField label={bi("Motif CDD (art. 12 loi 90-11) · سبب التوظيف", "")}>
                   <select
                     className={rhInput}
@@ -226,10 +219,8 @@ export function ContractPrintDialog({
                     ))}
                   </select>
                 </RhField>
-              ) : (
-                <div />
-              )}
-              {FIELDS.filter((f) => !(values.is_cdi && f.key === "end_date")).map((f) => (
+              </div>
+              {FIELDS.map((f) => (
                 <div key={f.key} className={f.wide ? "sm:col-span-2" : undefined}>
                   <RhField label={f.label} hint={f.hint}>
                     <input

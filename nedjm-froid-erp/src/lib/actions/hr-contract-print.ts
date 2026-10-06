@@ -12,9 +12,10 @@ import { hrFileHref } from "@/lib/hr/hr-file-url";
 import { htmlToPdf } from "@/lib/pdf/html-to-pdf";
 import { archiveFileStem, archiveFolder, hrPdfOptions, requestOrigin, uploadHrPdf } from "@/lib/pdf/print-archive";
 import {
+  CONTRACT_DOC_TYPE,
   contractDocData,
-  contractDocType,
   contractPrintDataToSave,
+  contractPrintError,
   contractPrintDefaults,
   type ContractPrintSource,
   type ContractPrintValues,
@@ -269,10 +270,11 @@ export async function archiveContractPrint(contractId: string): Promise<ActionRe
     const [context, origin] = await Promise.all([getContractPrintContext(contractId), requestOrigin()]);
     if (!context.ok) return context;
     const { values } = context.data;
-    const type = contractDocType(values);
-    const kit = await loadPrintKit(supabase, [type]);
+    const blocked = contractPrintError(values);
+    if (blocked) return { ok: false, error: blocked };
+    const kit = await loadPrintKit(supabase, [CONTRACT_DOC_TYPE]);
     if (!kit.ok) return kit;
-    const html = printFromKit(kit.data, type, contractDocData(values, kit.data.company), origin);
+    const html = printFromKit(kit.data, CONTRACT_DOC_TYPE, contractDocData(values, kit.data.company), origin);
     if (!html.ok) return html;
     const pdf = await htmlToPdf(html.data, hrPdfOptions(supabase, origin));
     const safeNum = (values.numero || "SN").replace(/\//g, "-");

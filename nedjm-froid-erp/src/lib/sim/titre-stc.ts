@@ -1,62 +1,18 @@
 import { printFromKit, type PrintKit } from "@/lib/doc/print-kit";
 import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
-import { letterDocData, letterDocType, type LetterValues } from "@/lib/hr/hr-letters";
-import { activeOptions, isAnnualLeave, listLabel } from "@/lib/hr/hr-lists";
+import { activeOptions, isAnnualLeave } from "@/lib/hr/hr-lists";
 import { calendarDays, returnDate, suggestSettlement, type SettlementLine } from "@/lib/hr/leave";
+import {
+  LEAVE_TITLE_FIELD_KEYS,
+  leaveTitleDocData,
+  type LeaveTitleFieldKey,
+  type LeaveTitleFields,
+} from "@/lib/hr/leave-title";
 import type { SimulatorData } from "@/lib/hr/payroll-simulator-load";
 import type { SimContext, SimEnv, SimFigure, SimOutput, SimVarDef } from "@/lib/sim/core";
+import { A4_PAGE_WIDTH } from "@/lib/sim/documents";
 import { leaveBalanceFromCtx, leaveKindSimOptions, type LeaveSimData } from "@/lib/sim/leave";
 import { runPaie } from "@/lib/sim/paie";
-
-export const LETTER_PAGE_WIDTH = 800;
-
-const G_LETTER = "Document (en-tête & identité)";
-
-type LetterTextKey = Exclude<keyof LetterValues, "kind" | "lang" | "sex" | "lines">;
-
-const LETTER_FIELDS: { key: LetterTextKey; label: string; kind?: SimVarDef["kind"] }[] = [
-  { key: "numero", label: "Numéro du document" },
-  { key: "date_doc", label: "Date du document", kind: "date" },
-  { key: "nom_fr", label: "Nom (FR)" },
-  { key: "nom_ar", label: "Nom (AR)" },
-  { key: "matricule", label: "Matricule" },
-  { key: "poste_fr", label: "Poste (FR)" },
-  { key: "poste_ar", label: "Poste (AR)" },
-  { key: "birth_date", label: "Date de naissance", kind: "date" },
-  { key: "birth_place_fr", label: "Lieu de naissance (FR)" },
-  { key: "birth_place_ar", label: "Lieu de naissance (AR)" },
-  { key: "address_fr", label: "Adresse (FR)" },
-  { key: "address_ar", label: "Adresse (AR)" },
-  { key: "start_date", label: "Date d'entrée", kind: "date" },
-  { key: "body", label: "Texte libre (remplace le corps généré)", kind: "longtext" },
-];
-
-export function letterVariables(v: LetterValues, skip: readonly LetterTextKey[] = []): SimVarDef[] {
-  return [
-    { id: "lettre.langue", label: "Langue du document", group: G_LETTER, kind: "select", base: v.lang, options: [{ value: "fr", label: "Français" }, { value: "ar", label: "العربية" }] },
-    { id: "lettre.sexe", label: "Civilité", group: G_LETTER, kind: "select", base: v.sex, options: [{ value: "M", label: "Monsieur" }, { value: "F", label: "Madame" }] },
-    ...LETTER_FIELDS.filter((f) => !skip.includes(f.key)).map(
-      (f): SimVarDef => ({ id: `lettre.${f.key}`, label: f.label, group: G_LETTER, kind: f.kind ?? "text", base: String(v[f.key] ?? "") }),
-    ),
-  ];
-}
-
-export function letterFromCtx(ctx: SimContext, v: LetterValues, skip: readonly LetterTextKey[] = []): LetterValues {
-  const out: LetterValues = { ...v, lang: ctx.str("lettre.langue", v.lang) === "ar" ? "ar" : "fr", sex: ctx.str("lettre.sexe", v.sex) === "F" ? "F" : "M" };
-  for (const f of LETTER_FIELDS) {
-    if (!skip.includes(f.key)) out[f.key] = ctx.str(`lettre.${f.key}`, String(v[f.key] ?? ""));
-  }
-  return out;
-}
-
-/** Printed letter and the template data, so the simulator can open the letter's template editor. */
-function letterDoc(v: LetterValues, letterheadUrl: string | null, kit: PrintKit, env: SimEnv, warnings: string[]) {
-  const type = letterDocType(v.kind, v.lang);
-  const data = letterDocData(v, kit.company, companyLetterheadUrl(letterheadUrl, env.origin));
-  const printed = printFromKit(kit, type, data, env.origin);
-  if (!printed.ok) warnings.push(printed.error);
-  return { html: printed.ok ? printed.data : null, doc: { type, data } };
-}
 
 // ---------------------------------------------------------------------------
 // Titre de congé
@@ -64,13 +20,30 @@ function letterDoc(v: LetterValues, letterheadUrl: string | null, kit: PrintKit,
 
 export type TitreSimData = {
   leave: LeaveSimData;
-  letter: LetterValues;
+  /** Print fields of the title (saved on the LEAVE correspondence, or taken from the employee). */
+  fields: Record<LeaveTitleFieldKey, string>;
+  numero: string;
   letterhead_url: string | null;
   kit: PrintKit;
   request: { id: string; kind: string; start_date: string; end_date: string; days: number } | null;
 };
 
 const G_TITRE = "Titre de congé";
+const G_TITRE_PRINT = "Titre de congé · impression";
+
+const TITRE_PRINT_FIELDS: { key: LeaveTitleFieldKey; label: string; kind?: SimVarDef["kind"] }[] = [
+  { key: "matricule", label: "Matricule" },
+  { key: "nom", label: "Nom" },
+  { key: "prenom", label: "Prénom" },
+  { key: "affectation", label: "Affectation" },
+  { key: "poste", label: "Fonction" },
+  { key: "moyen", label: "Moyen de transport" },
+  { key: "pieceType", label: "Pièce d'identité · type" },
+  { key: "pieceNum", label: "Pièce d'identité · numéro" },
+  { key: "donneur", label: "Établi par" },
+  { key: "faitA", label: "Fait à" },
+  { key: "dateDoc", label: "Date du document", kind: "date" },
+];
 
 export function titreDefaults(d: TitreSimData) {
   const start = d.request?.start_date ?? d.leave.as_of;
@@ -88,7 +61,10 @@ export function titreVariables(d: TitreSimData): SimVarDef[] {
     { id: "titre.jours", label: "Nombre de jours", group: G_TITRE, kind: "days", base: def.days, derived: true },
     { id: "titre.reprise", label: "Date de reprise", group: G_TITRE, kind: "date", base: returnDate(def.end), derived: true },
     { id: "titre.solde", label: "Solde de congé à la fin", group: G_TITRE, kind: "days", base: 0, derived: true, hint: "congé annuel uniquement" },
-    ...letterVariables(d.letter),
+    { id: "titre.numero", label: "Numéro du titre", group: G_TITRE_PRINT, kind: "text", base: d.numero },
+    ...TITRE_PRINT_FIELDS.map(
+      (f): SimVarDef => ({ id: `titre.${f.key}`, label: f.label, group: G_TITRE_PRINT, kind: f.kind ?? "text", base: d.fields[f.key] ?? "" }),
+    ),
   ];
 }
 
@@ -100,7 +76,7 @@ export function titreOutput(d: TitreSimData, ctx: SimContext, env: SimEnv): SimO
   const days = ctx.deriveNum("titre.jours", () =>
     d.request && from === d.request.start_date && to === d.request.end_date ? d.request.days : calendarDays(from, to),
   );
-  const back = ctx.deriveStr("titre.reprise", () => (to ? returnDate(to) : ""));
+  ctx.deriveStr("titre.reprise", () => (to ? returnDate(to) : ""));
   const warnings: string[] = [];
   if (!from || !to || to < from) warnings.push("Dates du congé incohérentes : « au » doit suivre « du ».");
 
@@ -115,21 +91,32 @@ export function titreOutput(d: TitreSimData, ctx: SimContext, env: SimEnv): SimO
     if (balance < 0) warnings.push(`Solde négatif après ce congé : ${balance} j.`);
   }
 
-  const label = listLabel(d.leave.kinds, kind);
-  const v: LetterValues = {
-    ...letterFromCtx(ctx, d.letter),
-    kind: "LEAVE",
-    leave_kind_fr: label.fr,
-    leave_kind_ar: label.ar,
-    leave_from: from,
-    leave_to: to,
-    leave_days: String(days),
-    leave_return: back,
-    leave_balance: balance == null ? "" : String(balance),
-  };
+  const raw = { ...d.fields };
+  for (const f of TITRE_PRINT_FIELDS) raw[f.key] = ctx.str(`titre.${f.key}`, d.fields[f.key] ?? "");
+  if (!raw.matricule.trim() || !raw.nom.trim()) warnings.push("Le matricule et le nom sont obligatoires.");
+  const fields = Object.fromEntries(
+    LEAVE_TITLE_FIELD_KEYS.map((k) => [k, raw[k]?.trim() ? raw[k].trim() : null]),
+  ) as LeaveTitleFields;
+  const data = leaveTitleDocData(
+    { ...fields, matricule: raw.matricule, nom: raw.nom },
+    { kind, dateDebut: from, dateFin: to, jours: days },
+    ctx.str("titre.numero", d.numero),
+    d.kit.company,
+    companyLetterheadUrl(d.letterhead_url, env.origin),
+    d.kit.lists,
+  );
+  const printed = printFromKit(d.kit, "titre_conge", data, env.origin);
+  if (!printed.ok) warnings.push(printed.error);
+
   const figures: SimFigure[] = [{ key: "days", label: "Jours de congé", value: days, format: "days", emphasis: true }];
   if (balance != null) figures.push({ key: "balance", label: "Solde restant", value: balance, format: "days", goodWhenUp: true });
-  return { ...letterDoc(v, d.letterhead_url, d.kit, env, warnings), pageWidth: LETTER_PAGE_WIDTH, figures, warnings };
+  return {
+    html: printed.ok ? printed.data : null,
+    doc: { type: "titre_conge", data },
+    pageWidth: A4_PAGE_WIDTH,
+    figures,
+    warnings,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -138,9 +125,6 @@ export function titreOutput(d: TitreSimData, ctx: SimContext, env: SimEnv): SimO
 
 export type StcSimData = {
   leave: LeaveSimData;
-  letter: LetterValues;
-  letterhead_url: string | null;
-  kit: PrintKit;
   exit: { date: string; status: string; lines: SettlementLine[] } | null;
   base_monthly: number;
   /** Payroll inputs of the exit month (null when the employee has no payable contract then). */
@@ -171,11 +155,10 @@ export function stcVariables(d: StcSimData): SimVarDef[] {
     defs.push({ id: "stc.net_mois", label: "Net du bulletin du mois de sortie", group: G_STC, kind: "money", base: 0, derived: true });
   }
   defs.push({ id: "stc.montant", label: "Montant du solde de tout compte", group: G_STC, kind: "money", base: 0, derived: true });
-  defs.push(...letterVariables(d.letter, ["start_date"]));
   return defs;
 }
 
-export function stcOutput(d: StcSimData, ctx: SimContext, env: SimEnv): SimOutput {
+export function stcOutput(d: StcSimData, ctx: SimContext): SimOutput {
   const date = ctx.str("stc.date_sortie", d.exit?.date ?? d.leave.as_of);
   const base = ctx.num("stc.salaire_base", d.base_monthly);
   const warnings: string[] = [];
@@ -218,13 +201,6 @@ export function stcOutput(d: StcSimData, ctx: SimContext, env: SimEnv): SimOutpu
   const amount = ctx.deriveNum("stc.montant", () => (net != null && net !== 0 ? net : linesTotal));
   if (!d.exit) warnings.push("Aucune sortie enregistrée : simulation d'une sortie à la date choisie.");
 
-  const v: LetterValues = {
-    ...letterFromCtx(ctx, d.letter, ["start_date"]),
-    kind: "STC",
-    end_date: date,
-    lines: lines.map((l) => ({ label_fr: l.label_fr, label_ar: l.label_ar, amount: l.amount })),
-    amount: amount ? amount.toFixed(2) : "",
-  };
   const figures: SimFigure[] = [
     { key: "balance", label: "Solde de congé", value: balance, format: "days" },
     { key: "icp", label: "ICP", value: icp, format: "money" },
@@ -232,5 +208,5 @@ export function stcOutput(d: StcSimData, ctx: SimContext, env: SimEnv): SimOutpu
   ];
   if (net != null) figures.push({ key: "net", label: "Net du mois", value: net, format: "money" });
   figures.push({ key: "amount", label: "Solde de tout compte", value: amount, format: "money", emphasis: true, goodWhenUp: true });
-  return { ...letterDoc(v, d.letterhead_url, d.kit, env, warnings), pageWidth: LETTER_PAGE_WIDTH, figures, warnings };
+  return { html: null, pageWidth: A4_PAGE_WIDTH, figures, warnings };
 }

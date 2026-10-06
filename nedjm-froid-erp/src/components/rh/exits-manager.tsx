@@ -12,8 +12,7 @@ import {
 import type { LeaveEmployee } from "@/lib/actions/hr-leave";
 import type { SettlementLine } from "@/lib/hr/leave";
 import { activeOptions, listLabel, type ExitReasonOption } from "@/lib/hr/hr-lists";
-import { slashDateIso, type LetterKind } from "@/lib/hr/hr-letters";
-import { HrLetterDialog } from "@/components/rh/hr-letter-dialog";
+import { slashDateIso } from "@/lib/hr/doc-format";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhChip, RhField, RhModal, bi, rhInput } from "@/components/rh/rh-ui";
@@ -78,7 +77,6 @@ export function ExitsManager({
   const exitReasonLabel = (code: string) => listLabel(reasons, code);
   const [rows, setRows] = useState(initialRows);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [letter, setLetter] = useState<{ employeeId: string; kind: LetterKind } | null>(null);
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -246,20 +244,10 @@ export function ExitsManager({
               </Button>
             </>
           ) : null}
-          {row.status === "VALIDATED" ? (
-            <>
-              <Button variant="secondary" onClick={() => setLetter({ employeeId: row.employee_id, kind: "CERTIF" })}>
-                {bi("Certificat de travail", "شهادة عمل")}
-              </Button>
-              <Button variant="secondary" onClick={() => setLetter({ employeeId: row.employee_id, kind: "STC" })}>
-                {bi("Solde de tout compte", "وصل التصفية")}
-              </Button>
-              {canEdit ? (
-                <Button variant="secondary" disabled={pending} onClick={() => changeStatus(row, "CANCELLED")}>
-                  {bi("Annuler", "إلغاء")}
-                </Button>
-              ) : null}
-            </>
+          {row.status === "VALIDATED" && canEdit ? (
+            <Button variant="secondary" disabled={pending} onClick={() => changeStatus(row, "CANCELLED")}>
+              {bi("Annuler", "إلغاء")}
+            </Button>
           ) : null}
         </>
       ),
@@ -379,18 +367,10 @@ export function ExitsManager({
             </div>
             {reasons.some((r) => r.notice && r.code === draft.reason_code) && draft.employee_id ? (
               <RhAlert tone="warning">
-                <span className="mr-2">
-                  {bi(
-                    `${exitReasonLabel(draft.reason_code).fr} : envoyer d'abord deux mises en demeure.`,
-                    `${exitReasonLabel(draft.reason_code).ar}: يجب إرسال إعذارين.`,
-                  )}
-                </span>
-                <Button variant="secondary" onClick={() => setLetter({ employeeId: draft.employee_id, kind: "MED1" })}>
-                  {bi("1ère mise en demeure", "الإعذار الأول")}
-                </Button>{" "}
-                <Button variant="secondary" onClick={() => setLetter({ employeeId: draft.employee_id, kind: "MED2" })}>
-                  {bi("2ème mise en demeure", "الإعذار الثاني")}
-                </Button>
+                {bi(
+                  `${exitReasonLabel(draft.reason_code).fr} : envoyer d'abord deux mises en demeure.`,
+                  `${exitReasonLabel(draft.reason_code).ar}: يجب إرسال إعذارين.`,
+                )}
               </RhAlert>
             ) : null}
 
@@ -488,10 +468,6 @@ export function ExitsManager({
             </div>
           </div>
         </RhModal>
-      ) : null}
-
-      {letter ? (
-        <HrLetterDialog employeeId={letter.employeeId} kind={letter.kind} onClose={() => setLetter(null)} />
       ) : null}
     </div>
   );

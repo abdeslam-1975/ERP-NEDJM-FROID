@@ -8,8 +8,8 @@ import {
   arabicNumberWords,
   contractCddReasons,
   contractDocData,
-  contractDocType,
   contractPrintDataToSave,
+  contractPrintError,
   contractPrintDefaults,
   formatDzd,
   type ContractPrintSource,
@@ -82,7 +82,7 @@ describe("formatting", () => {
   it("gives the templates formatted amounts, words and dotted blanks", () => {
     const v = contractPrintDefaults(source, cdd);
     const data = contractDocData(v, SEED_COMPANY);
-    expect(contractDocType(v)).toBe("contrat_cdd");
+    expect(contractPrintError(v)).toBeNull();
     expect(data.net).toBe("210 000.00");
     expect(data.net_words).toBe("مائتان وعشرة آلاف");
     expect(data.birth_date).toBe("28 ديسمبر 1991");
@@ -112,7 +112,7 @@ describe("contractPrintDefaults", () => {
     expect([cdd.essai, cdd.preavis, cdd.cdd_reason, cdd.cdi]).toEqual(["شهرا واحدا", "ثلاثة أشهر", 5, false]);
     const cdi = contractPrintDefaults(source, contractTypeDefaults(SEED_LIST_ITEMS, "cdi"));
     expect(cdi.is_cdi).toBe(true);
-    expect(contractDocType(cdi)).toBe("contrat_cdi");
+    expect(contractPrintError(cdi)).toContain("CDI");
     const custom = contractPrintDefaults(source, { cdi: false, essai: "ستة أشهر", preavis: "شهر", cdd_reason: 2 });
     expect([custom.essai, custom.preavis, custom.cdd_reason]).toEqual(["ستة أشهر", "شهر", 2]);
     expect(contractTypeDefaults(SEED_LIST_ITEMS, "INCONNU")).toEqual({ cdi: false, essai: "", preavis: "", cdd_reason: 1 });

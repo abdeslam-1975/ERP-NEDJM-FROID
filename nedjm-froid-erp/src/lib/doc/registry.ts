@@ -26,30 +26,7 @@ export type DocTypeMeta = {
 /** What the editor needs to know about a document (built-in or created from the interface). */
 export type DocMeta = Pick<DocTypeMeta, "label" | "labelAr" | "pageList" | "fields" | "lists">;
 
-export const LETTER_DOC_TYPE_IDS = [
-  "lettre_attest_fr",
-  "lettre_attest_ar",
-  "lettre_certif_fr",
-  "lettre_certif_ar",
-  "lettre_stc_fr",
-  "lettre_stc_ar",
-  "lettre_med1_fr",
-  "lettre_med1_ar",
-  "lettre_med2_fr",
-  "lettre_med2_ar",
-  "lettre_leave_fr",
-  "lettre_leave_ar",
-] as const;
-
-export const HR_DOC_TYPE_IDS = [
-  ...LETTER_DOC_TYPE_IDS,
-  "ordre_mission",
-  "ordre_mission_v1",
-  "titre_conge",
-  "fiche_renseignements",
-  "contrat_cdd",
-  "contrat_cdi",
-] as const;
+export const HR_DOC_TYPE_IDS = ["ordre_mission", "titre_conge", "fiche_renseignements", "contrat_cdd"] as const;
 
 export const DOC_TYPE_IDS = ["bulletin_paie", ...HR_DOC_TYPE_IDS] as const;
 export type DocTypeId = (typeof DOC_TYPE_IDS)[number];
@@ -200,80 +177,6 @@ const COMPANY_FIELDS: DocField[] = [
   company("company.bank", "Banque / RIB"),
 ];
 
-const letter = text("Lettre");
-const agree = text("Accords selon le genre");
-const LETTER_FIELDS: DocField[] = [
-  letter("numero", "N° (……… si vide)"),
-  letter("numero_raw", "N° (vide si non numéroté)"),
-  letter("matricule", "Matricule (vide si absent)"),
-  letter("matricule_txt", "Matricule (…… si vide)"),
-  letter("date_doc", "Date du document"),
-  letter("civ", "Civilité (Monsieur / Madame)"),
-  letter("civ_short", "Civilité abrégée (M. / Mme)"),
-  letter("nom", "Nom et prénom"),
-  letter("birth_date", "Date de naissance"),
-  letter("birth_place", "Lieu de naissance"),
-  letter("poste", "Poste"),
-  letter("recipient_address", "Adresse du destinataire"),
-  letter("start", "Date d'entrée"),
-  letter("end", "Date de sortie"),
-  letter("since", "Absent depuis le"),
-  letter("delai", "Délai (jours)"),
-  letter("ref", "N° de la première mise en demeure"),
-  letter("ref_date", "Date de la première mise en demeure"),
-  letter("amount", "Montant (1 234,56)"),
-  letter("amount_words", "Montant en lettres"),
-  letter("leave_kind", "Nature du congé"),
-  letter("from", "Congé du"),
-  letter("to", "Congé au"),
-  letter("days", "Nombre de jours"),
-  letter("reprise", "Date de reprise"),
-  letter("leave_balance", "Reliquat après congé"),
-  agree("e", "« e » au féminin (employé·e)"),
-  agree("ne", "né / née"),
-  agree("il", "Il / Elle"),
-  agree("a_ne", "المولود / المولودة"),
-  agree("a_works", "يعمل / تعمل"),
-  agree("a_worked", "عمل / عملت"),
-  agree("a_left", "غادر / غادرت"),
-  agree("a_free", "حراً / حرةً"),
-  agree("a_concerned", "المعني / المعنية"),
-  agree("a_signed", "الموقع / الموقعة"),
-  agree("a_who", "الذي شغل / التي شغلت"),
-  agree("a_her", "ه / ها"),
-  agree("a_join", "تلتحق / تلتحقي"),
-  { path: "label", label: "Désignation", group: "Ligne du reçu", within: "lines" },
-  { path: "amount", label: "Montant", group: "Ligne du reçu", within: "lines" },
-  { path: "$item", label: "Paragraphe libre", group: "Texte libre", within: "custom_body" },
-  ...COMPANY_FIELDS,
-];
-const LETTER_LISTS: DocList[] = [
-  { path: "lines", label: "Lignes du reçu (solde de tout compte)" },
-  { path: "custom_body", label: "Paragraphes du texte libre" },
-];
-
-const LETTER_NAMES: Record<string, [string, string]> = {
-  attest: ["Attestation de travail", "إفادة عمل"],
-  certif: ["Certificat de travail", "شهادة عمل"],
-  stc: ["Reçu pour solde de tout compte", "وصل تصفية كل حساب"],
-  med1: ["Mise en demeure (1ère)", "إعذار أول"],
-  med2: ["Mise en demeure (2ème et dernière)", "إعذار ثانٍ وأخير"],
-  leave: ["Titre de congé (lettre)", "سند عطلة"],
-};
-
-function letterMeta(id: (typeof LETTER_DOC_TYPE_IDS)[number]): DocTypeMeta {
-  const [, kind, lang] = id.split("_");
-  const [fr, ar] = LETTER_NAMES[kind];
-  return {
-    id,
-    label: `${fr} — ${lang === "ar" ? "arabe" : "français"}`,
-    labelAr: ar,
-    family: "lettres",
-    fields: LETTER_FIELDS,
-    lists: LETTER_LISTS,
-  };
-}
-
 const sheet = text("Document");
 const SHEET_FIELDS: DocField[] = [
   sheet("numero", "N°"),
@@ -397,14 +300,8 @@ const hr = (
 
 export const DOC_TYPES: Record<DocTypeId, DocTypeMeta> = {
   bulletin_paie: BULLETIN,
-  ...(Object.fromEntries(LETTER_DOC_TYPE_IDS.map((id) => [id, letterMeta(id)])) as Record<
-    (typeof LETTER_DOC_TYPE_IDS)[number],
-    DocTypeMeta
-  >),
   ordre_mission: hr("ordre_mission", "Ordre de mission", "أمر بمهمة", "fiches", MISSION_FIELDS),
-  ordre_mission_v1: hr("ordre_mission_v1", "Ordre de mission (ancien gabarit)", "أمر بمهمة (النموذج القديم)", "fiches", MISSION_FIELDS),
   titre_conge: hr("titre_conge", "Titre de congé", "إجازة", "fiches", LEAVE_TITLE_FIELDS),
   fiche_renseignements: hr("fiche_renseignements", "Fiche de renseignements", "بطاقة المعلومات", "fiches", FICHE_FIELDS, FICHE_LISTS),
   contrat_cdd: hr("contrat_cdd", "Contrat de travail à durée déterminée", "عقد عمل محدد المدة", "contrats", CONTRACT_FIELDS),
-  contrat_cdi: hr("contrat_cdi", "Contrat de travail à durée indéterminée", "عقد عمل غير محدد المدة", "contrats", CONTRACT_FIELDS),
 };

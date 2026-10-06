@@ -3,7 +3,7 @@ import { escapeHtml, type DocData } from "@/lib/doc/engine";
 import { DEFAULT_PAGE_SETUP, applyPageSetup, normalizePageSetup, pageSetupSchema, type PageSetup } from "@/lib/doc/page-setup";
 import type { DocField, DocList } from "@/lib/doc/registry";
 import type { HrCompanyProfile } from "@/lib/hr/company-profile";
-import { formatAmount, frenchAmountWords } from "@/lib/hr/hr-letters";
+import { formatAmount, frenchAmountWords } from "@/lib/hr/doc-format";
 import { arabicLongDate, arabicNumberWords } from "@/lib/hr/work-contract";
 
 /**

@@ -50,7 +50,6 @@ import {
   formatEstablishmentDate,
   formatOmDate,
   missionDocData,
-  missionDocType,
   missionOrderFieldsSchema,
   missionPayload,
   missionPointageHref,
@@ -372,7 +371,6 @@ export function DocumentsManager({
       donneur: textPayload(row.payload, "donneur") || textPayload(row.payload, "issuer_service") || emptyMission().donneur,
       faitA: textPayload(row.payload, "faitA") || textPayload(row.payload, "done_at") || emptyMission().faitA,
       dateDoc: textPayload(row.payload, "dateDoc") || textPayload(row.payload, "done_on") || emptyMission().dateDoc,
-      gabarit: textPayload(row.payload, "gabarit"),
       savedDateDepart: row.start_date ?? "",
       savedDateRetour: row.end_date ?? "",
     };
@@ -389,9 +387,8 @@ export function DocumentsManager({
       return;
     }
     const fields = { ...checked.data, numero: draft.numero };
-    const type = missionDocType(fields);
-    printFromTemplate([type], (kit, origin) =>
-      printFromKit(kit, type, missionDocData(fields, kit.company, companyLetterheadUrl(letterheadUrl, origin), kit.lists), origin),
+    printFromTemplate(["ordre_mission"], (kit, origin) =>
+      printFromKit(kit, "ordre_mission", missionDocData(fields, kit.company, companyLetterheadUrl(letterheadUrl, origin), kit.lists), origin),
     ).then((problem) => problem && setMissionError(problem));
   }
 

@@ -278,8 +278,13 @@ export function arabicAmountWords(value: string | number): string {
   return cents ? `${words} و${arabicNumberWords(cents)} سنتيم` : words;
 }
 
-export function contractDocType(v: Pick<ContractPrintValues, "is_cdi">) {
-  return v.is_cdi ? "contrat_cdi" : "contrat_cdd";
+export const CONTRACT_DOC_TYPE = "contrat_cdd";
+
+/** Only fixed-term contracts have a template; a CDI contract cannot be printed. */
+export function contractPrintError(v: Pick<ContractPrintValues, "is_cdi">) {
+  return v.is_cdi
+    ? "Aucun modèle d'impression pour les contrats CDI (créez-le dans Paramètres RH › Documents › Créer un document). · لا يوجد نموذج طباعة لعقود CDI."
+    : null;
 }
 
 /** Values printed by the contract templates (empty values print as a dotted blank). */

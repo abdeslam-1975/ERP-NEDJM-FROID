@@ -3,14 +3,14 @@ import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
 import {
   missionDateIssue,
   missionDocData,
-  missionDocType,
   missionOrderFieldsSchema,
   type MissionOrderFields,
 } from "@/lib/hr/mission-order";
 import {
+  CONTRACT_DOC_TYPE,
   CONTRACT_PRINT_KEYS,
   contractDocData,
-  contractDocType,
+  contractPrintError,
   type ContractPrintValues,
 } from "@/lib/hr/work-contract";
 import type { SimContext, SimEnv, SimOutput, SimVarDef } from "@/lib/sim/core";
@@ -62,7 +62,6 @@ const OM_FIELDS: { key: OmFieldKey; label: string; kind?: SimVarDef["kind"] }[] 
   { key: "donneur", label: "Donneur d'ordre" },
   { key: "faitA", label: "Fait à" },
   { key: "dateDoc", label: "Date du document", kind: "date" },
-  { key: "gabarit", label: "Modèle d'impression (v1 = ancien)" },
 ];
 
 export const OM_FIELD_KEYS = OM_FIELDS.map((f) => f.key);
@@ -88,7 +87,7 @@ export function omOutput(d: OmSimData, ctx: SimContext, env: SimEnv): SimOutput 
   if (!parsed.success) warnings.push(...new Set(parsed.error.issues.map((i) => i.message)));
   const issue = missionDateIssue(fields, ctx.str("om.aujourdhui", d.today), d.original);
   if (issue) warnings.push(issue.message);
-  const type = missionDocType(fields);
+  const type = "ordre_mission";
   const data = missionDocData(
     { ...fields, matricule: raw.matricule, nom: raw.nom, numero: ctx.str("om.numero", d.numero) },
     d.kit.company,
@@ -169,7 +168,6 @@ export function contractDocVariables(d: ContractDocSimData): SimVarDef[] {
     { id: `contrat.${k}.net_reference`, label: "Net de référence du contrat", group: G_CONTRACT, kind: "money", base: d.contract.net_ref ?? 0 },
     { id: `contrat.${k}.net_recup`, label: "Net de récupération du contrat", group: G_CONTRACT, kind: "money", base: d.contract.net_recup ?? 0 },
     { id: "impression.numero", label: "Numéro du contrat", group: G_PRINT, kind: "text", base: v.numero },
-    { id: "impression.is_cdi", label: "Contrat à durée indéterminée (CDI)", group: G_PRINT, kind: "toggle", base: v.is_cdi },
     { id: "impression.cdd_reason", label: "Motif du CDD coché (n°)", group: G_PRINT, kind: "number", base: v.cdd_reason },
   ];
   for (const key of CONTRACT_PRINT_KEYS) {
@@ -193,7 +191,6 @@ export function contractDocOutput(d: ContractDocSimData, ctx: SimContext, env: S
   const values: ContractPrintValues = {
     ...v0,
     numero: ctx.str("impression.numero", v0.numero),
-    is_cdi: ctx.bool("impression.is_cdi", v0.is_cdi),
     cdd_reason: Math.max(1, Math.round(ctx.num("impression.cdd_reason", v0.cdd_reason))),
     start_date: ctx.str(`contrat.${k}.date_debut`, v0.start_date),
     end_date: ctx.str(`contrat.${k}.date_fin`, v0.end_date),
@@ -216,13 +213,13 @@ export function contractDocOutput(d: ContractDocSimData, ctx: SimContext, env: S
   for (const key of ["nom", "poste", "net"] as const) {
     if (!values[key].trim()) warnings.push(`Champ vide sur le contrat imprimé : ${PRINT_LABELS[key]}.`);
   }
-  const type = contractDocType(values);
   const data = contractDocData(values, d.kit.company);
-  const printed = printFromKit(d.kit, type, data, env.origin);
+  const blocked = contractPrintError(values);
+  const printed = blocked ? { ok: false as const, error: blocked } : printFromKit(d.kit, CONTRACT_DOC_TYPE, data, env.origin);
   if (!printed.ok) warnings.push(printed.error);
   return {
     html: printed.ok ? printed.data : null,
-    doc: { type, data },
+    doc: { type: CONTRACT_DOC_TYPE, data },
     pageWidth: A4_PAGE_WIDTH,
     figures: [{ key: "net", label: "Net imprimé", value: Number(values.net) || 0, format: "money", emphasis: true }],
     warnings,

@@ -17,9 +17,6 @@ const optDate = z
   .optional()
   .transform((v) => (v ? v : null));
 
-/** Print layout kept for orders that must still use the legacy boxed sheet. */
-export const OM_GABARIT_ANCIEN = "v1";
-
 export const missionOrderFieldsSchema = z
   .object({
     matricule: z.string().trim().min(1, { message: "Le matricule et le nom sont obligatoires." }).max(40),
@@ -50,12 +47,6 @@ export const missionOrderFieldsSchema = z
     donneur: optText(80),
     faitA: optText(40),
     dateDoc: optDate,
-    gabarit: z
-      .string()
-      .trim()
-      .optional()
-      .nullable()
-      .transform((v) => (v === OM_GABARIT_ANCIEN ? OM_GABARIT_ANCIEN : null)),
   })
   .superRefine((v, ctx) => {
     if (v.dateDepart && v.dateRetour && v.dateRetour < v.dateDepart) {
@@ -128,7 +119,6 @@ export function missionPayload(fields: MissionOrderFields, defaults: SheetDefaul
     donneur: fields.donneur ?? (defaults.hr_service || null),
     faitA: fields.faitA ?? (defaults.city_short || null),
     dateDoc: fields.dateDoc,
-    gabarit: fields.gabarit,
   };
 }
 
@@ -305,10 +295,6 @@ export function sheetDocData(
 
 export function missionReference(numero: string | null | undefined, company: Pick<HrCompanyProfile, "doc_prefix">) {
   return documentReference(company.doc_prefix, "OM", numero);
-}
-
-export function missionDocType(fields: Pick<MissionOrderFields, "gabarit">) {
-  return fields.gabarit === OM_GABARIT_ANCIEN ? "ordre_mission_v1" : "ordre_mission";
 }
 
 export function missionDocData(

@@ -8,7 +8,6 @@ import { hrCorrespondenceSchema, hrFileSchema } from "@/lib/validations/hr";
 import {
   missionDateIssue,
   missionDocData,
-  missionDocType,
   missionOrderFieldsSchema,
   missionPayload,
   pickMissionContract,
@@ -492,11 +491,10 @@ async function archiveMissionOrderSnapshot(input: {
       };
     }
     const fields = { ...checked.data, numero: input.number };
-    const type = missionDocType(fields);
     const supabase = await createClient();
-    const kit = await loadPrintKit(supabase, [type]);
+    const kit = await loadPrintKit(supabase, ["ordre_mission"]);
     if (!kit.ok) return kit;
-    const html = printFromKit(kit.data, type, missionDocData(fields, kit.data.company, letterhead, kit.data.lists), origin);
+    const html = printFromKit(kit.data, "ordre_mission", missionDocData(fields, kit.data.company, letterhead, kit.data.lists), origin);
     if (!html.ok) return html;
     const safeNum = input.number.replace(/\//g, "-");
     const fileName = `OM_${archiveFileStem(safeNum, checked.data.matricule || "NA", checked.data.nom || "OM")}.pdf`;

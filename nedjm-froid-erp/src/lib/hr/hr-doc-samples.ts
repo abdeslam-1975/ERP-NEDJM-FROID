@@ -6,7 +6,6 @@ import type { HrCompanyProfile } from "@/lib/hr/company-profile";
 import { ficheDocData } from "@/lib/hr/employee-fiche-doc";
 import type { HrFicheSettings } from "@/lib/hr/fiche-settings";
 import type { PrintLists } from "@/lib/hr/hr-lists";
-import { emptyLetterValues, letterDocData, type LetterKind, type LetterLang, type LetterValues } from "@/lib/hr/hr-letters";
 import { leaveTitleDocData, type LeaveTitleFields } from "@/lib/hr/leave-title";
 import { missionDocData, todayIsoAlgiers, type MissionOrderFields } from "@/lib/hr/mission-order";
 import { contractDocData, type ContractPrintValues } from "@/lib/hr/work-contract";
@@ -16,38 +15,6 @@ export type HrDocSampleContext = {
   company: HrCompanyProfile;
   letterheadUrl: string;
   fiche: { settings: HrFicheSettings; fields: HrEmployeeField[]; catalogs: CatalogItem[] };
-};
-
-const SAMPLE_LETTER: Partial<LetterValues> = {
-  numero: "000123/26",
-  nom_fr: "BENALI Karim",
-  nom_ar: "بن علي كريم",
-  matricule: "042/24",
-  birth_date: "1990-05-12",
-  birth_place_fr: "Oran",
-  birth_place_ar: "وهران",
-  address_fr: "Cité 20 août, Oran",
-  address_ar: "حي 20 أوت، وهران",
-  poste_fr: "Frigoriste",
-  poste_ar: "تقني تبريد",
-  start_date: "2024-03-01",
-  end_date: "2026-08-31",
-  amount: "123456.78",
-  lines: [
-    { label_fr: "Indemnité compensatrice de congé", label_ar: "تعويض العطلة", amount: 45000 },
-    { label_fr: "Salaire du mois", label_ar: "أجر الشهر", amount: 78456.78 },
-  ],
-  absence_since: "2026-09-20",
-  delai: "08",
-  ref_numero: "000098/26",
-  ref_date: "2026-09-25",
-  leave_kind_fr: "Congé annuel",
-  leave_kind_ar: "عطلة سنوية",
-  leave_from: "2026-10-10",
-  leave_to: "2026-10-30",
-  leave_days: "21",
-  leave_return: "2026-10-31",
-  leave_balance: "9",
 };
 
 const SAMPLE_SHEET = {
@@ -101,10 +68,7 @@ const SAMPLE_CONTRACT: ContractPrintValues = {
   retenue: "2166.67",
 };
 
-function missionSample(
-  company: HrCompanyProfile,
-  gabarit: MissionOrderFields["gabarit"],
-): MissionOrderFields & { numero: string } {
+function missionSample(company: HrCompanyProfile): MissionOrderFields & { numero: string } {
   return {
     ...SAMPLE_SHEET,
     numero: "000004/26",
@@ -122,7 +86,6 @@ function missionSample(
     donneur: company.hr_service || null,
     faitA: company.city_short || null,
     dateDoc: todayIsoAlgiers(),
-    gabarit,
   };
 }
 
@@ -135,18 +98,9 @@ function ficheSampleValues(fields: HrEmployeeField[]) {
 /** Example data of each HR document, so a template can be edited and previewed without a real employee. */
 export function hrDocSample(docType: DocTypeId, ctx: HrDocSampleContext): DocData | null {
   const { company, letterheadUrl } = ctx;
-  const letter = /^lettre_([a-z0-9]+)_(fr|ar)$/.exec(docType);
-  if (letter) {
-    const kind = letter[1].toUpperCase() as LetterKind;
-    const lang = letter[2] as LetterLang;
-    const values = { ...emptyLetterValues(kind, lang), ...SAMPLE_LETTER, date_doc: todayIsoAlgiers() };
-    return letterDocData(values, company, letterheadUrl);
-  }
   switch (docType) {
     case "ordre_mission":
-      return missionDocData(missionSample(company, null), company, letterheadUrl, SAMPLE_LISTS);
-    case "ordre_mission_v1":
-      return missionDocData(missionSample(company, "v1"), company, letterheadUrl, SAMPLE_LISTS);
+      return missionDocData(missionSample(company), company, letterheadUrl, SAMPLE_LISTS);
     case "titre_conge": {
       const fields: LeaveTitleFields = {
         ...SAMPLE_SHEET,
@@ -164,8 +118,6 @@ export function hrDocSample(docType: DocTypeId, ctx: HrDocSampleContext): DocDat
     }
     case "contrat_cdd":
       return contractDocData(SAMPLE_CONTRACT, company);
-    case "contrat_cdi":
-      return contractDocData({ ...SAMPLE_CONTRACT, is_cdi: true, end_date: "", numero: "2026/015" }, company);
     default:
       return null;
   }

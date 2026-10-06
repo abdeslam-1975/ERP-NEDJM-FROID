@@ -23,7 +23,7 @@ import {
   titreVariables,
   type StcSimData,
   type TitreSimData,
-} from "@/lib/sim/letters";
+} from "@/lib/sim/titre-stc";
 import { leaveVariables, soldeOutput, soldeVariables, type LeaveSimData } from "@/lib/sim/leave";
 import { paieOutput, paieVariables } from "@/lib/sim/paie";
 import { pointageOutput, pointageVariables } from "@/lib/sim/pointage";
@@ -68,7 +68,7 @@ export function simRun(d: SimTargetData, ctx: SimContext, env: SimEnv): SimOutpu
     case "titre_conge":
       return titreOutput(d, ctx, env);
     case "stc":
-      return stcOutput(d, ctx, env);
+      return stcOutput(d, ctx);
     case "ordre_mission":
       return omOutput(d.om, ctx, env);
     case "contrat_travail":

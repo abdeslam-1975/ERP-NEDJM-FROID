@@ -7,7 +7,6 @@ import {
   missionDateBounds,
   missionDateIssue,
   missionDocData,
-  missionDocType,
   missionOrderFieldsSchema,
   missionPayload,
   missionPointageHref,
@@ -77,7 +76,7 @@ describe("mission order print", () => {
     lists = SEED_LISTS,
   ) =>
     renderDocument(
-      seededTemplate(missionDocType(fields)),
+      seededTemplate("ordre_mission"),
       missionDocData(fields, company, "/hr-letterhead.png", lists),
       origin,
     );
@@ -86,7 +85,6 @@ describe("mission order print", () => {
     const parsed = missionOrderFieldsSchema.safeParse({ ...sample, codeAffectation: "ADM-01" });
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
-    expect(parsed.data.gabarit).toBeNull();
     const html = print({ ...parsed.data, numero: "000004/26" });
     expect(html).toContain("NF/OM/0004/26");
     expect(html).toContain("I. IDENTIFICATION DU MISSIONNAIRE");
@@ -103,13 +101,12 @@ describe("mission order print", () => {
     expect(html).not.toContain("Fin de mission");
   });
 
-  it("prints « Fin de mission » for an open order, in both layouts", () => {
+  it("prints « Fin de mission » for an open order", () => {
     const parsed = missionOrderFieldsSchema.safeParse({ ...sample, dateDepart: "2026-09-12", dateRetour: "" });
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
     expect(parsed.data.dateRetour).toBeNull();
     expect(print(parsed.data)).toContain("Fin de mission");
-    expect(print({ ...parsed.data, gabarit: "v1" })).toContain("Fin de mission");
   });
 
   it("prints the open return set in the company identity", () => {
@@ -144,12 +141,10 @@ describe("mission order print", () => {
     const parsed = missionOrderFieldsSchema.safeParse(sample);
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
-    for (const gabarit of [null, "v1"] as const) {
-      const html = print({ ...parsed.data, gabarit }, "https://erp.test");
-      expect(html).not.toContain("fonts.googleapis.com");
-      expect(html).toContain('<base href="https://erp.test/">');
-      expect(html).toContain('url("/fonts/om/');
-    }
+    const html = print(parsed.data, "https://erp.test");
+    expect(html).not.toContain("fonts.googleapis.com");
+    expect(html).toContain('<base href="https://erp.test/">');
+    expect(html).toContain('url("/fonts/om/');
   });
 
   it("keeps the reference readable for unusual numbers", () => {
@@ -158,27 +153,6 @@ describe("mission order print", () => {
     expect(missionReference("", SEED_COMPANY)).toBe("");
     expect(missionReference("BROUILLON", SEED_COMPANY)).toBe("NF/OM/BROUILLON");
     expect(missionReference("000123/26", { doc_prefix: "" })).toBe("OM/0123/26");
-  });
-
-  it("keeps the legacy bilingual sheet on request", () => {
-    const parsed = missionOrderFieldsSchema.safeParse({ ...sample, gabarit: "v1" });
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) return;
-    expect(missionPayload(parsed.data, SEED_COMPANY).gabarit).toBe("v1");
-    const html = print({ ...parsed.data, numero: "000004/26" });
-    expect(html).toContain("ORDRE DE MISSION");
-    expect(html).toContain("أمر بمهمة");
-    expect(html).toContain("Times New Roman");
-    expect(html).toContain("TAHRI CHAHINAZ");
-    expect(html).toContain("000004/26");
-    expect(html).toContain("05/26");
-    expect(html).toContain("Hassi Messaoud");
-    expect(html).toContain("Taxi");
-    expect(html).toContain("22/08/2023");
-    expect(html).toContain("11/09/2026");
-    expect(html).toContain("E.U.R.L. NEDJM FROID");
-    expect(html).toContain('class="om-letterhead"');
-    expect(html).toContain("z-index: 0");
   });
 
   it("defaults the issuer and place to the company identity", () => {

@@ -2,21 +2,13 @@
 
 import { useState, useTransition } from "react";
 import {
-  Award,
-  BadgeCheck,
-  CalendarCheck,
   ClipboardList,
-  FileCheck,
   FileClock,
   FilePlus2,
-  HandCoins,
   LayoutTemplate,
-  Mail,
-  OctagonAlert,
   Pencil,
   Plane,
   TreePalm,
-  TriangleAlert,
   Type,
   type LucideIcon,
 } from "lucide-react";
@@ -27,7 +19,7 @@ import type { CustomDocRow } from "@/lib/actions/hr-custom-docs";
 import type { DocTemplateSummary } from "@/lib/actions/doc-templates";
 import { BUNDLED_FONTS } from "@/lib/doc/bundled-fonts";
 import type { UploadedFont } from "@/lib/doc/fonts";
-import { DOC_TYPES, HR_DOC_TYPE_IDS, LETTER_DOC_TYPE_IDS, type DocTypeId } from "@/lib/doc/registry";
+import { DOC_TYPES, HR_DOC_TYPE_IDS, type DocTypeId } from "@/lib/doc/registry";
 import type { DocData } from "@/lib/doc/engine";
 import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
 import {
@@ -61,35 +53,16 @@ const PROFILE_KEYS = PROFILE_GROUPS.flatMap((g) => g.keys);
 
 type Look = { icon: LucideIcon; color: string };
 
-const LETTER_LOOK: Record<string, Look> = {
-  attest: { icon: BadgeCheck, color: "#2563eb" },
-  certif: { icon: Award, color: "#0891b2" },
-  stc: { icon: HandCoins, color: "#059669" },
-  med1: { icon: TriangleAlert, color: "#d97706" },
-  med2: { icon: OctagonAlert, color: "#dc2626" },
-  leave: { icon: CalendarCheck, color: "#16a34a" },
-};
-
 const SHEET_LOOK: Partial<Record<DocTypeId, Look>> = {
   ordre_mission: { icon: Plane, color: "#0ea5e9" },
-  ordre_mission_v1: { icon: Plane, color: "#64748b" },
   titre_conge: { icon: TreePalm, color: "#22a06b" },
   fiche_renseignements: { icon: ClipboardList, color: "#6366f1" },
   contrat_cdd: { icon: FileClock, color: "#14b8a6" },
-  contrat_cdi: { icon: FileCheck, color: "#0d9488" },
 };
 
-type LetterGroup = { kind: string; title: string; titleAr: string; fr: DocTypeId; ar: DocTypeId };
-
-const LETTER_GROUPS: LetterGroup[] = [...new Set(LETTER_DOC_TYPE_IDS.map((id) => id.split("_")[1]))].map((kind) => {
-  const fr = `lettre_${kind}_fr` as DocTypeId;
-  const ar = `lettre_${kind}_ar` as DocTypeId;
-  return { kind, title: DOC_TYPES[fr].label.split(" — ")[0], titleAr: DOC_TYPES[fr].labelAr, fr, ar };
-});
-
 const SHEET_FAMILIES: { id: "fiches" | "contrats"; title: string; hint: string }[] = [
-  { id: "fiches", title: "Fiches et ordres", hint: "Ordres de mission, titre de congé, fiche de renseignements" },
-  { id: "contrats", title: "Contrats de travail", hint: "CDD et CDI" },
+  { id: "fiches", title: "Fiches et ordres", hint: "Ordre de mission, titre de congé, fiche de renseignements" },
+  { id: "contrats", title: "Contrats de travail", hint: "Contrat à durée déterminée (CDD)" },
 ];
 
 export type CustomDocsSettings = { defs: CustomDocRow[]; canEdit: boolean; fonts: UploadedFont[]; error?: string };
@@ -374,47 +347,6 @@ function BuiltInDocumentsSettings({
         info={info}
       />
 
-      <section>
-        <FamilyHeader
-          icon={Mail}
-          color="#2563eb"
-          title="Lettres et attestations"
-          hint="Chaque lettre existe en français et en arabe : choisissez la version à modifier."
-          count={LETTER_GROUPS.length}
-        />
-        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
-          {LETTER_GROUPS.map((g) => {
-            const look = LETTER_LOOK[g.kind] ?? { icon: Mail, color: "#2563eb" };
-            const fr = summaries[g.fr];
-            const ar = summaries[g.ar];
-            const pendingDraft = fr?.has_draft || ar?.has_draft;
-            return (
-              <DocCard
-                key={g.kind}
-                title={g.title}
-                subtitle={g.titleAr}
-                icon={look.icon}
-                color={look.color}
-                badge={pendingDraft ? <RhChip tone="brand">Brouillon en cours</RhChip> : null}
-                meta={`FR v${fr?.version ?? "—"} · AR v${ar?.version ?? "—"}`}
-                onOpen={() => openEditor(g.fr)}
-                openLabel={`${openLabel} (français)`}
-                actions={
-                  <>
-                    <Button size="sm" variant="secondary" className="flex-1" onClick={() => openEditor(g.fr)}>
-                      Français
-                    </Button>
-                    <Button size="sm" variant="secondary" className="flex-1" onClick={() => openEditor(g.ar)}>
-                      العربية
-                    </Button>
-                  </>
-                }
-              />
-            );
-          })}
-        </ul>
-      </section>
-
       {SHEET_FAMILIES.map((family) => {
         const types = HR_DOC_TYPE_IDS.filter((id) => DOC_TYPES[id].family === family.id);
         if (!types.length) return null;
@@ -437,7 +369,6 @@ function BuiltInDocumentsSettings({
                     meta={s?.approved_at ? `Approuvé le ${frDate(s.approved_at)}` : undefined}
                     onOpen={() => openEditor(id)}
                     openLabel={openLabel}
-                    dimmed={id === "ordre_mission_v1"}
                     actions={
                       <Button size="sm" variant="secondary" className="flex-1" onClick={() => openEditor(id)}>
                         <Pencil aria-hidden />

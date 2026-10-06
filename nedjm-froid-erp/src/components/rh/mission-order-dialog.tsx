@@ -5,7 +5,6 @@ import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import type { HrCorrespondenceRow } from "@/lib/actions/hr-documents";
 import type { HrEmployeeRow } from "@/lib/actions/hr-employees";
 import {
-  OM_GABARIT_ANCIEN,
   missionDateBounds,
   missionDateIssue,
   pickMissionContract,
@@ -51,7 +50,6 @@ export type MissionDraft = {
   donneur: string;
   faitA: string;
   dateDoc: string;
-  gabarit: string;
   savedDateDepart?: string;
   savedDateRetour?: string;
 };
@@ -96,7 +94,6 @@ export const emptyMissionDraft = (defaults: MissionDefaults): MissionDraft => ({
   donneur: defaults.hr_service,
   faitA: defaults.city_short,
   dateDoc: todayIsoAlgiers(),
-  gabarit: "",
 });
 
 type SiteOpt = { id: string; name_fr: string };
@@ -188,7 +185,6 @@ export function MissionOrderDialog({
   const jobs = catalogOptions(catalogs, "job_title").map((item) => item.label_fr);
   const affectations = sites.map((site) => site.name_fr);
   const transportChoices = activeOptions(transportModeOptions(catalogs)).map((m) => m.fr);
-  const legacy = value.gabarit === OM_GABARIT_ANCIEN;
   const today = todayIsoAlgiers();
   const saved = value.id ? { dateDepart: value.savedDateDepart, dateRetour: value.savedDateRetour } : null;
   const bounds = missionDateBounds(value, today, saved);
@@ -426,11 +422,6 @@ export function MissionOrderDialog({
               />
               {dateError("dateDepart")}
             </RhField>
-            {legacy ? (
-              <RhField label="Heure de départ">
-                <input type="time" className={rhInput} value={value.heureDepart} onChange={(e) => set({ heureDepart: e.target.value })} />
-              </RhField>
-            ) : null}
             <RhField label="Lieu de retour">
               <input className={rhInput} value={value.lieuRetour} onChange={(e) => set({ lieuRetour: e.target.value })} />
             </RhField>
@@ -449,11 +440,6 @@ export function MissionOrderDialog({
                   </p>
                 ))}
             </RhField>
-            {legacy ? (
-              <RhField label="Heure de retour">
-                <input type="time" className={rhInput} value={value.heureRetour} onChange={(e) => set({ heureRetour: e.target.value })} />
-              </RhField>
-            ) : null}
             <div className="sm:col-span-2 lg:col-span-3">
               <RhField label="Motif du déplacement">
                 <textarea
@@ -513,16 +499,6 @@ export function MissionOrderDialog({
             <RhField label="N° pièce">
               <input className={rhInput} value={value.pieceNum} onChange={(e) => set({ pieceNum: e.target.value })} />
             </RhField>
-            {legacy ? (
-              <>
-                <RhField label="Délivré le">
-                  <input type="date" className={rhInput} value={value.pieceDelivre} onChange={(e) => set({ pieceDelivre: e.target.value })} />
-                </RhField>
-                <RhField label="À (lieu)">
-                  <input className={rhInput} value={value.pieceLieu} onChange={(e) => set({ pieceLieu: e.target.value })} />
-                </RhField>
-              </>
-            ) : null}
           </div>
         </section>
 
@@ -540,12 +516,6 @@ export function MissionOrderDialog({
             </RhField>
             <RhField label="Date du document">
               <input type="date" className={rhInput} value={value.dateDoc} onChange={(e) => set({ dateDoc: e.target.value })} />
-            </RhField>
-            <RhField label="Modèle d'impression — نموذج الطباعة">
-              <select className={rhInput} value={value.gabarit} onChange={(e) => set({ gabarit: e.target.value })}>
-                <option value="">Nouveau modèle</option>
-                <option value={OM_GABARIT_ANCIEN}>Ancien modèle</option>
-              </select>
             </RhField>
           </div>
         </section>

@@ -185,7 +185,6 @@ export const UI_TABSETS: UiTabsetDef[] = [
         routes: ["/rh/contrats", "/rh/paie/bulletins"],
         section: "documents",
       },
-      { id: "attestations", labelFr: "Attestations", href: "/rh/attestations", section: "documents" },
       { id: "legal", labelFr: "Cotisations & impôts", href: "/rh/legal", exact: true, section: "legal" },
       { id: "legal_propositions", labelFr: "Propositions légales", href: "/rh/legal/propositions", section: "legal" },
       { id: "legal_documents", labelFr: "Documents juridiques", href: "/rh/legal/documents", section: "legal" },

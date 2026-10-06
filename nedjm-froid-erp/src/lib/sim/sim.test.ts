@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_BULLETIN_SETTINGS } from "@/lib/hr/bulletin-settings";
-import { emptyLetterValues } from "@/lib/hr/hr-letters";
 import { computeLeaveBalance } from "@/lib/hr/leave";
+import { LEAVE_TITLE_FIELD_KEYS, type LeaveTitleFieldKey } from "@/lib/hr/leave-title";
 import { initialScenario, runScenario } from "@/lib/hr/payroll-simulator";
 import { simData } from "@/lib/hr/payroll-simulator.fixture";
 import { seededTemplate } from "@/lib/doc/migration-templates";
@@ -18,7 +18,7 @@ const env = { origin: "" };
 const kit: PrintKit = {
   company: SEED_COMPANY,
   templates: Object.fromEntries(
-    (["lettre_leave_fr", "lettre_leave_ar", "ordre_mission", "ordre_mission_v1"] as const).map((t) => [t, seededTemplate(t)]),
+    (["titre_conge", "ordre_mission"] as const).map((t) => [t, seededTemplate(t)]),
   ),
   lists: SEED_LISTS,
 };
@@ -174,7 +174,12 @@ describe("congés", () => {
     const data: SimTargetData = {
       target: "titre_conge",
       leave,
-      letter: { ...emptyLetterValues("LEAVE"), nom_fr: "TEST" },
+      fields: {
+        ...(Object.fromEntries(LEAVE_TITLE_FIELD_KEYS.map((k) => [k, ""])) as Record<LeaveTitleFieldKey, string>),
+        matricule: "M001",
+        nom: "TEST",
+      },
+      numero: "000005/26",
       letterhead_url: null,
       kit,
       request: { id: "q1", kind: "ANNUAL", start_date: "2026-03-01", end_date: "2026-03-10", days: 10 },
@@ -188,7 +193,8 @@ describe("congés", () => {
     const ctx = new SimContext(map, {});
     const atEnd = leaveBalanceFromCtx(ctx, leave, "2026-03-10").balance;
     expect(map.get("titre.solde")?.base).toBe(atEnd);
-    expect(longer.output.html).toContain("2026");
+    expect(longer.output.html).toContain("NF/CNG/0005/26");
+    expect(longer.output.html).toContain("15/03/2026");
   });
 });
 

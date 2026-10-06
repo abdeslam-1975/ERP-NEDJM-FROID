@@ -17,8 +17,7 @@ import {
 } from "@/lib/actions/hr-leave";
 import { calendarDays } from "@/lib/hr/leave";
 import { activeOptions, isAnnualLeave, type LeaveKindOption } from "@/lib/hr/hr-lists";
-import { slashDateIso } from "@/lib/hr/hr-letters";
-import { HrLetterDialog } from "@/components/rh/hr-letter-dialog";
+import { slashDateIso } from "@/lib/hr/doc-format";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 import { RhAlert, RhChip, RhField, bi, rhInput } from "@/components/rh/rh-ui";
@@ -87,7 +86,6 @@ export function LeaveManager({
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, start] = useTransition();
-  const [printRow, setPrintRow] = useState<LeaveRequestRow | null>(null);
   const kindChoices = activeOptions(leaveKinds);
   const kindOf = (code: string) =>
     leaveKinds.find((k) => k.code === code) ?? { code, fr: code, ar: code, legend: "", annual: false, active: false };
@@ -258,14 +256,10 @@ export function LeaveManager({
       meta: { align: "right", className: "space-x-1 whitespace-nowrap" },
       cell: ({ row: { original: row } }) => (
         <>
-          {row.status === "APPROVED" ? (
+          {row.status === "APPROVED" && row.correspondence_id ? (
             <Button
               variant="secondary"
-              onClick={() =>
-                row.correspondence_id
-                  ? router.push(`/rh/documents?onglet=conges&titre=${row.correspondence_id}`)
-                  : setPrintRow(row)
-              }
+              onClick={() => router.push(`/rh/documents?onglet=conges&titre=${row.correspondence_id}`)}
             >
               {bi("Titre de congé", "سند الإجازة")}
             </Button>
@@ -550,15 +544,6 @@ export function LeaveManager({
             emptyTitle={bi("Aucun ajustement", "لا توجد تعديلات")}
           />
         </>
-      ) : null}
-
-      {printRow ? (
-        <HrLetterDialog
-          employeeId={printRow.employee_id}
-          kind="LEAVE"
-          leaveRequestId={printRow.id}
-          onClose={() => setPrintRow(null)}
-        />
       ) : null}
     </div>
   );

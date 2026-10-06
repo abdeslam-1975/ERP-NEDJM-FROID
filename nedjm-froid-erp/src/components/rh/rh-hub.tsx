@@ -13,7 +13,6 @@ import {
   ChevronRight,
   CircleCheck,
   Clock,
-  FileBadge,
   FileClock,
   FilePenLine,
   HandCoins,
@@ -395,7 +394,6 @@ const ALERT_META: Record<ContractAlert["key"], { icon: LucideIcon; color: string
 const QUICK_ACTIONS: { icon: LucideIcon; label: string; href: string }[] = [
   { icon: CalendarClock, label: "Pointage", href: "/rh/presence" },
   { icon: UserPlus, label: "Nouvel employé", href: "/rh/employes?nouveau=1" },
-  { icon: FileBadge, label: "Attestation", href: "/rh/attestations" },
   { icon: CalendarPlus, label: "Congé", href: "/rh/conges" },
   { icon: HandCoins, label: "Avance", href: "/rh/paie/avances" },
   { icon: FolderOpen, label: "Documents", href: "/rh/documents" },

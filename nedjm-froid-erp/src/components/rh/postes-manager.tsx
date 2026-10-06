@@ -11,7 +11,7 @@ import {
   type PosteCategory,
   type PosteRow,
 } from "@/lib/actions/hr-postes";
-import { slashDateIso } from "@/lib/hr/hr-letters";
+import { slashDateIso } from "@/lib/hr/doc-format";
 import { ToolbarSlot, UiToolbar } from "@/components/layout/arrange";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhChip, RhField, RhModal, bi, rhInput } from "@/components/rh/rh-ui";

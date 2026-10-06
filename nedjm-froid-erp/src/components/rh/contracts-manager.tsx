@@ -58,7 +58,7 @@ import {
   catalogOptions,
   rhInput,
 } from "@/components/rh/rh-ui";
-import { ContractPrintDialog, contractHtml } from "@/components/rh/contract-print-dialog";
+import { CONTRACT_DOC_TYPES, ContractPrintDialog, contractHtml } from "@/components/rh/contract-print-dialog";
 import { ContractViewDialog } from "@/components/rh/contract-view-dialog";
 import { WorkRegimeField } from "@/components/rh/work-regime-field";
 import { ContractRubriquesField } from "@/components/rh/contract-rubriques-field";
@@ -82,8 +82,6 @@ const STATUS_OPTIONS = [
   { value: "SUSPENDED", label: "Suspendu", dot: "bg-amber-500", tone: "warning" },
   { value: "ENDED", label: "Clôturé", dot: "bg-red-500", tone: "danger" },
 ] as const;
-
-const CONTRACT_DOC_TYPES = ["contrat_cdd", "contrat_cdi"] as const;
 
 const EMPTY_PRINT_EMPLOYEE: ContractPrintSource["employee"] = {
   matricule: "",

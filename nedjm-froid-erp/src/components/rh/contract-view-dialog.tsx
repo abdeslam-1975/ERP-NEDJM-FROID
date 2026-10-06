@@ -4,11 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Pencil, Printer } from "lucide-react";
 import { getContractPrintContext, type ContractPrintContext } from "@/lib/actions/hr-contract-print";
 import { usePrintKit } from "@/components/doc/use-print-kit";
-import { contractHtml } from "@/components/rh/contract-print-dialog";
+import { CONTRACT_DOC_TYPES, contractHtml } from "@/components/rh/contract-print-dialog";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhModal, bi } from "@/components/rh/rh-ui";
-
-const VIEW_DOC_TYPES = ["contrat_cdd", "contrat_cdi"] as const;
 
 /** The saved contract exactly as it prints, read-only, with Edit and Print. */
 export function ContractViewDialog({
@@ -41,7 +39,7 @@ export function ContractViewDialog({
     };
   }, [contractId]);
 
-  const { kit, error: kitError } = usePrintKit(VIEW_DOC_TYPES);
+  const { kit, error: kitError } = usePrintKit(CONTRACT_DOC_TYPES);
   const printed = useMemo(() => (context && kit ? contractHtml(kit, context.values) : null), [context, kit]);
   const html = printed?.ok
     ? printed.data.replace("</head>", "<style>@media screen { body { padding: 28px 34px; } }</style></head>")

@@ -3,10 +3,9 @@ import { renderDocument } from "@/lib/doc/engine";
 import { seededTemplate } from "@/lib/doc/migration-templates";
 import { ficheDocData } from "@/lib/hr/employee-fiche-doc";
 import { DEFAULT_FICHE_SETTINGS, type HrFicheSettings } from "@/lib/hr/fiche-settings";
-import { defaultLetterBody, letterDocData, letterDocType } from "@/lib/hr/hr-letters";
 import { leaveTitleDocData } from "@/lib/hr/leave-title";
-import { missionDocData, missionDocType } from "@/lib/hr/mission-order";
-import { contractDocData, contractDocType } from "@/lib/hr/work-contract";
+import { missionDocData } from "@/lib/hr/mission-order";
+import { CONTRACT_DOC_TYPE, contractDocData } from "@/lib/hr/work-contract";
 import {
   CONTRACT_FIXTURES,
   FICHE_CATALOGS,
@@ -16,7 +15,6 @@ import {
   FIXTURE_LETTERHEAD,
   FIXTURE_ORIGIN,
   LEAVE_TITLE_FIXTURES,
-  LETTER_FIXTURES,
   MISSION_FIXTURES,
   SEED_COMPANY,
   SEED_LISTS,
@@ -37,16 +35,10 @@ describe("HR documents printed from their seeded templates", () => {
     vi.useRealTimers();
   });
 
-  for (const f of LETTER_FIXTURES) {
-    it(f.name, async () => {
-      const docType = letterDocType(f.values.kind, f.values.lang);
-      await expect(print(docType, letterDocData(f.values, SEED_COMPANY, FIXTURE_LETTERHEAD))).toMatchFileSnapshot(snap(f.name));
-    });
-  }
   for (const f of MISSION_FIXTURES) {
     it(f.name, async () => {
       const data = missionDocData(f.fields, SEED_COMPANY, FIXTURE_LETTERHEAD, SEED_LISTS);
-      await expect(print(missionDocType(f.fields), data)).toMatchFileSnapshot(snap(f.name));
+      await expect(print("ordre_mission", data)).toMatchFileSnapshot(snap(f.name));
     });
   }
   for (const f of LEAVE_TITLE_FIXTURES) {
@@ -79,18 +71,7 @@ describe("HR documents printed from their seeded templates", () => {
   });
   for (const f of CONTRACT_FIXTURES) {
     it(f.name, async () => {
-      await expect(print(contractDocType(f.values), contractDocData(f.values, SEED_COMPANY))).toMatchFileSnapshot(snap(f.name));
+      await expect(print(CONTRACT_DOC_TYPE, contractDocData(f.values, SEED_COMPANY))).toMatchFileSnapshot(snap(f.name));
     });
   }
-});
-
-describe("letter free text", () => {
-  it("starts from the template's standard paragraphs", () => {
-    const { values } = LETTER_FIXTURES.find((f) => f.name === "attest-fr-f")!;
-    const body = defaultLetterBody(seededTemplate("lettre_attest_fr"), letterDocData(values, SEED_COMPANY, ""));
-    expect(body).toEqual([
-      'Nous soussignés, E.U.R.L. NEDJM FROID, attestons par la présente que Madame BEN ALI KARIM, née le 12/05/1990 à Oran, est employée au sein de notre entreprise en qualité de Soudeur <qualifié> & "chef", depuis le 01/03/2024 à ce jour.',
-      "La présente attestation est délivrée à l'intéressée, sur sa demande, pour servir et valoir ce que de droit.",
-    ]);
-  });
 });
