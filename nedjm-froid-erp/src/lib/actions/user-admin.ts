@@ -78,10 +78,13 @@ async function roleAssignError(
 ): Promise<string | null> {
   const { data: role, error } = await supabase
     .from("sys_roles")
-    .select("id, code, hierarchy_level, site_scoped_allowed, is_active")
+    .select("id, code, hierarchy_level, site_scoped_allowed, sites_only, is_active")
     .eq("id", roleId)
     .maybeSingle();
   if (error || !role || !role.is_active) return "Rôle introuvable.";
+  if (role.sites_only && siteId === null) {
+    return `Le rôle ${role.code} est limité à ses chantiers : choisissez un chantier.`;
+  }
 
   if (role.code === "SUPER_ADMIN" && !workspace.isSuperAdmin) {
     return "Seul un SUPER_ADMIN peut créer un SUPER_ADMIN.";

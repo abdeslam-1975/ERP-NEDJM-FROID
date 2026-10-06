@@ -207,7 +207,7 @@ export const UI_TABSETS: UiTabsetDef[] = [
     items: [
       { id: "interface", labelFr: "Interface", labelAr: "الواجهة", href: "/parametres/interface", locked: true, superAdminOnly: true },
       { id: "acces", labelFr: "Accès par compte", labelAr: "صلاحيات الحسابات", href: "/parametres/acces", locked: true, superAdminOnly: true },
-      { id: "permissions", labelFr: "Matrice des permissions", labelAr: "مصفوفة الصلاحيات", href: "/administration/permissions" },
+      { id: "permissions", labelFr: "Droits par rôle", labelAr: "صلاحيات الأدوار", href: "/administration/permissions" },
       { id: "periodes", labelFr: "Clôture des périodes", labelAr: "إقفال الفترات", href: "/administration/periodes" },
       { id: "audit", labelFr: "Journal d'audit", labelAr: "سجل التدقيق", href: "/administration/audit" },
       { id: "finance_parametres", labelFr: "Paramètres finance", labelAr: "إعدادات المالية", href: "/parametres/finance" },
@@ -475,7 +475,7 @@ export const UI_TABSETS: UiTabsetDef[] = [
   ]),
 ];
 
-/** Action buttons at the top of a page: they can be reordered, never hidden nor renamed. */
+/** Action buttons at the top of a page: they can be reordered and hidden per role (Droits par rôle), never renamed. */
 function toolbar(key: string, titleFr: string, titleAr: string, whereFr: string, items: [string, string][]): UiTabsetDef {
   return {
     key,
@@ -484,7 +484,7 @@ function toolbar(key: string, titleFr: string, titleAr: string, whereFr: string,
     titleAr,
     whereFr,
     kind: "toolbar",
-    items: items.map(([id, labelFr]) => ({ id, labelFr, locked: true })),
+    items: items.map(([id, labelFr]) => ({ id, labelFr })),
   };
 }
 

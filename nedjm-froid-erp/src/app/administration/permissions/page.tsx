@@ -1,35 +1,29 @@
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
-import { PermissionMatrix } from "@/components/admin/admin-managers";
+import { RoleRightsManager } from "@/components/admin/role-rights-manager";
 import { RhAlert } from "@/components/rh/rh-ui";
-import { loadPermissionMatrix } from "@/lib/actions/admin-rbac";
+import { loadRoleRights } from "@/lib/actions/role-rights";
 import { requireRoles } from "@/lib/auth/require-roles";
 
 export const dynamic = "force-dynamic";
 
-export default async function PermissionsPage() {
+export default async function RoleRightsPage() {
   const workspace = await requireRoles(["SUPER_ADMIN", "GERANT"]);
-  const matrix = await loadPermissionMatrix();
+  const data = await loadRoleRights();
   return (
-    <AppShell title="Matrice des droits">
-      {workspace.isSuperAdmin ? (
-        <div className="mb-4">
-          <RhAlert tone="info">
-            Pour choisir les modules et onglets d&apos;un compte précis :{" "}
-            <Link href="/parametres/acces" className="font-semibold underline">
+    <AppShell title="Droits par rôle">
+      <div className="space-y-4">
+        {data.ok ? <RoleRightsManager data={data.data} /> : <RhAlert tone="danger">{data.error}</RhAlert>}
+        {workspace.isSuperAdmin ? (
+          <p className="text-xs text-foreground/55">
+            Un compte précis peut recevoir d&apos;autres modules que son rôle :{" "}
+            <Link href="/parametres/acces" className="font-semibold text-brand underline">
               Accès par compte
             </Link>
             .
-          </RhAlert>
-        </div>
-      ) : null}
-      {!matrix.ok ? <RhAlert tone="danger">{matrix.error}</RhAlert> : null}
-      <PermissionMatrix
-        roles={matrix.ok ? matrix.data.roles : []}
-        screens={matrix.ok ? matrix.data.screens : []}
-        initialPermissions={matrix.ok ? matrix.data.permissions : []}
-        canEdit={workspace.isSuperAdmin}
-      />
+          </p>
+        ) : null}
+      </div>
     </AppShell>
   );
 }

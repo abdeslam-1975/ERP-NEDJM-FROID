@@ -190,12 +190,12 @@ export const SETTINGS_GROUPS: SettingsGroupDef[] = [
       },
       {
         id: "permissions",
-        labelFr: "Matrice des permissions",
-        labelAr: "مصفوفة الصلاحيات",
-        descriptionFr: "Lire, créer, modifier, supprimer, imprimer, exporter : par rôle et par écran.",
+        labelFr: "Droits par rôle",
+        labelAr: "صلاحيات الأدوار",
+        descriptionFr: "Pour chaque rôle : modules, onglets et boutons ouverts, actions permises et chantiers.",
         href: "/administration/permissions",
         icon: "grid",
-        keywords: "droits",
+        keywords: "droits permissions matrice",
         roles: ["SUPER_ADMIN", "GERANT"],
       },
       {

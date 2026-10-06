@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
+import { unseenKeys } from "@/lib/auth/role-rights";
 import { EMPTY_USER_PREFS, parseDesign, parseUserPrefs } from "@/lib/ui/design";
 import { ACCESS_KEYS, hiddenKeysForAccess } from "@/lib/ui/registry";
 import {
@@ -37,7 +38,7 @@ export const getUiLayout = cache(async function getUiLayout(): Promise<UiLayoutD
   const supabase = await createClient();
   const roleIds = [...new Set(workspace.roles.map((r) => r.roleId))];
   try {
-    const [hiddenRes, accessRes, overridesRes, themeRes, prefsRes, personalRes] = await Promise.all([
+    const [hiddenRes, accessRes, overridesRes, themeRes, prefsRes, personalRes, seenRes] = await Promise.all([
       workspace.isSuperAdmin || !roleIds.length
         ? Promise.resolve({ data: [] as { role_id: string; item_key: string }[], error: null })
         : supabase.from("sys_ui_role_hidden").select("role_id, item_key").in("role_id", roleIds),
@@ -49,6 +50,9 @@ export const getUiLayout = cache(async function getUiLayout(): Promise<UiLayoutD
       supabase.from("sys_ui_theme").select("*").eq("id", 1).maybeSingle(),
       supabase.from("sys_ui_user_prefs").select("mode, density").eq("user_id", workspace.id).maybeSingle(),
       readPersonalOrder(supabase, workspace.id),
+      workspace.isSuperAdmin
+        ? Promise.resolve({ data: [] as { item_key: string }[], error: null })
+        : supabase.from("sys_ui_catalog_seen").select("item_key"),
     ]);
     const overrides: Record<string, UiOverride> = {};
     if (!overridesRes.error) {
@@ -77,12 +81,18 @@ export const getUiLayout = cache(async function getUiLayout(): Promise<UiLayoutD
         }
       : EMPTY_THEME;
     const roleHidden = hiddenRes.error ? [] : hiddenKeysForRoles(hiddenRes.data ?? [], roleIds);
+    const unseen = seenRes.error ? [] : unseenKeys(new Set((seenRes.data ?? []).map((r) => r.item_key)));
     const access = accessRes.error ? null : accessRes.data;
     return {
       unrestricted: workspace.isSuperAdmin,
-      hidden: access
-        ? [...roleHidden.filter((key) => !ACCESS_KEYS.has(key)), ...hiddenKeysForAccess(access.allowed ?? [])]
-        : roleHidden,
+      hidden: [
+        ...new Set([
+          ...(access
+            ? [...roleHidden.filter((key) => !ACCESS_KEYS.has(key)), ...hiddenKeysForAccess(access.allowed ?? [])]
+            : roleHidden),
+          ...unseen,
+        ]),
+      ],
       overrides,
       personal,
       theme,

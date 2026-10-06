@@ -39,13 +39,16 @@ describe("registry", () => {
     for (const key of keys) expect(key).toMatch(KEY_PATTERN);
   });
 
-  it("keeps page buttons reorderable only: never hidden, never renamed", () => {
+  it("keeps page buttons hideable per role, without a page of their own", () => {
     const toolbars = UI_TABSETS.filter((t) => t.kind === "toolbar");
     expect(toolbars.length).toBeGreaterThan(0);
     for (const t of toolbars) {
       expect(t.level).toBe("E");
       expect(t.items.length).toBeGreaterThan(1);
-      for (const item of t.items) expect(item.locked).toBe(true);
+      for (const item of t.items) {
+        expect(item.locked).toBeFalsy();
+        expect(item.href).toBeUndefined();
+      }
     }
     expect(keysOfTabset("btn_rh_employees")).toEqual(["btn_rh_employees.columns", "btn_rh_employees.new"]);
     expect(keysOfTabset(NAV_GROUPS_TABSET)).toEqual(UI_NAV_GROUPS.map((g) => g.key));
