@@ -6,52 +6,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { useUiLayout } from "@/components/layout/ui-layout-context";
 import { searchEmployees, type GlobalSearchEmployee } from "@/lib/actions/global-search";
+import { APP_PAGES, type AppPage } from "@/lib/ui/app-pages";
 import { isPathBlocked } from "@/lib/ui/resolve";
-
-type PageEntry = { href: string; fr: string; ar: string; keywords?: string };
-
-const PAGES: PageEntry[] = [
-  { href: "/", fr: "Tableau de bord", ar: "لوحة القيادة" },
-  { href: "/rh", fr: "Ressources humaines", ar: "الموارد البشرية" },
-  { href: "/rh/employes", fr: "Employés", ar: "العمال", keywords: "fiche salarie personnel" },
-  { href: "/rh/postes", fr: "Postes & grille", ar: "المناصب" },
-  { href: "/rh/presence", fr: "Présence / pointage", ar: "الحضور" },
-  { href: "/rh/conges", fr: "Congés", ar: "العطل" },
-  { href: "/rh/paie", fr: "Paie", ar: "الأجور", keywords: "salaire" },
-  { href: "/rh/paie/social", fr: "Paie — social (CNAS)", ar: "الضمان الاجتماعي" },
-  { href: "/rh/paie/fiscal", fr: "Paie — fiscal (IRG)", ar: "الضريبة" },
-  { href: "/rh/paie/exceptions", fr: "Exceptions de paie", ar: "استثناءات" },
-  { href: "/rh/paie/avances", fr: "Avances & prêts", ar: "التسبيقات والقروض" },
-  {
-    href: "/simulateur",
-    fr: "Simulateur",
-    ar: "المحاكي",
-    keywords: "test fiche de paie pointage conge stc ordre de mission contrat variables",
-  },
-  { href: "/rh/paie/virements", fr: "Virements des salaires", ar: "تحويل الأجور" },
-  { href: "/rh/couts", fr: "Coûts de la paie", ar: "التكاليف" },
-  { href: "/rh/interim", fr: "Intérim", ar: "العمل المؤقت" },
-  { href: "/rh/sorties", fr: "Sorties", ar: "الخروج" },
-  {
-    href: "/rh/documents",
-    fr: "Documents RH",
-    ar: "الوثائق",
-    keywords:
-      "contrat de travail bulletin de paie kashf ajr كشف الاجر العقود ordre de mission titre de conge fiche de renseignements",
-  },
-  { href: "/rh/attestations", fr: "Attestations", ar: "الشهادات" },
-  { href: "/rh/legal", fr: "Cotisations & impôts", ar: "الاشتراكات والضرائب", keywords: "cnas irg cacobatph regime" },
-  { href: "/rh/parametres", fr: "Paramètres RH", ar: "إعدادات الموارد البشرية", keywords: "rubriques" },
-  { href: "/referentiels/clients", fr: "Clients", ar: "العملاء", keywords: "fiche client nif" },
-  { href: "/referentiels/contrats", fr: "Contrats clients", ar: "عقود العملاء", keywords: "commercial" },
-  { href: "/referentiels/chantiers", fr: "Chantiers", ar: "الورشات", keywords: "sites" },
-  { href: "/referentiels/activites", fr: "Codes d'activité", ar: "رموز النشاط" },
-  { href: "/finance", fr: "Banque & caisse", ar: "البنك والصندوق" },
-  { href: "/achats", fr: "Achats", ar: "المشتريات" },
-  { href: "/parametres/utilisateurs", fr: "Utilisateurs", ar: "المستخدمون" },
-  { href: "/administration/roles", fr: "Rôles & droits", ar: "الأدوار" },
-  { href: "/parametres", fr: "Paramètres", ar: "إعدادات عامة" },
-];
 
 function fold(s: string) {
   return s
@@ -62,7 +18,7 @@ function fold(s: string) {
 }
 
 type Result =
-  | { kind: "page"; page: PageEntry }
+  | { kind: "page"; page: AppPage }
   | { kind: "employee"; employee: GlobalSearchEmployee };
 
 export function GlobalSearch() {
@@ -91,7 +47,7 @@ export function GlobalSearch() {
   const pages = useMemo(() => {
     const q = fold(query.trim());
     if (!q) return [];
-    return PAGES.filter(
+    return APP_PAGES.filter(
       (p) => !isPathBlocked(layout, p.href) && fold(`${p.fr} ${p.ar} ${p.keywords ?? ""}`).includes(q),
     ).slice(0, 5);
   }, [query, layout]);

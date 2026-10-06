@@ -17,6 +17,7 @@ export async function AppShell({
   title,
   nav,
   subnav,
+  tools,
   children,
 }: {
   title: string;
@@ -24,6 +25,8 @@ export async function AppShell({
   nav?: ReactNode;
   /** Second row of the top bar, under the module tabs. */
   subnav?: ReactNode;
+  /** Module-specific buttons of the top bar. */
+  tools?: ReactNode;
   children: ReactNode;
 }) {
   const workspace = await getWorkspaceProfile();
@@ -70,6 +73,7 @@ export async function AppShell({
               title={title}
               nav={nav}
               subnav={subnav}
+              tools={tools}
               notifications={notifications?.ok ? notifications.data.rows : []}
             />
             <main className="flex-1 px-4 pt-7 pb-8 sm:px-6">

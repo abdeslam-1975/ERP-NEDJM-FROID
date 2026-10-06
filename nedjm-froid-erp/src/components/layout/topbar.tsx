@@ -11,11 +11,14 @@ export function Topbar({
   title,
   nav,
   subnav,
+  tools,
   notifications = [],
 }: {
   title: string;
   nav?: ReactNode;
   subnav?: ReactNode;
+  /** Module-specific buttons placed before the notifications. */
+  tools?: ReactNode;
   notifications?: NotificationRow[];
 }) {
   const month = new Date().toLocaleDateString("fr-FR", { month: "short", year: "numeric" });
@@ -31,6 +34,7 @@ export function Topbar({
             <GlobalSearch />
             <ArrangeButton />
             <DisplayMenu />
+            {tools}
             <NotificationBell initial={notifications} />
             <span className="ml-1 hidden h-10 items-center gap-2 rounded-xl border border-border/80 bg-surface px-3.5 text-sm font-medium capitalize text-foreground/75 min-[1700px]:inline-flex">
               <CalendarDays className="h-4 w-4" aria-hidden />
