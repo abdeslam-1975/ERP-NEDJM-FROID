@@ -144,6 +144,7 @@ export const UI_TABSETS: UiTabsetDef[] = [
       { id: "clients", labelFr: "Clients", labelAr: "العملاء", href: "/referentiels/clients", icon: "users", group: "group.commercial" },
       { id: "contrats", labelFr: "Contrats clients", labelAr: "عقود العملاء", href: "/referentiels/contrats", icon: "contract", group: "group.commercial" },
       { id: "finance", labelFr: "Banque & Caisse", labelAr: "البنك والصندوق", href: "/finance", icon: "finance", group: "group.finance" },
+      { id: "caisse", labelFr: "صندوق", labelAr: "صندوق", href: "/caisse", icon: "pay", group: "group.finance" },
       { id: "achats", labelFr: "Achats", labelAr: "المشتريات", href: "/achats", icon: "cart", group: "group.finance" },
       { id: "utilisateurs", labelFr: "Utilisateurs", labelAr: "المستخدمون", href: "/parametres/utilisateurs", icon: "users", group: "group.admin" },
       { id: "roles", labelFr: "Rôles & droits", labelAr: "الأدوار", href: "/administration/roles", icon: "shield", group: "group.admin" },
