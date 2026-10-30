@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import { Columns3, DatabaseZap, UserCheck, UserPlus } from "lucide-react";
+import { Columns3, DatabaseZap, FileDown, UserCheck, UserPlus } from "lucide-react";
 import { ToolbarSlot } from "@/components/layout/arrange";
 import {
   deleteHrEmployeeField,
@@ -45,6 +45,7 @@ import {
 import { EmployeeAdminDossierDialog } from "@/components/rh/employee-admin-dossier";
 import { EmployeeCardPreview } from "@/components/rh/employee-card-preview";
 import { EmployeeImportDialog } from "@/components/rh/employee-import-dialog";
+import { EmployeeExportDialog } from "@/components/rh/employee-export-dialog";
 import { DEFAULT_FICHE_SETTINGS, type HrFicheSettings } from "@/lib/hr/fiche-settings";
 import { mergeAffectationCatalog } from "@/lib/hr/affectation-options";
 import { sortEmployees } from "@/lib/hr/employee-order";
@@ -109,6 +110,7 @@ export function EmployeesManager({
   const [dossierEmployee, setDossierEmployee] = useState<HrEmployeeFiche | null>(null);
   const [preview, setPreview] = useState<HrEmployeeFiche | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [activeOnly, setActiveOnly] = useState(false);
   const shownRows = useMemo(
     () => (activeOnly ? rows.filter((r) => r.status === "ACTIVE") : rows),
@@ -433,6 +435,10 @@ export function EmployeesManager({
             <DatabaseZap aria-hidden />
             Importer l&apos;ancienne base
           </Button>
+          <Button type="button" variant="secondary" onClick={() => setExportOpen(true)}>
+            <FileDown aria-hidden />
+            Télécharger / Imprimer
+          </Button>
           <Button
             type="button"
             variant={activeOnly ? "primary" : "secondary"}
@@ -646,6 +652,15 @@ export function EmployeesManager({
           existing={existingIds}
           onClose={() => setImportOpen(false)}
           onImported={refreshRows}
+        />
+      ) : null}
+
+      {exportOpen ? (
+        <EmployeeExportDialog
+          rows={rows}
+          fields={fields}
+          catalogs={ficheCatalogs}
+          onClose={() => setExportOpen(false)}
         />
       ) : null}
 
