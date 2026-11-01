@@ -1,30 +1,12 @@
 import { AppShell } from "@/components/layout/app-shell";
-import { FinanceHub } from "@/components/finance/finance-hub";
-import { getFinanceHubData, type FinanceHubData } from "@/lib/actions/finance";
+import { RhPageHeader } from "@/components/rh/rh-ui";
 
 export const dynamic = "force-dynamic";
 
-const emptyData: FinanceHubData = {
-  accounts: [],
-  taxRates: [],
-  methods: [],
-  categories: [],
-  transactions: [],
-  advances: [],
-  periodLocks: [],
-  sites: [],
-  employees: [],
-};
-
-export default async function FinancePage() {
-  const result = await getFinanceHubData();
+export default function FinancePage() {
   return (
     <AppShell title="Banque & Caisse">
-      <FinanceHub
-        initialData={result.ok ? result.data : emptyData}
-        loadError={result.ok ? undefined : result.error}
-      />
+      <RhPageHeader title="Banque & Caisse · البنك والصندوق" />
     </AppShell>
   );
 }
-

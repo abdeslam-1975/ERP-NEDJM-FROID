@@ -137,19 +137,10 @@ export const SETTINGS_GROUPS: SettingsGroupDef[] = [
     key: "finance",
     titleFr: "Finance & achats",
     titleAr: "المالية والمشتريات",
-    descriptionFr: "Comptes, TVA, modes de paiement, documents d'achat et numérotation.",
+    descriptionFr: "Documents d'achat et numérotation.",
     color: "#059669",
     icon: "landmark",
     sections: [
-      {
-        id: "finance",
-        labelFr: "Banque & caisse",
-        labelAr: "البنك والصندوق",
-        descriptionFr: "Comptes, TVA, modes de paiement, catégories et clôtures financières.",
-        href: "/parametres/finance",
-        icon: "landmark",
-        keywords: "tva compte bancaire caisse categorie",
-      },
       {
         id: "achats",
         labelFr: "Achats & facturation",
