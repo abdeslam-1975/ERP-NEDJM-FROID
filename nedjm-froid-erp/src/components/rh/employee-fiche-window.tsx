@@ -17,6 +17,7 @@ import {
   saveEmployeeFiche,
   valuesFromFiche,
 } from "@/components/rh/employee-fiche-save";
+import { findEmployeeForFicheSearch } from "@/lib/hr/employee-fiche-search";
 
 const activeOf = (fields: HrEmployeeField[]) =>
   fields.filter((f) => f.is_active).sort((a, b) => a.sort_order - b.sort_order);
@@ -70,16 +71,9 @@ export function EmployeeFicheWindow({
   }
 
   function search(query: string) {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return;
-    const found = employees.find(
-      (e) =>
-        e.matricule.toLowerCase() === needle ||
-        (e.nss ?? "").toLowerCase() === needle ||
-        (e.nin ?? "").toLowerCase() === needle,
-    );
-    if (found) open(found.id);
-    else setFormError("Aucun employé pour cette recherche.");
+    const found = findEmployeeForFicheSearch(employees, query);
+    if (found.ok) open(found.employee.id);
+    else setFormError(found.error);
   }
 
   function submit() {

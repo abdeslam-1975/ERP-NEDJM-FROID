@@ -92,6 +92,8 @@ export function EmployeeFicheDialog({
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
   const [fieldHint, setFieldHint] = useState<string | null>(null);
+  /** Unlocked only for the current card; switching employee locks it again. */
+  const [unlockedMatriculeFor, setUnlockedMatriculeFor] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [, start] = useTransition();
@@ -99,6 +101,8 @@ export function EmployeeFicheDialog({
   const groups = useMemo(() => groupFields(fields, values), [fields, values]);
   const headerGroup = groups[0];
   const restGroups = groups.slice(1);
+  const matriculeKey = values.id || "new";
+  const matriculeUnlocked = unlockedMatriculeFor === matriculeKey;
 
   const displayName =
     [values.last_name, values.first_name].filter(Boolean).join(" ") ||
@@ -139,6 +143,17 @@ export function EmployeeFicheDialog({
     });
   }
 
+  function unlockMatricule() {
+    if (
+      !window.confirm(
+        "Le matricule est attribué automatiquement.\nConfirmez pour saisir un numéro manuel (ex. ancien personnel).\n\nالرقم التسلسلي يُمنح تلقائياً.\nأكد لإدخال رقم يدوي (مثلاً عامل قديم).",
+      )
+    ) {
+      return;
+    }
+    setUnlockedMatriculeFor(matriculeKey);
+  }
+
   return (
     <RhModal
       size="xl"
@@ -172,7 +187,7 @@ export function EmployeeFicheDialog({
             <input
               ref={searchRef}
               className={`${rhInput} mt-0 h-11 pl-10`}
-              placeholder="Rechercher par matricule, N°SS ou NIN…"
+              placeholder="Rechercher : nom, prénom, matricule, NSS ou NIN…"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -303,6 +318,8 @@ export function EmployeeFicheDialog({
                   catalogs={catalogs}
                   value={values[field.code] ?? ""}
                   onChange={(v) => set(field.code, v)}
+                  matriculeUnlocked={matriculeUnlocked}
+                  onUnlockMatricule={unlockMatricule}
                 />
               </FicheField>
             ))}
@@ -323,6 +340,8 @@ export function EmployeeFicheDialog({
                   catalogs={catalogs}
                   value={values[field.code] ?? ""}
                   onChange={(v) => set(field.code, v)}
+                  matriculeUnlocked={matriculeUnlocked}
+                  onUnlockMatricule={unlockMatricule}
                 />
               </FicheField>
             ))}
@@ -410,19 +429,45 @@ function FieldControl({
   catalogs,
   value,
   onChange,
+  matriculeUnlocked = false,
+  onUnlockMatricule,
 }: {
   field: HrEmployeeField;
   catalogs: CatalogItem[];
   value: string;
   onChange: (value: string) => void;
+  matriculeUnlocked?: boolean;
+  onUnlockMatricule?: () => void;
 }) {
   if (field.code === "matricule") {
     return (
-      <input
-        className={`${ficheInput} bg-brand-muted/50 font-mono font-semibold text-brand`}
-        value={value}
-        readOnly
-      />
+      <div className="flex items-center gap-1">
+        <input
+          className={`${ficheInput} min-w-0 flex-1 font-mono font-semibold text-brand ${
+            matriculeUnlocked ? "bg-white" : "bg-brand-muted/50"
+          }`}
+          value={value}
+          readOnly={!matriculeUnlocked}
+          title={
+            matriculeUnlocked
+              ? "Matricule manuel · رقم يدوي"
+              : "Attribué automatiquement · يُمنح تلقائياً"
+          }
+          onChange={(e) => onChange(e.target.value)}
+        />
+        {!matriculeUnlocked ? (
+          <button
+            type="button"
+            className="inline-flex h-8 shrink-0 items-center rounded-lg border border-border/70 bg-surface px-2 text-[10px] font-semibold text-foreground/70 transition hover:border-brand/40 hover:text-brand"
+            title="Saisir un matricule manuel · إدخال رقم يدوي"
+            onClick={onUnlockMatricule}
+          >
+            Manuel
+          </button>
+        ) : (
+          <span className="shrink-0 text-[9px] font-medium text-brand">Manuel</span>
+        )}
+      </div>
     );
   }
   if (field.code === "status") {

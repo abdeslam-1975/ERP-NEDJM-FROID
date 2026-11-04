@@ -41,7 +41,7 @@ export const NON_DELEGABLE_SCREENS = [
 ];
 
 /** Screens left out: the home page (always open) and features removed from the application. */
-const HIDDEN_SCREENS = new Set(["castle", "hr_letters", "finance_settings", ...NON_DELEGABLE_SCREENS]);
+const HIDDEN_SCREENS = new Set(["castle", "hr_letters", ...NON_DELEGABLE_SCREENS]);
 
 /** Lists shown under each module of the side menu. */
 const MODULE_TABSETS: Record<string, string[]> = {
@@ -50,6 +50,7 @@ const MODULE_TABSETS: Record<string, string[]> = {
   rh: ["rh"],
   clients: ["client_fiche"],
   contrats: ["client_contract"],
+  finance: ["finance", "finance_settings"],
   achats: ["purchases", "purchase_settings"],
   parametres: ["settings"],
 };
@@ -110,6 +111,7 @@ const NODE_SCREENS: Record<string, string[]> = {
   "settings.permissions": ["permissions"],
   "settings.periodes": ["period_locks"],
   "settings.audit": ["audit"],
+  "settings.finance_parametres": ["finance_settings"],
   "settings.achats_parametres": ["purchase_settings"],
 };
 
@@ -135,7 +137,7 @@ const SENSITIVE: Record<string, string> = {
   "btn_rh_payroll_run.validate": "Valide les salaires du mois",
   "btn_rh_payroll_run.request_reopen": "Rouvre une paie validée",
   "btn_rh_payroll_run.close": "Fige définitivement le mois",
-  "nav.finance": "Banque & caisse",
+  "nav.finance": "Comptes bancaires et caisse",
   "nav.utilisateurs": "Création et suppression de comptes",
   "nav.roles": "Rôles de tous les comptes",
   "settings.permissions": "Droits de tous les rôles",

@@ -47,6 +47,7 @@ import { EmployeeCardPreview } from "@/components/rh/employee-card-preview";
 import { EmployeeImportDialog } from "@/components/rh/employee-import-dialog";
 import { EmployeeExportDialog } from "@/components/rh/employee-export-dialog";
 import { DEFAULT_FICHE_SETTINGS, type HrFicheSettings } from "@/lib/hr/fiche-settings";
+import { findEmployeeForFicheSearch } from "@/lib/hr/employee-fiche-search";
 import { mergeAffectationCatalog } from "@/lib/hr/affectation-options";
 import { sortEmployees } from "@/lib/hr/employee-order";
 
@@ -273,19 +274,13 @@ export function EmployeesManager({
   }
 
   function searchFromFiche(q: string) {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return;
-    const found = rows.find(
-      (r) =>
-        r.matricule.toLowerCase() === needle ||
-        (r.nss ?? "").toLowerCase() === needle ||
-        (r.nin ?? "").toLowerCase() === needle,
-    );
-    if (found) {
-      openEdit(found);
+    const found = findEmployeeForFicheSearch(rows, q);
+    if (!found.ok) {
+      setFormError(found.error);
       return;
     }
-    setFormError("Aucun employé pour cette recherche.");
+    const row = rows.find((r) => r.id === found.employee.id);
+    if (row) openEdit(row);
   }
 
   const columns: DataColumn<HrEmployeeFiche>[] = [
