@@ -1,0 +1,1007 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { logoutAction } from "@/lib/actions/auth";
+import {
+  addCaisseBuyer,
+  closeCaisseDay,
+  deleteCaisseOperation,
+  getCaisseAdmin,
+  getCaisseAudit,
+  getCaisseClose,
+  getCaisseDashboard,
+  getCaissePhoto,
+  saveCaisseFinance,
+  saveCaisseOpenings,
+  saveCaissePurchase,
+  saveCaisseRights,
+  unlockCaisseDay,
+} from "@/lib/actions/caisse";
+import { formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
+import type { CaisseAdminUser, CaisseAuditRow, CaisseDashboard, CloseStatus, JournalLine, PurchaseItemInput } from "@/lib/caisse/types";
+import "./caisse.css";
+
+const INACTIVITY_MS = 5 * 60 * 1000;
+
+type ItemDraft = {
+  desc: string;
+  itemVal: string;
+  unit: string;
+  qte: string;
+  price: string;
+  photoName: string;
+  photoDataUrl: string;
+  keepPhoto: boolean;
+};
+
+type Toast = { title: string; text: string };
+type Ask = { title: string; text: string; confirm: string; reason?: boolean; resolve: (value: string | null) => void };
+
+function emptyItem(unit: string): ItemDraft {
+  return { desc: "", itemVal: "", unit: unit || "U", qte: "", price: "", photoName: "", photoDataUrl: "", keepPhoto: false };
+}
+
+function moneyClass(value: number): string {
+  if (value > 0) return "pos";
+  if (value < 0) return "neg";
+  return "";
+}
+
+function readFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Lecture fichier"));
+    reader.readAsDataURL(file);
+  });
+}
+
+export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | null; loadError?: string }) {
+  const [data, setData] = useState<CaisseDashboard | null>(initial);
+  const [error, setError] = useState(loadError || "");
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const [ask, setAsk] = useState<Ask | null>(null);
+  const [reason, setReason] = useState("");
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [datedSummary, setDatedSummary] = useState(false);
+  const [opOpen, setOpOpen] = useState(false);
+  const [editId, setEditId] = useState("");
+  const [editOp, setEditOp] = useState<number | null>(null);
+  const [opDate, setOpDate] = useState("");
+  const [affectation, setAffectation] = useState("");
+  const [matricule, setMatricule] = useState("");
+  const [buyer, setBuyer] = useState("");
+  const [items, setItems] = useState<ItemDraft[]>([]);
+  const [financeOpen, setFinanceOpen] = useState(false);
+  const [financeEdit, setFinanceEdit] = useState("");
+  const [finType, setFinType] = useState<"IN" | "OUT">("IN");
+  const [finDate, setFinDate] = useState("");
+  const [finAmount, setFinAmount] = useState("");
+  const [finMethod, setFinMethod] = useState("Espèces");
+  const [finRef, setFinRef] = useState("");
+  const [finBuyer, setFinBuyer] = useState("");
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [closeState, setCloseState] = useState<CloseStatus | null>(null);
+  const [physical, setPhysical] = useState("");
+  const [closeNote, setCloseNote] = useState("");
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [adminUsers, setAdminUsers] = useState<CaisseAdminUser[]>([]);
+  const [openings, setOpenings] = useState<{ name: string; amount: string }[]>([]);
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newPass, setNewPass] = useState("");
+  const [newAccess, setNewAccess] = useState("");
+  const [newRole, setNewRole] = useState("");
+  const [newJournal, setNewJournal] = useState("");
+  const [newCaisse, setNewCaisse] = useState("");
+  const [newEdit, setNewEdit] = useState("");
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditRows, setAuditRows] = useState<CaisseAuditRow[]>([]);
+  const [photoUrl, setPhotoUrl] = useState("");
+
+  const flags = data?.flags;
+  const today = data?.today || "";
+
+  function notify(title: string, text = "") {
+    setToast({ title, text });
+    window.setTimeout(() => setToast(null), 2800);
+  }
+
+  function confirmBox(title: string, text: string, confirm: string, withReason = false) {
+    return new Promise<string | null>((resolve) => {
+      setReason("");
+      setAsk({ title, text, confirm, reason: withReason, resolve });
+    });
+  }
+
+  async function reload(next?: { month?: string; buyer?: string; type?: string }) {
+    setBusy(true);
+    const result = await getCaisseDashboard({
+      month: next?.month ?? data?.month ?? "CURRENT",
+      buyer: next?.buyer ?? data?.buyer ?? "TOUS",
+      type: next?.type ?? data?.type ?? "TOUS",
+    });
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error);
+      notify("Chargement", result.error);
+      return;
+    }
+    setError("");
+    setData(result.data);
+    setDatedSummary(false);
+  }
+
+  useEffect(() => {
+    let timer = window.setTimeout(() => void logoutAction(), INACTIVITY_MS);
+    const reset = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void logoutAction(), INACTIVITY_MS);
+    };
+    const events = ["mousemove", "mousedown", "keypress", "scroll", "touchstart"] as const;
+    events.forEach((event) => document.addEventListener(event, reset, true));
+    return () => {
+      window.clearTimeout(timer);
+      events.forEach((event) => document.removeEventListener(event, reset, true));
+    };
+  }, []);
+
+  const summary = useMemo(() => {
+    if (!data) return null;
+    if (datedSummary && dateFrom && dateTo) {
+      return recomputePeriodFromDates({
+        rows: data.moneyRows,
+        openings: data.openings,
+        fallbackOuverture: data.periodSummary.ouverture,
+        from: dateFrom,
+        to: dateTo,
+        buyer: data.buyer,
+        viewer: data.flags.userName,
+        seeAll: data.flags.canSeeAllJournal || data.flags.isAdmin,
+      });
+    }
+    return data.periodSummary;
+  }, [data, datedSummary, dateFrom, dateTo]);
+
+  const visibleRows = useMemo(() => {
+    const rows = data?.rows ?? [];
+    const query = search.trim().toLowerCase();
+    return rows.filter((row) => {
+      const text = `${row.op} ${row.date} ${row.type} ${row.affectation} ${row.desc} ${row.buyer} ${row.bon}`.toLowerCase();
+      if (query && !text.includes(query)) return false;
+      if (dateFrom && row.date < dateFrom) return false;
+      if (dateTo && row.date > dateTo) return false;
+      return true;
+    });
+  }, [data, search, dateFrom, dateTo]);
+
+  function openOperation() {
+    if (!data || !flags) return;
+    setEditId("");
+    setEditOp(null);
+    setOpDate(today);
+    setAffectation("");
+    setMatricule("");
+    setBuyer(flags.userName);
+    setItems([emptyItem(data.units[0] || "U")]);
+    setOpOpen(true);
+  }
+
+  function openEdit(line: JournalLine) {
+    if (!data || !flags?.canManage) {
+      notify("Accès", "Droit Modifier/Supprimer requis");
+      return;
+    }
+    const lines = data.rows.filter((row) => row.operationId === line.operationId).sort((a, b) => a.lineNo - b.lineNo);
+    if (!lines.length) {
+      notify("Erreur", "Opération introuvable");
+      return;
+    }
+    if (line.type !== "ACHAT") {
+      setFinanceEdit(line.operationId);
+      setFinType(line.type === "ALIMENTATION" ? "IN" : "OUT");
+      setFinDate(line.date);
+      setFinAmount(String(line.recettes ?? line.prixBon ?? ""));
+      setFinBuyer(line.buyer);
+      setFinMethod("Espèces");
+      setFinRef("");
+      setFinanceOpen(true);
+      return;
+    }
+    setEditId(line.operationId);
+    setEditOp(line.op);
+    setOpDate(line.date);
+    setAffectation(line.affectation);
+    setMatricule(line.matricule);
+    setBuyer(line.buyer);
+    setItems(
+      lines.map((row) => ({
+        desc: row.desc,
+        itemVal: row.itemVal,
+        unit: row.unit || data.units[0] || "U",
+        qte: String(row.qty ?? ""),
+        price: row.price == null ? "" : String(row.price),
+        photoName: row.hasPhoto ? row.bon || "Bon actuel" : "",
+        photoDataUrl: "",
+        keepPhoto: row.hasPhoto,
+      })),
+    );
+    setOpOpen(true);
+  }
+
+  async function saveOperation() {
+    if (!data || !flags) return;
+    const contrat = affectation.toUpperCase().startsWith("CONTRAT");
+    const pending: PurchaseItemInput[] = [];
+    for (const item of items) {
+      if (!item.desc && !item.qte && !item.price && !item.photoDataUrl && !item.keepPhoto) continue;
+      pending.push({
+        desc: item.desc.trim(),
+        itemVal: item.itemVal.trim(),
+        unit: item.unit || "U",
+        qte: Number(item.qte),
+        price: Number(item.price),
+        photoDataUrl: item.photoDataUrl || null,
+        keepPhoto: item.keepPhoto,
+      });
+      if (!item.desc.trim() || !item.qte || !item.price || (contrat && !item.itemVal.trim())) {
+        notify("Attention", "Complétez désignation, quantité et prix");
+        return;
+      }
+    }
+    if (!opDate) return notify("Attention", "Choisissez une date");
+    if (!affectation) return notify("Attention", "Choisissez une Affectation");
+    if (affectation === "PARC ROULANT" && !matricule) return notify("Attention", "Sélectionnez le matricule");
+    if (!pending.length) return notify("Attention", "Ajoutez au moins un article");
+    if (!pending.some((item) => item.photoDataUrl || item.keepPhoto)) {
+      return notify("Attention", "Ajoutez au moins une photo pour cette opération (une seule suffit)");
+    }
+    setBusy(true);
+    const result = await saveCaissePurchase({
+      operationId: editId || undefined,
+      date: opDate,
+      affectation,
+      immatriculation: matricule,
+      buyer: flags.isMaster || flags.isAdmin ? buyer : null,
+      items: pending,
+    });
+    setBusy(false);
+    if (!result.ok) return notify("Résultat", result.error);
+    notify("Résultat", result.data.message);
+    setOpOpen(false);
+    await reload();
+  }
+
+  async function openFinance() {
+    if (!data) return;
+    const status = await getCaisseClose(today);
+    if (status.ok && status.data.closed) {
+      notify("Caisse clôturée", `La journée ${status.data.date} est clôturée.`);
+      if (flags?.isAdmin) await openClose(status.data.date);
+      return;
+    }
+    setFinanceEdit("");
+    setFinType("IN");
+    setFinDate(today);
+    setFinAmount("");
+    setFinMethod("Espèces");
+    setFinRef("");
+    setFinBuyer(data.userList[0] || "");
+    setFinanceOpen(true);
+  }
+
+  async function saveFinance() {
+    const amount = Number(finAmount);
+    if (!Number.isFinite(amount) || amount <= 0) return notify("Erreur", "Montant invalide");
+    if (finType === "OUT" && !finBuyer) return notify("Erreur", "Choisissez un bénéficiaire");
+    setBusy(true);
+    const result = await saveCaisseFinance({
+      operationId: financeEdit || undefined,
+      type: finType,
+      date: finDate,
+      amount,
+      method: finMethod,
+      ref: finRef,
+      beneficiary: finBuyer,
+    });
+    setBusy(false);
+    if (!result.ok) return notify("Résultat", result.error);
+    notify("Résultat", result.data.message);
+    setFinanceOpen(false);
+    await reload();
+  }
+
+  async function removeOperation(line: JournalLine) {
+    if (!flags?.canManage) return notify("Accès", "Droit Modifier/Supprimer requis");
+    const answer = await confirmBox("Supprimer ?", `L'opération N° ${line.op} sera supprimée définitivement.`, "Oui, supprimer");
+    if (answer === null) return;
+    setBusy(true);
+    const result = await deleteCaisseOperation(line.operationId);
+    setBusy(false);
+    notify("Résultat", result.ok ? result.data.message : result.error);
+    if (result.ok) await reload();
+  }
+
+  async function openClose(date?: string) {
+    const result = await getCaisseClose(date || today);
+    if (!result.ok) return notify("Clôture", result.error);
+    setCloseState(result.data);
+    setPhysical(result.data.physicalSolde == null ? "" : String(result.data.physicalSolde));
+    setCloseNote(result.data.note);
+    setCloseOpen(true);
+  }
+
+  async function confirmClose() {
+    if (!closeState) return;
+    if (physical === "" || Number.isNaN(Number(physical))) return notify("Info", "Saisissez le solde physique compté");
+    const answer = await confirmBox(
+      "Clôturer cette journée ?",
+      "Les opérations caisse (alimentation / avance) seront bloquées pour cette date jusqu’à réouverture admin.",
+      "Oui, clôturer",
+    );
+    if (answer === null) return;
+    setBusy(true);
+    const result = await closeCaisseDay({ date: closeState.date, physical: Number(physical), note: closeNote.trim() });
+    setBusy(false);
+    notify("Clôture", result.ok ? result.data.message : result.error);
+    if (result.ok) {
+      setCloseOpen(false);
+      await reload();
+    }
+  }
+
+  async function reopen() {
+    if (!closeState || !flags?.isAdmin) return notify("Accès", "Réservé à l’administrateur");
+    const answer = await confirmBox("Rouvrir la caisse ?", "Motif (retard de travail, rattrapage...)", "Rouvrir", true);
+    if (answer === null) return;
+    const result = await unlockCaisseDay({ date: closeState.date, reason: answer || "Réouverture admin" });
+    notify("Réouverture", result.ok ? result.data.message : result.error);
+    if (result.ok) {
+      await openClose(closeState.date);
+      await reload();
+    }
+  }
+
+  async function openAdmin() {
+    const result = await getCaisseAdmin();
+    if (!result.ok) return notify("Erreur", result.error);
+    setAdminUsers(result.data.users);
+    setOpenings(result.data.openings.map((row) => ({ name: row.name, amount: row.amount ? String(row.amount) : "" })));
+    setAdminOpen(true);
+  }
+
+  async function saveRights() {
+    const result = await saveCaisseRights(adminUsers);
+    notify("Droits", result.ok ? result.data.message : result.error);
+  }
+
+  async function saveOpenings() {
+    const result = await saveCaisseOpenings(openings.map((row) => ({ name: row.name, amount: Number(row.amount) || 0 })));
+    notify("Ouverture", result.ok ? result.data.message : result.error);
+    if (result.ok) {
+      await openAdmin();
+      await reload();
+    }
+  }
+
+  async function addBuyer() {
+    const result = await addCaisseBuyer({
+      name: newName,
+      email: newEmail,
+      pass: newPass,
+      access: newAccess,
+      role: newRole,
+      journal: newJournal,
+      caisse: newCaisse,
+      edit: newEdit,
+    });
+    notify("Utilisateur", result.ok ? result.data.message : result.error);
+    if (result.ok) {
+      setNewName("");
+      setNewEmail("");
+      setNewPass("");
+      await openAdmin();
+    }
+  }
+
+  async function openAudit() {
+    const result = await getCaisseAudit();
+    if (!result.ok) return notify("Audit", result.error);
+    setAuditRows(result.data);
+    setAuditOpen(true);
+  }
+
+  async function showPhoto(operationId: string) {
+    const result = await getCaissePhoto(operationId);
+    if (!result.ok) return notify("Bon", result.error);
+    setPhotoUrl(result.data.url);
+  }
+
+  function exportPdf() {
+    if (!visibleRows.length) return notify("Info", "Aucune opération");
+    const escape = (value: unknown) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const body = visibleRows
+      .map((row) => {
+        const amount = row.type === "ACHAT" ? row.lineTotal : row.recettes;
+        return `<tr><td>${escape(row.op)}</td><td>${escape(formatDateFr(row.date))}</td><td>${escape(row.type)}</td><td>${escape(row.affectation)}</td><td>${escape(row.desc)}</td><td>${escape(row.qty)}</td><td>${escape(row.price ?? "")}</td><td>${escape(amount ?? "")}</td><td>${escape(row.prixBon ?? "")}</td><td>${escape(row.buyer)}</td></tr>`;
+      })
+      .join("");
+    const popup = window.open("", "_blank");
+    if (!popup) return notify("Popup bloquée", "Autorisez les fenêtres");
+    popup.document.write(`<!DOCTYPE html><html><head><title>Journal caisse</title><style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #ccc;padding:6px}th{background:#2d5a27;color:#fff}</style></head><body><h1>GESTION CAISSE 2026</h1><p>${flags?.userName ?? ""} · ${data?.month === "TOUS" ? "Tous les mois" : data?.month}</p><table><thead><tr><th>N°</th><th>Date</th><th>Type</th><th>Aff.</th><th>Désignation</th><th>Qté</th><th>Prix unitaire</th><th>Montant</th><th>Prix bon</th><th>Acheteur</th></tr></thead><tbody>${body}</tbody></table></body></html>`);
+    popup.document.close();
+    popup.focus();
+    window.setTimeout(() => popup.print(), 250);
+  }
+
+  function exportXls() {
+    if (!visibleRows.length) return notify("Info", "Aucune opération");
+    const header = ["N°", "DATE", "TYPE", "AFFECTATION", "DÉSIGNATION", "QTÉ", "UNITÉ", "PRIX UNITAIRE", "MONTANT", "PRIX BON", "ACHETEUR", "BON"];
+    const lines = visibleRows.map((row) => [
+      row.op,
+      formatDateFr(row.date),
+      row.type,
+      row.affectation,
+      row.desc,
+      row.qty,
+      row.unit,
+      row.price ?? "",
+      row.type === "ACHAT" ? (row.lineTotal ?? "") : (row.recettes ?? ""),
+      row.prixBon ?? "",
+      row.buyer,
+      row.bon,
+    ]);
+    const xml = `<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Caisse" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Table>${[header, ...lines]
+      .map((cells) => `<Row>${cells.map((cell) => `<Cell><Data ss:Type="String">${String(cell).replace(/&/g, "&amp;").replace(/</g, "&lt;")}</Data></Cell>`).join("")}</Row>`)
+      .join("")}</Table></Worksheet></Workbook>`;
+    const blob = new Blob([xml], { type: "application/vnd.ms-excel" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "Journal_Caisse.xls";
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  const totalBon = items.reduce((sum, item) => sum + (Number(item.qte) || 0) * (Number(item.price) || 0), 0);
+  const roleLabel = !flags ? "" : flags.isAdmin ? "ADMIN" : flags.canSeeAllJournal ? "JOURNAL" : flags.isMaster ? "MASTER" : "USER";
+  const openingTotal = openings.reduce((sum, row) => sum + (Number(row.amount) > 0 ? Number(row.amount) : 0), 0);
+  const ecart = closeState ? (physical === "" || Number.isNaN(Number(physical)) ? 0 : Number(physical) - closeState.systemSolde) : 0;
+  const dateLocked = !!flags && !flags.isAdmin && !flags.isUnlimited && !editId;
+
+  if (!data) {
+    return (
+      <div className="caisse-app">
+        <div className="panel">{error || "Chargement de la caisse impossible."}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="caisse-app">
+      <div className="caisse-bar">
+        <div className="brand">GESTION CAISSE 2026</div>
+        <div className="user-info">
+          <span>{flags?.userName}</span>
+          <span className="role-badge">{roleLabel}</span>
+        </div>
+      </div>
+
+      <div className="kpi-grid">
+        <div className="kpi-card solde">
+          <div className="kpi-label">Caisse principale</div>
+          <div className="kpi-value">{formatDa(data.solde)}</div>
+          <small>Cash en caisse (Caisse_Centrale)</small>
+        </div>
+        <div className="kpi-card dep">
+          <div className="kpi-label">Dépenses (achats)</div>
+          <div className="kpi-value">{formatDa(data.totalDepenses)}</div>
+          <small>Total ACHAT visible</small>
+        </div>
+        <div className="kpi-card av">
+          <div className="kpi-label">Avances / Alimentations</div>
+          <div className="kpi-value">{formatDa(data.totalAvances + data.totalAlim)}</div>
+          <small>Sorties acheteurs + entrées caisse</small>
+        </div>
+      </div>
+
+      {summary ? (
+        <section className="panel">
+          <div className="panel-head">
+            <h6>Solde de la période</h6>
+            <span className="pill">{summary.label}</span>
+          </div>
+          <div className="summary-grid">
+            {[
+              ["Ouverture · 31/12/2025", summary.ouverture],
+              ["Achats période", summary.achats],
+              ["Avances période", summary.avances],
+              ["Mouvement", summary.mouvement],
+              ["Solde fin période", summary.soldeFin],
+            ].map(([label, value]) => (
+              <div className="summary-item" key={String(label)}>
+                <span className="ps-label">{label}</span>
+                <span className={`ps-value ${moneyClass(Number(value))}`}>{formatDa(Number(value))} DA</span>
+              </div>
+            ))}
+          </div>
+          <small className="hint">Mouvement = Avances − Achats sur la période · Solde fin = Ouverture 31/12/2025 + cumul jusqu’à la fin de la période</small>
+        </section>
+      ) : null}
+
+      <section className="panel">
+        <div className="panel-head">
+          <h6>{flags?.canSeeAllJournal || flags?.isAdmin ? "Soldes par acheteur" : "Mon solde"}</h6>
+          <small className="hint">Solde fin de période = Ouverture + cumul · Achats/Avances = période filtrée</small>
+        </div>
+        <div className="buyer-grid">
+          {data.buyerBalances.filter((row) => !isCaissePrincipaleName(row.name)).map((row) => (
+            <article className="buyer-card" key={row.name}>
+              <div className="buyer-name">{row.name}</div>
+              <div className={`buyer-solde ${moneyClass(row.solde)}`}>{formatDa(row.solde)} DA</div>
+              <div className="buyer-meta">
+                <span>Solde fin période</span>
+                {row.ouverture ? <span>Ouverture : {formatDa(row.ouverture)} DA</span> : null}
+                <span>Achats période : {formatDa(row.achats)} DA</span>
+                <span>Avances période : {formatDa(row.avances)} DA</span>
+                <span>Mouvement : {formatDa(row.mouvement)} DA</span>
+              </div>
+              <button
+                type="button"
+                className="btn-buyer"
+                onClick={() => {
+                  void reload({ buyer: row.name, month: data.month });
+                }}
+              >
+                Voir ses achats
+              </button>
+            </article>
+          ))}
+          {!data.buyerBalances.length ? <p className="hint">Aucun acheteur sur cette période.</p> : null}
+        </div>
+      </section>
+
+      {flags?.isAdmin || flags?.canSeeAllJournal ? (
+        <section className="panel">
+          <div className="panel-head">
+            <h6>Solde par mois</h6>
+            <small className="hint">Cumul chronologique depuis l’ouverture 31/12/2025</small>
+          </div>
+          <table className="month-table">
+            <thead>
+              <tr><th>Mois</th><th>Achats</th><th>Avances</th><th>Mouvement</th><th>Solde fin</th></tr>
+            </thead>
+            <tbody>
+              {data.monthlySoldes.map((row) => (
+                <tr key={row.month} className={row.month === data.month ? "selected" : ""}>
+                  <td>{row.month}</td>
+                  <td>{formatDa(row.achats)}</td>
+                  <td>{formatDa(row.avances)}</td>
+                  <td className={moneyClass(row.mouvement)}>{formatDa(row.mouvement)}</td>
+                  <td className={moneyClass(row.soldeFin)}>{formatDa(row.soldeFin)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+
+      {data.closeStatus ? (
+        <div className={`banner ${data.closeStatus.closed ? "closed" : "open"}`}>
+          <div>
+            <strong>{data.closeStatus.closed ? `Caisse clôturée — ${data.closeStatus.date}` : `Caisse ouverte — ${data.closeStatus.date}`}</strong>
+            <div className="hint">
+              {data.closeStatus.closed
+                ? `Système ${formatDa(data.closeStatus.systemSolde)} DA · Physique ${formatDa(data.closeStatus.physicalSolde || 0)} DA · Écart ${formatDa(data.closeStatus.ecart || 0)} DA`
+                : `Solde système actuel : ${formatDa(data.closeStatus.systemSolde)} DA — à comparer avec le cash compté en fin de journée.`}
+            </div>
+          </div>
+          <button type="button" className="btn-light" onClick={() => void openClose(data.closeStatus?.date)}>{data.closeStatus.closed ? "Gérer / Rouvrir" : "Clôturer"}</button>
+        </div>
+      ) : null}
+
+      <div className="panel action-bar">
+        <div className="toolbar">
+          <button type="button" className="btn-action btn-green" onClick={openOperation}>OPÉRATION</button>
+          {flags?.canSeeCaisse || flags?.isAdmin ? <button type="button" className="btn-action btn-purple" onClick={() => void openFinance()}>CAISSE</button> : null}
+          {flags?.canSeeCaisse || flags?.isAdmin ? <button type="button" className="btn-action btn-teal" onClick={() => void openClose()}>CLÔTURE</button> : null}
+          {flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openAdmin()}>ADMIN</button> : null}
+          {flags?.isAdmin ? <button type="button" className="btn-action btn-brown" onClick={() => void openAudit()}>AUDIT</button> : null}
+        </div>
+        <div className="toolbar">
+          <button type="button" className="btn-action btn-green" onClick={exportXls}>EXPORT</button>
+          <button type="button" className="btn-light" onClick={exportPdf}>PDF</button>
+        </div>
+      </div>
+
+      <div className="panel filter-bar">
+        <div className="field">
+          <label>Mois</label>
+          <select value={data.month} onChange={(event) => void reload({ month: event.target.value })}>
+            <option value="TOUS">Tous les mois</option>
+            {data.months.map((month) => <option key={month} value={month}>{month}</option>)}
+          </select>
+        </div>
+        {flags?.canSeeAllJournal || flags?.isAdmin ? (
+          <div className="field">
+            <label>Acheteur</label>
+            <select value={data.buyer} onChange={(event) => void reload({ buyer: event.target.value })}>
+              <option value="TOUS">Tous les acheteurs</option>
+              {data.buyers.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </div>
+        ) : null}
+        {flags?.canSeeCaisse || flags?.isAdmin ? (
+          <div className="field">
+            <label>Type</label>
+            <select value={data.type} onChange={(event) => void reload({ type: event.target.value })}>
+              <option value="TOUS">Tous types</option>
+              <option value="ACHAT">ACHAT</option>
+              <option value="AVANCE">AVANCE</option>
+              <option value="ALIMENTATION">ALIMENTATION</option>
+            </select>
+          </div>
+        ) : null}
+        <div className="field">
+          <label>Dates</label>
+          <div className="toolbar">
+            <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+            <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+            <button type="button" className="btn-light" onClick={() => { if (!dateFrom || !dateTo) return notify("Période", "Choisissez une date de début et de fin"); setDatedSummary(true); }}>Filtrer</button>
+            <button type="button" className="btn-light" onClick={() => { setDateFrom(""); setDateTo(""); setSearch(""); setDatedSummary(false); }}>Réinitialiser</button>
+          </div>
+        </div>
+        <div className="field">
+          <label>Recherche</label>
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Rechercher..." />
+        </div>
+        <div className="count">{new Set(visibleRows.map((row) => row.op)).size} opération(s) · {visibleRows.length} ligne(s)</div>
+      </div>
+
+      <div className="panel ops-wrap">
+        <table className="ops">
+          <thead>
+            <tr>
+              {["N°", "DATE", "TYPE", "AFFECTATION", "DÉSIGNATION", "QTÉ", "UNITÉ", "PRIX UNITAIRE", "MONTANT", "PRIX BON", "ACHETEUR", "BON", "ACTION"].map((title) => <th key={title}>{title}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {error ? <tr><td colSpan={13}>{error}</td></tr> : null}
+            {!visibleRows.length && !error ? <tr><td colSpan={13}>Aucune opération</td></tr> : null}
+            {visibleRows.map((row) => {
+              const amount = row.type === "ACHAT" ? row.lineTotal : row.recettes;
+              return (
+                <tr key={`${row.operationId}-${row.lineNo}`} className={row.type === "ACHAT" ? "row-out" : "row-in"}>
+                  <td>{row.op}</td>
+                  <td>{formatDateFr(row.date)}</td>
+                  <td><span className={`ops-type ${row.type === "AVANCE" ? "avance" : row.type === "ALIMENTATION" ? "alim" : ""}`}>{row.type}</span></td>
+                  <td>{row.affectation}</td>
+                  <td className="libelle">{row.desc}</td>
+                  <td>{row.qty}</td>
+                  <td>{row.unit}</td>
+                  <td>{row.price == null ? "" : formatDa(row.price)}</td>
+                  <td>{amount == null ? "" : formatDa(amount)}</td>
+                  <td>{row.prixBon == null ? "" : formatDa(row.prixBon)}</td>
+                  <td>{row.buyer}</td>
+                  <td>{row.hasPhoto ? <button type="button" className="btn-light" onClick={() => void showPhoto(row.operationId)}>Voir</button> : row.bon || "—"}</td>
+                  <td>
+                    {flags?.canManage && row.isFirst ? (
+                      <>
+                        <button type="button" className="icon-btn" title="Modifier" onClick={() => openEdit(row)}>✎</button>
+                        <button type="button" className="icon-btn" title="Supprimer" onClick={() => void removeOperation(row)}>🗑</button>
+                      </>
+                    ) : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {opOpen ? (
+        <div className="overlay">
+          <div className="modal">
+            <div className="modal-head green">
+              <strong>{editOp ? `Modifier opération N° ${editOp}` : "Nouvelle opération caisse"}</strong>
+              <button type="button" className="close-x" onClick={() => setOpOpen(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="grid-3">
+                <div className="field">
+                  <label>Date</label>
+                  <input type="date" value={opDate} min={dateLocked ? data.today && shift(data.today, -1) : undefined} max={dateLocked ? data.today : undefined} onChange={(event) => setOpDate(event.target.value)} />
+                </div>
+                <div className="field">
+                  <label>Affectation</label>
+                  <select value={affectation} onChange={(event) => setAffectation(event.target.value)}>
+                    <option value="">-- Sélectionner --</option>
+                    {data.affectations.map((name) => <option key={name}>{name}</option>)}
+                  </select>
+                </div>
+                {flags?.isMaster || flags?.isAdmin ? (
+                  <div className="field">
+                    <label>Au nom de (Acheteur)</label>
+                    <select value={buyer} onChange={(event) => setBuyer(event.target.value)}>
+                      {data.userList.map((name) => <option key={name}>{name}</option>)}
+                    </select>
+                  </div>
+                ) : null}
+                {affectation === "PARC ROULANT" ? (
+                  <div className="field">
+                    <label>Matricule</label>
+                    <select value={matricule} onChange={(event) => setMatricule(event.target.value)}>
+                      <option value="">-- Sélectionner --</option>
+                      {data.matricules.map((name) => <option key={name}>{name}</option>)}
+                    </select>
+                  </div>
+                ) : null}
+              </div>
+              <p className="hint">Détails des achats — 1 photo suffit pour toute l&apos;opération (pas une par ligne)</p>
+              <table>
+                <thead><tr><th>Désignation</th><th>Item</th><th>Unité</th><th>Qté</th><th>Prix</th><th>Photo</th><th></th></tr></thead>
+                <tbody>
+                  {items.map((item, index) => (
+                    <tr key={index}>
+                      <td><input value={item.desc} onChange={(event) => updateItem(index, { desc: event.target.value })} /></td>
+                      <td><input value={item.itemVal} disabled={!affectation.toUpperCase().startsWith("CONTRAT")} onChange={(event) => updateItem(index, { itemVal: event.target.value })} /></td>
+                      <td>
+                        <select value={item.unit} onChange={(event) => updateItem(index, { unit: event.target.value })}>
+                          {data.units.map((unit) => <option key={unit}>{unit}</option>)}
+                        </select>
+                      </td>
+                      <td><input type="number" min="0" step="any" value={item.qte} onChange={(event) => updateItem(index, { qte: event.target.value })} /></td>
+                      <td><input type="number" min="0" step="any" value={item.price} onChange={(event) => updateItem(index, { price: event.target.value })} /></td>
+                      <td>
+                        <input type="file" accept="image/*" onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+                          void readFile(file).then((url) => updateItem(index, { photoDataUrl: url, photoName: file.name, keepPhoto: false }));
+                        }} />
+                        <small>{item.photoName}</small>
+                      </td>
+                      <td><button type="button" className="btn-light" onClick={() => setItems((current) => current.length > 1 ? current.filter((_, i) => i !== index) : [emptyItem(data.units[0] || "U")])}>X</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <button type="button" className="btn-light" onClick={() => setItems((current) => [...current, emptyItem(data.units[0] || "U")])}>+ Ajouter une ligne</button>
+              <p style={{ textAlign: "right", fontWeight: 800 }}>Total Bon : <span className="neg">{totalBon.toFixed(2)}</span> DA</p>
+              <div className="panel">
+                <div className="hint">Aperçu immédiat</div>
+                <table>
+                  <thead><tr><th>N°</th><th>Date</th><th>Aff.</th><th>Désignation</th><th>Qté</th><th>Prix</th><th>Total</th><th>Acheteur</th><th>Bon</th></tr></thead>
+                  <tbody>
+                    {items.filter((item) => item.desc || item.qte || item.price || item.photoName).map((item, index) => (
+                      <tr key={index}>
+                        <td>{editOp ?? "—"}</td>
+                        <td>{formatDateFr(opDate)}</td>
+                        <td>{affectation || "—"}</td>
+                        <td className="libelle">{item.desc || "—"}</td>
+                        <td>{item.qte || "—"}</td>
+                        <td>{item.price ? formatDa(Number(item.price)) : "—"}</td>
+                        <td>{index === 0 ? formatDa(totalBon) : "—"}</td>
+                        <td>{buyer || flags?.userName}</td>
+                        <td>{item.photoName || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn-light" onClick={() => setOpOpen(false)}>Annuler</button>
+              <button type="button" className="btn-action btn-green" onClick={() => void saveOperation()} disabled={busy}>{editId ? "Mettre à jour" : "ENREGISTRER"}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {financeOpen ? (
+        <div className="overlay">
+          <div className="modal narrow">
+            <div className="modal-head navy">
+              <strong>{financeEdit ? "Modifier caisse" : "Gestion caisse"}</strong>
+              <button type="button" className="close-x" onClick={() => setFinanceOpen(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="field"><label>Type</label>
+                <select value={finType} disabled={!!financeEdit} onChange={(event) => setFinType(event.target.value as "IN" | "OUT")}>
+                  <option value="IN">Alimenter la caisse</option>
+                  <option value="OUT">Donner à un acheteur</option>
+                </select>
+              </div>
+              <div className="field"><label>Date</label><input type="date" value={finDate} onChange={(event) => setFinDate(event.target.value)} /></div>
+              <div className="field"><label>Montant (DA)</label><input type="number" min="0" step="0.01" value={finAmount} onChange={(event) => setFinAmount(event.target.value)} /></div>
+              {finType === "IN" ? (
+                <>
+                  <div className="field"><label>Moyen</label>
+                    <select value={finMethod} onChange={(event) => setFinMethod(event.target.value)}>
+                      <option>Espèces</option>
+                      <option>Chèque / Virement</option>
+                    </select>
+                  </div>
+                  <div className="field"><label>Référence</label><input value={finRef} onChange={(event) => setFinRef(event.target.value)} /></div>
+                </>
+              ) : (
+                <div className="field"><label>Bénéficiaire</label>
+                  <select value={finBuyer} onChange={(event) => setFinBuyer(event.target.value)}>
+                    <option value="">-- Sélectionner --</option>
+                    {data.userList.filter((name) => !isCaissePrincipaleName(name)).map((name) => <option key={name}>{name}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn-light" onClick={() => setFinanceOpen(false)}>Annuler</button>
+              <button type="button" className="btn-action btn-navy" onClick={() => void saveFinance()} disabled={busy}>Confirmer</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {closeOpen && closeState ? (
+        <div className="overlay">
+          <div className="modal narrow">
+            <div className="modal-head teal">
+              <strong>Clôture journalière de caisse</strong>
+              <button type="button" className="close-x" onClick={() => setCloseOpen(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p className="hint">Comparez le solde système avec le cash compté. Une fois clôturée, aucune opération caisse (alimentation / avance) ne peut être saisie pour cette date — l’admin peut rouvrir à tout moment.</p>
+              <div className="field"><label>Date</label><input type="date" value={closeState.date} onChange={(event) => void openClose(event.target.value)} /></div>
+              <p>Solde système <strong>{formatDa(closeState.systemSolde)} DA</strong></p>
+              <div className="field"><label>Solde physique</label><input type="number" min="0" step="0.01" value={physical} disabled={closeState.closed} onChange={(event) => setPhysical(event.target.value)} placeholder="Cash compté" /></div>
+              <p>Écart <strong className={ecart === 0 ? "pos" : "neg"}>{formatDa(ecart)} DA</strong></p>
+              <div className="field"><label>Note (optionnel)</label><input value={closeNote} disabled={closeState.closed} onChange={(event) => setCloseNote(event.target.value)} placeholder="Ex. billet manquant, retard de saisie..." /></div>
+              {closeState.closed ? <p className="hint">Journée clôturée par {closeState.closedBy || "—"} le {closeState.closedAt || "—"}</p> : null}
+              {closeState.unlockedBy && !closeState.closed ? <p className="hint">Journée rouverte par {closeState.unlockedBy} · {closeState.unlockedAt} {closeState.unlockReason}</p> : null}
+            </div>
+            <div className="modal-foot">
+              {closeState.canUnlock ? <button type="button" className="btn-light" onClick={() => void reopen()}>Rouvrir (admin)</button> : null}
+              <button type="button" className="btn-light" onClick={() => setCloseOpen(false)}>Fermer</button>
+              {closeState.canClose ? <button type="button" className="btn-action btn-green" onClick={() => void confirmClose()}>Clôturer la journée</button> : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {adminOpen ? (
+        <div className="overlay">
+          <div className="modal">
+            <div className="modal-head slate">
+              <strong>Contrôle des droits</strong>
+              <button type="button" className="close-x" onClick={() => setAdminOpen(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p className="hint">L’administrateur voit toujours tout. Pour chaque employé, cochez ce qu’il a le droit de faire.</p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nom</th><th>Email</th><th>Dates libres</th><th>Acheter pour autrui</th><th>Voir achats des autres</th><th>Opérations caisse</th><th>Modifier / Supprimer</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adminUsers.map((user, index) => (
+                    <tr key={`${user.userId || user.buyerId}-${user.name}`}>
+                      <td>{user.name}</td>
+                      <td>{user.email}</td>
+                      {user.isAdmin ? <td colSpan={5}>Admin — voit tout (droits non modifiables)</td> : (
+                        <>
+                          {(["datesLibres", "buyForOthers", "seeAll", "caisseOps", "canEdit"] as const).map((key) => (
+                            <td key={key}><input type="checkbox" checked={user[key]} onChange={(event) => setAdminUsers((current) => current.map((row, i) => i === index ? { ...row, [key]: event.target.checked } : row))} /></td>
+                          ))}
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="toolbar" style={{ margin: "12px 0" }}>
+                <button type="button" className="btn-action btn-green" onClick={() => void saveRights()}>Enregistrer les droits</button>
+                <button type="button" className="btn-light" onClick={() => notify("Trier caisse", "Les mouvements sont déjà dans le journal du mois. Rien à copier.")}>Trier caisse → mois</button>
+              </div>
+              <h6>Soldes d’ouverture — 31/12/2025</h6>
+              <p className="hint">Saisie manuelle du reste chez chaque acheteur. Le total doit égaler le solde d’ouverture de la caisse.</p>
+              <table>
+                <thead><tr><th>Acheteur</th><th>Solde (DA)</th></tr></thead>
+                <tbody>
+                  {openings.map((row, index) => (
+                    <tr key={row.name}>
+                      <td>{row.name}</td>
+                      <td><input type="number" min="0" step="0.01" value={row.amount} onChange={(event) => setOpenings((current) => current.map((item, i) => i === index ? { ...item, amount: event.target.value } : item))} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="panel-head">
+                <span className="pill">Total (= caisse ouverture) : {formatDa(openingTotal)} DA</span>
+                <button type="button" className="btn-action btn-green" onClick={() => void saveOpenings()}>Enregistrer les soldes d’ouverture</button>
+              </div>
+              <h6>Ajouter un utilisateur</h6>
+              <div className="grid-3">
+                <input placeholder="Nom" value={newName} onChange={(event) => setNewName(event.target.value)} />
+                <input placeholder="Email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} />
+                <input placeholder="Mot de passe 6 car." maxLength={6} value={newPass} onChange={(event) => setNewPass(event.target.value)} />
+                <select value={newAccess} onChange={(event) => setNewAccess(event.target.value)}><option value="">Date limitée</option><option value="OPEN">Dates libres</option></select>
+                <select value={newRole} onChange={(event) => setNewRole(event.target.value)}><option value="">Employé</option><option value="MASTER">Acheter pour autrui</option></select>
+                <select value={newJournal} onChange={(event) => setNewJournal(event.target.value)}><option value="">Ses achats seulement</option><option value="ALL">Voir achats des autres</option></select>
+                <select value={newCaisse} onChange={(event) => setNewCaisse(event.target.value)}><option value="">Sans caisse</option><option value="CAISSE">Opérations caisse</option></select>
+                <select value={newEdit} onChange={(event) => setNewEdit(event.target.value)}><option value="">Sans modification</option><option value="EDIT">Modifier / Supprimer</option></select>
+              </div>
+              <button type="button" className="btn-action btn-navy" onClick={() => void addBuyer()}>Ajouter</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {auditOpen ? (
+        <div className="overlay">
+          <div className="modal">
+            <div className="modal-head brown">
+              <strong>Journal d’audit</strong>
+              <button type="button" className="close-x" onClick={() => setAuditOpen(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p className="hint">Qui a créé, modifié ou supprimé une opération — avec date/heure.</p>
+              <table>
+                <thead><tr><th>Date/Heure</th><th>Utilisateur</th><th>Action</th><th>Type</th><th>N°</th><th>Feuille</th><th>Détail</th><th>Montant</th></tr></thead>
+                <tbody>
+                  {!auditRows.length ? <tr><td colSpan={8}>Aucune entrée d’audit pour le moment.</td></tr> : null}
+                  {auditRows.map((row, index) => (
+                    <tr key={index}>
+                      <td>{row.when}</td><td>{row.user}</td><td>{row.action}</td><td>{row.type}</td><td>{row.op}</td><td>{row.sheet}</td><td className="libelle">{row.detail}</td><td>{row.amount == null ? "" : `${formatDa(row.amount)} DA`}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {photoUrl ? (
+        <div className="overlay" onClick={() => setPhotoUrl("")}>
+          <div className="modal narrow" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head green"><strong>Bon / pièce jointe</strong><button type="button" className="close-x" onClick={() => setPhotoUrl("")}>×</button></div>
+            <div className="modal-body" style={{ textAlign: "center" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={photoUrl} alt="Bon" style={{ maxWidth: "100%", maxHeight: "70vh" }} />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {ask ? (
+        <div className="overlay">
+          <div className="modal narrow">
+            <div className="modal-body">
+              <h6>{ask.title}</h6>
+              <p>{ask.text}</p>
+              {ask.reason ? <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Ex. saisie en retard" /> : null}
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn-light" onClick={() => { ask.resolve(null); setAsk(null); }}>Annuler</button>
+              <button type="button" className="btn-action btn-green" onClick={() => { ask.resolve(ask.reason ? reason : "ok"); setAsk(null); }}>{ask.confirm}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {toast ? <div className="toast"><strong>{toast.title}</strong><div>{toast.text}</div></div> : null}
+      {busy ? <div className="overlay"><div className="panel">Chargement...</div></div> : null}
+    </div>
+  );
+
+  function updateItem(index: number, patch: Partial<ItemDraft>) {
+    setItems((current) => current.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  }
+}
+
+function shift(iso: string, days: number): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}

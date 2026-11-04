@@ -88,6 +88,7 @@ const TINTS: Record<string, string> = {
   "nav.clients": "#0284c7",
   "nav.contrats": "#4f46e5",
   "nav.finance": "#16a34a",
+  "nav.caisse": "#15803d",
   "nav.achats": "#ea580c",
   "nav.utilisateurs": "#475569",
   "nav.roles": "#9333ea",

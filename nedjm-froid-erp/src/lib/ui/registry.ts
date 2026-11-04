@@ -151,7 +151,8 @@ export const UI_TABSETS: UiTabsetDef[] = [
       { id: "activites", labelFr: "Codes d'activité", labelAr: "رموز النشاط", href: "/referentiels/activites", icon: "site", group: "group.sites" },
       { id: "clients", labelFr: "Clients", labelAr: "العملاء", href: "/referentiels/clients", icon: "users", group: "group.commercial", tabsets: ["client_fiche"] },
       { id: "contrats", labelFr: "Contrats clients", labelAr: "عقود العملاء", href: "/referentiels/contrats", icon: "contract", group: "group.commercial", tabsets: ["client_contract"] },
-      { id: "finance", labelFr: "Banque & Caisse", labelAr: "البنك والصندوق", href: "/finance", routes: ["/parametres/finance"], icon: "finance", group: "group.finance", tabsets: ["finance", "finance_settings"] },
+      { id: "finance", labelFr: "Banque", labelAr: "البنك", href: "/finance", routes: ["/parametres/finance"], icon: "finance", group: "group.finance", tabsets: ["finance", "finance_settings"] },
+      { id: "caisse", labelFr: "Caisse", labelAr: "الصندوق", href: "/caisse", icon: "pay", group: "group.finance" },
       { id: "achats", labelFr: "Achats", labelAr: "المشتريات", href: "/achats", routes: ["/parametres/achats"], icon: "cart", group: "group.finance", tabsets: ["purchases", "purchase_settings"] },
       { id: "utilisateurs", labelFr: "Utilisateurs", labelAr: "المستخدمون", href: "/parametres/utilisateurs", icon: "users", group: "group.admin", inSettings: true },
       { id: "roles", labelFr: "Rôles & droits", labelAr: "الأدوار", href: "/administration/roles", icon: "shield", group: "group.admin", inSettings: true },
@@ -297,9 +298,9 @@ export const UI_TABSETS: UiTabsetDef[] = [
   {
     key: "finance",
     level: "C",
-    titleFr: "Banque & Caisse",
-    titleAr: "البنك والصندوق",
-    whereFr: "Banque & Caisse",
+    titleFr: "Banque",
+    titleAr: "البنك",
+    whereFr: "Banque",
     items: [
       { id: "dashboard", labelFr: "Vue d'ensemble" },
       { id: "operations", labelFr: "Opérations" },
@@ -312,7 +313,7 @@ export const UI_TABSETS: UiTabsetDef[] = [
     level: "C",
     titleFr: "Paramètres finance",
     titleAr: "إعدادات المالية",
-    whereFr: "Banque & Caisse → Paramètres",
+    whereFr: "Banque → Paramètres",
     items: [
       { id: "accounts", labelFr: "Comptes" },
       { id: "tax", labelFr: "TVA" },

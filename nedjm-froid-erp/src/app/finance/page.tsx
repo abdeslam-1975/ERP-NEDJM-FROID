@@ -19,7 +19,7 @@ const emptyData: FinanceHubData = {
 export default async function FinancePage() {
   const result = await getFinanceHubData();
   return (
-    <AppShell title="Banque & Caisse">
+    <AppShell title="Banque">
       <FinanceHub
         initialData={result.ok ? result.data : emptyData}
         loadError={result.ok ? undefined : result.error}

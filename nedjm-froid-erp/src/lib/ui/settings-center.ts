@@ -143,9 +143,9 @@ export const SETTINGS_GROUPS: SettingsGroupDef[] = [
     sections: [
       {
         id: "finance",
-        labelFr: "Banque & caisse",
-        labelAr: "البنك والصندوق",
-        descriptionFr: "Comptes, TVA, modes de paiement, catégories et clôtures financières.",
+        labelFr: "Banque",
+        labelAr: "البنك",
+        descriptionFr: "Comptes bancaires, TVA, modes de paiement, catégories et clôtures.",
         href: "/parametres/finance",
         icon: "landmark",
         keywords: "tva compte bancaire caisse categorie",

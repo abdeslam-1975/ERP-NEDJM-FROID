@@ -90,9 +90,9 @@ export function FinanceHub({
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-200">
               Trésorerie intégrée
             </p>
-            <h1 className="mt-1 text-2xl font-bold">Banque · Caisse · Paiements</h1>
+            <h1 className="mt-1 text-2xl font-bold">Banque</h1>
             <p className="mt-1 max-w-2xl text-sm text-blue-100">
-              Soldes en temps réel, journal immuable, rapprochement et avances de caisse.
+              Soldes des comptes, journal des opérations et rapprochement.
             </p>
           </div>
           <Button asChild variant="ghost" className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white">

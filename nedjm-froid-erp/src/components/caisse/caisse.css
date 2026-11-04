@@ -1,0 +1,85 @@
+.caisse-app { color: #1f2937; font-family: "Segoe UI", sans-serif; }
+.caisse-app * { box-sizing: border-box; }
+.caisse-app .hidden { display: none !important; }
+.caisse-app .caisse-bar {
+  background: linear-gradient(135deg, #1a472a, #2d6a4f);
+  color: #fff; border-radius: 12px; padding: 10px 16px; display: flex;
+  align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px;
+}
+.caisse-app .brand { font-weight: 800; display: flex; align-items: center; gap: 8px; }
+.caisse-app .user-info { display: flex; align-items: center; gap: 8px; font-size: 0.84rem; }
+.caisse-app .role-badge { background: #f59e0b; color: #111; border-radius: 999px; padding: 2px 8px; font-weight: 800; font-size: 11px; }
+.caisse-app .kpi-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+.caisse-app .kpi-card { border-radius: 15px; padding: 18px 20px; color: #fff; min-height: 118px; position: relative; overflow: hidden; }
+.caisse-app .kpi-card.solde { background: linear-gradient(135deg, #1a472a, #2d6a4f); }
+.caisse-app .kpi-card.dep { background: linear-gradient(135deg, #991b1b, #dc2626); }
+.caisse-app .kpi-card.av { background: linear-gradient(135deg, #b45309, #d97706); }
+.caisse-app .kpi-label { font-size: 0.74rem; letter-spacing: 1px; text-transform: uppercase; opacity: 0.9; }
+.caisse-app .kpi-value { font-size: 1.5rem; font-weight: 800; margin-top: 5px; }
+.caisse-app .kpi-card small { opacity: 0.85; font-size: 11px; }
+.caisse-app .panel { background: #fff; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); padding: 14px 16px; margin-bottom: 14px; }
+.caisse-app .panel h6 { margin: 0; font-weight: 800; color: #1a472a; }
+.caisse-app .panel-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; margin-bottom: 12px; flex-wrap: wrap; }
+.caisse-app .pill { font-size: 0.82rem; font-weight: 700; color: #14532d; background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 8px; padding: 4px 10px; }
+.caisse-app .summary-grid, .caisse-app .buyer-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.caisse-app .buyer-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.caisse-app .summary-item, .caisse-app .buyer-card {
+  border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px;
+  background: linear-gradient(160deg, #f8faf8, #eef5ee);
+}
+.caisse-app .ps-label { display: block; font-size: 0.7rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
+.caisse-app .ps-value { display: block; margin-top: 4px; font-size: 1.05rem; font-weight: 800; }
+.caisse-app .pos { color: #15803d; } .caisse-app .neg { color: #b91c1c; }
+.caisse-app .buyer-name { font-weight: 800; color: #1a472a; }
+.caisse-app .buyer-solde { font-size: 1.25rem; font-weight: 800; }
+.caisse-app .buyer-meta { font-size: 0.75rem; color: #64748b; display: flex; flex-direction: column; gap: 2px; margin: 6px 0; }
+.caisse-app .btn-buyer { border: 0; border-radius: 7px; padding: 5px 10px; background: #1a472a; color: #fff; font-weight: 700; font-size: 12px; cursor: pointer; }
+.caisse-app table { width: 100%; border-collapse: collapse; }
+.caisse-app .month-table th { background: #1a472a; color: #fff; font-size: 11px; padding: 8px; }
+.caisse-app .month-table td, .caisse-app .ops td, .caisse-app .ops th { text-align: center; font-size: 12px; padding: 7px 6px; border-bottom: 1px solid #f1f5f9; }
+.caisse-app .ops-wrap { max-height: 58vh; overflow: auto; }
+.caisse-app .ops { min-width: 1200px; }
+.caisse-app .ops thead th { position: sticky; top: 0; background: #2d5a27; color: #fff; font-size: 10px; text-transform: uppercase; z-index: 1; }
+.caisse-app .row-out td { background: #fff5f5; }
+.caisse-app .row-in td { background: #f0fdf4; }
+.caisse-app .libelle { text-align: left !important; }
+.caisse-app .ops-type { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; background: #e8eef4; }
+.caisse-app .ops-type.avance { background: #e8f5e9; color: #1b7a3a; }
+.caisse-app .ops-type.alim { background: #fff3cd; color: #8a5a00; }
+.caisse-app .action-bar, .caisse-app .filter-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; justify-content: space-between; }
+.caisse-app .toolbar { display: flex; flex-wrap: wrap; gap: 6px; }
+.caisse-app .btn-action { color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.caisse-app .btn-green { background: #16a34a; } .caisse-app .btn-purple { background: #5e4a8a; }
+.caisse-app .btn-teal { background: #0f766e; } .caisse-app .btn-navy { background: #1e3a5f; } .caisse-app .btn-brown { background: #7c2d12; }
+.caisse-app .btn-light { background: #fff; color: #111; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 12px; cursor: pointer; font-weight: 700; }
+.caisse-app .field { display: flex; flex-direction: column; gap: 4px; }
+.caisse-app .field label, .caisse-app .form-label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; }
+.caisse-app input, .caisse-app select, .caisse-app textarea {
+  border: 2px solid #e9ecef; border-radius: 8px; padding: 7px 10px; font: inherit; background: #fff; color: #111;
+}
+.caisse-app .count { margin-left: auto; background: #f1f6f1; color: #1a472a; border-radius: 8px; padding: 8px 12px; font-weight: 700; }
+.caisse-app .banner { border-radius: 12px; padding: 12px 16px; display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 14px; }
+.caisse-app .banner.open { background: linear-gradient(135deg, #ecfdf5, #d1fae5); border: 1px solid #6ee7b7; }
+.caisse-app .banner.closed { background: linear-gradient(135deg, #fff7ed, #ffedd5); border: 1px solid #fdba74; }
+.caisse-app .overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); z-index: 40; display: flex; align-items: flex-start; justify-content: center; padding: 24px 12px; overflow: auto; }
+.caisse-app .modal { background: #fff; border-radius: 16px; width: min(1100px, 100%); box-shadow: 0 25px 60px rgba(0,0,0,0.2); overflow: hidden; }
+.caisse-app .modal.narrow { width: min(560px, 100%); }
+.caisse-app .modal-head { color: #fff; padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; }
+.caisse-app .modal-head.green { background: #16a34a; }
+.caisse-app .modal-head.teal { background: linear-gradient(135deg, #0f766e, #134e4a); }
+.caisse-app .modal-head.navy { background: linear-gradient(135deg, #1e3a5f, #3a87ad); }
+.caisse-app .modal-head.slate { background: linear-gradient(135deg, #1e293b, #334155); }
+.caisse-app .modal-head.brown { background: linear-gradient(135deg, #7c2d12, #9a3412); }
+.caisse-app .modal-body { padding: 16px; }
+.caisse-app .modal-foot { padding: 12px 16px; display: flex; justify-content: flex-end; gap: 8px; background: #f8fafc; }
+.caisse-app .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.caisse-app .error-border { border-color: #dc2626 !important; background: #fff6f6 !important; }
+.caisse-app .toast { position: fixed; right: 16px; bottom: 16px; z-index: 60; background: #fff; border-radius: 12px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.18); max-width: 360px; }
+.caisse-app .icon-btn { border: 0; background: transparent; cursor: pointer; font-size: 14px; }
+.caisse-app .close-x { border: 0; background: transparent; color: #fff; font-size: 20px; cursor: pointer; }
+.caisse-app .hint { color: #64748b; font-size: 12px; }
+.caisse-app .selected { background: #ecfdf5; }
+@media (max-width: 800px) {
+  .caisse-app .kpi-grid, .caisse-app .grid-3 { grid-template-columns: 1fr; }
+  .caisse-app .kpi-value { font-size: 1.1rem; }
+}
