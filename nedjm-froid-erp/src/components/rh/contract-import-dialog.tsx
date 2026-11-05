@@ -27,8 +27,6 @@ import { Combobox } from "@/components/ui/combobox";
 import { cn } from "@/lib/utils";
 
 const BATCH = 20;
-const SHOWN = 400;
-
 const STATUS: Record<ContractImportStatus, { label: string; tone: string }> = {
   ready: { label: "À importer", tone: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" },
   unmatched: { label: "Employé à choisir", tone: "bg-amber-500/10 text-amber-700 dark:text-amber-300" },
@@ -408,7 +406,7 @@ export function ContractImportDialog({
             </section>
 
             <section className="overflow-hidden rounded-2xl border border-border/70 bg-surface">
-              <div className="max-h-[50vh] overflow-auto">
+              <div>
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 z-10 bg-surface-muted text-left text-xs text-foreground/55">
                     <tr>
@@ -421,7 +419,7 @@ export function ContractImportDialog({
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.slice(0, SHOWN).map((r) => {
+                    {rows.map((r) => {
                       const p = r.payload;
                       const site = p ? sites.find((s) => s.id === p.site_id)?.name_fr : null;
                       return (
@@ -471,11 +469,9 @@ export function ContractImportDialog({
                   </tbody>
                 </table>
               </div>
-              {rows.length > SHOWN ? (
-                <p className="border-t border-border/50 px-3 py-2 text-xs text-foreground/50">
-                  {SHOWN} premières lignes affichées sur {rows.length}.
-                </p>
-              ) : null}
+              <p className="border-t border-border/50 px-3 py-2 text-xs text-foreground/50">
+                Rapport complet : {rows.length} ligne{rows.length > 1 ? "s" : ""}.
+              </p>
             </section>
           </>
         ) : null}

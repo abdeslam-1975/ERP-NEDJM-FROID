@@ -23,7 +23,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const BATCH = 25;
-const SHOWN = 300;
 
 const STATUS: Record<ImportRowStatus, { label: string; tone: string }> = {
   new: { label: "À créer", tone: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" },
@@ -347,7 +346,7 @@ export function EmployeeImportDialog({
             </section>
 
             <section className="overflow-hidden rounded-2xl border border-border/70 bg-surface">
-              <div className="max-h-[50vh] overflow-auto">
+              <div>
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-surface-muted text-left text-xs text-foreground/55">
                     <tr>
@@ -359,7 +358,7 @@ export function EmployeeImportDialog({
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.slice(0, SHOWN).map((r) => (
+                    {rows.map((r) => (
                       <tr key={r.line} className="border-t border-border/50 align-top">
                         <td className="px-3 py-2 tabular-nums text-foreground/50">{r.line}</td>
                         <td className="px-3 py-2 tabular-nums">
@@ -411,11 +410,9 @@ export function EmployeeImportDialog({
                   </tbody>
                 </table>
               </div>
-              {rows.length > SHOWN ? (
-                <p className="border-t border-border/50 px-3 py-2 text-xs text-foreground/50">
-                  {SHOWN} premières lignes affichées sur {rows.length}.
-                </p>
-              ) : null}
+              <p className="border-t border-border/50 px-3 py-2 text-xs text-foreground/50">
+                Rapport complet : {rows.length} ligne{rows.length > 1 ? "s" : ""}.
+              </p>
             </section>
           </>
         ) : null}
