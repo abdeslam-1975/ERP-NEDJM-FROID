@@ -23,15 +23,18 @@ begin
     raise exception 'Accès réservé : droit Modifier/Supprimer requis.' using errcode = 'P0001';
   end if;
 
-  update public.caisse_operations
-  set voided_at = now()
-  where id = p_id
-    and voided_at is null
-  returning op_number into v_op;
-
+  select o.op_number into v_op
+  from public.caisse_operations o
+  where o.id = p_id
+    and o.voided_at is null;
   if v_op is null then
     raise exception 'Opération introuvable.' using errcode = 'P0001';
   end if;
+
+  update public.caisse_operations
+  set voided_at = now()
+  where id = p_id
+    and voided_at is null;
   return v_op;
 end;
 $$;
