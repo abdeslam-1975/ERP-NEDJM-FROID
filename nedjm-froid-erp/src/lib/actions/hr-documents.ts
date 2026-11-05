@@ -56,6 +56,7 @@ export type HrFileRow = {
   issued_on: string | null;
   expires_on: string | null;
   notes: string | null;
+  created_at: string | null;
   matricule: string;
   employee_name: string;
 };
@@ -178,6 +179,7 @@ function mapFileRow(row: {
   issued_on: string | null;
   expires_on: string | null;
   notes: string | null;
+  created_at?: string | null;
   employee?: HrFileRow extends never ? never : unknown;
 }): HrFileRow {
   return {
@@ -190,12 +192,13 @@ function mapFileRow(row: {
     issued_on: row.issued_on,
     expires_on: row.expires_on,
     notes: row.notes,
+    created_at: row.created_at ?? null,
     ...empName(row as Parameters<typeof empName>[0]),
   };
 }
 
 const FILE_SELECT =
-  "id, employee_id, doc_type_code, file_url, file_name, storage_path, issued_on, expires_on, notes, employee:hr_employees ( matricule, last_name, first_name )";
+  "id, employee_id, doc_type_code, file_url, file_name, storage_path, issued_on, expires_on, notes, created_at, employee:hr_employees ( matricule, last_name, first_name )";
 
 export async function listHrFiles(): Promise<ActionResult<HrFileRow[]>> {
   const supabase = await createClient();
@@ -247,26 +250,6 @@ export async function upsertHrFile(
       .from("hr_employee_files")
       .update(payload)
       .eq("id", p.id)
-      .select("id")
-      .maybeSingle();
-    if (error) return { ok: false, error: error.message };
-    if (!data) return { ok: false, error: "Enregistrement refusé." };
-    revalidate();
-    return { ok: true, data: { id: data.id } };
-  }
-
-  const { data: existing } = await supabase
-    .from("hr_employee_files")
-    .select("id")
-    .eq("employee_id", p.employee_id)
-    .eq("doc_type_code", p.doc_type_code)
-    .maybeSingle();
-
-  if (existing?.id) {
-    const { data, error } = await supabase
-      .from("hr_employee_files")
-      .update(payload)
-      .eq("id", existing.id)
       .select("id")
       .maybeSingle();
     if (error) return { ok: false, error: error.message };

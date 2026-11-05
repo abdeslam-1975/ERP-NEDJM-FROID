@@ -1,9 +1,8 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   getHrEmployeeFiche,
-  nextHrMatricule,
   type HrEmployeeFiche,
   type HrEmployeeField,
   type HrEmployeeRow,
@@ -17,8 +16,10 @@ import {
   saveEmployeeFiche,
   valuesFromFiche,
 } from "@/components/rh/employee-fiche-save";
+import { confirmFicheIdentity } from "@/components/rh/employee-identity";
 import { findEmployeeForFicheSearch } from "@/lib/hr/employee-fiche-search";
-import { numberTaken } from "@/components/rh/manual-number-input";
+import { matriculeKey } from "@/lib/hr/contract-import";
+import { nextMatriculeForHire } from "@/lib/hr/employee-matricule";
 
 const activeOf = (fields: HrEmployeeField[]) =>
   fields.filter((f) => f.is_active).sort((a, b) => a.sort_order - b.sort_order);
@@ -32,10 +33,7 @@ export async function ficheWindowValues(
     const result = await getHrEmployeeFiche(employeeId);
     return result.ok ? { ok: true, values: valuesFromFiche(result.data, fields) } : result;
   }
-  const values = emptyFicheValues(activeOf(fields));
-  const next = await nextHrMatricule();
-  if (next.ok && next.data.matricule) values.matricule = next.data.matricule;
-  return { ok: true, values };
+  return { ok: true, values: emptyFicheValues(activeOf(fields)) };
 }
 
 /** The « Fiche employé » window on its own: edits a card, searches another one, saves and archives the PDF. */
@@ -60,10 +58,47 @@ export function EmployeeFicheWindow({
   const [values, setValues] = useState(initialValues);
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const autoMatricule = useRef(initialValues.matricule || "");
+  const known = useMemo(
+    () =>
+      employees.map((row) => ({
+        id: row.id,
+        matricule: row.matricule,
+        nin: row.nin,
+        nss: row.nss,
+        last_name: row.last_name,
+        first_name: row.first_name,
+        birth_date: row.birth_date,
+        hired_at: row.hired_at,
+      })),
+    [employees],
+  );
+  const hireMatricule = useMemo(
+    () =>
+      nextMatriculeForHire(
+        values.hired_at || "",
+        employees.filter((row) => row.id !== values.id).map((row) => row.matricule),
+      ),
+    [values.hired_at, values.id, employees],
+  );
+
+  useEffect(() => {
+    if (values.id) return;
+    setValues((current) => {
+      const typed = current.matricule || "";
+      if (typed && typed !== autoMatricule.current) return current;
+      if (typed === hireMatricule) return current;
+      autoMatricule.current = hireMatricule;
+      return { ...current, matricule: hireMatricule };
+    });
+  }, [hireMatricule, values.id]);
 
   function open(employeeId: string | null) {
     setFormError(null);
-    if (!employeeId) setValues(emptyFicheValues(activeFields));
+    if (!employeeId) {
+      autoMatricule.current = "";
+      setValues(emptyFicheValues(activeFields));
+    }
     start(async () => {
       const result = await ficheWindowValues(employeeId, fields);
       if (result.ok) setValues(result.values);
@@ -79,14 +114,22 @@ export function EmployeeFicheWindow({
 
   function submit() {
     setFormError(null);
-    const { normalized, error } = checkFicheValues(values, activeFields);
+    const manual = Boolean(values.matricule && values.matricule !== autoMatricule.current);
+    const decision = confirmFicheIdentity(values, known, manual);
+    if (!decision.ok) {
+      setFormError(decision.error);
+      return;
+    }
+    const { normalized, error } = checkFicheValues(decision.values, activeFields);
     setValues(normalized);
     if (error) {
       setFormError(error);
       return;
     }
-    const own = employees.find((row) => row.id === normalized.id)?.matricule ?? "";
-    if (numberTaken(normalized.matricule ?? "", employees.map((row) => row.matricule), own)) {
+    const taken = employees.some(
+      (row) => row.id !== normalized.id && matriculeKey(row.matricule) === matriculeKey(normalized.matricule ?? ""),
+    );
+    if (taken) {
       setFormError("Ce matricule est déjà utilisé. · هذا الرقم التسلسلي مستعمل مسبقاً");
       return;
     }

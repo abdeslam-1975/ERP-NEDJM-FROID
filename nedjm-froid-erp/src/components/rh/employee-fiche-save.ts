@@ -9,6 +9,7 @@ import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import { missingRequiredFields } from "@/lib/hr/employee-field-utils";
 import { employeePayloadFromValues } from "@/lib/hr/employee-payload";
 import { normalizeFicheValues, validateFicheConstraints } from "@/lib/hr/employee-fiche-constraints";
+import { confirmAnotherCopy } from "@/lib/hr/document-notice";
 import { missingRequiredDocuments } from "@/lib/hr/required-documents";
 
 function asText(value: unknown) {
@@ -66,14 +67,32 @@ export type FicheSaveResult =
   | { ok: true; fiche: HrEmployeeFiche | null; info: string }
   | { ok: false; error: string };
 
-/** Saves checked values, then archives the fiche de renseignements PDF (an archive failure never fails the save). */
+function printedFicheChanged(
+  before: Record<string, string> | null,
+  after: Record<string, string>,
+  fields: HrEmployeeField[],
+) {
+  if (!before) return true;
+  return fields.some((field) => (before[field.code] ?? "").trim() !== (after[field.code] ?? "").trim());
+}
+
+function ficheFileDate(file: { issued_on: string | null; created_at: string | null }) {
+  return file.issued_on || (file.created_at ? file.created_at.slice(0, 10) : "sans date");
+}
+
+/** Saves checked values, then archives a new fiche PDF beside the previous one. */
 export async function saveEmployeeFiche(
   normalized: Record<string, string>,
   activeFields: HrEmployeeField[],
   ficheCatalogs: CatalogItem[],
 ): Promise<FicheSaveResult> {
+  let previous: Record<string, string> | null = null;
+  let ficheDates: string[] = [];
   if (normalized.id) {
-    const files = await listHrFilesForEmployee(normalized.id);
+    const [files, current] = await Promise.all([
+      listHrFilesForEmployee(normalized.id),
+      getHrEmployeeFiche(normalized.id),
+    ]);
     if (files.ok) {
       const missingDocs = missingRequiredDocuments(
         ficheCatalogs,
@@ -88,11 +107,33 @@ export async function saveEmployeeFiche(
             .join(", ")}. Onglet Documents.`,
         };
       }
+      ficheDates = files.data
+        .filter((file) => file.doc_type_code === "FICHE_RENSEIGNEMENTS")
+        .map(ficheFileDate);
     }
+    if (current.ok) previous = valuesFromFiche(current.data, activeFields);
   }
   const result = await upsertHrEmployee(employeePayloadFromValues(normalized, activeFields));
   if (!result.ok) return { ok: false, error: result.error };
   const fiche = await getHrEmployeeFiche(result.data.id);
+  const saved = fiche.ok ? fiche.data : null;
+  if (!printedFicheChanged(previous, normalized, activeFields)) {
+    return {
+      ok: true,
+      fiche: saved,
+      info: "Fiche enregistrée. Aucun changement imprimé : l'ancienne fiche PDF est conservée.",
+    };
+  }
+  if (
+    ficheDates.length &&
+    !confirmAnotherCopy("Fiche de renseignements", "بطاقة المعلومات", ficheDates)
+  ) {
+    return {
+      ok: true,
+      fiche: saved,
+      info: "Fiche enregistrée. L'ancienne fiche PDF est conservée.",
+    };
+  }
   let info = "Fiche enregistrée.";
   try {
     const archived = await archiveEmployeeFicheRenseignements(result.data.id);
@@ -102,5 +143,5 @@ export async function saveEmployeeFiche(
   } catch {
     info = "Fiche enregistrée. Génération PDF reportée.";
   }
-  return { ok: true, fiche: fiche.ok ? fiche.data : null, info };
+  return { ok: true, fiche: saved, info };
 }

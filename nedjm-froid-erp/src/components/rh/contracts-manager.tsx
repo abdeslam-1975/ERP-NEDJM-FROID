@@ -39,6 +39,7 @@ import {
   saveContractRetenue,
   type ContractPreviewContext,
 } from "@/lib/actions/hr-contract-print";
+import { confirmAnotherCopy } from "@/lib/hr/document-notice";
 import { contractTypeAllowsFixedIrg } from "@/lib/hr/compliance";
 import { contractPrintDefaults, type ContractPrintSource } from "@/lib/hr/work-contract";
 import { contractTypeDefaults } from "@/lib/hr/hr-lists";
@@ -521,6 +522,13 @@ export function ContractsManager({
     if (form.id && !legalBase) {
       setError("Chargement des choix IRG / CACOBATPH en cours, réessayez dans un instant.");
       return;
+    }
+    if (!form.id) {
+      const dates = rows
+        .filter((row) => row.employee_id === form.employee_id)
+        .map((row) => row.start_date)
+        .filter(Boolean);
+      if (!confirmAnotherCopy("Contrat", "عقد", dates)) return;
     }
     start(async () => {
       const toLines = (lines: Record<string, SelectedSalaryLine>, period_scope: "WORK" | "CRP") =>

@@ -34,6 +34,7 @@ import {
   type HrEmployeeField,
   type HrEmployeeRow,
 } from "@/lib/actions/hr-employees";
+import { confirmAnotherCopy, documentDates } from "@/lib/hr/document-notice";
 import { valuesFromFicheRecord } from "@/lib/hr/employee-field-utils";
 import type { HrFicheSettings } from "@/lib/hr/fiche-settings";
 import { EmployeeCardPreview } from "@/components/rh/employee-card-preview";
@@ -420,6 +421,16 @@ export function DocumentsManager({
       setMissionError("Ce numéro est déjà utilisé. · هذا الرقم مستعمل مسبقاً");
       return;
     }
+    if (
+      !missionForm.id &&
+      !confirmAnotherCopy(
+        "Ordre de mission",
+        "أمر بمهمة",
+        documentDates(omRows, missionForm.employee_id),
+      )
+    ) {
+      return;
+    }
     start(async () => {
       const r = await upsertHrCorrespondence({
         id: missionForm.id,
@@ -531,6 +542,12 @@ export function DocumentsManager({
   function createTitle(draft: LeaveTitleDraft, confirmBalance = false) {
     if (numberTaken(draft.numero, leaveRows.map((row) => row.number))) {
       setTitleError("Ce numéro est déjà utilisé. · هذا الرقم مستعمل مسبقاً");
+      return;
+    }
+    if (
+      !confirmBalance &&
+      !confirmAnotherCopy("Titre de congé", "سند عطلة", documentDates(leaveRows, draft.employee_id))
+    ) {
       return;
     }
     start(async () => {

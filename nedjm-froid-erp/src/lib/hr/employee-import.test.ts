@@ -8,6 +8,7 @@ import {
   guessMapping,
   toIsoDate,
 } from "@/lib/hr/employee-import";
+import { nextMatriculeForHire, reportEmployeeTable } from "@/lib/hr/employee-matricule";
 import { cellText, parseCsvMatrix } from "@/lib/hr/employee-import-file";
 
 let order = 0;
@@ -39,6 +40,7 @@ const fields: HrEmployeeField[] = [
   field("last_name_ar", "Nom AR", "اللقب"),
   field("birth_date", "Né(e) le", "تاريخ الميلاد", { value_type: "date" }),
   field("nss", "N° NSS", "رقم الضمان"),
+  field("nin", "NIN", "رقم التعريف"),
   field("sex_code", "Sexe", "الجنس", { value_type: "catalog", catalog_kind: "sex", storage_group: "civil" }),
   field("poste", "Poste Occupé", "المنصب", { value_type: "catalog", catalog_kind: "job_title", storage_group: "extra" }),
   field("hired_at", "Date de recrutement", "تاريخ التوظيف", { value_type: "date" }),
@@ -129,6 +131,202 @@ describe("buildImportRows", () => {
     expect(r.warnings.join(" ")).toMatch(/Matricule absent/);
     expect(r.warnings.join(" ")).toMatch(/date illisible/);
     expect(rows[4].issues[0]).toMatch(/Nom/);
+  });
+});
+
+describe("matricules", () => {
+  function planned(
+    body: string[][],
+    existing: { id?: string; matricule: string; nin?: string | null; nss?: string | null; last_name?: string; first_name?: string; birth_date?: string }[],
+    links?: Record<number, "same" | "other">,
+  ) {
+    const matrix = [["Matricule", "Nom", "Prénom", "NSS", "NIN", "Date de naissance", "Date de recrutement"], ...body];
+    return buildImportRows({
+      matrix,
+      headerRow: 0,
+      mapping: ["matricule", "last_name", "first_name", "nss", "nin", "birth_date", "hired_at"],
+      fields,
+      catalogs,
+      existing,
+      links,
+      today: "2026-11-05",
+    });
+  }
+
+  it("keeps one matricule when the NSS or the NIN is the same", () => {
+    const rows = planned(
+      [
+        ["99/26", "Benali", "Karim", "123456789012", "", "12/03/1985", "02/01/2026"],
+        ["", "Benali", "Karim", "", "123456789012345678", "12/03/1985", "01/06/2024"],
+      ],
+      [{ id: "emp-1", matricule: "05/24", nss: "123456789012", nin: "123456789012345678", last_name: "BENALI", first_name: "KARIM" }],
+    );
+    expect(rows.map((r) => [r.status, r.matricule, r.expectedMatricule, r.employeeId])).toEqual([
+      ["mismatch", "99/26", "05/24", "emp-1"],
+      ["exists", "05/24", "05/24", "emp-1"],
+    ]);
+  });
+
+  it("numbers new people by hire date and does not fill a hole", () => {
+    const rows = planned(
+      [
+        ["", "Ami", "Nora", "", "", "01/01/1990", "01/06/2024"],
+        ["", "Boudia", "Ali", "", "", "02/02/1991", "15/01/2024"],
+      ],
+      [{ matricule: "01/24" }, { matricule: "03/24" }],
+    );
+    expect(rows.map((r) => [r.line, r.matricule])).toEqual([
+      [2, "05/24"],
+      [3, "04/24"],
+    ]);
+  });
+
+  it("keeps the width already used in that year", () => {
+    const rows = planned(
+      [["", "Ami", "Nora", "", "", "01/01/1990", "01/06/2024"]],
+      [{ matricule: "001/24" }],
+    );
+    expect(rows[0].matricule).toBe("002/24");
+  });
+
+  it("reports a file matricule that does not follow the hire order", () => {
+    const rows = planned(
+      [
+        ["02/24", "Ami", "Nora", "", "", "01/01/1990", "01/06/2024"],
+        ["03/24", "Boudia", "Ali", "", "", "02/02/1991", "15/01/2024"],
+      ],
+      [{ matricule: "01/24" }],
+    );
+    expect(rows.map((r) => [r.status, r.matricule, r.expectedMatricule])).toEqual([
+      ["mismatch", "02/24", "03/24"],
+      ["mismatch", "03/24", "02/24"],
+    ]);
+  });
+
+  it("accepts 1/24, 01/24 and 001/24 as the same number when the sequence matches", () => {
+    const rows = planned(
+      [["001/24", "Ami", "Nora", "", "", "01/01/1990", "15/01/2024"]],
+      [{ matricule: "001/24" }],
+    );
+    expect(rows[0].status).toBe("exists");
+    expect(rows[0].matricule).toBe("001/24");
+  });
+
+  it("asks before merging a close name and the same birth date", () => {
+    const rows = planned(
+      [["", "Benali", "Karime", "", "", "12/03/1985", "01/02/2026"]],
+      [{ id: "emp-1", matricule: "05/24", last_name: "BENALI", first_name: "KARIM", birth_date: "1985-03-12" }],
+    );
+    expect(rows[0].status).toBe("confirm");
+    expect(rows[0].candidate?.matricule).toBe("05/24");
+    const accepted = planned(
+      [["", "Benali", "Karime", "", "", "12/03/1985", "01/02/2026"]],
+      [{ id: "emp-1", matricule: "05/24", last_name: "BENALI", first_name: "KARIM", birth_date: "1985-03-12" }],
+      { 2: "same" },
+    );
+    expect(accepted[0].status).toBe("exists");
+    expect(accepted[0].matricule).toBe("05/24");
+    const refused = planned(
+      [["", "Benali", "Karime", "", "", "12/03/1985", "01/02/2026"]],
+      [{ id: "emp-1", matricule: "05/24", last_name: "BENALI", first_name: "KARIM", birth_date: "1985-03-12" }],
+      { 2: "other" },
+    );
+    expect(refused[0].status).toBe("new");
+    expect(refused[0].matricule).toBe("01/26");
+  });
+
+  it("keeps the 2008 number when the same worker returns in 2015 and 2021", () => {
+    const rows = planned(
+      [
+        ["", "Ami", "Nora", "", "123456789012345678", "01/01/1980", "01/03/2021"],
+        ["", "Ami", "Nora", "", "123456789012345678", "01/01/1980", "01/06/2015"],
+        ["", "Ami", "Nora", "", "123456789012345678", "01/01/1980", "15/02/2008"],
+      ],
+      [{ matricule: "03/08" }],
+    );
+    expect(rows.map((r) => r.matricule)).toEqual(["04/08", "04/08", "04/08"]);
+  });
+
+  it("does not take a number in the year of a return", () => {
+    const rows = planned(
+      [
+        ["", "Ami", "Nora", "111111111111", "", "01/01/1980", "01/03/2021"],
+        ["", "Said", "Ali", "222222222222", "", "02/02/1990", "10/01/2021"],
+      ],
+      [{ id: "ami", matricule: "05/08", nss: "111111111111", last_name: "AMI", first_name: "NORA", hired_at: "2008-02-15" }],
+    );
+    expect(rows.map((r) => [r.status, r.matricule])).toEqual([
+      ["exists", "05/08"],
+      ["new", "01/21"],
+    ]);
+  });
+
+  it("keeps the same matricule for two hires of one new person", () => {
+    const rows = planned(
+      [
+        ["", "Ami", "Nora", "", "123456789012345678", "01/01/1990", "01/06/2026"],
+        ["", "Ami", "Nora", "", "123456789012345678", "01/01/1990", "15/01/2024"],
+      ],
+      [],
+    );
+    expect(rows.map((r) => [r.line, r.status, r.matricule, r.leadLine])).toEqual([
+      [2, "exists", "01/24", 3],
+      [3, "new", "01/24", null],
+    ]);
+  });
+
+  it("does not merge when the NIN and the NSS point to two people", () => {
+    const rows = planned(
+      [["", "X", "Y", "123456789012", "123456789012345678", "01/01/1990", "01/01/2024"]],
+      [
+        { id: "a", matricule: "01/24", nin: "123456789012345678", last_name: "AAA", first_name: "AAA" },
+        { id: "b", matricule: "02/24", nss: "123456789012", last_name: "BBB", first_name: "BBB" },
+      ],
+    );
+    expect(rows[0].status).toBe("conflict");
+  });
+});
+
+describe("live matricules", () => {
+  it("proposes the next number of the hire year and skips holes", () => {
+    expect(nextMatriculeForHire("2024-06-01", ["01/24", "03/24"])).toBe("04/24");
+    expect(nextMatriculeForHire("2024-06-01", ["001/24"])).toBe("002/24");
+    expect(nextMatriculeForHire("", ["01/24"])).toBe("");
+  });
+
+  it("reports two rows that share an NSS", () => {
+    const report = reportEmployeeTable([
+      {
+        id: "a",
+        matricule: "01/24",
+        nss: "123456789012",
+        last_name: "BENALI",
+        first_name: "KARIM",
+        hired_at: "2024-01-15",
+      },
+      {
+        id: "b",
+        matricule: "09/24",
+        nss: "123456789012",
+        last_name: "BENALI",
+        first_name: "KARIM",
+        hired_at: "2024-06-01",
+      },
+    ]);
+    expect(report.total).toBe(2);
+    expect(report.lines.map((line) => [line.id, line.status, line.expectedMatricule])).toEqual([
+      ["b", "mismatch", "01/24"],
+    ]);
+  });
+
+  it("does not renumber a 2008 matricule when the fiche date is the 2021 return", () => {
+    const report = reportEmployeeTable([
+      { id: "a", matricule: "05/08", last_name: "AMI", first_name: "NORA", hired_at: "2021-03-01", nss: "111111111111" },
+      { id: "b", matricule: "01/21", last_name: "SAID", first_name: "ALI", hired_at: "2021-01-10", nss: "222222222222" },
+      { id: "c", matricule: "03/21", last_name: "KACI", first_name: "OMAR", hired_at: "2021-06-01", nss: "333333333333" },
+    ]);
+    expect(report.returns).toBe(1);
+    expect(report.lines.map((line) => [line.id, line.expectedMatricule])).toEqual([["c", "02/21"]]);
   });
 });
 

@@ -15,6 +15,7 @@ import {
   guessMapping,
   importTargets,
   type ExistingEmployee,
+  type ImportLinkChoice,
   type ImportRowStatus,
 } from "@/lib/hr/employee-import";
 import { RhAlert, RhModal, rhInput } from "@/components/rh/rh-ui";
@@ -25,10 +26,23 @@ const BATCH = 25;
 const SHOWN = 300;
 
 const STATUS: Record<ImportRowStatus, { label: string; tone: string }> = {
-  new: { label: "À importer", tone: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" },
-  exists: { label: "Déjà présent", tone: "bg-slate-500/10 text-foreground/60" },
+  new: { label: "À créer", tone: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" },
+  exists: { label: "Mise à jour", tone: "bg-sky-500/10 text-sky-800 dark:text-sky-200" },
   duplicate: { label: "Doublon", tone: "bg-amber-500/10 text-amber-700 dark:text-amber-300" },
   invalid: { label: "Incomplet", tone: "bg-rose-500/10 text-rose-700 dark:text-rose-300" },
+  confirm: { label: "À confirmer", tone: "bg-amber-500/10 text-amber-800 dark:text-amber-200" },
+  mismatch: { label: "Matricule", tone: "bg-rose-500/10 text-rose-700 dark:text-rose-300" },
+  conflict: { label: "Conflit", tone: "bg-rose-500/10 text-rose-700 dark:text-rose-300" },
+};
+
+const EMPTY_COUNTS: Record<ImportRowStatus, number> = {
+  new: 0,
+  exists: 0,
+  duplicate: 0,
+  invalid: 0,
+  confirm: 0,
+  mismatch: 0,
+  conflict: 0,
 };
 
 type Step = "file" | "preview" | "running" | "done";
@@ -55,6 +69,8 @@ export function EmployeeImportDialog({
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [results, setResults] = useState<EmployeeImportResult[]>([]);
+  const [links, setLinks] = useState<Record<number, ImportLinkChoice>>({});
+  const [fixes, setFixes] = useState<Record<number, string>>({});
   const [pending, start] = useTransition();
 
   const targets = useMemo(() => importTargets(fields), [fields]);
@@ -65,15 +81,27 @@ export function EmployeeImportDialog({
   const rows = useMemo(
     () =>
       matrix.length
-        ? buildImportRows({ matrix, headerRow, mapping, fields, catalogs, existing })
+        ? buildImportRows({ matrix, headerRow, mapping, fields, catalogs, existing, links, fixes })
         : [],
-    [matrix, headerRow, mapping, fields, catalogs, existing],
+    [matrix, headerRow, mapping, fields, catalogs, existing, links, fixes],
   );
   const counts = useMemo(() => {
-    const c: Record<ImportRowStatus, number> = { new: 0, exists: 0, duplicate: 0, invalid: 0 };
+    const c = { ...EMPTY_COUNTS };
     for (const r of rows) c[r.status] += 1;
     return c;
   }, [rows]);
+  const ready = useMemo(
+    () =>
+      rows
+        .filter((r) => r.status === "new" || (r.status === "exists" && (r.employeeId || r.leadLine)))
+        .slice()
+        .sort(
+          (a, b) =>
+            (a.values.hired_at || "9999-99-99").localeCompare(b.values.hired_at || "9999-99-99") ||
+            a.line - b.line,
+        ),
+    [rows],
+  );
 
   function read() {
     if (!file) return;
@@ -90,6 +118,8 @@ export function EmployeeImportDialog({
       setMatrix(res.data.matrix);
       setHeaderRow(header);
       setMapping(guessMapping(res.data.matrix[header] ?? [], fields));
+      setLinks({});
+      setFixes({});
       setStep("preview");
     });
   }
@@ -97,6 +127,8 @@ export function EmployeeImportDialog({
   function changeHeaderRow(index: number) {
     setHeaderRow(index);
     setMapping(guessMapping(matrix[index] ?? [], fields));
+    setLinks({});
+    setFixes({});
   }
 
   function changeMapping(col: number, code: string) {
@@ -112,22 +144,51 @@ export function EmployeeImportDialog({
   }
 
   function run() {
-    const todo = rows.filter((r) => r.status === "new");
+    const todo = ready;
     if (!todo.length) return;
     setError(null);
     setStep("running");
     setProgress({ done: 0, total: todo.length });
     start(async () => {
       const all: EmployeeImportResult[] = [];
-      for (let i = 0; i < todo.length; i += BATCH) {
-        const chunk = todo.slice(i, i + BATCH);
+      const createdIds = new Map<number, string>();
+      let left = todo.slice();
+      while (left.length) {
+        const batch: typeof left = [];
+        const later: typeof left = [];
+        for (const row of left) {
+          const waiting = Boolean(row.leadLine && !row.employeeId && !createdIds.has(row.leadLine));
+          if (waiting || batch.length >= BATCH) later.push(row);
+          else batch.push(row);
+        }
+        if (!batch.length) {
+          all.push(
+            ...later.map((row) => ({
+              line: row.line,
+              ok: false,
+              error: "La première ligne de cet employé n'a pas été importée.",
+            })),
+          );
+          break;
+        }
         const res = await importEmployeeRows({
-          rows: chunk.map((r) => ({ line: r.line, values: r.values, excelNo: r.excelNo })),
+          rows: batch.map((r) => ({
+            line: r.line,
+            values: r.values,
+            excelNo: r.excelNo,
+            employeeId: r.employeeId || (r.leadLine ? createdIds.get(r.leadLine) : undefined),
+          })),
         });
         if (!res.ok) {
-          all.push(...chunk.map((r) => ({ line: r.line, ok: false, error: res.error })));
-        } else all.push(...res.data);
-        setProgress({ done: Math.min(todo.length, i + BATCH), total: todo.length });
+          all.push(...batch.map((r) => ({ line: r.line, ok: false, error: res.error })));
+        } else {
+          all.push(...res.data);
+          for (const item of res.data) {
+            if (item.ok && item.id) createdIds.set(item.line, item.id);
+          }
+        }
+        left = later;
+        setProgress({ done: all.length, total: todo.length });
       }
       setResults(all);
       setStep("done");
@@ -136,6 +197,7 @@ export function EmployeeImportDialog({
   }
 
   const created = results.filter((r) => r.ok).length;
+  const notes = results.filter((r) => r.ok && r.note);
   const failed = results.filter((r) => !r.ok);
   const unmatchedRequired = fields.filter(
     (f) => f.is_active && f.is_required && f.code !== "matricule" && f.code !== "status" && !mapping.includes(f.code),
@@ -145,7 +207,7 @@ export function EmployeeImportDialog({
     <RhModal
       size="xl"
       title="Importer l'ancienne base"
-      subtitle="Excel (.xlsx) ou CSV. Les employés déjà présents (même matricule ou NIN) ne sont jamais modifiés."
+      subtitle="Excel (.xlsx) ou CSV. Même NSS ou NIN : le matricule existant est conservé et la fiche est mise à jour. L'ancienne fiche PDF reste archivée."
       onClose={onClose}
       footer={
         step === "file" ? (
@@ -163,9 +225,9 @@ export function EmployeeImportDialog({
             <Button variant="secondary" onClick={() => setStep("file")}>
               Retour
             </Button>
-            <Button disabled={!counts.new || pending} onClick={run}>
+            <Button disabled={!ready.length || pending} onClick={run}>
               <Upload aria-hidden />
-              Importer {counts.new} employé{counts.new > 1 ? "s" : ""}
+              Importer {ready.length} ligne{ready.length > 1 ? "s" : ""}
             </Button>
           </>
         ) : step === "done" ? (
@@ -220,6 +282,28 @@ export function EmployeeImportDialog({
                 </select>
               </label>
             </div>
+
+            {counts.mismatch || counts.conflict ? (
+              <RhAlert tone="danger">
+                Rapport des matricules : ces lignes ne sont pas importées tant que le numéro du fichier n&apos;est pas
+                celui attendu. Utilisez le numéro proposé, ou corrigez le fichier.
+              </RhAlert>
+            ) : counts.confirm ? (
+              <RhAlert tone="warning">
+                Des noms se ressemblent. Confirmez chaque ligne : même personne, ou personne différente.
+              </RhAlert>
+            ) : counts.duplicate ? (
+              <RhAlert tone="warning">
+                Un même matricule est porté par deux personnes. Ces lignes ne sont pas importées.
+              </RhAlert>
+            ) : rows.some((r) => r.warnings.some((w) => w.includes("ordre non vérifié"))) ? (
+              <RhAlert tone="warning">
+                Les matricules présents sont conservés. Les lignes sans date d&apos;embauche n&apos;ont pas été
+                réordonnées.
+              </RhAlert>
+            ) : rows.length ? (
+              <RhAlert tone="success">Les matricules du fichier sont corrects.</RhAlert>
+            ) : null}
 
             {unmatchedRequired.length ? (
               <RhAlert tone="warning">
@@ -278,7 +362,12 @@ export function EmployeeImportDialog({
                     {rows.slice(0, SHOWN).map((r) => (
                       <tr key={r.line} className="border-t border-border/50 align-top">
                         <td className="px-3 py-2 tabular-nums text-foreground/50">{r.line}</td>
-                        <td className="px-3 py-2 tabular-nums">{r.matricule || "auto"}</td>
+                        <td className="px-3 py-2 tabular-nums">
+                          {r.matricule || "auto"}
+                          {r.expectedMatricule && r.expectedMatricule !== r.matricule ? (
+                            <span className="mt-1 block text-xs text-foreground/55">attendu {r.expectedMatricule}</span>
+                          ) : null}
+                        </td>
                         <td className="px-3 py-2 font-medium">{r.name || "—"}</td>
                         <td className="px-3 py-2">
                           <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap", STATUS[r.status].tone)}>
@@ -286,7 +375,36 @@ export function EmployeeImportDialog({
                           </span>
                         </td>
                         <td className="px-3 py-2 text-xs text-foreground/60">
-                          {[...r.issues, ...r.warnings].join(" · ") || "—"}
+                          <div>{[...r.issues, ...r.warnings].join(" · ") || "—"}</div>
+                          {r.status === "confirm" && r.candidate ? (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              <Button
+                                type="button"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => setLinks((prev) => ({ ...prev, [r.line]: "same" }))}
+                              >
+                                Même personne
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => setLinks((prev) => ({ ...prev, [r.line]: "other" }))}
+                              >
+                                Personne différente
+                              </Button>
+                            </div>
+                          ) : null}
+                          {(r.status === "mismatch" || r.status === "duplicate") && r.expectedMatricule ? (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              className="mt-1 h-7 px-2 text-xs"
+                              onClick={() => setFixes((prev) => ({ ...prev, [r.line]: r.expectedMatricule }))}
+                            >
+                              Utiliser {r.expectedMatricule}
+                            </Button>
+                          ) : null}
                         </td>
                       </tr>
                     ))}
@@ -321,7 +439,7 @@ export function EmployeeImportDialog({
             <div className="flex flex-wrap gap-3">
               <span className="inline-flex items-center gap-2 rounded-xl bg-emerald-500/10 px-4 py-2.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
                 <CircleCheck className="h-4 w-4" aria-hidden />
-                {created} employé{created > 1 ? "s" : ""} créé{created > 1 ? "s" : ""}
+                {created} ligne{created > 1 ? "s" : ""} enregistrée{created > 1 ? "s" : ""}
               </span>
               {failed.length ? (
                 <span className="inline-flex items-center gap-2 rounded-xl bg-rose-500/10 px-4 py-2.5 text-sm font-semibold text-rose-700 dark:text-rose-300">
@@ -330,6 +448,16 @@ export function EmployeeImportDialog({
                 </span>
               ) : null}
             </div>
+            {notes.length ? (
+              <ul className="divide-y divide-border/50 rounded-2xl border border-border/70 bg-surface text-sm">
+                {notes.map((r) => (
+                  <li key={r.line} className="flex gap-3 px-4 py-2.5">
+                    <span className="w-16 shrink-0 tabular-nums text-foreground/50">Ligne {r.line}</span>
+                    <span className="text-foreground/75">{r.note}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {failed.length ? (
               <ul className="divide-y divide-border/50 rounded-2xl border border-border/70 bg-surface text-sm">
                 {failed.map((r) => (

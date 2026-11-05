@@ -346,6 +346,36 @@ export async function getHrEmployeeFiche(
   };
 }
 
+async function sameEmployeeElsewhere(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  person: { id?: string; nss: string; nin: string },
+): Promise<string | null> {
+  const nin = person.nin.replace(/\D/g, "");
+  const nss = person.nss.replace(/\D/g, "");
+  const load = async (column: "nin" | "nss", value: string) => {
+    if (!value) return [];
+    const { data } = await supabase
+      .from("hr_employees")
+      .select("id, matricule, last_name, first_name")
+      .eq(column, value)
+      .limit(5);
+    return (data ?? []).filter((row) => row.id !== person.id);
+  };
+  const [byNin, byNss] = await Promise.all([
+    load("nin", nin.length === 18 ? nin : ""),
+    load("nss", nss.length === 12 ? nss : ""),
+  ]);
+  const ninRow = byNin[0];
+  const nssRow = byNss[0];
+  if (ninRow && nssRow && ninRow.id !== nssRow.id) {
+    return `NIN déjà porté par ${ninRow.last_name} ${ninRow.first_name} (${ninRow.matricule}), NSS déjà porté par ${nssRow.last_name} ${nssRow.first_name} (${nssRow.matricule}).`;
+  }
+  const other = ninRow || nssRow;
+  if (!other) return null;
+  const name = [other.last_name, other.first_name].filter(Boolean).join(" ");
+  return `Employé déjà connu : ${name}, matricule ${other.matricule}. Ouvrez sa fiche. · عامل معروف: ${other.matricule}`;
+}
+
 export async function upsertHrEmployee(
   input: unknown,
 ): Promise<ActionResult<{ id: string }>> {
@@ -380,6 +410,13 @@ export async function upsertHrEmployee(
 
   const p = parsed.data as ReturnType<typeof hrFull.parse>;
   const supabase = await createClient();
+
+  const identityError = await sameEmployeeElsewhere(supabase, {
+    id: p.id,
+    nss: p.nss ?? "",
+    nin: p.nin ?? "",
+  });
+  if (identityError) return { ok: false, error: identityError };
 
   const fieldsRes = await listHrEmployeeFields();
   if (fieldsRes.ok) {

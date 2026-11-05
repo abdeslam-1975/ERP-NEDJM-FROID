@@ -16,6 +16,7 @@ import {
   type OcrFieldSuggestion,
 } from "@/lib/hr/ocr/types";
 import { sanitizeOcrSuggestion } from "@/lib/hr/ocr/extractors";
+import { confirmAnotherCopy } from "@/lib/hr/document-notice";
 import {
   isDocumentRequiredForSave,
   isEmployeeUploadDocument,
@@ -72,7 +73,8 @@ export function EmployeeDocumentsUpload({
 
   const doneByCode = useMemo(() => {
     const map = new Map<string, DoneDoc>();
-    for (const f of employeeId ? files : []) {
+    const ordered = (employeeId ? files : []).slice().sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+    for (const f of ordered) {
       const slot = slots.find((s) => s.code === f.doc_type_code);
       map.set(f.doc_type_code, {
         code: f.doc_type_code,
@@ -95,7 +97,6 @@ export function EmployeeDocumentsUpload({
     return map;
   }, [employeeId, files, doneDocs, slots]);
 
-  const pendingSlots = slots.filter((s) => !doneByCode.has(s.code));
   const completedList = slots
     .filter((s) => doneByCode.has(s.code))
     .map((s) => doneByCode.get(s.code)!);
@@ -145,10 +146,22 @@ export function EmployeeDocumentsUpload({
     if (fileRef.current) fileRef.current.value = "";
   }
 
-  async function uploadFile(docType: string, file: File): Promise<HrFileRow | null> {
+  async function uploadFile(docType: string, file: File): Promise<HrFileRow | "cancel" | null> {
     if (!employeeId) {
       setError("Enregistrez d'abord la fiche, puis importez le document.");
       return null;
+    }
+    const previous = files.filter((item) => item.doc_type_code === docType);
+    const label = slots.find((slot) => slot.code === docType)?.label_fr || docType;
+    if (
+      previous.length &&
+      !confirmAnotherCopy(
+        label,
+        label,
+        previous.map((item) => item.issued_on || (item.created_at ? item.created_at.slice(0, 10) : "sans date")),
+      )
+    ) {
+      return "cancel";
     }
     const data = new FormData();
     data.set("file", file);
@@ -159,10 +172,7 @@ export function EmployeeDocumentsUpload({
       setError(result.error);
       return null;
     }
-    setFiles((prev) => {
-      const rest = prev.filter((f) => f.doc_type_code !== result.data.doc_type_code);
-      return [...rest, result.data];
-    });
+    setFiles((prev) => [result.data, ...prev.filter((item) => item.id !== result.data.id)]);
     return result.data;
   }
 
@@ -209,7 +219,7 @@ export function EmployeeDocumentsUpload({
         return;
       }
       const row = await uploadFile(selectedCode, file);
-      if (!row) return;
+      if (!row || row === "cancel") return;
       markDone({
         code: row.doc_type_code,
         label,
@@ -239,6 +249,10 @@ export function EmployeeDocumentsUpload({
     start(async () => {
       if (employeeId) {
         const row = await uploadFile(ocrProfile, pendingFile);
+        if (row === "cancel") {
+          resetOcrUi();
+          return;
+        }
         if (row) {
           markDone({
             code: row.doc_type_code,
@@ -247,7 +261,6 @@ export function EmployeeDocumentsUpload({
             file_name: row.file_name,
           });
         } else {
-          // Échec archivage : on marque quand même (champs déjà appliqués)
           markDone({ code: ocrProfile, label, file_name: pendingFile.name });
         }
       } else {
@@ -273,9 +286,10 @@ export function EmployeeDocumentsUpload({
             }}
           >
             <option value="">— Choisir un document —</option>
-            {pendingSlots.map((slot) => (
+            {slots.map((slot) => (
               <option key={slot.id} value={slot.code}>
                 {slot.label_fr}
+                {doneByCode.has(slot.code) ? " — déjà archivé" : ""}
                 {isDocumentRequiredForSave(slot) ? " *" : ""}
               </option>
             ))}
@@ -346,6 +360,26 @@ export function EmployeeDocumentsUpload({
               ) : null}
             </li>
           ))}
+        </ul>
+      ) : null}
+
+      {files.filter((file) => files.filter((item) => item.doc_type_code === file.doc_type_code).length > 1).length ? (
+        <ul className="mt-1.5 space-y-1 text-xs text-foreground/70">
+          {files
+            .filter((file) => files.filter((item) => item.doc_type_code === file.doc_type_code).length > 1)
+            .map((file) => (
+              <li key={file.id} className="flex flex-wrap gap-2">
+                <span>{slots.find((slot) => slot.code === file.doc_type_code)?.label_fr ?? file.doc_type_code}</span>
+                <span>
+                  {file.issued_on || (file.created_at ? file.created_at.slice(0, 10) : "sans date")}
+                </span>
+                {file.file_url ? (
+                  <a className="font-medium text-brand underline" href={file.file_url} target="_blank" rel="noreferrer">
+                    Voir
+                  </a>
+                ) : null}
+              </li>
+            ))}
         </ul>
       ) : null}
 

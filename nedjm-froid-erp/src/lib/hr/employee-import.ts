@@ -2,6 +2,7 @@ import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import type { HrEmployeeField } from "@/lib/actions/hr-employees";
 import { missingRequiredFields } from "@/lib/hr/employee-field-utils";
 import { normalizeFicheValues, validateFicheConstraints } from "@/lib/hr/employee-fiche-constraints";
+import { applyEmployeeMatricules } from "@/lib/hr/employee-matricule";
 import { defaultEmployeeStatus, matchEmployeeStatus } from "@/lib/hr/employee-status";
 
 /** Target of an old-base column: a fiche field code, or the row number of the old sheet. */
@@ -179,7 +180,16 @@ function statusCode(raw: string): string | null {
   return STATUS_WORDS.find(([, words]) => words.includes(norm))?.[0] ?? null;
 }
 
-export type ImportRowStatus = "new" | "exists" | "duplicate" | "invalid";
+export type ImportRowStatus =
+  | "new"
+  | "exists"
+  | "duplicate"
+  | "invalid"
+  | "confirm"
+  | "mismatch"
+  | "conflict";
+
+export type ImportLinkChoice = "same" | "other";
 
 export type ImportRow = {
   /** Line number in the sheet (1 = first line). */
@@ -187,13 +197,30 @@ export type ImportRow = {
   status: ImportRowStatus;
   name: string;
   matricule: string;
+  /** Matricule kept for this person (stored, or the next number of the hire year). */
+  expectedMatricule: string;
+  /** Known employee to update. Empty when the person is created by an earlier line of this file. */
+  employeeId: string | null;
+  /** Earlier line that creates this same person during the import. */
+  leadLine: number | null;
+  /** Name match waiting for a human decision. Never applied on its own. */
+  candidate: { name: string; matricule: string; birthDate: string } | null;
   values: Record<string, string>;
   excelNo: number | null;
   issues: string[];
   warnings: string[];
 };
 
-export type ExistingEmployee = { matricule: string; nin?: string | null };
+export type ExistingEmployee = {
+  id?: string | null;
+  matricule: string;
+  nin?: string | null;
+  nss?: string | null;
+  last_name?: string | null;
+  first_name?: string | null;
+  birth_date?: string | null;
+  hired_at?: string | null;
+};
 
 /** Rows of the old base turned into fiche values, with what blocks or alters each one. */
 export function buildImportRows(input: {
@@ -203,14 +230,16 @@ export function buildImportRows(input: {
   fields: HrEmployeeField[];
   catalogs: CatalogItem[];
   existing: ExistingEmployee[];
+  /** same = the suggested person; other = a different person, so a new matricule. */
+  links?: Record<number, ImportLinkChoice>;
+  /** Matricule typed by the user to replace a wrong one on that line. */
+  fixes?: Record<number, string>;
+  /** ISO date used when a row has no hire date (defaults to today). */
+  today?: string;
 }): ImportRow[] {
   const { matrix, headerRow, mapping, fields, catalogs } = input;
   const byCode = new Map(fields.map((f) => [f.code, f]));
   const headers = matrix[headerRow] ?? [];
-  const takenMat = new Set(input.existing.map((e) => e.matricule.trim().toUpperCase()));
-  const takenNin = new Set(input.existing.map((e) => (e.nin ?? "").trim()).filter(Boolean));
-  const seenMat = new Set<string>();
-  const seenNin = new Set<string>();
   const rows: ImportRow[] = [];
   const statusItems = catalogs.filter((item) => item.kind === "employee_status");
   const fallbackStatus = defaultEmployeeStatus(catalogs);
@@ -270,32 +299,34 @@ export function buildImportRows(input: {
     }
 
     const matricule = (normalized.matricule ?? "").trim();
-    const nin = (normalized.nin ?? "").trim();
     const issues = missingRequiredFields(
       { ...normalized, matricule: matricule || "auto" },
       fields,
     ).map((f) => f.label_fr || f.label_ar || f.code);
     if (!matricule) warnings.push("Matricule absent : attribué automatiquement");
 
-    let status: ImportRowStatus = "new";
-    const matKey = matricule.toUpperCase();
-    if ((matricule && takenMat.has(matKey)) || (nin && takenNin.has(nin))) status = "exists";
-    else if ((matricule && seenMat.has(matKey)) || (nin && seenNin.has(nin))) status = "duplicate";
-    else if (issues.length) status = "invalid";
-    if (matricule) seenMat.add(matKey);
-    if (nin) seenNin.add(nin);
-
     rows.push({
       line: headerRow + index + 2,
-      status,
+      status: issues.length ? "invalid" : "new",
       name: [normalized.last_name, normalized.first_name].filter(Boolean).join(" ") ||
         [normalized.last_name_ar, normalized.first_name_ar].filter(Boolean).join(" "),
       matricule,
+      expectedMatricule: "",
+      employeeId: null,
+      leadLine: null,
+      candidate: null,
       values: normalized,
       excelNo,
       issues: issues.length ? [`Champs obligatoires manquants : ${issues.join(", ")}`] : [],
       warnings,
     });
   });
-  return rows;
+
+  for (const row of rows) {
+    const fix = input.fixes?.[row.line]?.trim();
+    if (!fix) continue;
+    row.values = { ...row.values, matricule: fix };
+    row.matricule = fix;
+  }
+  return applyEmployeeMatricules(rows, input.existing, { links: input.links, today: input.today });
 }

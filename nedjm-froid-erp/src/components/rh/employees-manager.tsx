@@ -1,14 +1,13 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import { Columns3, DatabaseZap, FileDown, UserCheck, UserPlus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { Columns3, ClipboardList, DatabaseZap, FileDown, UserCheck, UserPlus } from "lucide-react";
 import { ToolbarSlot } from "@/components/layout/arrange";
 import {
   deleteHrEmployeeField,
   getHrEmployeeFiche,
   listHrEmployeeFiches,
-  nextHrMatricule,
   setHrEmployeeFieldActive,
   setHrEmployeeStatus,
   upsertHrEmployeeField,
@@ -23,7 +22,9 @@ import {
 } from "@/components/rh/employee-fiche-save";
 import type { CatalogItem, CatalogKind } from "@/lib/actions/hr-catalogs";
 import { activityStatusOptions, workingStatusCodes } from "@/lib/hr/employee-status";
-import { numberTaken } from "@/components/rh/manual-number-input";
+import { confirmFicheIdentity } from "@/components/rh/employee-identity";
+import { matriculeKey } from "@/lib/hr/contract-import";
+import { nextMatriculeForHire, reportEmployeeTable } from "@/lib/hr/employee-matricule";
 import type { SiteRow } from "@/lib/actions/sites";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns, type DataColumn } from "@/components/ui/data-table";
@@ -46,6 +47,7 @@ import {
 import { EmployeeAdminDossierDialog } from "@/components/rh/employee-admin-dossier";
 import { EmployeeCardPreview } from "@/components/rh/employee-card-preview";
 import { EmployeeImportDialog } from "@/components/rh/employee-import-dialog";
+import { EmployeeTableReport } from "@/components/rh/employee-table-report";
 import { EmployeeExportDialog } from "@/components/rh/employee-export-dialog";
 import { DEFAULT_FICHE_SETTINGS, type HrFicheSettings } from "@/lib/hr/fiche-settings";
 import { findEmployeeForFicheSearch } from "@/lib/hr/employee-fiche-search";
@@ -115,6 +117,8 @@ export function EmployeesManager({
   const [values, setValues] = useState<Record<string, string>>(() =>
     startNew ? emptyValues(initialFields.filter((f) => f.is_active)) : {},
   );
+  const [reportOpen, setReportOpen] = useState(false);
+  const autoMatricule = useRef("");
   const [formError, setFormError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -182,18 +186,25 @@ export function EmployeesManager({
     return String(raw);
   }
 
+  const hireMatricule = useMemo(
+    () =>
+      nextMatriculeForHire(
+        values.hired_at || "",
+        rows.filter((row) => row.id !== values.id).map((row) => row.matricule),
+      ),
+    [values.hired_at, values.id, rows],
+  );
+
   useEffect(() => {
-    if (!startNew) return;
-    let cancelled = false;
-    void nextHrMatricule().then((next) => {
-      if (!cancelled && next.ok && next.data.matricule) {
-        setValues((v) => ({ ...v, matricule: v.matricule || next.data.matricule }));
-      }
+    if (values.id) return;
+    setValues((current) => {
+      const typed = current.matricule || "";
+      if (typed && typed !== autoMatricule.current) return current;
+      if (typed === hireMatricule) return current;
+      autoMatricule.current = hireMatricule;
+      return { ...current, matricule: hireMatricule };
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [startNew]);
+  }, [hireMatricule, values.id]);
 
   const fallbackText = useCallback(
     (row: HrEmployeeFiche, code: "fiche_affectation" | "fiche_poste") => {
@@ -210,15 +221,10 @@ export function EmployeesManager({
   );
 
   function openCreate() {
+    autoMatricule.current = "";
     setValues(emptyValues(activeFields));
     setFormError(null);
     setOpen(true);
-    startTransition(async () => {
-      const next = await nextHrMatricule();
-      if (next.ok && next.data.matricule) {
-        setValues((v) => ({ ...v, matricule: v.matricule || next.data.matricule }));
-      }
-    });
   }
 
   function openEdit(row: HrEmployeeFiche) {
@@ -237,14 +243,22 @@ export function EmployeesManager({
   function submit() {
     setFormError(null);
     setInfo(null);
-    const { normalized, error } = checkFicheValues(values, activeFields);
+    const manual = Boolean(values.matricule && values.matricule !== autoMatricule.current);
+    const decision = confirmFicheIdentity(values, existingIds, manual);
+    if (!decision.ok) {
+      setFormError(decision.error);
+      return;
+    }
+    const { normalized, error } = checkFicheValues(decision.values, activeFields);
     setValues(normalized);
     if (error) {
       setFormError(error);
       return;
     }
-    const own = rows.find((row) => row.id === normalized.id)?.matricule ?? "";
-    if (numberTaken(normalized.matricule ?? "", rows.map((row) => row.matricule), own)) {
+    const taken = rows.some(
+      (row) => row.id !== normalized.id && matriculeKey(row.matricule) === matriculeKey(normalized.matricule ?? ""),
+    );
+    if (taken) {
       setFormError("Ce matricule est déjà utilisé. · هذا الرقم التسلسلي مستعمل مسبقاً");
       return;
     }
@@ -262,11 +276,24 @@ export function EmployeesManager({
         });
         setValues(valuesFromFiche(saved, fields));
       }
-      setInfo(result.info);
+      setInfo([decision.note, result.info].filter(Boolean).join(" "));
     });
   }
 
-  const existingIds = useMemo(() => rows.map((r) => ({ matricule: r.matricule, nin: r.nin })), [rows]);
+  const existingIds = useMemo(
+    () =>
+      rows.map((r) => ({
+        id: r.id,
+        matricule: r.matricule,
+        nin: r.nin,
+        nss: r.nss,
+        last_name: r.last_name,
+        first_name: r.first_name,
+        birth_date: r.birth_date,
+        hired_at: r.hired_at,
+      })),
+    [rows],
+  );
 
   function refreshRows() {
     startTransition(async () => {
@@ -442,6 +469,10 @@ export function EmployeesManager({
           <Button type="button" variant="secondary" disabled={pending} onClick={() => setImportOpen(true)}>
             <DatabaseZap aria-hidden />
             Importer l&apos;ancienne base
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => setReportOpen(true)}>
+            <ClipboardList aria-hidden />
+            RAPPORT
           </Button>
           <Button type="button" variant="secondary" onClick={() => setExportOpen(true)}>
             <FileDown aria-hidden />
@@ -650,6 +681,18 @@ export function EmployeesManager({
             const row = preview;
             setPreview(null);
             openEdit(row);
+          }}
+        />
+      ) : null}
+
+      {reportOpen ? (
+        <EmployeeTableReport
+          people={existingIds}
+          onClose={() => setReportOpen(false)}
+          onOpen={(id) => {
+            const row = rows.find((item) => item.id === id);
+            setReportOpen(false);
+            if (row) openEdit(row);
           }}
         />
       ) : null}

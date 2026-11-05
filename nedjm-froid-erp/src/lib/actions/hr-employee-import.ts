@@ -2,7 +2,9 @@
 
 import { z } from "zod";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
+import { archiveEmployeeFicheRenseignements } from "@/lib/actions/hr-documents";
 import {
+  getHrEmployeeFiche,
   listHrEmployeeFields,
   nextHrMatricule,
   upsertHrEmployee,
@@ -10,6 +12,7 @@ import {
 } from "@/lib/actions/hr-employees";
 import { EMPLOYEE_IMPORT_MAX_ROWS } from "@/lib/hr/employee-import";
 import { EMPLOYEE_IMPORT_MAX_BYTES, readEmployeeSheet } from "@/lib/hr/employee-import-file";
+import { valuesFromFiche } from "@/components/rh/employee-fiche-save";
 import { employeePayloadFromValues } from "@/lib/hr/employee-payload";
 import { normalizeFicheValues } from "@/lib/hr/employee-fiche-constraints";
 import { hrEmployeeFullSchema } from "@/lib/validations/hr";
@@ -38,15 +41,23 @@ const importRowsSchema = z.object({
         line: z.number().int().positive(),
         values: z.record(z.string(), z.string().max(500)),
         excelNo: z.number().finite().nullable(),
+        employeeId: z.string().uuid().optional(),
       }),
     )
     .min(1)
     .max(100),
 });
 
-export type EmployeeImportResult = { line: number; ok: boolean; error?: string; matricule?: string };
+export type EmployeeImportResult = {
+  line: number;
+  ok: boolean;
+  error?: string;
+  matricule?: string;
+  id?: string;
+  note?: string;
+};
 
-/** Creates the given employees one by one, with the same checks as the fiche; existing ones are never touched. */
+/** Creates a new employee, or updates a known one and archives a new fiche PDF beside the old one. */
 export async function importEmployeeRows(input: unknown): Promise<ActionResult<EmployeeImportResult[]>> {
   const parsed = importRowsSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
@@ -57,14 +68,39 @@ export async function importEmployeeRows(input: unknown): Promise<ActionResult<E
   const results: EmployeeImportResult[] = [];
   for (const row of parsed.data.rows) {
     const values = { ...row.values };
-    delete values.id;
-    if (!values.matricule?.trim()) {
-      const next = await nextHrMatricule();
-      if (!next.ok || !next.data.matricule) {
-        results.push({ line: row.line, ok: false, error: next.ok ? "Matricule automatique indisponible." : next.error });
+    let previous: Record<string, string> | null = null;
+    if (row.employeeId) {
+      const current = await getHrEmployeeFiche(row.employeeId);
+      if (!current.ok) {
+        results.push({ line: row.line, ok: false, error: current.error });
         continue;
       }
-      values.matricule = next.data.matricule;
+      const before = valuesFromFiche(current.data, active);
+      previous = { ...before };
+      for (const [key, value] of Object.entries(values)) {
+        if (key === "id" || key === "matricule" || !value.trim()) continue;
+        if (key === "hired_at") {
+          const current = (before.hired_at ?? "").slice(0, 10);
+          const incoming = value.slice(0, 10);
+          if (!current || incoming < current) previous.hired_at = incoming;
+          continue;
+        }
+        previous[key] = value;
+      }
+      previous.id = row.employeeId;
+      previous.matricule = current.data.matricule;
+      Object.assign(values, previous);
+      previous = before;
+    } else {
+      delete values.id;
+      if (!values.matricule?.trim()) {
+        const next = await nextHrMatricule();
+        if (!next.ok || !next.data.matricule) {
+          results.push({ line: row.line, ok: false, error: next.ok ? "Matricule automatique indisponible." : next.error });
+          continue;
+        }
+        values.matricule = next.data.matricule;
+      }
     }
     const payload = employeePayloadFromValues(
       values,
@@ -77,11 +113,22 @@ export async function importEmployeeRows(input: unknown): Promise<ActionResult<E
       continue;
     }
     const saved = await upsertHrEmployee(payload);
-    results.push(
-      saved.ok
-        ? { line: row.line, ok: true, matricule: values.matricule }
-        : { line: row.line, ok: false, error: saved.error },
-    );
+    if (!saved.ok) {
+      results.push({ line: row.line, ok: false, error: saved.error });
+      continue;
+    }
+    let note: string | undefined;
+    if (row.employeeId && previous) {
+      const changed = active.some((field) => (previous?.[field.code] ?? "").trim() !== (values[field.code] ?? "").trim());
+      if (!changed) note = "Fiche inchangée, ancienne fiche PDF conservée.";
+      else {
+        const archived = await archiveEmployeeFicheRenseignements(saved.data.id);
+        note = archived.ok
+          ? "Nouvelle fiche PDF archivée, l'ancienne est conservée."
+          : `Fiche mise à jour. PDF non archivé : ${archived.error}`;
+      }
+    }
+    results.push({ line: row.line, ok: true, matricule: values.matricule, id: saved.data.id, note });
   }
   return { ok: true, data: results };
 }
