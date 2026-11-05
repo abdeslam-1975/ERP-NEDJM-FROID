@@ -2,8 +2,18 @@ import { createClient } from "@/lib/supabase/server";
 import type { GeminiFunctionDeclaration } from "@/lib/ai/gemini";
 import { listLeaveBalances } from "@/lib/actions/hr-leave";
 import { todayIsoAlgiers } from "@/lib/hr/mission-order";
+import { workingStatusCodes } from "@/lib/hr/employee-status";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
+
+async function workingEmployees(supabase: Supabase): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("hr_catalogs")
+    .select("kind, code, extra, is_active")
+    .eq("kind", "employee_status");
+  if (error) return new Set(["ACTIVE"]);
+  return workingStatusCodes(data ?? []);
+}
 
 export type AssistantAccess = {
   canSee: (path: string) => boolean;
@@ -223,8 +233,9 @@ const TOOLS: AssistantTool[] = [
         : await fetchAll<EmployeeLite>((from, to) =>
             supabase.from("hr_employees").select(EMPLOYEE_COLUMNS).order("last_name").range(from, to),
           );
-      if (statut === "ACTIF") employees = employees.filter((e) => (e.status ?? "ACTIVE") === "ACTIVE");
-      if (statut === "INACTIF") employees = employees.filter((e) => (e.status ?? "ACTIVE") !== "ACTIVE");
+      const working = await workingEmployees(supabase);
+      if (statut === "ACTIF") employees = employees.filter((e) => working.has(e.status ?? "ACTIVE"));
+      if (statut === "INACTIF") employees = employees.filter((e) => !working.has(e.status ?? "ACTIVE"));
       const current = currentContracts(await contractsOf(supabase, texte ? employees.map((e) => e.id) : null));
       if (chantier) employees = employees.filter((e) => fold(current.get(e.id)?.site_name ?? "").includes(chantier));
       return {
@@ -256,7 +267,8 @@ const TOOLS: AssistantTool[] = [
       const employees = await fetchAll<EmployeeLite>((from, to) =>
         supabase.from("hr_employees").select(EMPLOYEE_COLUMNS).range(from, to),
       );
-      const active = employees.filter((e) => (e.status ?? "ACTIVE") === "ACTIVE");
+      const working = await workingEmployees(supabase);
+      const active = employees.filter((e) => working.has(e.status ?? "ACTIVE"));
       const current = currentContracts(await contractsOf(supabase, null));
       const bySite = new Map<string, { employes: number; par_type: Record<string, number> }>();
       for (const e of active) {

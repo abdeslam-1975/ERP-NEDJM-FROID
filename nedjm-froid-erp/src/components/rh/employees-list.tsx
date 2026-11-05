@@ -9,7 +9,6 @@ import {
   List,
   MapPin,
   Pencil,
-  Power,
   Search,
   SearchX,
   Table2,
@@ -38,15 +37,6 @@ const STATUS: Record<string, { label: string; className: string }> = {
 
 const PAGE_SIZE = 12;
 
-function StatusPill({ status }: { status: string }) {
-  const meta = STATUS[status] ?? { label: status, className: "bg-surface-muted text-foreground/70" };
-  return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap", meta.className)}>
-      <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
-      {meta.label}
-    </span>
-  );
-}
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -91,7 +81,8 @@ export function EmployeesList({
   onOpen,
   onEdit,
   onDossier,
-  onToggle,
+  onStatus,
+  statusOptions,
 }: {
   rows: HrEmployeeFiche[];
   assignments: EmployeeAssignment[];
@@ -105,7 +96,8 @@ export function EmployeesList({
   onOpen: (row: HrEmployeeFiche) => void;
   onEdit: (row: HrEmployeeFiche) => void;
   onDossier: (row: HrEmployeeFiche) => void;
-  onToggle: (row: HrEmployeeFiche) => void;
+  onStatus: (row: HrEmployeeFiche, status: string) => void;
+  statusOptions: { code: string; label: string }[];
 }) {
   const [query, setQuery] = useState(initialQuery);
   const [site, setSite] = useState<string | null>(null);
@@ -150,6 +142,28 @@ export function EmployeesList({
     setPage(0);
   }
 
+  function statusSelect(row: HrEmployeeFiche) {
+    const options = statusOptions.some((item) => item.code === row.status)
+      ? statusOptions
+      : [{ code: row.status, label: STATUS[row.status]?.label ?? row.status }, ...statusOptions];
+    return (
+      <select
+        className="h-8 max-w-[9rem] rounded-full border border-border/70 bg-surface px-2 text-xs"
+        value={row.status}
+        disabled={pending}
+        aria-label="État d'activité"
+        onClick={(event) => event.stopPropagation()}
+        onChange={(event) => onStatus(row, event.target.value)}
+      >
+        {options.map((item) => (
+          <option key={item.code} value={item.code}>
+            {item.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
   const actions = (row: HrEmployeeFiche) => (
     <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
       <button
@@ -171,16 +185,6 @@ export function EmployeesList({
         className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-foreground/45 transition hover:bg-brand/[0.08] hover:text-brand disabled:opacity-50"
       >
         <FolderOpen className="h-4 w-4" aria-hidden />
-      </button>
-      <button
-        type="button"
-        title={row.status === "ACTIVE" ? "Désactiver" : "Activer"}
-        aria-label={row.status === "ACTIVE" ? "Désactiver" : "Activer"}
-        disabled={pending}
-        onClick={() => onToggle(row)}
-        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-foreground/45 transition hover:bg-brand/[0.08] hover:text-brand disabled:opacity-50"
-      >
-        <Power className="h-4 w-4" aria-hidden />
       </button>
     </div>
   );
@@ -311,7 +315,7 @@ export function EmployeesList({
                       {p.row.hired_at ? new Date(p.row.hired_at).toLocaleDateString("fr-FR") : <span className="text-foreground/30">—</span>}
                     </td>
                     <td className="px-3 py-3.5">
-                      <StatusPill status={p.row.status} />
+                      {statusSelect(p.row)}
                     </td>
                     <td className="pr-5">
                       <div className="flex items-center justify-end gap-1">
@@ -342,7 +346,7 @@ export function EmployeesList({
               >
                 <div className="flex items-start justify-between">
                   <Avatar name={p.name} photo={p.row.photo_url} size={52} />
-                  <StatusPill status={p.row.status} />
+                  {statusSelect(p.row)}
                 </div>
                 <div className="mt-4 truncate font-semibold text-foreground">{p.name}</div>
                 <div className="truncate text-sm text-foreground/50">{p.poste || p.contract || "—"}</div>

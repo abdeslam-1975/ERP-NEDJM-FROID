@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import type { CatalogItem, CatalogKind } from "@/lib/actions/hr-catalogs";
 import type { HrEmployeeField } from "@/lib/actions/hr-employees";
-import { saveHrCompanyProfile } from "@/lib/actions/hr-company";
+import { saveDocCodeSettings, saveHrCompanyProfile } from "@/lib/actions/hr-company";
 import type { CustomDocRow } from "@/lib/actions/hr-custom-docs";
 import type { DocTemplateSummary } from "@/lib/actions/doc-templates";
 import { BUNDLED_FONTS } from "@/lib/doc/bundled-fonts";
@@ -103,6 +103,7 @@ export function HrDocumentsSettings({
   kinds,
   custom,
   summaries,
+  isSuperAdmin = false,
 }: {
   company: HrCompanyProfile;
   canEdit: boolean;
@@ -112,6 +113,7 @@ export function HrDocumentsSettings({
   kinds: CatalogKind[];
   custom: CustomDocsSettings;
   summaries: Record<string, DocTemplateSummary>;
+  isSuperAdmin?: boolean;
 }) {
   const [sub, setSub] = useState<DocumentsSubTab>("models");
   const activeCustom = custom.defs.filter((d) => d.is_active).length;
@@ -152,7 +154,9 @@ export function HrDocumentsSettings({
       {tiles}
       {sub !== "models" && custom.error ? <RhAlert tone="danger">{custom.error}</RhAlert> : null}
       {sub === "models" ? (
-        <BuiltInDocumentsSettings
+        <>
+          {isSuperAdmin ? <DocCodeCard company={initialCompany} /> : null}
+          <BuiltInDocumentsSettings
           company={initialCompany}
           canEdit={canEdit}
           fiche={fiche}
@@ -160,6 +164,7 @@ export function HrDocumentsSettings({
           catalogs={catalogs}
           summaries={summaries}
         />
+        </>
       ) : sub === "custom" ? (
         <CustomDocsManager
           defs={custom.defs}
@@ -173,6 +178,59 @@ export function HrDocumentsSettings({
       ) : (
         <DocFontsManager fonts={custom.fonts} canEdit={custom.canEdit} />
       )}
+    </div>
+  );
+}
+
+function DocCodeCard({ company }: { company: HrCompanyProfile }) {
+  const [mode, setMode] = useState<"auto" | "manual">(company.doc_code_mode === "manual" ? "manual" : "auto");
+  const [om, setOm] = useState(company.doc_code_om || "OM");
+  const [cng, setCng] = useState(company.doc_code_cng || "CNG");
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  return (
+    <div className="rounded-xl border border-border/60 bg-surface p-4">
+      <h3 className="font-display text-sm font-semibold">Codes des documents · رموز الوثائق</h3>
+      <p className="mt-1 text-xs text-foreground/55">
+        Le numéro de chaque document est toujours généré. En automatique la référence utilise OM et CNG. En manuel, vous choisissez ces deux codes.
+      </p>
+      {error ? <RhAlert tone="danger">{error}</RhAlert> : null}
+      {info ? <RhAlert tone="success">{info}</RhAlert> : null}
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="radio" checked={mode === "auto"} onChange={() => setMode("auto")} />
+          Automatique
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="radio" checked={mode === "manual"} onChange={() => setMode("manual")} />
+          Manuel
+        </label>
+        {mode === "manual" ? (
+          <>
+            <input className={`${rhInput} w-28`} value={om} maxLength={8} onChange={(event) => setOm(event.target.value.toUpperCase())} aria-label="Code mission" />
+            <input className={`${rhInput} w-28`} value={cng} maxLength={8} onChange={(event) => setCng(event.target.value.toUpperCase())} aria-label="Code congé" />
+          </>
+        ) : null}
+        <Button
+          type="button"
+          disabled={pending}
+          onClick={() => {
+            setError(null);
+            setInfo(null);
+            start(async () => {
+              const result = await saveDocCodeSettings({ mode, om, cng });
+              if (!result.ok) {
+                setError(result.error);
+                return;
+              }
+              setInfo(mode === "manual" ? `Codes ${result.data.doc_code_om} et ${result.data.doc_code_cng}.` : "Codes automatiques OM et CNG.");
+            });
+          }}
+        >
+          Enregistrer
+        </Button>
+      </div>
     </div>
   );
 }

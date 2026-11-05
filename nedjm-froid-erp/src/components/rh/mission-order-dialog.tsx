@@ -15,6 +15,7 @@ import {
 import { activeOptions, transportModeOptions } from "@/lib/hr/hr-lists";
 import { catalogOptions } from "@/components/rh/rh-ui";
 import { Button } from "@/components/ui/button";
+import { ManualNumberInput } from "@/components/rh/manual-number-input";
 import { RhAlert, RhField, RhModal, rhInput } from "@/components/rh/rh-ui";
 
 export type MissionDraft = {
@@ -177,6 +178,7 @@ export function MissionOrderDialog({
   onReset: () => void;
   onOpenOrder: (row: HrCorrespondenceRow) => void;
 }) {
+  const [manualNumero, setManualNumero] = useState(false);
   const [orderQuery, setOrderQuery] = useState("");
   const [employeeQuery, setEmployeeQuery] = useState("");
   const [matches, setMatches] = useState<HrEmployeeRow[]>([]);
@@ -262,7 +264,7 @@ export function MissionOrderDialog({
       onClose={onClose}
       footer={
         <>
-          <Button variant="secondary" onClick={onReset}>
+          <Button variant="secondary" onClick={() => { setManualNumero(false); onReset(); }}>
             NOUVEAU
           </Button>
           <Button variant="secondary" onClick={onPrint}>
@@ -315,7 +317,16 @@ export function MissionOrderDialog({
           <h4 className="text-sm font-semibold">Identification</h4>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <RhField label="N° Ordre de Mission">
-              <input className={rhInput} value={value.numero || "—"} readOnly />
+              <ManualNumberInput
+                className={rhInput}
+                value={value.numero}
+                onChange={(numero) => onChange({ ...value, numero })}
+                manual={manualNumero}
+                onManual={() => setManualNumero(true)}
+                taken={orders.map((order) => order.number)}
+                own={value.id ? value.numero : ""}
+                readOnly={!!value.id}
+              />
             </RhField>
             <RhField label="Rechercher un employé">
               <div className="mt-1.5 flex gap-2">

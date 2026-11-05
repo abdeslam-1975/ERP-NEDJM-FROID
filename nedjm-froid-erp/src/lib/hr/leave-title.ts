@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { DocData } from "@/lib/doc/engine";
-import { documentReference, type HrCompanyProfile } from "@/lib/hr/company-profile";
+import { docMiddleCode, documentReference, type HrCompanyProfile } from "@/lib/hr/company-profile";
 import { listLabel, type LeaveKindOption, type PrintLists } from "@/lib/hr/hr-lists";
 import { returnDate } from "@/lib/hr/leave";
 import { formatOmDate, sheetDocData, type SheetDefaults } from "@/lib/hr/mission-order";
@@ -94,8 +94,11 @@ export function leaveDaysLabel(jours: number) {
 }
 
 /** "000005/26" → "NF/CNG/0005/26". */
-export function leaveTitleReference(numero: string | null | undefined, company: Pick<HrCompanyProfile, "doc_prefix">) {
-  return documentReference(company.doc_prefix, "CNG", numero);
+export function leaveTitleReference(
+  numero: string | null | undefined,
+  company: Pick<HrCompanyProfile, "doc_prefix"> & { doc_code_mode?: string | null; doc_code_cng?: string | null },
+) {
+  return documentReference(company.doc_prefix, docMiddleCode(company, "CNG"), numero);
 }
 
 export function leaveTitleDocData(

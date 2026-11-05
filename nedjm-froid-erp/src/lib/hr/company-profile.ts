@@ -27,7 +27,12 @@ export const COMPANY_PROFILE_KEYS = [
 ] as const;
 
 export type CompanyProfileKey = (typeof COMPANY_PROFILE_KEYS)[number];
-export type HrCompanyProfile = Record<CompanyProfileKey, string>;
+export type HrCompanyProfile = Record<CompanyProfileKey, string> & {
+  /** auto: OM and CNG. manual: the two codes below, chosen by the super admin. */
+  doc_code_mode?: "auto" | "manual";
+  doc_code_om?: string;
+  doc_code_cng?: string;
+};
 
 export const COMPANY_PROFILE_LABELS: Record<CompanyProfileKey, { fr: string; ar: string; hint?: string }> = {
   name_fr: { fr: "Raison sociale (FR)", ar: "التسمية (فرنسية)" },
@@ -70,7 +75,21 @@ export function normalizeCompanyProfile(raw: unknown): HrCompanyProfile {
     const v = src[key];
     if (typeof v === "string") out[key] = v;
   }
+  out.doc_code_mode = src.doc_code_mode === "manual" ? "manual" : "auto";
+  if (typeof src.doc_code_om === "string" && src.doc_code_om) out.doc_code_om = src.doc_code_om;
+  if (typeof src.doc_code_cng === "string" && src.doc_code_cng) out.doc_code_cng = src.doc_code_cng;
   return out;
+}
+
+/** Middle code of a printed reference. Automatic mode always uses OM or CNG. */
+export function docMiddleCode(
+  company: { doc_code_mode?: string | null; doc_code_om?: string | null; doc_code_cng?: string | null },
+  slot: "OM" | "CNG",
+) {
+  if (company.doc_code_mode !== "manual") return slot;
+  const raw = (slot === "OM" ? company.doc_code_om : company.doc_code_cng) || slot;
+  const clean = raw.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+  return clean || slot;
 }
 
 /** "000005/26" → "NF/OM/0005/26" (no prefix → "OM/0005/26"). */

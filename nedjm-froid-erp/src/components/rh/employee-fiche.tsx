@@ -14,6 +14,7 @@ import {
   RhModal,
   rhInput,
 } from "@/components/rh/rh-ui";
+import { ManualNumberInput } from "@/components/rh/manual-number-input";
 import { fetchPrintKit } from "@/components/doc/use-print-kit";
 import { FICHE_DOC_TYPES, ficheHtml } from "@/lib/hr/employee-fiche-doc";
 import { EmployeeDocumentsUpload } from "@/components/rh/employee-documents-upload";
@@ -76,6 +77,7 @@ export function EmployeeFicheDialog({
   onSubmit,
   onNew,
   onSearch,
+  takenMatricules = [],
 }: {
   values: Record<string, string>;
   setValues: (next: Record<string, string> | ((prev: Record<string, string>) => Record<string, string>)) => void;
@@ -88,6 +90,7 @@ export function EmployeeFicheDialog({
   onSubmit: () => void;
   onNew: () => void;
   onSearch: (query: string) => void;
+  takenMatricules?: string[];
 }) {
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
@@ -144,13 +147,6 @@ export function EmployeeFicheDialog({
   }
 
   function unlockMatricule() {
-    if (
-      !window.confirm(
-        "Le matricule est attribué automatiquement.\nConfirmez pour saisir un numéro manuel (ex. ancien personnel).\n\nالرقم التسلسلي يُمنح تلقائياً.\nأكد لإدخال رقم يدوي (مثلاً عامل قديم).",
-      )
-    ) {
-      return;
-    }
     setUnlockedMatriculeFor(matriculeKey);
   }
 
@@ -320,6 +316,7 @@ export function EmployeeFicheDialog({
                   onChange={(v) => set(field.code, v)}
                   matriculeUnlocked={matriculeUnlocked}
                   onUnlockMatricule={unlockMatricule}
+                  takenMatricules={takenMatricules}
                 />
               </FicheField>
             ))}
@@ -342,6 +339,7 @@ export function EmployeeFicheDialog({
                   onChange={(v) => set(field.code, v)}
                   matriculeUnlocked={matriculeUnlocked}
                   onUnlockMatricule={unlockMatricule}
+                  takenMatricules={takenMatricules}
                 />
               </FicheField>
             ))}
@@ -431,6 +429,8 @@ function FieldControl({
   onChange,
   matriculeUnlocked = false,
   onUnlockMatricule,
+  takenMatricules = [],
+  ownMatricule = "",
 }: {
   field: HrEmployeeField;
   catalogs: CatalogItem[];
@@ -438,45 +438,40 @@ function FieldControl({
   onChange: (value: string) => void;
   matriculeUnlocked?: boolean;
   onUnlockMatricule?: () => void;
+  takenMatricules?: string[];
+  ownMatricule?: string;
 }) {
   if (field.code === "matricule") {
     return (
-      <div className="flex items-center gap-1">
-        <input
-          className={`${ficheInput} min-w-0 flex-1 font-mono font-semibold text-brand ${
-            matriculeUnlocked ? "bg-white" : "bg-brand-muted/50"
-          }`}
-          value={value}
-          readOnly={!matriculeUnlocked}
-          title={
-            matriculeUnlocked
-              ? "Matricule manuel · رقم يدوي"
-              : "Attribué automatiquement · يُمنح تلقائياً"
-          }
-          onChange={(e) => onChange(e.target.value)}
-        />
-        {!matriculeUnlocked ? (
-          <button
-            type="button"
-            className="inline-flex h-8 shrink-0 items-center rounded-lg border border-border/70 bg-surface px-2 text-[10px] font-semibold text-foreground/70 transition hover:border-brand/40 hover:text-brand"
-            title="Saisir un matricule manuel · إدخال رقم يدوي"
-            onClick={onUnlockMatricule}
-          >
-            Manuel
-          </button>
-        ) : (
-          <span className="shrink-0 text-[9px] font-medium text-brand">Manuel</span>
-        )}
-      </div>
+      <ManualNumberInput
+        className={`${ficheInput} font-mono font-semibold text-brand ${matriculeUnlocked ? "bg-white" : "bg-brand-muted/50"}`}
+        value={value}
+        onChange={onChange}
+        manual={matriculeUnlocked}
+        onManual={() => onUnlockMatricule?.()}
+        taken={takenMatricules}
+        own={ownMatricule}
+      />
     );
   }
   if (field.code === "status") {
+    const fromList = catalogs.filter((item) => item.kind === "employee_status" && item.is_active);
+    const options = fromList.length
+      ? fromList.map((item) => ({ code: item.code, label: item.label_fr || item.code }))
+      : [
+          { code: "ACTIVE", label: "ACTIVE" },
+          { code: "INACTIVE", label: "INACTIVE" },
+          { code: "SUSPENDED", label: "SUSPENDED" },
+          { code: "DISABLED", label: "DISABLED" },
+        ];
     return (
       <select className={ficheInput} value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="ACTIVE">ACTIVE</option>
-        <option value="INACTIVE">INACTIVE</option>
-        <option value="SUSPENDED">SUSPENDED</option>
-        <option value="DISABLED">DISABLED</option>
+        {options.some((item) => item.code === value) ? null : <option value={value}>{value}</option>}
+        {options.map((item) => (
+          <option key={item.code} value={item.code}>
+            {item.label}
+          </option>
+        ))}
       </select>
     );
   }

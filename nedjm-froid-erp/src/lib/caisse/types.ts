@@ -7,6 +7,8 @@ export type CaisseFlags = {
   canSeeAllJournal: boolean;
   canSeeCaisse: boolean;
   canManage: boolean;
+  /** Super admin, or a user they ticked « soldes et date d'ouverture ». */
+  canManageOpenings: boolean;
   userName: string;
 };
 
@@ -68,6 +70,7 @@ export type CaisseDashboard = {
   buyerBalances: BuyerBalance[];
   moneyRows: MoneyRow[];
   openings: Record<string, number>;
+  openingDate: string;
   rows: JournalLine[];
   closeStatus: CloseStatus | null;
   month: string;
@@ -86,6 +89,7 @@ export type CaisseAdminUser = {
   seeAll: boolean;
   caisseOps: boolean;
   canEdit: boolean;
+  manageOpenings: boolean;
 };
 
 export type CaisseAuditRow = {

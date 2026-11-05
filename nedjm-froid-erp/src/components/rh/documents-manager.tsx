@@ -38,6 +38,7 @@ import { valuesFromFicheRecord } from "@/lib/hr/employee-field-utils";
 import type { HrFicheSettings } from "@/lib/hr/fiche-settings";
 import { EmployeeCardPreview } from "@/components/rh/employee-card-preview";
 import { EmployeeFicheWindow, ficheWindowValues } from "@/components/rh/employee-fiche-window";
+import { numberTaken } from "@/components/rh/manual-number-input";
 import { printHtml as printFrame } from "@/components/rh/print-frame";
 import { fetchPrintKit } from "@/components/doc/use-print-kit";
 import { printFromKit, type PrintKit } from "@/lib/doc/print-kit";
@@ -415,6 +416,10 @@ export function DocumentsManager({
       setMissionError(dateIssue.message);
       return;
     }
+    if (!missionForm.id && numberTaken(missionForm.numero, omRows.map((row) => row.number))) {
+      setMissionError("Ce numéro est déjà utilisé. · هذا الرقم مستعمل مسبقاً");
+      return;
+    }
     start(async () => {
       const r = await upsertHrCorrespondence({
         id: missionForm.id,
@@ -425,6 +430,7 @@ export function DocumentsManager({
         start_date: checked.data.dateDepart,
         end_date: checked.data.dateRetour,
         payload: missionPayload(checked.data, company),
+        ...(!missionForm.id && missionForm.numero.trim() ? { number: missionForm.numero.trim() } : {}),
       });
       if (!r.ok) {
         setMissionError(r.error);
@@ -523,6 +529,10 @@ export function DocumentsManager({
   }
 
   function createTitle(draft: LeaveTitleDraft, confirmBalance = false) {
+    if (numberTaken(draft.numero, leaveRows.map((row) => row.number))) {
+      setTitleError("Ce numéro est déjà utilisé. · هذا الرقم مستعمل مسبقاً");
+      return;
+    }
     start(async () => {
       const r = await createLeaveTitle({
         request: {
@@ -533,6 +543,7 @@ export function DocumentsManager({
           days: draft.daysText,
         },
         fields: draft,
+        number: draft.numero.trim() || undefined,
         confirmBalance,
       });
       if (!r.ok) {

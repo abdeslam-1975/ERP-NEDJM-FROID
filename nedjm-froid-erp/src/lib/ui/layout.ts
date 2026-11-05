@@ -88,6 +88,17 @@ export const getUiLayout = cache(async function getUiLayout(): Promise<UiLayoutD
         }
       : EMPTY_THEME;
     const readable = readableRes.error || !readableRes.data ? null : new Set(readableRes.data.flatMap((r) => screenCodes(r.screen)));
+    const screensRes = await supabase
+      .from("sys_ui_custom_screens")
+      .select("code, label_fr, label_ar, group_key, icon")
+      .order("created_at");
+    const screens = screensRes.error
+      ? []
+      : (screensRes.data ?? []).flatMap((row) =>
+          /^[a-z][a-z0-9_]{1,30}$/.test(row.code)
+            ? [{ code: row.code, label_fr: row.label_fr, label_ar: row.label_ar || "", group_key: row.group_key, icon: row.icon || "docs" }]
+            : [],
+        );
     const roleHidden = [
       ...(hiddenRes.error ? [] : hiddenKeysForRoles(hiddenRes.data ?? [], roleIds)),
       ...(readable ? closedByRights(readable) : []),
@@ -109,6 +120,7 @@ export const getUiLayout = cache(async function getUiLayout(): Promise<UiLayoutD
       theme,
       design: parseDesign(raw),
       prefs: prefsRes.error ? EMPTY_USER_PREFS : parseUserPrefs(prefsRes.data),
+      screens,
     };
   } catch {
     return { ...DEFAULT_LAYOUT, unrestricted: workspace.isSuperAdmin };

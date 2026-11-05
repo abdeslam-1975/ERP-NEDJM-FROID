@@ -17,6 +17,7 @@ import {
   financeTaxRateSchema,
   financeTransferSchema,
 } from "@/lib/validations/finance";
+import { workingStatusCodes } from "@/lib/hr/employee-status";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -164,6 +165,8 @@ function one<T>(value: T | T[] | null): T | null {
 
 export async function getFinanceHubData(): Promise<ActionResult<FinanceHubData>> {
   const supabase = await createClient();
+  const statusRows = await supabase.from("hr_catalogs").select("kind, code, extra, is_active").eq("kind", "employee_status");
+  const activeCodes = [...workingStatusCodes(statusRows.data ?? [])];
   const [
     accountsResult,
     ratesResult,
@@ -213,7 +216,7 @@ export async function getFinanceHubData(): Promise<ActionResult<FinanceHubData>>
     supabase
       .from("hr_employees")
       .select("id, matricule, first_name, last_name")
-      .eq("status", "ACTIVE")
+      .in("status", activeCodes)
       .order("last_name"),
   ]);
 

@@ -24,6 +24,7 @@ import {
 } from "@/lib/hr/mission-order";
 import { employeeIdentity, findEmployees, withCurrent } from "@/components/rh/mission-order-dialog";
 import { Button } from "@/components/ui/button";
+import { ManualNumberInput } from "@/components/rh/manual-number-input";
 import { RhAlert, RhField, RhModal, catalogOptions, rhInput } from "@/components/rh/rh-ui";
 
 export type LeaveTitleDraft = Record<LeaveTitleFieldKey, string> & {
@@ -92,6 +93,7 @@ export function LeaveTitleDialog({
   onReset: () => void;
   onOpenTitle: (row: HrCorrespondenceRow) => void;
 }) {
+  const [manualNumero, setManualNumero] = useState(false);
   const [titleQuery, setTitleQuery] = useState("");
   const [employeeQuery, setEmployeeQuery] = useState("");
   const [matches, setMatches] = useState<HrEmployeeRow[]>([]);
@@ -204,7 +206,7 @@ export function LeaveTitleDialog({
       onClose={onClose}
       footer={
         <>
-          <Button variant="secondary" onClick={onReset}>
+          <Button variant="secondary" onClick={() => { setManualNumero(false); onReset(); }}>
             NOUVEAU
           </Button>
           <Button variant="secondary" onClick={onPrint} disabled={cancelled}>
@@ -261,7 +263,20 @@ export function LeaveTitleDialog({
         <section className="space-y-3 rounded-2xl border border-border/70 p-4">
           <h4 className="text-sm font-semibold">Identification</h4>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <RhField label="N° Titre de congé">{readOnly(reference)}</RhField>
+            <RhField label="N° Titre de congé">
+              {isNew ? (
+                <ManualNumberInput
+                  className={rhInput}
+                  value={value.numero}
+                  onChange={(numero) => set({ numero })}
+                  manual={manualNumero}
+                  onManual={() => setManualNumero(true)}
+                  taken={titles.map((title) => title.number)}
+                />
+              ) : (
+                readOnly(reference)
+              )}
+            </RhField>
             {isNew ? (
               <RhField label="Rechercher un employé">
                 <div className="mt-1.5 flex gap-2">

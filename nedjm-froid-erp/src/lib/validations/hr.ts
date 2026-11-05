@@ -143,9 +143,10 @@ export const hrEmployeeFullSchema = z.object({
     (v) => (v === "" || v == null ? "STANDARD" : v),
     z.enum(["STANDARD", "DISABLED_OR_RETIREE"]),
   ),
-  status: z
-    .enum(["INVITED", "ACTIVE", "SUSPENDED", "DISABLED", "INACTIVE"])
-    .default("ACTIVE"),
+  status: z.preprocess(
+    (value) => (value === "" || value == null ? "ACTIVE" : typeof value === "string" ? value.trim().toUpperCase() : value),
+    z.string().regex(/^[A-Z][A-Z0-9_]{0,39}$/, "Statut inconnu"),
+  ),
   sex_code: optText(20),
   marital_code: optText(20),
   children_count: z.preprocess(
@@ -364,6 +365,7 @@ export const hrCorrespondenceSchema = z.object({
   start_date: optDate,
   end_date: optDate,
   payload: z.record(z.string(), z.unknown()).optional(),
+  number: z.string().trim().max(40).optional(),
 });
 
 export const attendanceCellSchema = z.object({

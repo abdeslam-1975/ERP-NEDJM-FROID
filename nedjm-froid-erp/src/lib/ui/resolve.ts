@@ -49,6 +49,16 @@ export type UiLayoutData = {
   /** null: no look chosen yet, the original appearance stays. */
   design: DesignSettings | null;
   prefs: UserDisplayPrefs;
+  /** Pages added from Paramètres → Interface by the super admin. */
+  screens: CustomScreen[];
+};
+
+export type CustomScreen = {
+  code: string;
+  label_fr: string;
+  label_ar: string;
+  group_key: string;
+  icon: string;
 };
 
 export const EMPTY_THEME: UiTheme = { brand_color: null, sidebar_color: null, app_name: null, app_subtitle: null };
@@ -61,6 +71,7 @@ export const DEFAULT_LAYOUT: UiLayoutData = {
   theme: EMPTY_THEME,
   design: null,
   prefs: EMPTY_USER_PREFS,
+  screens: [],
 };
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -261,6 +272,8 @@ const ALWAYS_OPEN = new Set(["/", "/parametres", "/parametres/interface"]);
  */
 export function isPathBlocked(data: UiLayoutData, pathname: string): boolean {
   if (data.unrestricted || ALWAYS_OPEN.has(pathname)) return false;
+  const custom = /^\/e\/([a-z][a-z0-9_]{1,30})$/.exec(pathname);
+  if (custom) return isKeyHidden(data, `nav.s_${custom[1]}`);
   for (const tabset of UI_TABSETS) {
     let best: UiItemDef | null = null;
     let bestLength = -1;
@@ -326,6 +339,20 @@ export function resolveNav(data: UiLayoutData, opts: { includeEmpty?: boolean } 
       label: item.label,
       labelAr: item.labelArShown ?? "",
       icon: item.icon ?? "docs",
+    });
+  }
+  for (const screen of data.screens ?? []) {
+    const key = `nav.s_${screen.code}`;
+    if (isKeyHidden(data, key)) continue;
+    const group = groups.find((entry) => entry.key === screen.group_key) ?? groups[0];
+    if (!group) continue;
+    group.items.push({
+      key,
+      href: `/e/${screen.code}`,
+      activeHref: `/e/${screen.code}`,
+      label: screen.label_fr,
+      labelAr: screen.label_ar,
+      icon: "docs",
     });
   }
   return groups.filter((g) => opts.includeEmpty || g.items.length).map(({ sort, ...g }) => {

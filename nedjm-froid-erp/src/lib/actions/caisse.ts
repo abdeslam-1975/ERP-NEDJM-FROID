@@ -6,6 +6,7 @@ import {
   algiersToday,
   computeSoldesBundle,
   isCaissePrincipaleName,
+  OPENING_BALANCE_DATE,
   monthSortKey,
   sheetNameFromIso,
   type MoneyRow,
@@ -67,6 +68,7 @@ async function clientOrError(): Promise<{ supabase: ServerClient; flags: CaisseF
   if (error) return fail(error.message);
   if (!data || typeof data !== "object") return fail("Accès caisse refusé.");
   const ctx = data as Record<string, unknown>;
+  const manage = await supabase.rpc("caisse_can_manage_openings");
   return {
     supabase,
     today: String(ctx.today || algiersToday()),
@@ -79,6 +81,7 @@ async function clientOrError(): Promise<{ supabase: ServerClient; flags: CaisseF
       canSeeAllJournal: !!ctx.canSeeAllJournal,
       canSeeCaisse: !!ctx.canSeeCaisse,
       canManage: !!ctx.canManage,
+      canManageOpenings: workspace.isSuperAdmin || (!manage.error && !!manage.data),
       userName: String(ctx.userName || workspace.fullName),
     },
   };
@@ -235,6 +238,10 @@ export async function getCaisseDashboard(filter?: {
   const money = built.map((entry) => entry.money);
   const openings: Record<string, number> = {};
   for (const row of openRes.data ?? []) openings[row.buyer_name] = Number(row.amount) || 0;
+  const settings = await supabase.from("caisse_settings").select("opening_date").eq("id", 1).maybeSingle();
+  const openingDate = settings.error || !settings.data?.opening_date
+    ? OPENING_BALANCE_DATE
+    : String(settings.data.opening_date).slice(0, 10);
   const bundle = computeSoldesBundle({
     rows: money,
     openings,
@@ -304,6 +311,7 @@ export async function getCaisseDashboard(filter?: {
       buyerBalances: bundle.buyerBalances,
       moneyRows: money,
       openings,
+      openingDate,
       rows: table,
       closeStatus,
       month,
@@ -610,21 +618,29 @@ export async function unlockCaisseDay(input: { date: string; reason: string }): 
 }
 
 export async function getCaisseAdmin(): Promise<
-  ActionResult<{ users: CaisseAdminUser[]; openings: { name: string; amount: number }[]; total: number }>
+  ActionResult<{ users: CaisseAdminUser[]; openings: { name: string; amount: number }[]; openingDate: string; total: number }>
 > {
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
   const { supabase, flags } = gate;
   if (!flags.isAdmin) return fail("Réservé à l’administrateur");
-  const [usersRes, buyersRes, openingsRes] = await Promise.all([
+  const [usersRes, buyersRes, openingsRes, rightsRes, settingsRes] = await Promise.all([
     supabase.rpc("caisse_admin_users"),
     supabase.from("caisse_journal_buyers").select("id, name, email, user_id, dates_libres, buy_for_others, see_all, caisse_ops, can_edit").eq("active", true),
     supabase.from("caisse_journal_openings").select("buyer_name, amount"),
+    supabase.from("caisse_rights").select("user_id, manage_openings"),
+    supabase.from("caisse_settings").select("opening_date").eq("id", 1).maybeSingle(),
   ]);
   if (usersRes.error) return fail(usersRes.error.message);
   if (buyersRes.error) return fail(buyersRes.error.message);
   if (openingsRes.error) return fail(openingsRes.error.message);
   const linked = new Set((buyersRes.data ?? []).map((row) => row.user_id).filter(Boolean));
+  const manageByUser = new Map(
+    (rightsRes.error ? [] : (rightsRes.data ?? [])).map((row) => [row.user_id, !!row.manage_openings]),
+  );
+  const openingDate = settingsRes.error || !settingsRes.data?.opening_date
+    ? OPENING_BALANCE_DATE
+    : String(settingsRes.data.opening_date).slice(0, 10);
   const users: CaisseAdminUser[] = ((usersRes.data ?? []) as {
     userId: string;
     name: string;
@@ -646,6 +662,7 @@ export async function getCaisseAdmin(): Promise<
     seeAll: !!user.seeAll,
     caisseOps: !!user.caisseOps,
     canEdit: !!user.canEdit,
+    manageOpenings: manageByUser.get(user.userId) ?? false,
   }));
   for (const buyer of buyersRes.data ?? []) {
     if (buyer.user_id && linked.has(buyer.user_id)) continue;
@@ -660,6 +677,7 @@ export async function getCaisseAdmin(): Promise<
       seeAll: !!buyer.see_all,
       caisseOps: !!buyer.caisse_ops,
       canEdit: !!buyer.can_edit,
+      manageOpenings: false,
     });
   }
   users.sort((a, b) => a.name.localeCompare(b.name, "fr"));
@@ -672,8 +690,36 @@ export async function getCaisseAdmin(): Promise<
     .map((name) => ({ name, amount: openingMap.get(name) || 0 }));
   return {
     ok: true,
-    data: { users, openings, total: openings.reduce((sum, row) => sum + (row.amount > 0 ? row.amount : 0), 0) },
+    data: { users, openings, openingDate, total: openings.reduce((sum, row) => sum + (row.amount > 0 ? row.amount : 0), 0) },
   };
+}
+
+export async function getCaisseOpeningForm(): Promise<
+  ActionResult<{ openings: { name: string; amount: number }[]; openingDate: string }>
+> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.canManageOpenings) return fail("Réservé au super administrateur ou à la personne qu'il a déléguée");
+  const [openingsRes, buyersRes, settingsRes] = await Promise.all([
+    supabase.from("caisse_journal_openings").select("buyer_name, amount"),
+    supabase.from("caisse_journal_buyers").select("name").eq("active", true),
+    supabase.from("caisse_settings").select("opening_date").eq("id", 1).maybeSingle(),
+  ]);
+  if (openingsRes.error) return fail(openingsRes.error.message);
+  const openingDate = settingsRes.error || !settingsRes.data?.opening_date
+    ? OPENING_BALANCE_DATE
+    : String(settingsRes.data.opening_date).slice(0, 10);
+  const names = new Set<string>();
+  for (const buyer of buyersRes.data ?? []) {
+    if (!isCaissePrincipaleName(buyer.name)) names.add(buyer.name);
+  }
+  const amounts = new Map((openingsRes.data ?? []).map((row) => [row.buyer_name, Number(row.amount) || 0]));
+  for (const name of amounts.keys()) if (!isCaissePrincipaleName(name)) names.add(name);
+  const openings = [...names]
+    .sort((a, b) => a.localeCompare(b, "fr"))
+    .map((name) => ({ name, amount: amounts.get(name) || 0 }));
+  return { ok: true, data: { openings, openingDate } };
 }
 
 export async function saveCaisseRights(rows: CaisseAdminUser[]): Promise<ActionResult<{ message: string }>> {
@@ -693,6 +739,7 @@ export async function saveCaisseRights(rows: CaisseAdminUser[]): Promise<ActionR
         see_all: !!row.seeAll,
         caisse_ops: !!row.caisseOps,
         can_edit: !!row.canEdit,
+        manage_openings: !!row.manageOpenings,
       });
       if (saved.error) return fail(saved.error.message);
     } else if (row.buyerId) {
@@ -715,11 +762,19 @@ export async function saveCaisseRights(rows: CaisseAdminUser[]): Promise<ActionR
   return { ok: true, data: { message: "✅ Droits enregistrés" } };
 }
 
-export async function saveCaisseOpenings(rows: { name: string; amount: number }[]): Promise<ActionResult<{ message: string }>> {
+export async function saveCaisseOpenings(
+  rows: { name: string; amount: number }[],
+  openingDate?: string,
+): Promise<ActionResult<{ message: string }>> {
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
   const { supabase, flags } = gate;
-  if (!flags.isAdmin) return fail("Réservé à l’administrateur");
+  if (!flags.canManageOpenings) return fail("Réservé au super administrateur ou à la personne qu'il a déléguée");
+  const date = openingDate && /^\d{4}-\d{2}-\d{2}$/.test(openingDate) ? openingDate : null;
+  if (date) {
+    const savedDate = await supabase.from("caisse_settings").update({ opening_date: date }).eq("id", 1);
+    if (savedDate.error) return fail(savedDate.error.message);
+  }
   const map = new Map<string, number>();
   for (const row of rows) {
     const name = row.name?.trim();
@@ -735,7 +790,8 @@ export async function saveCaisseOpenings(rows: { name: string; amount: number }[
     if (inserted.error) return fail(inserted.error.message);
   }
   const total = payload.reduce((sum, row) => sum + row.amount, 0);
-  await logAction(supabase, "OUVERTURE", "", "", "Soldes_Ouverture", `Soldes ouverture 31/12/2025: ${payload.length} acheteur(s), total caisse ${total}`, total);
+  const label = date ? date.split("-").reverse().join("/") : "ouverture";
+  await logAction(supabase, "OUVERTURE", "", "", "Soldes_Ouverture", `Soldes ouverture ${label}: ${payload.length} acheteur(s), total caisse ${total}`, total);
   refresh();
   return {
     ok: true,

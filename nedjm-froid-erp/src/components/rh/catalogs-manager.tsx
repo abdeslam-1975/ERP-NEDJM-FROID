@@ -57,7 +57,7 @@ export function CatalogsManager({
   const [kindList, setKindList] = useState(kinds);
   const [rows, setRows] = useState(items);
   const [legendRows, setLegendRows] = useState(legends);
-  const [kind, setKind] = useState(kinds[0]?.code ?? "");
+  const [kind, setKind] = useState(kinds.find((row) => row.code !== "employee_status")?.code ?? kinds[0]?.code ?? "");
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [info, setInfo] = useState<string | null>(null);
@@ -74,7 +74,10 @@ export function CatalogsManager({
     extra: "{}",
     sort_order: 10,
     is_active: true,
+    working: false,
+    isDefault: false,
   });
+  const visibleKinds = kindList.filter((row) => row.code !== "employee_status");
   const [legOriginId, setLegOriginId] = useState("");
   const [legForm, setLegForm] = useState(emptyLegend);
 
@@ -122,6 +125,8 @@ export function CatalogsManager({
                   extra: JSON.stringify(row.extra ?? {}),
                   sort_order: row.sort_order,
                   is_active: row.is_active,
+                  working: row.extra?.working === true,
+                  isDefault: row.extra?.default === true,
                 })
               }
             >
@@ -226,10 +231,10 @@ export function CatalogsManager({
           <RhField label={bi("Liste", "القائمة")}>
             <select
               className={rhInput}
-              value={kind}
+              value={visibleKinds.some((row) => row.code === kind) ? kind : visibleKinds[0]?.code ?? ""}
               onChange={(e) => setKind(e.target.value)}
             >
-              {kindList.map((k) => (
+              {visibleKinds.map((k) => (
                 <option key={k.code} value={k.code}>
                   {k.label_fr} — {k.label_ar}
                 </option>
@@ -257,22 +262,39 @@ export function CatalogsManager({
             value={form.label_ar}
             onChange={(e) => setForm({ ...form, label_ar: e.target.value })}
           />
-          <input
-            className={rhInput}
-            placeholder={extraHint ? "Extra JSON" : 'Extra JSON {"work_days":28}'}
-            value={form.extra}
-            onChange={(e) => setForm({ ...form, extra: e.target.value })}
-          />
+          {kind === "employee_status" ? (
+            <div className="flex flex-col justify-center gap-1 text-xs">
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={form.working} onChange={(e) => setForm({ ...form, working: e.target.checked })} />
+                Compte comme actif
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={form.isDefault} onChange={(e) => setForm({ ...form, isDefault: e.target.checked })} />
+                Proposé à l&apos;import
+              </label>
+            </div>
+          ) : (
+            <input
+              className={rhInput}
+              placeholder={extraHint ? "Extra JSON" : 'Extra JSON {"work_days":28}'}
+              value={form.extra}
+              onChange={(e) => setForm({ ...form, extra: e.target.value })}
+            />
+          )}
           <Button
             disabled={pending}
             onClick={() => {
               setError(null);
               let extra: Record<string, unknown> = {};
-              try {
-                extra = form.extra.trim() ? JSON.parse(form.extra) : {};
-              } catch {
-                setError("JSON extra invalide.");
-                return;
+              if (kind === "employee_status") {
+                extra = { working: form.working, default: form.isDefault };
+              } else {
+                try {
+                  extra = form.extra.trim() ? JSON.parse(form.extra) : {};
+                } catch {
+                  setError("JSON extra invalide.");
+                  return;
+                }
               }
               start(async () => {
                 const r = await upsertCatalogItem({
@@ -313,6 +335,8 @@ export function CatalogsManager({
                   extra: "{}",
                   sort_order: 10,
                   is_active: true,
+                  working: false,
+                  isDefault: false,
                 });
                 setInfo("Valeur enregistrée.");
               });

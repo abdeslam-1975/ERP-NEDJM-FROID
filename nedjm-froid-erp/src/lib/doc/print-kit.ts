@@ -23,10 +23,18 @@ export type PrintKit = {
 
 export const COMPANY_PROFILE_COLUMNS = COMPANY_PROFILE_KEYS.join(", ");
 
+const DOC_CODE_COLUMNS = "doc_code_mode, doc_code_om, doc_code_cng";
+
 export async function loadCompanyProfile(db: Db): Promise<Result<HrCompanyProfile>> {
-  const { data, error } = await db.from("hr_company_profile").select(COMPANY_PROFILE_COLUMNS).eq("id", "default").maybeSingle();
-  if (error) return { ok: false, error: error.message };
-  return { ok: true, data: normalizeCompanyProfile(data) };
+  const withCodes = await db
+    .from("hr_company_profile")
+    .select(`${COMPANY_PROFILE_COLUMNS}, ${DOC_CODE_COLUMNS}`)
+    .eq("id", "default")
+    .maybeSingle();
+  if (!withCodes.error) return { ok: true, data: normalizeCompanyProfile(withCodes.data) };
+  const plain = await db.from("hr_company_profile").select(COMPANY_PROFILE_COLUMNS).eq("id", "default").maybeSingle();
+  if (plain.error) return { ok: false, error: plain.error.message };
+  return { ok: true, data: normalizeCompanyProfile(plain.data) };
 }
 
 /** Short company name (falls back to the legal name), "" when the profile is unreadable. */

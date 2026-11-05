@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { COMPANY_PROFILE_COLUMNS, loadCompanyProfile } from "@/lib/doc/print-kit";
-import { COMPANY_PROFILE_KEYS, normalizeCompanyProfile, type HrCompanyProfile } from "@/lib/hr/company-profile";
+import { loadCompanyProfile } from "@/lib/doc/print-kit";
+import { COMPANY_PROFILE_KEYS, type HrCompanyProfile } from "@/lib/hr/company-profile";
+import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -30,14 +31,42 @@ export async function saveHrCompanyProfile(input: unknown): Promise<ActionResult
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
   if (!parsed.data.name_fr && !parsed.data.name_ar) return { ok: false, error: "Indiquez la raison sociale." };
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("hr_company_profile")
-    .upsert({ id: "default", ...parsed.data }, { onConflict: "id" })
-    .select(COMPANY_PROFILE_COLUMNS)
-    .maybeSingle();
+  const { error } = await supabase.from("hr_company_profile").upsert({ id: "default", ...parsed.data }, { onConflict: "id" });
   if (error) return { ok: false, error: error.message };
-  if (!data) return { ok: false, error: "Enregistrement refusé (droits)." };
+  const saved = await loadCompanyProfile(supabase);
+  if (!saved.ok) return saved;
   revalidatePath("/rh", "layout");
   revalidatePath("/simulateur");
-  return { ok: true, data: normalizeCompanyProfile(data) };
+  return { ok: true, data: saved.data };
+}
+
+const docCodeSchema = z.object({
+  mode: z.enum(["auto", "manual"]),
+  om: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{1,8}$/, "Code mission : 1 à 8 lettres ou chiffres.").optional(),
+  cng: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{1,8}$/, "Code congé : 1 à 8 lettres ou chiffres.").optional(),
+});
+
+/** Automatic OM/CNG, or codes typed by the super admin. The sequence number stays generated. */
+export async function saveDocCodeSettings(input: unknown): Promise<ActionResult<HrCompanyProfile>> {
+  const workspace = await getWorkspaceProfile();
+  if (!workspace?.isSuperAdmin) return { ok: false, error: "Réservé au super administrateur." };
+  const parsed = docCodeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
+  if (parsed.data.mode === "manual" && (!parsed.data.om || !parsed.data.cng)) {
+    return { ok: false, error: "Indiquez les deux codes." };
+  }
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("hr_company_profile")
+    .update({
+      doc_code_mode: parsed.data.mode,
+      doc_code_om: parsed.data.mode === "manual" ? parsed.data.om : "OM",
+      doc_code_cng: parsed.data.mode === "manual" ? parsed.data.cng : "CNG",
+    })
+    .eq("id", "default");
+  if (error) return { ok: false, error: error.message };
+  const saved = await loadCompanyProfile(supabase);
+  if (!saved.ok) return saved;
+  revalidatePath("/rh", "layout");
+  return { ok: true, data: saved.data };
 }

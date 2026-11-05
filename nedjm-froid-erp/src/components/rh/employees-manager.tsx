@@ -22,10 +22,11 @@ import {
   valuesFromFiche,
 } from "@/components/rh/employee-fiche-save";
 import type { CatalogItem, CatalogKind } from "@/lib/actions/hr-catalogs";
+import { activityStatusOptions, workingStatusCodes } from "@/lib/hr/employee-status";
+import { numberTaken } from "@/components/rh/manual-number-input";
 import type { SiteRow } from "@/lib/actions/sites";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns, type DataColumn } from "@/components/ui/data-table";
-import { AlertBadge } from "@/components/castle/alert-badge";
 import {
   RhAlert,
   RhField,
@@ -62,15 +63,6 @@ function rawValue(row: HrEmployeeFiche, field: HrEmployeeField): unknown {
 function asText(value: unknown) {
   if (value == null || value === "") return "";
   return String(value);
-}
-
-function statusTone(
-  status: string,
-): "success" | "warning" | "critical" | "info" {
-  if (status === "ACTIVE") return "success";
-  if (status === "SUSPENDED" || status === "INVITED") return "warning";
-  if (status === "DISABLED" || status === "INACTIVE") return "critical";
-  return "info";
 }
 
 function slugify(label: string) {
@@ -113,9 +105,11 @@ export function EmployeesManager({
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [activeOnly, setActiveOnly] = useState(false);
+  const working = useMemo(() => workingStatusCodes(catalogs), [catalogs]);
+  const statusOptions = useMemo(() => activityStatusOptions(catalogs), [catalogs]);
   const shownRows = useMemo(
-    () => (activeOnly ? rows.filter((r) => r.status === "ACTIVE") : rows),
-    [rows, activeOnly],
+    () => (activeOnly ? rows.filter((r) => working.has(r.status)) : rows),
+    [rows, activeOnly, working],
   );
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>(() =>
@@ -148,6 +142,28 @@ export function EmployeesManager({
 
   function display(row: HrEmployeeFiche, field: HrEmployeeField) {
     const raw = rawValue(row, field);
+    if (field.code === "status") {
+      const code = String(raw || "ACTIVE");
+      const options = statusOptions.some((item) => item.code === code)
+        ? statusOptions
+        : [{ code, label: code }, ...statusOptions];
+      return (
+        <select
+          className="h-8 max-w-[9rem] rounded-lg border border-border/70 bg-surface px-2 text-xs"
+          value={code}
+          disabled={pending}
+          aria-label="État d'activité"
+          onClick={(event) => event.stopPropagation()}
+          onChange={(event) => changeStatus(row, event.target.value)}
+        >
+          {options.map((item) => (
+            <option key={item.code} value={item.code}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+      );
+    }
     if (raw == null || raw === "") return "—";
     if (field.value_type === "catalog" && field.catalog_kind) {
       const opt = ficheCatalogs.find(
@@ -161,11 +177,6 @@ export function EmployeesManager({
         <img src={String(raw)} alt="" className="h-10 w-8 object-cover" />
       ) : (
         "—"
-      );
-    }
-    if (field.code === "status") {
-      return (
-        <AlertBadge label={String(raw)} tone={statusTone(String(raw))} />
       );
     }
     return String(raw);
@@ -232,6 +243,11 @@ export function EmployeesManager({
       setFormError(error);
       return;
     }
+    const own = rows.find((row) => row.id === normalized.id)?.matricule ?? "";
+    if (numberTaken(normalized.matricule ?? "", rows.map((row) => row.matricule), own)) {
+      setFormError("Ce matricule est déjà utilisé. · هذا الرقم التسلسلي مستعمل مسبقاً");
+      return;
+    }
     startTransition(async () => {
       const result = await saveEmployeeFiche(normalized, activeFields, ficheCatalogs);
       if (!result.ok) {
@@ -259,10 +275,10 @@ export function EmployeesManager({
     });
   }
 
-  function toggleActive(row: HrEmployeeFiche) {
-    const nextStatus = row.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+  function changeStatus(row: HrEmployeeFiche, status: string) {
+    if (!status || status === row.status) return;
     startTransition(async () => {
-      const result = await setHrEmployeeStatus({ id: row.id, status: nextStatus });
+      const result = await setHrEmployeeStatus({ id: row.id, status });
       if (!result.ok) {
         setFormError(result.error);
         return;
@@ -315,9 +331,6 @@ export function EmployeesManager({
           </Button>
           <Button type="button" variant="secondary" disabled={pending} onClick={() => setDossierEmployee(row.original)}>
             Dossier
-          </Button>
-          <Button type="button" variant="ghost" disabled={pending} onClick={() => toggleActive(row.original)}>
-            {row.original.status === "ACTIVE" ? "Désactiver" : "Activer"}
           </Button>
         </div>
       ),
@@ -476,7 +489,8 @@ export function EmployeesManager({
           onOpen={setPreview}
           onEdit={openEdit}
           onDossier={setDossierEmployee}
-          onToggle={toggleActive}
+          onStatus={changeStatus}
+          statusOptions={statusOptions}
         />
       )}
 
@@ -672,6 +686,7 @@ export function EmployeesManager({
           onSubmit={submit}
           onNew={openCreate}
           onSearch={searchFromFiche}
+          takenMatricules={rows.filter((row) => row.id !== values.id).map((row) => row.matricule)}
         />
       ) : null}
     </RhPage>

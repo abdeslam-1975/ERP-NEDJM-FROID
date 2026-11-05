@@ -8,11 +8,12 @@ import { listHrEmployeeFields } from "@/lib/actions/hr-employees";
 import { getHrFicheSettings } from "@/lib/actions/hr-fiche";
 import { loadHrLookups } from "@/lib/actions/hr-lookups";
 import { DEFAULT_FICHE_SETTINGS } from "@/lib/hr/fiche-settings";
+import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 
 export const dynamic = "force-dynamic";
 
 export default async function DocumentsSettingsPage() {
-  const [company, fiche, fields, lookups, customDefs, docFonts, summaries] = await Promise.all([
+  const [company, fiche, fields, lookups, customDefs, docFonts, summaries, workspace] = await Promise.all([
     getHrCompanyProfile(),
     getHrFicheSettings(),
     listHrEmployeeFields(),
@@ -20,6 +21,7 @@ export default async function DocumentsSettingsPage() {
     listCustomDocDefs(),
     listDocFonts(),
     listDocTemplateSummaries(),
+    getWorkspaceProfile(),
   ]);
   return (
     <AppShell title="Modèles de documents">
@@ -44,6 +46,7 @@ export default async function DocumentsSettingsPage() {
               error: (!customDefs.ok ? customDefs.error : undefined) || (!docFonts.ok ? docFonts.error : undefined),
             }}
             summaries={summaries.ok ? summaries.data : {}}
+            isSuperAdmin={!!workspace?.isSuperAdmin}
           />
         ) : (
           <RhAlert tone="danger">{company.error}</RhAlert>

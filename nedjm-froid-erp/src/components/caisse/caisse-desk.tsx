@@ -10,6 +10,7 @@ import {
   getCaisseAudit,
   getCaisseClose,
   getCaisseDashboard,
+  getCaisseOpeningForm,
   getCaissePhoto,
   saveCaisseFinance,
   saveCaisseOpenings,
@@ -88,6 +89,8 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   const [physical, setPhysical] = useState("");
   const [closeNote, setCloseNote] = useState("");
   const [adminOpen, setAdminOpen] = useState(false);
+  const [openingsOnly, setOpeningsOnly] = useState(false);
+  const [openingDate, setOpeningDate] = useState(initial?.openingDate ?? "");
   const [adminUsers, setAdminUsers] = useState<CaisseAdminUser[]>([]);
   const [openings, setOpenings] = useState<{ name: string; amount: string }[]>([]);
   const [newName, setNewName] = useState("");
@@ -370,6 +373,17 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     if (!result.ok) return notify("Erreur", result.error);
     setAdminUsers(result.data.users);
     setOpenings(result.data.openings.map((row) => ({ name: row.name, amount: row.amount ? String(row.amount) : "" })));
+    setOpeningDate(result.data.openingDate);
+    setOpeningsOnly(false);
+    setAdminOpen(true);
+  }
+
+  async function openOpenings() {
+    const result = await getCaisseOpeningForm();
+    if (!result.ok) return notify("Erreur", result.error);
+    setOpenings(result.data.openings.map((row) => ({ name: row.name, amount: row.amount ? String(row.amount) : "" })));
+    setOpeningDate(result.data.openingDate);
+    setOpeningsOnly(true);
     setAdminOpen(true);
   }
 
@@ -379,10 +393,14 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   }
 
   async function saveOpenings() {
-    const result = await saveCaisseOpenings(openings.map((row) => ({ name: row.name, amount: Number(row.amount) || 0 })));
+    const result = await saveCaisseOpenings(
+      openings.map((row) => ({ name: row.name, amount: Number(row.amount) || 0 })),
+      openingDate,
+    );
     notify("Ouverture", result.ok ? result.data.message : result.error);
     if (result.ok) {
-      await openAdmin();
+      if (openingsOnly) await openOpenings();
+      else await openAdmin();
       await reload();
     }
   }
@@ -515,7 +533,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
           </div>
           <div className="summary-grid">
             {[
-              ["Ouverture · 31/12/2025", summary.ouverture],
+              [`Ouverture · ${formatDateFr(data.openingDate)}`, summary.ouverture],
               ["Achats période", summary.achats],
               ["Avances période", summary.avances],
               ["Mouvement", summary.mouvement],
@@ -527,7 +545,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
               </div>
             ))}
           </div>
-          <small className="hint">Mouvement = Avances − Achats sur la période · Solde fin = Ouverture 31/12/2025 + cumul jusqu’à la fin de la période</small>
+          <small className="hint">Mouvement = Avances − Achats sur la période · Solde fin = Ouverture {formatDateFr(data.openingDate)} + cumul jusqu’à la fin de la période</small>
         </section>
       ) : null}
 
@@ -567,7 +585,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         <section className="panel">
           <div className="panel-head">
             <h6>Solde par mois</h6>
-            <small className="hint">Cumul chronologique depuis l’ouverture 31/12/2025</small>
+            <small className="hint">Cumul chronologique depuis l’ouverture {formatDateFr(data.openingDate)}</small>
           </div>
           <table className="month-table">
             <thead>
@@ -608,6 +626,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
           {flags?.canSeeCaisse || flags?.isAdmin ? <button type="button" className="btn-action btn-purple" onClick={() => void openFinance()}>CAISSE</button> : null}
           {flags?.canSeeCaisse || flags?.isAdmin ? <button type="button" className="btn-action btn-teal" onClick={() => void openClose()}>CLÔTURE</button> : null}
           {flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openAdmin()}>ADMIN</button> : null}
+          {flags?.canManageOpenings && !flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openOpenings()}>OUVERTURE</button> : null}
           {flags?.isAdmin ? <button type="button" className="btn-action btn-brown" onClick={() => void openAudit()}>AUDIT</button> : null}
         </div>
         <div className="toolbar">
@@ -876,11 +895,13 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
               <button type="button" className="close-x" onClick={() => setAdminOpen(false)}>×</button>
             </div>
             <div className="modal-body">
-              <p className="hint">L’administrateur voit toujours tout. Pour chaque employé, cochez ce qu’il a le droit de faire.</p>
+              {openingsOnly ? null : (
+                <>
+              <p className="hint">L’administrateur voit toujours tout. Pour chaque employé, cochez ce qu’il a le droit de faire. « Ouverture » autorise la date et les soldes d’ouverture.</p>
               <table>
                 <thead>
                   <tr>
-                    <th>Nom</th><th>Email</th><th>Dates libres</th><th>Acheter pour autrui</th><th>Voir achats des autres</th><th>Opérations caisse</th><th>Modifier / Supprimer</th>
+                    <th>Nom</th><th>Email</th><th>Dates libres</th><th>Acheter pour autrui</th><th>Voir achats des autres</th><th>Opérations caisse</th><th>Modifier / Supprimer</th><th>Ouverture</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -888,10 +909,10 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                     <tr key={`${user.userId || user.buyerId}-${user.name}`}>
                       <td>{user.name}</td>
                       <td>{user.email}</td>
-                      {user.isAdmin ? <td colSpan={5}>Admin — voit tout (droits non modifiables)</td> : (
+                      {user.isAdmin ? <td colSpan={6}>Admin — voit tout (droits non modifiables)</td> : (
                         <>
-                          {(["datesLibres", "buyForOthers", "seeAll", "caisseOps", "canEdit"] as const).map((key) => (
-                            <td key={key}><input type="checkbox" checked={user[key]} onChange={(event) => setAdminUsers((current) => current.map((row, i) => i === index ? { ...row, [key]: event.target.checked } : row))} /></td>
+                          {(["datesLibres", "buyForOthers", "seeAll", "caisseOps", "canEdit", "manageOpenings"] as const).map((key) => (
+                            <td key={key}><input type="checkbox" checked={user[key]} disabled={key === "manageOpenings" && !user.userId} onChange={(event) => setAdminUsers((current) => current.map((row, i) => i === index ? { ...row, [key]: event.target.checked } : row))} /></td>
                           ))}
                         </>
                       )}
@@ -903,8 +924,13 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                 <button type="button" className="btn-action btn-green" onClick={() => void saveRights()}>Enregistrer les droits</button>
                 <button type="button" className="btn-light" onClick={() => notify("Trier caisse", "Les mouvements sont déjà dans le journal du mois. Rien à copier.")}>Trier caisse → mois</button>
               </div>
-              <h6>Soldes d’ouverture — 31/12/2025</h6>
-              <p className="hint">Saisie manuelle du reste chez chaque acheteur. Le total doit égaler le solde d’ouverture de la caisse.</p>
+                </>
+              )}
+              {flags?.canManageOpenings ? (
+                <>
+              <h6>Soldes d’ouverture — {formatDateFr(openingDate)}</h6>
+              <p className="hint">Date et reste chez chaque acheteur. Le total doit égaler le solde d’ouverture de la caisse.</p>
+              <label className="hint">Date d’ouverture <input type="date" value={openingDate} onChange={(event) => setOpeningDate(event.target.value)} /></label>
               <table>
                 <thead><tr><th>Acheteur</th><th>Solde (DA)</th></tr></thead>
                 <tbody>
@@ -920,6 +946,10 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                 <span className="pill">Total (= caisse ouverture) : {formatDa(openingTotal)} DA</span>
                 <button type="button" className="btn-action btn-green" onClick={() => void saveOpenings()}>Enregistrer les soldes d’ouverture</button>
               </div>
+                </>
+              ) : null}
+              {openingsOnly ? null : (
+                <>
               <h6>Ajouter un utilisateur</h6>
               <div className="grid-3">
                 <input placeholder="Nom" value={newName} onChange={(event) => setNewName(event.target.value)} />
@@ -932,6 +962,8 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                 <select value={newEdit} onChange={(event) => setNewEdit(event.target.value)}><option value="">Sans modification</option><option value="EDIT">Modifier / Supprimer</option></select>
               </div>
               <button type="button" className="btn-action btn-navy" onClick={() => void addBuyer()}>Ajouter</button>
+                </>
+              )}
             </div>
           </div>
         </div>

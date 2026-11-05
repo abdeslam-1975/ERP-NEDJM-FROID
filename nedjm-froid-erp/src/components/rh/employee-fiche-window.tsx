@@ -18,6 +18,7 @@ import {
   valuesFromFiche,
 } from "@/components/rh/employee-fiche-save";
 import { findEmployeeForFicheSearch } from "@/lib/hr/employee-fiche-search";
+import { numberTaken } from "@/components/rh/manual-number-input";
 
 const activeOf = (fields: HrEmployeeField[]) =>
   fields.filter((f) => f.is_active).sort((a, b) => a.sort_order - b.sort_order);
@@ -84,6 +85,11 @@ export function EmployeeFicheWindow({
       setFormError(error);
       return;
     }
+    const own = employees.find((row) => row.id === normalized.id)?.matricule ?? "";
+    if (numberTaken(normalized.matricule ?? "", employees.map((row) => row.matricule), own)) {
+      setFormError("Ce matricule est déjà utilisé. · هذا الرقم التسلسلي مستعمل مسبقاً");
+      return;
+    }
     start(async () => {
       const result = await saveEmployeeFiche(normalized, activeFields, catalogs);
       if (!result.ok) {
@@ -108,6 +114,7 @@ export function EmployeeFicheWindow({
       onSubmit={submit}
       onNew={() => open(null)}
       onSearch={search}
+      takenMatricules={employees.filter((row) => row.id !== values.id).map((row) => row.matricule)}
     />
   );
 }

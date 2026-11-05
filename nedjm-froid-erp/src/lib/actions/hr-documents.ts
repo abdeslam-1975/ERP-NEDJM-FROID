@@ -621,6 +621,7 @@ export type NewLeaveTitleResult =
 export async function createLeaveTitle(input: {
   request: { employee_id: string; kind: string; start_date: string; end_date: string; days?: string };
   fields: unknown;
+  number?: string;
   confirmBalance?: boolean;
 }): Promise<ActionResult<NewLeaveTitleResult>> {
   const checked = leaveTitleFieldsSchema.safeParse(input.fields);
@@ -640,6 +641,13 @@ export async function createLeaveTitle(input: {
     const balance = balances.ok ? balances.data[0]?.balance : undefined;
     if (balance !== undefined && balance < days) return { ok: true, data: { status: "balance", balance, days } };
   }
+  const wanted = input.number?.trim() ?? "";
+  if (wanted) {
+    const existingNumber = await createClient().then((db) =>
+      db.from("hr_correspondences").select("id").eq("number", wanted).maybeSingle(),
+    );
+    if (existingNumber.data) return { ok: false, error: "Numéro déjà utilisé. · هذا الرقم مستعمل مسبقاً" };
+  }
   const created = await createLeaveRequest({ employee_id, kind, start_date, end_date, days: input.request.days || undefined });
   if (!created.ok) return created;
   const decided = await decideLeaveRequest({ id: created.data.id, status: "APPROVED" });
@@ -655,6 +663,15 @@ export async function createLeaveTitle(input: {
     };
   }
   const corrId = decided.data.correspondence_id;
+  if (wanted) {
+    const renamed = await (await createClient()).from("hr_correspondences").update({ number: wanted }).eq("id", corrId);
+    if (renamed.error) {
+      return {
+        ok: false,
+        error: renamed.error.code === "23505" ? "Numéro déjà utilisé. · هذا الرقم مستعمل مسبقاً" : renamed.error.message,
+      };
+    }
+  }
   const saved = await saveLeaveTitle({ id: corrId, fields: checked.data });
   const supabase = await createClient();
   const { data: row, error } = await supabase
@@ -843,19 +860,25 @@ export async function upsertHrCorrespondence(input: unknown): Promise<
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    const manual = p.number?.trim() ?? "";
     for (let attempt = 0; attempt < 3 && !id; attempt += 1) {
-      const { data: next, error: numErr } = await supabase.rpc("hr_next_doc_number", {
-        p_prefix: p.type_code,
-      });
-      if (numErr || typeof next !== "string") {
-        return { ok: false, error: numErr?.message ?? "Numérotation indisponible." };
+      let next = manual;
+      if (!manual) {
+        const numbered = await supabase.rpc("hr_next_doc_number", { p_prefix: p.type_code });
+        if (numbered.error || typeof numbered.data !== "string") {
+          return { ok: false, error: numbered.error?.message ?? "Numérotation indisponible." };
+        }
+        next = numbered.data;
       }
       const { data, error } = await supabase
         .from("hr_correspondences")
         .insert({ ...row, number: next, created_by: user?.id ?? null })
         .select("id, number")
         .maybeSingle();
-      if (error?.code === UNIQUE_VIOLATION) continue;
+      if (error?.code === UNIQUE_VIOLATION) {
+        if (manual) return { ok: false, error: "Numéro déjà utilisé. · هذا الرقم مستعمل مسبقاً" };
+        continue;
+      }
       if (error) return { ok: false, error: error.message };
       if (!data) return { ok: false, error: "Enregistrement refusé." };
       id = data.id;

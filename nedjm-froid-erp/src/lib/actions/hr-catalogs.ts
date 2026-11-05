@@ -125,6 +125,10 @@ export async function upsertCatalogItem(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides" };
   }
   const p = parsed.data;
+  if (p.kind === "employee_status") {
+    const workspace = await getWorkspaceProfile();
+    if (!workspace?.isSuperAdmin) return { ok: false, error: "Réservé au super administrateur." };
+  }
   const supabase = await createClient();
   const payload = {
     kind: p.kind,
@@ -184,11 +188,21 @@ export async function setDocumentRequiredForSave(input: {
   return { ok: true, data: { id: data.id } };
 }
 
+async function guardEmployeeStatus(supabase: Awaited<ReturnType<typeof createClient>>, id: string) {
+  const row = await supabase.from("hr_catalogs").select("kind").eq("id", id).maybeSingle();
+  if (row.data?.kind !== "employee_status") return null;
+  const workspace = await getWorkspaceProfile();
+  if (!workspace?.isSuperAdmin) return "Réservé au super administrateur.";
+  return null;
+}
+
 export async function setCatalogItemActive(input: {
   id: string;
   is_active: boolean;
 }): Promise<ActionResult<{ id: string }>> {
   const supabase = await createClient();
+  const denied = await guardEmployeeStatus(supabase, input.id);
+  if (denied) return { ok: false, error: denied };
   const { data, error } = await supabase
     .from("hr_catalogs")
     .update({ is_active: input.is_active })
@@ -205,6 +219,8 @@ export async function deleteCatalogItem(
   id: string,
 ): Promise<ActionResult<{ id: string }>> {
   const supabase = await createClient();
+  const denied = await guardEmployeeStatus(supabase, id);
+  if (denied) return { ok: false, error: denied };
   const { data, error } = await supabase
     .from("hr_catalogs")
     .delete()

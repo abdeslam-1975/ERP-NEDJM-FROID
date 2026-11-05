@@ -1,12 +1,10 @@
 import { z } from "zod";
 
-export const hrEmployeeStatusSchema = z.enum([
-  "INVITED",
-  "ACTIVE",
-  "SUSPENDED",
-  "DISABLED",
-  "INACTIVE",
-]);
+export const hrEmployeeStatusSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z][A-Z0-9_]{0,39}$/, "Statut inconnu");
 
 export const irgCategorySchema = z.enum(["STANDARD", "DISABLED_OR_RETIREE"]);
 

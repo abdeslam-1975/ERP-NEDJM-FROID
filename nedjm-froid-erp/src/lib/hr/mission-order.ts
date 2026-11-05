@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { DocData } from "@/lib/doc/engine";
-import { documentReference, type HrCompanyProfile } from "@/lib/hr/company-profile";
+import { docMiddleCode, documentReference, type HrCompanyProfile } from "@/lib/hr/company-profile";
 import { transportBox, type PrintLists } from "@/lib/hr/hr-lists";
 
 const optText = (max: number) =>
@@ -293,8 +293,11 @@ export function sheetDocData(
   };
 }
 
-export function missionReference(numero: string | null | undefined, company: Pick<HrCompanyProfile, "doc_prefix">) {
-  return documentReference(company.doc_prefix, "OM", numero);
+export function missionReference(
+  numero: string | null | undefined,
+  company: Pick<HrCompanyProfile, "doc_prefix"> & { doc_code_mode?: string | null; doc_code_om?: string | null },
+) {
+  return documentReference(company.doc_prefix, docMiddleCode(company, "OM"), numero);
 }
 
 export function missionDocData(

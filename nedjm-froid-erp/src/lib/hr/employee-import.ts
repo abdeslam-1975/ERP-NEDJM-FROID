@@ -2,6 +2,7 @@ import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import type { HrEmployeeField } from "@/lib/actions/hr-employees";
 import { missingRequiredFields } from "@/lib/hr/employee-field-utils";
 import { normalizeFicheValues, validateFicheConstraints } from "@/lib/hr/employee-fiche-constraints";
+import { defaultEmployeeStatus, matchEmployeeStatus } from "@/lib/hr/employee-status";
 
 /** Target of an old-base column: a fiche field code, or the row number of the old sheet. */
 export const EXCEL_NO = "__excel_no";
@@ -211,10 +212,12 @@ export function buildImportRows(input: {
   const seenMat = new Set<string>();
   const seenNin = new Set<string>();
   const rows: ImportRow[] = [];
+  const statusItems = catalogs.filter((item) => item.kind === "employee_status");
+  const fallbackStatus = defaultEmployeeStatus(catalogs);
 
   matrix.slice(headerRow + 1, headerRow + 1 + EMPLOYEE_IMPORT_MAX_ROWS).forEach((cells, index) => {
     if (!cells.some((c) => c.trim())) return;
-    const values: Record<string, string> = { status: "ACTIVE", irg_category: "STANDARD" };
+    const values: Record<string, string> = { status: fallbackStatus, irg_category: "STANDARD" };
     const warnings: string[] = [];
     let excelNo: number | null = null;
 
@@ -230,9 +233,10 @@ export function buildImportRows(input: {
       const field = byCode.get(code);
       if (!field) return;
       if (code === "status") {
-        const s = statusCode(raw);
+        const fromList = statusItems.length ? matchEmployeeStatus(raw, catalogs) : null;
+        const s = fromList ?? (statusItems.length ? null : statusCode(raw));
         if (s) values.status = s;
-        else warnings.push(`${header} : « ${raw} » non reconnu, statut Actif`);
+        else warnings.push(`${header} : « ${raw} » non reconnu, statut ${fallbackStatus}`);
         return;
       }
       if (field.value_type === "date") {
