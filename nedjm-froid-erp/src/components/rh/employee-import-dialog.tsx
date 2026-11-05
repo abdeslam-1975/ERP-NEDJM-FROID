@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { CircleCheck, FileSpreadsheet, TriangleAlert, Upload } from "lucide-react";
 import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import type { HrEmployeeField } from "@/lib/actions/hr-employees";
@@ -70,7 +70,9 @@ export function EmployeeImportDialog({
   const [results, setResults] = useState<EmployeeImportResult[]>([]);
   const [links, setLinks] = useState<Record<number, ImportLinkChoice>>({});
   const [fixes, setFixes] = useState<Record<number, string>>({});
+  const [statusFilter, setStatusFilter] = useState<ImportRowStatus | null>(null);
   const [pending, start] = useTransition();
+  const reportRef = useRef<HTMLElement>(null);
 
   const targets = useMemo(() => importTargets(fields), [fields]);
   const width = useMemo(
@@ -89,6 +91,10 @@ export function EmployeeImportDialog({
     for (const r of rows) c[r.status] += 1;
     return c;
   }, [rows]);
+  const shown = useMemo(
+    () => (statusFilter ? rows.filter((row) => row.status === statusFilter) : rows),
+    [rows, statusFilter],
+  );
   const ready = useMemo(
     () =>
       rows
@@ -119,6 +125,7 @@ export function EmployeeImportDialog({
       setMapping(guessMapping(res.data.matrix[header] ?? [], fields));
       setLinks({});
       setFixes({});
+      setStatusFilter(null);
       setStep("preview");
     });
   }
@@ -262,9 +269,23 @@ export function EmployeeImportDialog({
           <>
             <div className="flex flex-wrap items-center gap-2">
               {(Object.keys(STATUS) as ImportRowStatus[]).map((s) => (
-                <span key={s} className={cn("rounded-full px-3 py-1 text-sm font-medium", STATUS[s].tone)}>
+                <button
+                  key={s}
+                  type="button"
+                  disabled={counts[s] === 0}
+                  aria-pressed={statusFilter === s}
+                  onClick={() => {
+                    setStatusFilter((current) => (current === s ? null : s));
+                    reportRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-sm font-medium disabled:cursor-default disabled:opacity-40",
+                    STATUS[s].tone,
+                    statusFilter === s && "ring-2 ring-current",
+                  )}
+                >
                   {STATUS[s].label} : {counts[s]}
-                </span>
+                </button>
               ))}
               <label className="ms-auto flex items-center gap-2 text-sm text-foreground/60">
                 Ligne d&apos;en-tête
@@ -345,7 +366,7 @@ export function EmployeeImportDialog({
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-2xl border border-border/70 bg-surface">
+            <section ref={reportRef} className="overflow-hidden rounded-2xl border border-border/70 bg-surface">
               <div>
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-surface-muted text-left text-xs text-foreground/55">
@@ -358,7 +379,14 @@ export function EmployeeImportDialog({
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((r) => (
+                    {shown.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-3 py-6 text-center text-sm text-foreground/50">
+                          Aucune ligne dans cet état.
+                        </td>
+                      </tr>
+                    ) : null}
+                    {shown.map((r) => (
                       <tr key={r.line} className="border-t border-border/50 align-top">
                         <td className="px-3 py-2 tabular-nums text-foreground/50">{r.line}</td>
                         <td className="px-3 py-2 tabular-nums">
@@ -411,7 +439,14 @@ export function EmployeeImportDialog({
                 </table>
               </div>
               <p className="border-t border-border/50 px-3 py-2 text-xs text-foreground/50">
-                Rapport complet : {rows.length} ligne{rows.length > 1 ? "s" : ""}.
+                {statusFilter
+                  ? `${STATUS[statusFilter].label} : ${shown.length} ligne${shown.length > 1 ? "s" : ""}.`
+                  : `Rapport complet : ${rows.length} ligne${rows.length > 1 ? "s" : ""}.`}
+                {statusFilter ? (
+                  <button type="button" className="ms-2 underline" onClick={() => setStatusFilter(null)}>
+                    Tout le tableau
+                  </button>
+                ) : null}
               </p>
             </section>
           </>
