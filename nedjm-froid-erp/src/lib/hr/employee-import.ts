@@ -328,5 +328,5 @@ export function buildImportRows(input: {
     row.values = { ...row.values, matricule: fix };
     row.matricule = fix;
   }
-  return applyEmployeeMatricules(rows, input.existing, { links: input.links, today: input.today });
+  return applyEmployeeMatricules(rows, input.existing, { links: input.links, today: input.today, fromFile: true });
 }

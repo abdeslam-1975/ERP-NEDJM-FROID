@@ -145,9 +145,10 @@ function peek(counters: Map<string, Counter>, yy: string): string {
 export function applyEmployeeMatricules(
   rows: ImportRow[],
   existing: ExistingEmployee[],
-  options: { links?: Record<number, ImportLinkChoice>; today?: string } = {},
+  options: { links?: Record<number, ImportLinkChoice>; today?: string; fromFile?: boolean } = {},
 ): ImportRow[] {
   const links = options.links ?? {};
+  const fromFile = options.fromFile === true;
   const today = options.today ?? new Date().toISOString().slice(0, 10);
   const known: Known[] = existing.map((e) => ({
     id: e.id ?? null,
@@ -250,8 +251,9 @@ export function applyEmployeeMatricules(
     const owner = slot.fileMat ? byMat.get(matriculeKey(slot.fileMat)) ?? null : null;
     let blockedOwner: Known | null = null;
     if (owner) {
-      const farByName = Boolean(slot.name && owner.name) && distance(slot.name, owner.name) > 1;
-      const farByBirth = Boolean(slot.birth && owner.birth) && slot.birth !== owner.birth;
+      const nameGap = slot.name && owner.name ? distance(slot.name, owner.name) : 0;
+      const farByName = nameGap > 1;
+      const farByBirth = nameGap !== 0 && Boolean(slot.birth && owner.birth) && slot.birth !== owner.birth;
       const ninClash = Boolean(slot.nin && owner.nin && slot.nin !== owner.nin);
       const nssClash = Boolean(slot.nss && owner.nss && slot.nss !== owner.nss);
       if (!farByName && !farByBirth && !ninClash && !nssClash) {
@@ -261,11 +263,13 @@ export function applyEmployeeMatricules(
       blockedOwner = owner;
     }
 
-    if (!slot.nin && !slot.nss && slot.name && slot.birth && links[row.line] !== "other") {
+    if (!slot.nin && !slot.nss && slot.name && links[row.line] !== "other") {
       const candidates: { distance: number; name: string; matricule: string; birthDate: string; known: Known | null; group: Group | null }[] = [];
       for (const person of known) {
-        if (!person.name || person.birth !== slot.birth) continue;
+        if (!person.name) continue;
         const gap = distance(slot.name, person.name);
+        if (gap > 1) continue;
+        if (gap > 0 && (!slot.birth || person.birth !== slot.birth)) continue;
         if (gap <= 1) {
           candidates.push({
             distance: gap,
@@ -278,8 +282,10 @@ export function applyEmployeeMatricules(
         }
       }
       for (const group of groups) {
-        if (group.kind !== "new" || !group.name || group.birth !== slot.birth) continue;
+        if (group.kind !== "new" || !group.name) continue;
         const gap = distance(slot.name, group.name);
+        if (gap > 1) continue;
+        if (gap > 0 && (!slot.birth || group.birth !== slot.birth)) continue;
         if (gap <= 1) {
           candidates.push({
             distance: gap,
@@ -292,16 +298,17 @@ export function applyEmployeeMatricules(
         }
       }
       candidates.sort((a, b) => a.distance - b.distance || a.name.localeCompare(b.name));
-      if (candidates.length && links[row.line] !== "same") {
-        const exact = candidates.filter((item) => item.distance === 0);
-        if (exact.length === 1) {
-          const match = exact[0];
-          const knownGroup = match.group || (match.known ? groupForKnown(match.known) : null);
-          if (knownGroup) {
-            addToGroup(slot, knownGroup);
-            continue;
-          }
+      const exact = candidates.filter((item) => item.distance === 0);
+      const chosen =
+        exact.length === 1 ? exact[0] : fromFile && candidates.length === 1 ? candidates[0] : links[row.line] === "same" ? candidates[0] : null;
+      if (chosen) {
+        const knownGroup = chosen.group || (chosen.known ? groupForKnown(chosen.known) : null);
+        if (knownGroup) {
+          addToGroup(slot, knownGroup);
+          continue;
         }
+      }
+      if (candidates.length && links[row.line] !== "same") {
         const best = candidates[0];
         slot.status = "confirm";
         slot.candidate = { name: best.name, matricule: best.matricule, birthDate: best.birthDate };
@@ -324,7 +331,7 @@ export function applyEmployeeMatricules(
       }
     }
 
-    if (blockedOwner) {
+    if (blockedOwner && !fromFile) {
       slot.status = "conflict";
       const same = matriculeKey(slot.fileMat) === matriculeKey(blockedOwner.matricule);
       slot.message = same

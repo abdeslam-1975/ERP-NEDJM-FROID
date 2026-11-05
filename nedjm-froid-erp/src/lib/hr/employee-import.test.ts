@@ -228,13 +228,14 @@ describe("matricules", () => {
     expect(rows[0].matricule).toBe("001/24");
   });
 
-  it("asks before merging a close name and the same birth date", () => {
+  it("links a single close name when the file is imported", () => {
     const rows = planned(
       [["", "Benali", "Karime", "", "", "12/03/1985", "01/02/2026"]],
       [{ id: "emp-1", matricule: "05/24", last_name: "BENALI", first_name: "KARIM", birth_date: "1985-03-12" }],
     );
-    expect(rows[0].status).toBe("confirm");
-    expect(rows[0].candidate?.matricule).toBe("05/24");
+    expect(rows[0].status).toBe("exists");
+    expect(rows[0].employeeId).toBe("emp-1");
+    expect(rows[0].matricule).toBe("05/24");
     const accepted = planned(
       [["", "Benali", "Karime", "", "", "12/03/1985", "01/02/2026"]],
       [{ id: "emp-1", matricule: "05/24", last_name: "BENALI", first_name: "KARIM", birth_date: "1985-03-12" }],
@@ -302,15 +303,20 @@ describe("matricules", () => {
         { id: "mam", matricule: "002/01", last_name: "MAMMRI", first_name: "KARIM", birth_date: "1980-04-08", hired_at: "2001-06-02" },
       ],
     );
-    expect(rows.map((r) => [r.status, r.matricule])).toEqual([
-      ["confirm", "001/01"],
-      ["conflict", "002/01"],
+    expect(rows.map((r) => [r.status, r.matricule, r.employeeId])).toEqual([
+      ["exists", "001/01", "mam"],
+      ["exists", "002/01", "hadj"],
     ]);
-    expect(rows[0].warnings.join(" ")).toMatch(/fichier indique 001\/01/);
-    expect(rows[0].warnings.join(" ")).toMatch(/MAMMRI KARIM/);
-    expect(rows[0].warnings.join(" ")).not.toMatch(/HADJMAHFOUD/);
-    expect(rows[1].issues.join(" ")).toMatch(/MAMMRI KARIM/);
-    expect(rows[1].issues.join(" ")).not.toMatch(/appartient/);
+    expect(rows[0].warnings.join(" ")).toMatch(/remplace 002\/01/);
+    expect(rows[1].warnings.join(" ")).toMatch(/remplace 001\/01/);
+  });
+
+  it("updates the same name when the birth date in the file is different", () => {
+    const rows = planned(
+      [["003/02", "BENKILA", "NABIL", "", "", "01/01/1977", "01/02/2002"]],
+      [{ id: "b", matricule: "003/02", last_name: "BENKILA", first_name: "NABIL", birth_date: "1977-02-02", hired_at: "2002-02-01" }],
+    );
+    expect(rows.map((r) => [r.status, r.matricule, r.employeeId])).toEqual([["exists", "003/02", "b"]]);
   });
 
   it("exchanges the stored numbers once both people are confirmed", () => {
@@ -333,20 +339,21 @@ describe("matricules", () => {
     expect(rows[1].warnings.join(" ")).toMatch(/remplace 001\/01/);
   });
 
-  it("waits for the other line before taking that person's number", () => {
+  it("gives each file row its own serial when the base holds them the other way", () => {
     const rows = planned(
       [
-        ["001/01", "MAMMERI", "KARIM", "", "", "08/04/1980", "02/06/2001"],
-        ["002/01", "HADJMAHFOUD", "KARIM", "", "", "13/03/1980", "02/06/2001"],
+        ["003/01", "GHRMIT", "MAHMOUD", "", "", "08/05/1969", "01/09/2001"],
+        ["004/01", "HAMIOUD", "HOCINE", "", "", "16/01/1975", "04/10/2001"],
       ],
       [
-        { id: "hadj", matricule: "001/01", last_name: "HADJMAHFOUD", first_name: "KARIM", birth_date: "1980-03-13", hired_at: "2001-06-02" },
-        { id: "mam", matricule: "002/01", last_name: "MAMMRI", first_name: "KARIM", birth_date: "1980-04-08", hired_at: "2001-06-02" },
+        { id: "h", matricule: "003/01", last_name: "HAMIOUD", first_name: "HOCINE", birth_date: "1975-01-16", hired_at: "2001-10-04" },
+        { id: "g", matricule: "004/01", last_name: "GHRMIT", first_name: "MAHMOUD", birth_date: "1969-05-08", hired_at: "2001-09-01" },
       ],
-      { 3: "same" },
     );
-    expect(rows.map((r) => r.status)).toEqual(["confirm", "conflict"]);
-    expect(rows[1].issues.join(" ")).toMatch(/MAMMRI KARIM/);
+    expect(rows.map((r) => [r.status, r.matricule, r.employeeId])).toEqual([
+      ["exists", "003/01", "g"],
+      ["exists", "004/01", "h"],
+    ]);
   });
 
   it("does not merge when the NIN and the NSS point to two people", () => {
