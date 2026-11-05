@@ -284,8 +284,8 @@ export function EmployeeImportDialog({
 
             {counts.mismatch || counts.conflict ? (
               <RhAlert tone="danger">
-                Rapport des matricules : ces lignes ne sont pas importées tant que le numéro du fichier n&apos;est pas
-                celui attendu. Utilisez le numéro proposé, ou corrigez le fichier.
+                Le matricule du fichier est écrit pour tout le tableau. Une ligne n&apos;est pas importée seulement
+                si l&apos;ordre des dates d&apos;embauche est faux, ou si son numéro appartient à une autre personne.
               </RhAlert>
             ) : counts.confirm ? (
               <RhAlert tone="warning">
@@ -394,7 +394,7 @@ export function EmployeeImportDialog({
                               </Button>
                             </div>
                           ) : null}
-                          {(r.status === "mismatch" || r.status === "duplicate") && r.expectedMatricule ? (
+                          {(r.status === "mismatch" || r.status === "duplicate") && r.expectedMatricule && r.expectedMatricule !== r.matricule ? (
                             <Button
                               type="button"
                               variant="secondary"

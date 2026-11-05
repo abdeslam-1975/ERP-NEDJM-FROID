@@ -137,8 +137,10 @@ function peek(counters: Map<string, Counter>, yy: string): string {
 
 /**
  * One matricule per person. NIN, then NSS, decides it is the same employee.
- * A close name plus the same birth date is only a suggestion. New numbers follow
- * the hire year: max + 1, no gap filling, sheet order when the dates are equal.
+ * A close name plus the same birth date is only a suggestion. An exact name is the same person.
+ * A matricule written in the file is kept for the whole table. The only rejection is a hire
+ * date that runs backwards against the serial. Empty cells still follow the hire year:
+ * max + 1, no gap filling, sheet order when the dates are equal.
  */
 export function applyEmployeeMatricules(
   rows: ImportRow[],
@@ -246,18 +248,17 @@ export function applyEmployeeMatricules(
     }
 
     const owner = slot.fileMat ? byMat.get(matriculeKey(slot.fileMat)) ?? null : null;
+    let blockedOwner: Known | null = null;
     if (owner) {
       const farByName = Boolean(slot.name && owner.name) && distance(slot.name, owner.name) > 1;
       const farByBirth = Boolean(slot.birth && owner.birth) && slot.birth !== owner.birth;
       const ninClash = Boolean(slot.nin && owner.nin && slot.nin !== owner.nin);
       const nssClash = Boolean(slot.nss && owner.nss && slot.nss !== owner.nss);
-      if (farByName || farByBirth || ninClash || nssClash) {
-        slot.status = "conflict";
-        slot.message = `Le matricule ${owner.matricule} appartient à ${owner.display}.`;
+      if (!farByName && !farByBirth && !ninClash && !nssClash) {
+        addToGroup(slot, groupForKnown(owner));
         continue;
       }
-      addToGroup(slot, groupForKnown(owner));
-      continue;
+      blockedOwner = owner;
     }
 
     if (!slot.nin && !slot.nss && slot.name && slot.birth && links[row.line] !== "other") {
@@ -292,11 +293,25 @@ export function applyEmployeeMatricules(
       }
       candidates.sort((a, b) => a.distance - b.distance || a.name.localeCompare(b.name));
       if (candidates.length && links[row.line] !== "same") {
+        const exact = candidates.filter((item) => item.distance === 0);
+        if (exact.length === 1) {
+          const match = exact[0];
+          const knownGroup = match.group || (match.known ? groupForKnown(match.known) : null);
+          if (knownGroup) {
+            addToGroup(slot, knownGroup);
+            continue;
+          }
+        }
         const best = candidates[0];
         slot.status = "confirm";
         slot.candidate = { name: best.name, matricule: best.matricule, birthDate: best.birthDate };
         const extra = candidates.length > 1 ? ` ${candidates.length} personnes proches.` : "";
-        slot.message = `Ressemble à ${best.name}${best.matricule ? ` (${best.matricule})` : ""}, né(e) le ${best.birthDate}.${extra} Confirmez ou refusez.`;
+        const stored = best.matricule ? `, enregistré sous ${best.matricule}` : "";
+        const file =
+          slot.fileMat && (!best.matricule || matriculeKey(slot.fileMat) !== matriculeKey(best.matricule))
+            ? ` Le fichier indique ${slot.fileMat}.`
+            : "";
+        slot.message = `Ressemble à ${best.name}${stored}, né(e) le ${best.birthDate}.${file}${extra} Confirmez ou refusez.`;
         continue;
       }
       if (links[row.line] === "same" && candidates[0]) {
@@ -307,6 +322,15 @@ export function applyEmployeeMatricules(
           continue;
         }
       }
+    }
+
+    if (blockedOwner) {
+      slot.status = "conflict";
+      const same = matriculeKey(slot.fileMat) === matriculeKey(blockedOwner.matricule);
+      slot.message = same
+        ? `Le matricule ${blockedOwner.matricule} est enregistré sur ${blockedOwner.display}.`
+        : `Le matricule ${slot.fileMat} est enregistré sur ${blockedOwner.display} (${blockedOwner.matricule}).`;
+      continue;
     }
 
     const created: Group = {
@@ -348,7 +372,59 @@ export function applyEmployeeMatricules(
     return list.slice().sort((a, b) => (a.hired || "9999-99-99").localeCompare(b.hired || "9999-99-99") || a.row.line - b.row.line)[0];
   }
 
-  const fresh = groups.filter((g) => g.kind === "new");
+  function fileMatFor(group: Group): string {
+    const list = members(group)
+      .slice()
+      .sort((a, b) => (a.hired || "9999-99-99").localeCompare(b.hired || "9999-99-99") || a.row.line - b.row.line);
+    const firstHired = list.find((slot) => slot.hired)?.hired.slice(0, 4) ?? "";
+    const withMat = list.filter((slot) => readMatricule(slot.fileMat));
+    const matching = withMat.find((slot) => {
+      const year = matriculeFullYear(slot.fileMat);
+      return firstHired && year === Number(firstHired);
+    });
+    return (matching ?? withMat[0])?.fileMat ?? "";
+  }
+
+  const claimed = new Map<string, Group>();
+  for (const group of groups) {
+    const stored = group.storedMatricule;
+    const lead = earliest(group);
+    const fileMat = fileMatFor(group);
+    const firstHired = lead?.hired ?? "";
+    const fileYear = fileMat ? matriculeFullYear(fileMat) : null;
+    const hireYear = Number(firstHired.slice(0, 4)) || null;
+    const keepStored = Boolean(
+      stored &&
+        (keepsFirstEmploymentNumber({ matricule: stored, hired_at: firstHired }) ||
+          (hireYear !== null && matriculeFullYear(stored) === hireYear && fileYear !== hireYear)),
+    );
+    const chosen = keepStored ? stored : fileMat || stored;
+    if (!chosen) continue;
+    const key = matriculeKey(chosen);
+    if (!key) continue;
+    const prior = claimed.get(key);
+    if (prior && prior !== group) {
+      for (const slot of members(group)) {
+        slot.status = "duplicate";
+        slot.message = `Matricule ${chosen} déjà utilisé par une autre personne.`;
+        slot.candidate = null;
+      }
+      continue;
+    }
+    claimed.set(key, group);
+    expected.set(group, chosen);
+    const parts = readMatricule(chosen);
+    if (parts && !keepStored) note(counters, parts);
+    if (key) used.add(key);
+    if (fileMat && !firstHired) {
+      for (const slot of members(group)) {
+        if (!slot.message) slot.message = "Date d'embauche absente : matricule du fichier conservé, ordre non vérifié.";
+      }
+    }
+  }
+
+  const open = (group: Group) => members(group).every((slot) => slot.status !== "duplicate");
+  const fresh = groups.filter((g) => g.kind === "new" && !expected.has(g) && open(g));
   const dated = fresh
     .filter((g) => members(g).some((s) => s.hired))
     .sort((a, b) => {
@@ -407,6 +483,62 @@ export function applyEmployeeMatricules(
     if (matricule) slot.candidate = { ...slot.candidate, matricule };
   }
 
+  const frHire = (iso: string) => iso.split("-").reverse().join("/");
+  const byYear = new Map<string, { group: Group; n: number; hired: string; mat: string }[]>();
+  for (const group of groups) {
+    const mat = expected.get(group) || "";
+    const parts = readMatricule(mat);
+    const lead = earliest(group);
+    if (!parts || !lead?.hired) continue;
+    if (members(group).some((slot) => slot.status === "duplicate" || slot.status === "conflict" || slot.status === "invalid")) continue;
+    const matYear = matriculeFullYear(mat);
+    const hireYear = Number(lead.hired.slice(0, 4));
+    if (matYear && hireYear && matYear < hireYear) continue;
+    const list = byYear.get(parts.yy) ?? [];
+    list.push({ group, n: parts.n, hired: lead.hired, mat });
+    byYear.set(parts.yy, list);
+  }
+  for (const list of byYear.values()) {
+    list.sort((a, b) => a.n - b.n || a.hired.localeCompare(b.hired));
+    for (let i = 1; i < list.length; i += 1) {
+      for (let j = 0; j < i; j += 1) {
+        if (list[i].hired >= list[j].hired) continue;
+        const previous = list[j];
+        const current = list[i];
+        const message = `Ordre des dates d'embauche incorrect : ${current.mat} (${frHire(current.hired)}) est antérieur à ${previous.mat} (${frHire(previous.hired)}).`;
+        for (const item of [previous, current]) {
+          for (const slot of members(item.group)) {
+            if (slot.status === "invalid" || slot.status === "conflict" || slot.status === "duplicate") continue;
+            if (slot.status === "mismatch" && slot.message.startsWith("Ordre des dates")) continue;
+            slot.status = "mismatch";
+            slot.message = message;
+          }
+        }
+      }
+    }
+  }
+
+  for (const group of groups) {
+    const mat = expected.get(group) || "";
+    const key = matriculeKey(mat);
+    if (!key) continue;
+    const holder = byMat.get(key) ?? null;
+    if (!holder || holder.id === group.employeeId) continue;
+    const holderGroup = groups.find((item) => item.employeeId && item.employeeId === holder.id);
+    const holderTarget = holderGroup ? matriculeKey(expected.get(holderGroup) || holderGroup.storedMatricule) : "";
+    if (holderGroup && holderTarget && holderTarget !== key) continue;
+    const pending = slots.some(
+      (slot) => slot.status === "confirm" && matriculeKey(slot.candidate?.matricule || "") === key,
+    );
+    for (const slot of members(group)) {
+      if (slot.status !== "new" && slot.status !== "exists") continue;
+      slot.status = "conflict";
+      slot.message = pending
+        ? `Le matricule ${mat} est enregistré sur ${holder.display} (${holder.matricule}). Confirmez cette personne dans le fichier avant de changer son numéro.`
+        : `Le matricule ${mat} est enregistré sur ${holder.display} (${holder.matricule}).`;
+    }
+  }
+
   return slots.map((slot) => {
     const group = slot.group;
     const wanted = group ? expected.get(group) || "" : "";
@@ -434,10 +566,14 @@ export function applyEmployeeMatricules(
       warnings.push(message);
     }
     if (status === "exists" && wanted) {
+      const stored = group?.storedMatricule ?? "";
+      const replaced = Boolean(stored && matriculeKey(stored) !== matriculeKey(wanted));
       warnings.push(
-        group?.employeeId || leadLine
-          ? `Employé déjà connu, matricule ${wanted} conservé. La fiche sera mise à jour.`
-          : `Employé déjà connu, matricule ${wanted}. Actualisez la liste pour le mettre à jour.`,
+        replaced
+          ? `Employé déjà connu. Le matricule ${wanted} du fichier remplace ${stored}.`
+          : group?.employeeId || leadLine
+            ? `Employé déjà connu, matricule ${wanted} conservé. La fiche sera mise à jour.`
+            : `Employé déjà connu, matricule ${wanted}. Actualisez la liste pour le mettre à jour.`,
       );
     }
     const issues = [...slot.row.issues];
