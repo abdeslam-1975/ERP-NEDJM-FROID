@@ -8,12 +8,12 @@ import { archiveEmployeeFicheRenseignements } from "@/lib/actions/hr-documents";
 import {
   getHrEmployeeFiche,
   listHrEmployeeFields,
-  nextHrMatricule,
   upsertHrEmployee,
   type ActionResult,
 } from "@/lib/actions/hr-employees";
 import { EMPLOYEE_IMPORT_MAX_ROWS } from "@/lib/hr/employee-import";
 import { EMPLOYEE_IMPORT_MAX_BYTES, readEmployeeSheet } from "@/lib/hr/employee-import-file";
+import { nextMatriculeForHire } from "@/lib/hr/employee-matricule";
 import { valuesFromFiche } from "@/components/rh/employee-fiche-save";
 import { employeePayloadFromValues } from "@/lib/hr/employee-payload";
 import { normalizeFicheValues } from "@/lib/hr/employee-fiche-constraints";
@@ -80,6 +80,9 @@ export async function importEmployeeRows(input: unknown): Promise<ActionResult<E
 
   const results: EmployeeImportResult[] = [];
   const supabase = await createClient();
+  const { data: knownMats, error: matError } = await supabase.from("hr_employees").select("matricule");
+  if (matError) return { ok: false, error: matError.message };
+  const pool = (knownMats ?? []).map((item) => String(item.matricule ?? ""));
   for (const row of parsed.data.rows) {
     const values = { ...row.values };
     let previous: Record<string, string> | null = null;
@@ -135,12 +138,14 @@ export async function importEmployeeRows(input: unknown): Promise<ActionResult<E
     } else {
       delete values.id;
       if (!values.matricule?.trim()) {
-        const next = await nextHrMatricule();
-        if (!next.ok || !next.data.matricule) {
-          results.push({ line: row.line, ok: false, error: next.ok ? "Matricule automatique indisponible." : next.error });
+        const hired = (values.hired_at ?? "").slice(0, 10);
+        const next = nextMatriculeForHire(hired, pool);
+        if (!next) {
+          results.push({ line: row.line, ok: false, error: "Date d'embauche absente : le matricule ne peut pas être créé." });
           continue;
         }
-        values.matricule = next.data.matricule;
+        values.matricule = next;
+        pool.push(next);
       }
     }
     const payload = employeePayloadFromValues(

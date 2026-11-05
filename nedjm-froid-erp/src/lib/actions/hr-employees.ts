@@ -20,6 +20,7 @@ import {
   normalizeFicheValues,
   validateFicheConstraints,
 } from "@/lib/hr/employee-fiche-constraints";
+import { nextMatriculeForHire } from "@/lib/hr/employee-matricule";
 import { missingRequiredDocuments } from "@/lib/hr/required-documents";
 import { listCatalogItems } from "@/lib/actions/hr-catalogs";
 import { listHrFilesForEmployee } from "@/lib/actions/hr-documents";
@@ -199,11 +200,14 @@ function attrText(attrs: unknown, key: string): string | null {
 const EMP_CORE_SELECT =
   "id, matricule, last_name, first_name, last_name_ar, first_name_ar, nss, nin, birth_date, hired_at, photo_url, irg_category, status, created_at, updated_at, attrs";
 
-export async function nextHrMatricule(): Promise<ActionResult<{ matricule: string }>> {
+export async function nextHrMatricule(hiredAt?: string): Promise<ActionResult<{ matricule: string }>> {
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("hr_next_matricule");
+  const hired = /^\d{4}-\d{2}-\d{2}$/.test(hiredAt ?? "") ? (hiredAt as string) : new Date().toISOString().slice(0, 10);
+  const { data, error } = await supabase.from("hr_employees").select("matricule");
   if (error) return { ok: false, error: error.message };
-  return { ok: true, data: { matricule: String(data ?? "") } };
+  const matricule = nextMatriculeForHire(hired, (data ?? []).map((row) => String(row.matricule ?? "")));
+  if (!matricule) return { ok: false, error: "Matricule automatique indisponible." };
+  return { ok: true, data: { matricule } };
 }
 
 export async function listHrEmployeeFiches(): Promise<ActionResult<HrEmployeeFiche[]>> {

@@ -203,20 +203,18 @@ describe("matricules", () => {
     ]);
   });
 
-  it("rejects the row only when a later serial has an earlier hire date", () => {
+  it("keeps 10/07 for a 2007 hire even when an earlier serial was hired later", () => {
     const rows = planned(
       [
-        ["02/24", "Ami", "Nora", "", "", "01/01/1990", "01/06/2024"],
-        ["03/24", "Boudia", "Ali", "", "", "02/02/1991", "15/01/2024"],
+        ["01/07", "Ami", "Nora", "", "", "01/01/1980", "01/12/2007"],
+        ["10/07", "Boudia", "Ali", "", "", "02/02/1981", "15/03/2007"],
       ],
-      [{ matricule: "01/24" }],
+      [],
     );
-    expect(rows.map((r) => [r.status, r.matricule])).toEqual([
-      ["mismatch", "02/24"],
-      ["mismatch", "03/24"],
+    expect(rows.map((r) => [r.status, r.matricule, r.issues])).toEqual([
+      ["new", "01/07", []],
+      ["new", "10/07", []],
     ]);
-    expect(rows[0].issues.join(" ")).toMatch(/Ordre des dates/);
-    expect(rows[1].issues.join(" ")).toMatch(/03\/24/);
   });
 
   it("accepts 1/24, 01/24 and 001/24 as the same number when the sequence matches", () => {

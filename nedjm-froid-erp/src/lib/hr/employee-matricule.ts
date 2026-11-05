@@ -138,9 +138,9 @@ function peek(counters: Map<string, Counter>, yy: string): string {
 /**
  * One matricule per person. NIN, then NSS, decides it is the same employee.
  * A close name plus the same birth date is only a suggestion. An exact name is the same person.
- * A matricule written in the file is kept for the whole table. The only rejection is a hire
- * date that runs backwards against the serial. Empty cells still follow the hire year:
- * max + 1, no gap filling, sheet order when the dates are equal.
+ * A matricule written in the file is kept, including when hire dates are not sorted by serial.
+ * 10/07 is the tenth hiring of 2007, and it stays 10/07. Empty cells still follow the hire
+ * year: max + 1, no gap filling, sheet order when the dates are equal.
  */
 export function applyEmployeeMatricules(
   rows: ImportRow[],
@@ -488,41 +488,6 @@ export function applyEmployeeMatricules(
     );
     const matricule = group ? expected.get(group) || "" : "";
     if (matricule) slot.candidate = { ...slot.candidate, matricule };
-  }
-
-  const frHire = (iso: string) => iso.split("-").reverse().join("/");
-  const byYear = new Map<string, { group: Group; n: number; hired: string; mat: string }[]>();
-  for (const group of groups) {
-    const mat = expected.get(group) || "";
-    const parts = readMatricule(mat);
-    const lead = earliest(group);
-    if (!parts || !lead?.hired) continue;
-    if (members(group).some((slot) => slot.status === "duplicate" || slot.status === "conflict" || slot.status === "invalid")) continue;
-    const matYear = matriculeFullYear(mat);
-    const hireYear = Number(lead.hired.slice(0, 4));
-    if (matYear && hireYear && matYear < hireYear) continue;
-    const list = byYear.get(parts.yy) ?? [];
-    list.push({ group, n: parts.n, hired: lead.hired, mat });
-    byYear.set(parts.yy, list);
-  }
-  for (const list of byYear.values()) {
-    list.sort((a, b) => a.n - b.n || a.hired.localeCompare(b.hired));
-    for (let i = 1; i < list.length; i += 1) {
-      for (let j = 0; j < i; j += 1) {
-        if (list[i].hired >= list[j].hired) continue;
-        const previous = list[j];
-        const current = list[i];
-        const message = `Ordre des dates d'embauche incorrect : ${current.mat} (${frHire(current.hired)}) est antérieur à ${previous.mat} (${frHire(previous.hired)}).`;
-        for (const item of [previous, current]) {
-          for (const slot of members(item.group)) {
-            if (slot.status === "invalid" || slot.status === "conflict" || slot.status === "duplicate") continue;
-            if (slot.status === "mismatch" && slot.message.startsWith("Ordre des dates")) continue;
-            slot.status = "mismatch";
-            slot.message = message;
-          }
-        }
-      }
-    }
   }
 
   for (const group of groups) {

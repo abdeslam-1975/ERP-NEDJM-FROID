@@ -305,8 +305,8 @@ export function EmployeeImportDialog({
 
             {counts.mismatch || counts.conflict ? (
               <RhAlert tone="danger">
-                Le matricule du fichier est écrit pour tout le tableau. Une ligne n&apos;est pas importée seulement
-                si l&apos;ordre des dates d&apos;embauche est faux, ou si son numéro appartient à une autre personne.
+                Le matricule écrit dans le fichier est conservé. 10/07 reste le dixième embauché de 2007.
+                Une ligne n&apos;est pas importée seulement si son numéro appartient à une autre personne.
               </RhAlert>
             ) : counts.confirm ? (
               <RhAlert tone="warning">
