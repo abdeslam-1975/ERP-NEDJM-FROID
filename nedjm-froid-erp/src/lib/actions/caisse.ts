@@ -483,7 +483,7 @@ export async function deleteCaisseOperation(operationId: string): Promise<Action
   const existing = await supabase.from("caisse_operations").select("id, op_number, kind, op_date").eq("id", operationId).maybeSingle();
   if (existing.error) return fail(existing.error.message);
   if (!existing.data) return fail("❌ Opération introuvable.");
-  const updated = await supabase.from("caisse_operations").update({ voided_at: new Date().toISOString() }).eq("id", operationId);
+  const updated = await supabase.rpc("caisse_void_operation", { p_id: operationId });
   if (updated.error) return fail(`❌ ${updated.error.message}`);
   await logAction(
     supabase,
