@@ -137,7 +137,7 @@ describe("buildImportRows", () => {
 describe("matricules", () => {
   function planned(
     body: string[][],
-    existing: { id?: string; matricule: string; nin?: string | null; nss?: string | null; last_name?: string; first_name?: string; birth_date?: string }[],
+    existing: { id?: string; matricule: string; nin?: string | null; nss?: string | null; last_name?: string; first_name?: string; birth_date?: string; hired_at?: string | null }[],
     links?: Record<number, "same" | "other">,
   ) {
     const matrix = [["Matricule", "Nom", "Prénom", "NSS", "NIN", "Date de naissance", "Date de recrutement"], ...body];
