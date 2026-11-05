@@ -130,7 +130,7 @@ export function EmployeeFicheWindow({
       (row) => row.id !== normalized.id && matriculeKey(row.matricule) === matriculeKey(normalized.matricule ?? ""),
     );
     if (taken) {
-      setFormError("Ce matricule est déjà utilisé. · هذا الرقم التسلسلي مستعمل مسبقاً");
+      setFormError("Ce matricule est déjà utilisé.");
       return;
     }
     start(async () => {

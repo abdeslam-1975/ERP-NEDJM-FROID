@@ -18,10 +18,13 @@ const LABEL: Record<TableReportLine["status"], string> = {
 /** Permanent check of the staff table: matricules, NSS, NIN and close names. */
 export function EmployeeTableReport({
   people,
+  filtered = false,
   onClose,
   onOpen,
 }: {
   people: ExistingEmployee[];
+  /** The staff table was narrowed before opening the report. */
+  filtered?: boolean;
   onClose: () => void;
   onOpen: (id: string) => void;
 }) {
@@ -30,7 +33,11 @@ export function EmployeeTableReport({
     <RhModal
       size="xl"
       title="RAPPORT"
-      subtitle="Contrôle du tableau des employés : numéro, NSS, NIN et noms proches."
+      subtitle={
+        filtered
+          ? "Contrôle des lignes affichées, selon le filtre actuel."
+          : "Contrôle du tableau des employés : numéro, NSS, NIN et noms proches."
+      }
       onClose={onClose}
       footer={
         <Button variant="secondary" onClick={onClose}>

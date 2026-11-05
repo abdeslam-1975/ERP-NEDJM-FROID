@@ -24,7 +24,9 @@ import type { CatalogItem, CatalogKind } from "@/lib/actions/hr-catalogs";
 import { activityStatusOptions, workingStatusCodes } from "@/lib/hr/employee-status";
 import { confirmFicheIdentity } from "@/components/rh/employee-identity";
 import { matriculeKey } from "@/lib/hr/contract-import";
-import { nextMatriculeForHire, reportEmployeeTable } from "@/lib/hr/employee-matricule";
+import { keepsFirstEmploymentNumber, nextMatriculeForHire } from "@/lib/hr/employee-matricule";
+import type { FilterRow } from "@/lib/hr/screen-filter";
+import { useScreenFilter } from "@/components/rh/screen-filter-bar";
 import type { SiteRow } from "@/lib/actions/sites";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns, type DataColumn } from "@/components/ui/data-table";
@@ -220,6 +222,35 @@ export function EmployeesManager({
     [fields, ficheCatalogs],
   );
 
+  const describeEmployee = useCallback((row: HrEmployeeFiche): FilterRow => {
+    const statusLabel = statusOptions.find((item) => item.code === row.status)?.label ?? row.status;
+    const assignment = assignments.find((item) => item.employee_id === row.id);
+    const site = assignment?.site || fallbackText(row, "fiche_affectation");
+    const year = (row.hired_at ?? "").slice(0, 4);
+    const facets: FilterRow["facets"] = [{ field: "statut", value: row.status, label: `Statut : ${statusLabel}` }];
+    if (/^\d{4}$/.test(year)) facets.push({ field: "annee", value: year, label: `Année d'embauche : ${year}` });
+    if (site) facets.push({ field: "chantier", value: site, label: `Chantier : ${site}` });
+    if (!row.nss) facets.push({ field: "manque", value: "nss", label: "Sans NSS" });
+    if (!row.nin) facets.push({ field: "manque", value: "nin", label: "Sans NIN" });
+    if (!assignment) facets.push({ field: "manque", value: "contrat", label: "Sans contrat" });
+    if (keepsFirstEmploymentNumber(row)) {
+      facets.push({ field: "retour", value: "1", label: "Retour après une sortie" });
+    }
+    return {
+      text: [row.matricule, row.last_name, row.first_name, row.nss, row.nin, site, ...activeFields.map((field) => asText(rawValue(row, field)))]
+        .filter(Boolean)
+        .join(" "),
+      matricule: row.matricule,
+      facets,
+    };
+  }, [activeFields, assignments, fallbackText, statusOptions]);
+  const staffFilter = useScreenFilter({
+    screen: "rh.employes",
+    rows: shownRows,
+    describe: describeEmployee,
+    initialText: urlQuery,
+  });
+
   function openCreate() {
     autoMatricule.current = "";
     setValues(emptyValues(activeFields));
@@ -259,7 +290,7 @@ export function EmployeesManager({
       (row) => row.id !== normalized.id && matriculeKey(row.matricule) === matriculeKey(normalized.matricule ?? ""),
     );
     if (taken) {
-      setFormError("Ce matricule est déjà utilisé. · هذا الرقم التسلسلي مستعمل مسبقاً");
+      setFormError("Ce matricule est déjà utilisé.");
       return;
     }
     startTransition(async () => {
@@ -485,35 +516,36 @@ export function EmployeesManager({
             onClick={() => setActiveOnly((on) => !on)}
           >
             <UserCheck aria-hidden />
-            Actifs seulement · النشطون فقط
+            Actifs seulement
             {activeOnly ? ` (${shownRows.length})` : ""}
           </Button>
         </div>
         {view === "table" ? <EmployeeViewSwitch value={view} onChange={setView} /> : null}
       </div>
 
+      {staffFilter.bar}
+
       {view === "table" ? (
         <>
           <DataTable
-            key={urlQuery}
-            data={shownRows}
+            data={staffFilter.rows}
             columns={columns}
             getRowId={(r) => r.id}
-            searchPlaceholder="Rechercher dans toutes les colonnes"
-            searchText={(row) => activeFields.map((field) => asText(rawValue(row, field))).join(" ")}
-            initialSearch={urlQuery}
+            searchable={false}
             columnToggle={false}
             maxHeight="70vh"
             emptyTitle="Aucun employé"
+            emptyBody={staffFilter.emptyHint ?? undefined}
           />
         </>
       ) : (
         <EmployeesList
-          key={urlQuery}
-          rows={shownRows}
+          rows={staffFilter.rows}
           assignments={assignments}
           fallback={fallbackText}
-          initialQuery={urlQuery}
+          initialQuery=""
+          hideFilters
+          emptyHint={staffFilter.emptyHint}
           view={view}
           onViewChange={setView}
           pending={pending}
@@ -687,7 +719,17 @@ export function EmployeesManager({
 
       {reportOpen ? (
         <EmployeeTableReport
-          people={existingIds}
+          people={staffFilter.rows.map((r) => ({
+            id: r.id,
+            matricule: r.matricule,
+            nin: r.nin,
+            nss: r.nss,
+            last_name: r.last_name,
+            first_name: r.first_name,
+            birth_date: r.birth_date,
+            hired_at: r.hired_at,
+          }))}
+          filtered={staffFilter.active}
           onClose={() => setReportOpen(false)}
           onOpen={(id) => {
             const row = rows.find((item) => item.id === id);
@@ -709,7 +751,7 @@ export function EmployeesManager({
 
       {exportOpen ? (
         <EmployeeExportDialog
-          rows={rows}
+          rows={staffFilter.rows}
           fields={fields}
           catalogs={ficheCatalogs}
           onClose={() => setExportOpen(false)}

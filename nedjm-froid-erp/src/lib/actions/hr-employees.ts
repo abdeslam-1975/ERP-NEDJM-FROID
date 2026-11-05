@@ -373,7 +373,7 @@ async function sameEmployeeElsewhere(
   const other = ninRow || nssRow;
   if (!other) return null;
   const name = [other.last_name, other.first_name].filter(Boolean).join(" ");
-  return `Employé déjà connu : ${name}, matricule ${other.matricule}. Ouvrez sa fiche. · عامل معروف: ${other.matricule}`;
+  return `Employé déjà connu : ${name}, matricule ${other.matricule}. Ouvrez sa fiche.`;
 }
 
 export async function upsertHrEmployee(

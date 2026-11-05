@@ -3,7 +3,7 @@
 import type { ClipboardEvent, KeyboardEvent } from "react";
 
 export const MANUAL_NUMBER_CONFIRM =
-  "Ce numéro est attribué automatiquement.\nConfirmez pour le saisir à la main.\n\nهذا الرقم يُمنح تلقائياً.\nأكد لإدخاله يدوياً.";
+  "Ce numéro est attribué automatiquement.\nConfirmez pour le saisir à la main.";
 
 export function numbersMatch(a: string, b: string) {
   return a.trim().toUpperCase() === b.trim().toUpperCase();
@@ -59,13 +59,13 @@ export function ManualNumberInput({
         value={readOnly ? value || "—" : value}
         readOnly={readOnly || !manual}
         placeholder={readOnly ? undefined : "Automatique"}
-        title={manual ? "Numéro manuel · رقم يدوي" : "Attribué automatiquement · يُمنح تلقائياً"}
+        title={manual ? "Numéro manuel" : "Attribué automatiquement"}
         onKeyDown={ask}
         onPaste={ask}
         onChange={(event) => onChange(event.target.value)}
       />
       {duplicate ? (
-        <p className="mt-1 text-xs text-red-600">Ce numéro est déjà utilisé. · هذا الرقم مستعمل مسبقاً</p>
+        <p className="mt-1 text-xs text-red-600">Ce numéro est déjà utilisé.</p>
       ) : null}
     </div>
   );

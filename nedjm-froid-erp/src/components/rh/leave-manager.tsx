@@ -20,6 +20,8 @@ import { activeOptions, isAnnualLeave, type LeaveKindOption } from "@/lib/hr/hr-
 import { slashDateIso } from "@/lib/hr/doc-format";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
+import { useScreenFilter } from "@/components/rh/screen-filter-bar";
+import type { FilterRow } from "@/lib/hr/screen-filter";
 import { RhAlert, RhChip, RhField, bi, rhInput } from "@/components/rh/rh-ui";
 
 const requestCol = dataColumns<LeaveRequestRow>();
@@ -46,6 +48,22 @@ const balanceColumns = [
     cell: (info) => <span className={info.getValue() < 0 ? "text-red-600" : undefined}>{info.getValue()}</span>,
   }),
 ];
+
+const LEAVE_STATUS_FR: Record<LeaveRequestRow["status"], string> = {
+  SUBMITTED: "En attente",
+  APPROVED: "Approuvé",
+  REJECTED: "Refusé",
+  CANCELLED: "Annulé",
+};
+
+function labelMatricule(label: string) {
+  return label.split("·")[0]?.trim() ?? "";
+}
+
+function leaveYearFacets(iso: string, label: string): FilterRow["facets"] {
+  const year = iso.slice(0, 4);
+  return /^\d{4}$/.test(year) ? [{ field: "annee", value: year, label: `${label} : ${year}` }] : [];
+}
 
 const STATUS: Record<LeaveRequestRow["status"], { label: string; tone: "neutral" | "success" | "warning" | "danger" }> = {
   SUBMITTED: { label: "En attente · قيد الانتظار", tone: "warning" },
@@ -323,6 +341,38 @@ export function LeaveManager({
     }),
   ];
 
+  const requestFilter = useScreenFilter({
+    screen: "rh.conges.demandes",
+    rows: visible,
+    describe: (row) => ({
+      text: [row.employee_label, row.reason, row.cnas_ref].filter(Boolean).join(" "),
+      matricule: labelMatricule(row.employee_label),
+      facets: [
+        { field: "statut", value: row.status, label: `Statut : ${LEAVE_STATUS_FR[row.status]}` },
+        { field: "nature", value: row.kind, label: `Nature : ${kindOf(row.kind).fr}` },
+        ...leaveYearFacets(row.start_date, "Année"),
+      ],
+    }),
+  });
+  const balanceFilter = useScreenFilter({
+    screen: "rh.conges.soldes",
+    rows: balances,
+    describe: (row) => ({
+      text: row.employee_label,
+      matricule: labelMatricule(row.employee_label),
+      facets: row.balance < 0 ? [{ field: "solde", value: "negatif", label: "Solde négatif" }] : [],
+    }),
+  });
+  const adjustmentFilter = useScreenFilter({
+    screen: "rh.conges.ajustements",
+    rows: adjustments,
+    describe: (row) => ({
+      text: [row.employee_label, row.reason, row.author_name].filter(Boolean).join(" "),
+      matricule: labelMatricule(row.employee_label),
+      facets: leaveYearFacets(row.as_of, "Année"),
+    }),
+  });
+
   const tabBtn = (key: typeof tab, label: string) => (
     <Button variant={tab === key ? "primary" : "secondary"} onClick={() => setTab(key)}>
       {label}
@@ -439,12 +489,12 @@ export function LeaveManager({
             </div>
           ) : null}
 
+          {requestFilter.bar}
           <DataTable
-            data={visible}
+            data={requestFilter.rows}
             columns={requestColumns}
             getRowId={(r) => r.id}
-            searchPlaceholder={bi("Rechercher un employé…", "بحث")}
-            searchText={(r) => r.employee_label}
+            searchable={false}
             toolbar={
               <div className="flex gap-2">
                 <Button variant={filter === "pending" ? "primary" : "secondary"} onClick={() => setFilter("pending")}>
@@ -456,19 +506,21 @@ export function LeaveManager({
               </div>
             }
             emptyTitle={bi("Aucune demande", "لا توجد طلبات")}
+            emptyBody={requestFilter.emptyHint ?? undefined}
           />
         </>
       ) : null}
 
       {tab === "balances" ? (
         <div className="space-y-1">
+          {balanceFilter.bar}
           <DataTable
-            data={balances}
+            data={balanceFilter.rows}
             columns={balanceColumns}
             getRowId={(b) => b.employee_id}
-            searchPlaceholder={bi("Rechercher un employé…", "بحث")}
-            searchText={(b) => b.employee_label}
+            searchable={false}
             emptyTitle={bi("Aucun solde", "لا توجد أرصدة")}
+            emptyBody={balanceFilter.emptyHint ?? undefined}
           />
           <p className="px-3 py-2 text-xs text-foreground/55">
             {bi(
@@ -535,13 +587,14 @@ export function LeaveManager({
               </div>
             </div>
           ) : null}
+          {adjustmentFilter.bar}
           <DataTable
-            data={adjustments}
+            data={adjustmentFilter.rows}
             columns={adjustmentColumns}
             getRowId={(a) => a.id}
-            searchPlaceholder={bi("Rechercher un employé…", "بحث")}
-            searchText={(a) => [a.employee_label, a.reason, a.author_name].filter(Boolean).join(" ")}
+            searchable={false}
             emptyTitle={bi("Aucun ajustement", "لا توجد تعديلات")}
+            emptyBody={adjustmentFilter.emptyHint ?? undefined}
           />
         </>
       ) : null}

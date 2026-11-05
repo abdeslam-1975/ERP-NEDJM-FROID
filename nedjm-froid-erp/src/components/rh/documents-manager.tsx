@@ -79,6 +79,8 @@ import { LeaveTitleDialog, emptyLeaveTitleDraft, type LeaveTitleDraft } from "@/
 import { DocumentTypeCards } from "@/components/rh/document-type-cards";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
+import { useScreenFilter } from "@/components/rh/screen-filter-bar";
+import type { FilterRow } from "@/lib/hr/screen-filter";
 import { RhAlert, RhChip, RhPanel, catalogOptions } from "@/components/rh/rh-ui";
 
 type SiteOpt = { id: string; name_fr: string };
@@ -241,6 +243,38 @@ function countLabel(count: number | null, singular: string, plural: string) {
   if (count === null) return "—";
   if (count === 0) return `Aucun ${singular}`;
   return `${count.toLocaleString("fr-FR")} ${count > 1 ? plural : singular}`;
+}
+
+function documentYear(value: string | null | undefined) {
+  const year = (value ?? "").slice(0, 4);
+  return /^\d{4}$/.test(year) ? year : "";
+}
+
+function describeCorrespondence(row: HrCorrespondenceRow, yearLabel: string): FilterRow {
+  const year = documentYear(row.start_date || row.created_at);
+  const facets: FilterRow["facets"] = [];
+  if (year) facets.push({ field: "annee", value: year, label: `${yearLabel} : ${year}` });
+  return {
+    text: [row.number, row.matricule, row.last_name, row.first_name, row.employee_name].filter(Boolean).join(" "),
+    matricule: row.matricule,
+    facets,
+  };
+}
+
+function describeFicheEmployee(row: HrEmployeeRow): FilterRow {
+  const year = documentYear(row.hired_at);
+  const facets: FilterRow["facets"] = [];
+  if (row.status) facets.push({ field: "statut", value: row.status, label: `Statut : ${row.status}` });
+  if (year) facets.push({ field: "annee", value: year, label: `Année d'embauche : ${year}` });
+  if (!row.nss) facets.push({ field: "manque", value: "nss", label: "Sans NSS" });
+  if (!row.nin) facets.push({ field: "manque", value: "nin", label: "Sans NIN" });
+  return {
+    text: [row.matricule, row.last_name, row.first_name, row.last_name_ar, row.first_name_ar, row.nss, row.nin]
+      .filter(Boolean)
+      .join(" "),
+    matricule: row.matricule,
+    facets,
+  };
 }
 
 export function DocumentsManager({
@@ -418,7 +452,7 @@ export function DocumentsManager({
       return;
     }
     if (!missionForm.id && numberTaken(missionForm.numero, omRows.map((row) => row.number))) {
-      setMissionError("Ce numéro est déjà utilisé. · هذا الرقم مستعمل مسبقاً");
+      setMissionError("Ce numéro est déjà utilisé.");
       return;
     }
     if (
@@ -541,7 +575,7 @@ export function DocumentsManager({
 
   function createTitle(draft: LeaveTitleDraft, confirmBalance = false) {
     if (numberTaken(draft.numero, leaveRows.map((row) => row.number))) {
-      setTitleError("Ce numéro est déjà utilisé. · هذا الرقم مستعمل مسبقاً");
+      setTitleError("Ce numéro est déjà utilisé.");
       return;
     }
     if (
@@ -869,6 +903,22 @@ export function DocumentsManager({
     setMissionOpen(true);
   }
 
+  const missionFilter = useScreenFilter({
+    screen: "rh.documents.missions",
+    rows: omRows,
+    describe: (row) => describeCorrespondence(row, "Année de la mission"),
+  });
+  const leaveTitleFilter = useScreenFilter({
+    screen: "rh.documents.conges",
+    rows: leaveRows,
+    describe: (row) => describeCorrespondence(row, "Année du titre"),
+  });
+  const ficheFilter = useScreenFilter({
+    screen: "rh.documents.fiches",
+    rows: employees,
+    describe: describeFicheEmployee,
+  });
+
   return (
     <div className="space-y-5">
       <DocumentTypeCards
@@ -971,18 +1021,14 @@ export function DocumentsManager({
             </Button>
           }
         >
+          {missionFilter.bar}
           <DataTable
-            data={omRows}
+            data={missionFilter.rows}
             columns={omColumns}
             getRowId={(r) => r.id}
-            searchPlaceholder="Référence, matricule, nom…"
-            searchText={(r) =>
-              [r.number, missionReference(r.number, company), r.matricule, r.last_name, r.first_name, r.created_by_name]
-                .filter(Boolean)
-                .join(" ")
-            }
+            searchable={false}
             emptyTitle="Aucun ordre de mission"
-            emptyBody="Créez le premier avec « Nouvel ordre de mission »."
+            emptyBody={missionFilter.emptyHint ?? "Créez le premier avec « Nouvel ordre de mission »."}
           />
         </RegisterSection>
       ) : tab === "conges" ? (
@@ -998,18 +1044,14 @@ export function DocumentsManager({
             </Button>
           }
         >
+          {leaveTitleFilter.bar}
           <DataTable
-            data={leaveRows}
+            data={leaveTitleFilter.rows}
             columns={leaveColumns}
             getRowId={(r) => r.id}
-            searchPlaceholder="Référence, matricule, nom…"
-            searchText={(r) =>
-              [r.number, leaveTitleReference(r.number, company), r.matricule, r.last_name, r.first_name]
-                .filter(Boolean)
-                .join(" ")
-            }
+            searchable={false}
             emptyTitle="Aucun titre de congé"
-            emptyBody="Créez le premier avec « Nouveau titre de congé »."
+            emptyBody={leaveTitleFilter.emptyHint ?? "Créez le premier avec « Nouveau titre de congé »."}
           />
         </RegisterSection>
       ) : (
@@ -1025,18 +1067,14 @@ export function DocumentsManager({
             </Button>
           }
         >
+          {ficheFilter.bar}
           <DataTable
-            data={employees}
+            data={ficheFilter.rows}
             columns={ficheColumns}
             getRowId={(r) => r.id}
-            searchPlaceholder="Matricule, nom, NSS, NIN…"
-            searchText={(r) =>
-              [r.matricule, r.last_name, r.first_name, r.last_name_ar, r.first_name_ar, r.nss, r.nin]
-                .filter(Boolean)
-                .join(" ")
-            }
+            searchable={false}
             emptyTitle="Aucun employé"
-            emptyBody="Créez la première fiche avec « Fiche employé »."
+            emptyBody={ficheFilter.emptyHint ?? "Créez la première fiche avec « Fiche employé »."}
           />
         </RegisterSection>
       )}

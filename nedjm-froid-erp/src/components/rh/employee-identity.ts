@@ -18,9 +18,7 @@ function ask(message: string) {
 function knownMessage(person: PersonHit) {
   return (
     `Employé déjà connu : ${person.name}, matricule ${person.matricule}.\n` +
-    `La fiche sera mise à jour et l'ancienne fiche PDF conservée.\n\n` +
-    `عامل معروف: ${person.name}، الرقم ${person.matricule}.\n` +
-    `تُحدَّث البطاقة وتبقى بطاقة PDF القديمة محفوظة.`
+    `La fiche sera mise à jour et l'ancienne fiche PDF conservée.`
   );
 }
 
@@ -28,9 +26,7 @@ function closeMessage(person: PersonHit) {
   const born = person.birthDate ? `, né(e) le ${person.birthDate}` : "";
   return (
     `Ressemble à ${person.name} (${person.matricule})${born}.\n` +
-    `Même personne ?\n\n` +
-    `يشبه ${person.name} (${person.matricule}).\n` +
-    `هل هو نفس الشخص؟`
+    `Même personne ?`
   );
 }
 

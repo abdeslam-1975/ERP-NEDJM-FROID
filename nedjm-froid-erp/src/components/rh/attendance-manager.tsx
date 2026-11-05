@@ -12,6 +12,8 @@ import {
 } from "react";
 import Link from "next/link";
 import { saveAttendanceMonth, type AttendanceCell } from "@/lib/actions/hr-ops";
+import { useScreenFilter } from "@/components/rh/screen-filter-bar";
+import type { FilterRow } from "@/lib/hr/screen-filter";
 import { parseAttendanceImport } from "@/lib/actions/hr-attendance-import";
 import { attendanceFrozenMessage, type PayrollRunStatus } from "@/lib/hr/payroll-run-status";
 import { payrollSignalNotice } from "@/lib/decisions/catalog";
@@ -86,6 +88,17 @@ type Person = {
   site_id: string;
   site_name: string;
 };
+
+function describePerson(person: Person): FilterRow {
+  const facets: FilterRow["facets"] = [];
+  if (person.site_name) facets.push({ field: "chantier", value: person.site_name, label: `Chantier : ${person.site_name}` });
+  if (person.poste) facets.push({ field: "poste", value: person.poste, label: `Poste : ${person.poste}` });
+  return {
+    text: [person.matricule, person.last_name, person.first_name, person.poste, person.site_name].filter(Boolean).join(" "),
+    matricule: person.matricule,
+    facets,
+  };
+}
 
 type RowValues = Record<string, Record<string, string>>;
 
@@ -369,11 +382,15 @@ export function AttendanceManager({
   }, [allPeople, empQuery]);
 
   const people = useMemo(() => {
-    if (mode === "employee") {
-      return pickedEmployee ? [pickedEmployee] : [];
-    }
+    if (mode === "employee") return pickedEmployee ? [pickedEmployee] : [];
     return allPeople.filter((p) => p.site_id === siteId);
   }, [mode, pickedEmployee, allPeople, siteId]);
+  const presenceFilter = useScreenFilter({
+    screen: "rh.presence",
+    rows: mode === "site" ? people : [],
+    describe: describePerson,
+  });
+  const shownPeople = mode === "site" ? presenceFilter.rows : people;
 
   const grid = useMemo(() => {
     const m = new Map<string, AttendanceCell>();
@@ -713,12 +730,12 @@ export function AttendanceManager({
 
   function dayTotaux(day: number) {
     const date = iso(day);
-    return people.filter(
+    return shownPeople.filter(
       (p) => grid.get(`${p.id}|${date}`)?.legend_code === totauxCode,
     ).length;
   }
 
-  const visibleIds = new Set(people.map((p) => p.id));
+  const visibleIds = new Set(shownPeople.map((p) => p.id));
   const pendingCounts = countPending(cells.filter((c) => visibleIds.has(c.employee_id)));
   const monthPrefix = iso(1).slice(0, 8);
   const codeTotals = new Map<string, number>();
@@ -981,7 +998,7 @@ export function AttendanceManager({
           {col.source === "NJ"
             ? days
             : col.source === "COEF"
-              ? people.reduce((n, p) => n + coefSum(p.id), 0) || ""
+              ? shownPeople.reduce((n, p) => n + coefSum(p.id), 0) || ""
               : ""}
         </td>
       );
@@ -1345,6 +1362,8 @@ export function AttendanceManager({
         </div>
       ) : null}
 
+      {mode === "site" ? <div className="print:hidden">{presenceFilter.bar}</div> : null}
+
       <div
         className={`relative max-h-[calc(100dvh-14rem)] overflow-auto rounded-2xl border border-border/70 bg-surface shadow-[var(--card-shadow)] transition-opacity print:max-h-none print:overflow-visible print:shadow-none ${
           pending && access ? "opacity-70" : ""
@@ -1374,16 +1393,16 @@ export function AttendanceManager({
                   Aucune colonne autorisée pour votre rôle sur ce chantier.
                 </td>
               </tr>
-            ) : people.length === 0 ? (
+            ) : shownPeople.length === 0 ? (
               <tr>
                 <td className="px-4 py-16 text-center text-sm text-foreground/45" colSpan={colCount}>
                   {mode === "employee"
                     ? "Recherchez un employé par matricule ou par nom."
-                    : "Aucun contrat sur ce chantier pour ce mois."}
+                    : presenceFilter.emptyHint ?? "Aucun contrat sur ce chantier pour ce mois."}
                 </td>
               </tr>
             ) : (
-              people.map((p, index) => (
+              shownPeople.map((p, index) => (
                 <tr
                   key={`${p.id}-${p.site_id}`}
                   className="group transition-colors hover:bg-[color-mix(in_oklab,var(--color-brand-muted)_45%,transparent)]"
@@ -1395,7 +1414,7 @@ export function AttendanceManager({
               ))
             )}
           </tbody>
-          {access && people.length > 0 && tableColumns.length > 0 ? (
+          {access && shownPeople.length > 0 && tableColumns.length > 0 ? (
             <tfoot>
               <tr>
                 {tableColumns.map((col) => (

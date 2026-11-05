@@ -16,13 +16,15 @@ import {
   type PayrollSlipLineRow,
   type PayrollSlipRow,
 } from "@/lib/actions/hr-ops";
-import { canRequestReopen, runStatusLabel, type PayrollRunAction } from "@/lib/hr/payroll-run-status";
+import { runStatusLabel, canRequestReopen, type PayrollRunAction } from "@/lib/hr/payroll-run-status";
 import { ReopenRequestDialog, SlipVersionsDialog } from "@/components/rh/payroll-reopen-dialogs";
 import { DeclarationExportDialog, type DeclarationExportTarget } from "@/components/rh/declaration-export-dialog";
 import { periodNatureOf, type DeclarationKind } from "@/lib/hr/external-operations";
 import { searchEmployeesForPayroll, type PayrollSearchEmployee } from "@/lib/actions/global-search";
 import { ToolbarSlot, UiToolbar } from "@/components/layout/arrange";
 import { Button } from "@/components/ui/button";
+import { useScreenFilter } from "@/components/rh/screen-filter-bar";
+import type { FilterRow } from "@/lib/hr/screen-filter";
 import {
   RhAlert,
   RhChip,
@@ -211,22 +213,31 @@ export function PayrollManager({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const urlQuery = searchParams.get("q") ?? "";
-  const [query, setQuery] = useState(urlQuery);
-  const [seenUrlQuery, setSeenUrlQuery] = useState(urlQuery);
-  if (urlQuery !== seenUrlQuery) {
-    setSeenUrlQuery(urlQuery);
-    setQuery(urlQuery);
-  }
-  const visibleSlips = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return slips;
-    const terms = q.split(/\s+/);
-    return slips.filter((s) => {
-      const hay = `${s.matricule} ${s.employee_name} ${s.nss ?? ""}`.toLowerCase();
-      return terms.every((t) => hay.includes(t));
-    });
-  }, [slips, query]);
-  const listKey = `${year}-${month}-${query}`;
+  const payrollFilter = useScreenFilter({
+    screen: "rh.paie",
+    rows: slips,
+    initialText: urlQuery,
+    describe: (slip) => {
+      const period = `${slip.period_year}-${String(slip.period_month).padStart(2, "0")}`;
+      const facets: FilterRow["facets"] = [
+        { field: "statut", value: slip.status_code, label: `Statut : ${runStatusLabel(slip.status_code).fr}` },
+        {
+          field: "mois",
+          value: period,
+          label: `Mois de paie : ${String(slip.period_month).padStart(2, "0")}/${slip.period_year}`,
+        },
+      ];
+      if (slip.site_name) facets.push({ field: "chantier", value: slip.site_name, label: `Chantier : ${slip.site_name}` });
+      if (!slip.nss) facets.push({ field: "manque", value: "nss", label: "Sans NSS" });
+      return {
+        text: [slip.matricule, slip.employee_name, slip.nss, slip.site_name].filter(Boolean).join(" "),
+        matricule: slip.matricule,
+        facets,
+      };
+    },
+  });
+  const visibleSlips = payrollFilter.rows;
+  const listKey = `${year}-${month}-${payrollFilter.signature}`;
   const [page, setPage] = useState(0);
   const [seenListKey, setSeenListKey] = useState(listKey);
   if (seenListKey !== listKey) {
@@ -237,7 +248,7 @@ export function PayrollManager({
   const safePage = Math.min(page, pageCount - 1);
   const pageSlips = visibleSlips.slice(safePage * SLIP_PAGE, safePage * SLIP_PAGE + SLIP_PAGE);
   const [candidates, setCandidates] = useState<{ q: string; rows: PayrollSearchEmployee[] }>({ q: "", rows: [] });
-  const missQuery = query.trim().length >= 2 && visibleSlips.length === 0 ? query.trim() : "";
+  const missQuery = payrollFilter.text.trim().length >= 2 && visibleSlips.length === 0 ? payrollFilter.text.trim() : "";
   useEffect(() => {
     if (!missQuery) return;
     let cancelled = false;
@@ -775,8 +786,7 @@ export function PayrollManager({
               const qs = new URLSearchParams(searchParams.toString());
               qs.set("year", String(periodYear));
               qs.set("month", String(periodMonth));
-              if (query.trim()) qs.set("q", query.trim());
-              else qs.delete("q");
+              qs.delete("q");
               router.push(`${pathname}?${qs.toString()}`);
             }}
           >
@@ -814,21 +824,7 @@ export function PayrollManager({
         ) : null}
       </RhToolbar>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          type="search"
-          className={`${rhInput} mt-0 max-w-md`}
-          placeholder={bi("Rechercher un employé (matricule, nom, NSS)…", "ابحث عن عامل (الرقم، الاسم، رقم الضمان)…")}
-          aria-label={bi("Rechercher un bulletin", "بحث عن كشف")}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        {query.trim() ? (
-          <span className="text-xs text-foreground/60">
-            {visibleSlips.length} / {slips.length} {bi("bulletin(s)", "كشف")}
-          </span>
-        ) : null}
-      </div>
+      {payrollFilter.bar}
       {missing.length ? (
         <RhAlert tone="warning">
           <p className="font-semibold">
@@ -958,8 +954,8 @@ export function PayrollManager({
             {visibleSlips.length === 0 ? (
               <tr>
                 <td className="px-3.5 py-6 text-center text-foreground/55" colSpan={totalCols}>
-                  {slips.length && query.trim()
-                    ? bi(`Aucun bulletin ne correspond à « ${query.trim()} ».`, "لا يوجد كشف مطابق للبحث.")
+                  {slips.length && payrollFilter.active
+                    ? payrollFilter.emptyHint ?? "Aucun bulletin ne correspond au filtre."
                     : bi("Aucun bulletin pour cette période.", "لا توجد كشوف لهذه الفترة.")}
                 </td>
               </tr>

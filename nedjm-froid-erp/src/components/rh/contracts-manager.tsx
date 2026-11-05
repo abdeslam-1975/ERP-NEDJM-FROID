@@ -48,6 +48,8 @@ import { gridAsOf } from "@/lib/hr/payroll-calc";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
+import { useScreenFilter } from "@/components/rh/screen-filter-bar";
+import type { FilterRow } from "@/lib/hr/screen-filter";
 import {
   CatalogSelect,
   RhAlert,
@@ -220,6 +222,25 @@ const emptyForm = (): FormState => ({
   status: "DRAFT",
   retenue: "",
 });
+
+function describeContract(row: HrContractRow): FilterRow {
+  const status = STATUS_OPTIONS.find((item) => item.value === row.status)?.label ?? row.status;
+  const year = row.start_date.slice(0, 4);
+  const facets: FilterRow["facets"] = [
+    { field: "statut", value: row.status, label: `Statut : ${status}` },
+  ];
+  if (row.contract_type_code) {
+    facets.push({ field: "type", value: row.contract_type_code, label: `Type : ${row.contract_type_code}` });
+  }
+  if (row.site_name) facets.push({ field: "chantier", value: row.site_name, label: `Chantier : ${row.site_name}` });
+  if (/^\d{4}$/.test(year)) facets.push({ field: "annee", value: year, label: `Année de début : ${year}` });
+  if (!row.end_date) facets.push({ field: "fin", value: "ouverte", label: "Sans date de fin" });
+  return {
+    text: [row.matricule, row.employee_name, row.site_name, row.contract_type_code, row.poste_fr, status].filter(Boolean).join(" "),
+    matricule: row.matricule,
+    facets,
+  };
+}
 
 export function ContractsManager({
   initialContracts,
@@ -695,6 +716,8 @@ export function ContractsManager({
     });
   }
 
+  const contractFilter = useScreenFilter({ screen: "rh.contrats", rows, describe: describeContract });
+
   const columns = [
     col.accessor((r) => `${r.matricule} ${r.employee_name}`, {
       id: "employee",
@@ -806,15 +829,14 @@ export function ContractsManager({
         />
       ) : null}
       {pdfOpen ? <ContractPdfDialog onClose={() => setPdfOpen(false)} onRead={openScan} /> : null}
+      {contractFilter.bar}
       <DataTable
-        data={rows}
+        data={contractFilter.rows}
         columns={columns}
         getRowId={(r) => r.id}
-        searchPlaceholder="Employé, matricule, affectation…"
-        searchText={(r) =>
-          [r.matricule, r.employee_name, r.site_name, r.contract_type_code, r.status].filter(Boolean).join(" ")
-        }
+        searchable={false}
         emptyTitle="Aucun contrat"
+        emptyBody={contractFilter.emptyHint ?? undefined}
       />
 
       {open ? (

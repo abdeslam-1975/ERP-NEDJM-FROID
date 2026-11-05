@@ -17,10 +17,10 @@ export function documentDates(
  * Asks before creating another copy. The existing document stays.
  * An empty list means there is nothing to confirm.
  */
-export function confirmAnotherCopy(titleFr: string, titleAr: string, dates: string[]): boolean {
+export function confirmAnotherCopy(titleFr: string, _titleAr: string, dates: string[]): boolean {
   if (typeof window === "undefined" || dates.length === 0) return true;
   const lines = dates.map((date) => `• ${showDate(date)}`).join("\n");
   return window.confirm(
-    `${titleFr} existe déjà pour cet employé :\n${lines}\n\nCréer une nouvelle copie pour cet emploi ? L'ancienne reste conservée.\n\n${titleAr} موجودة مسبقاً:\n${lines}\n\nإنشاء نسخة جديدة لهذا التوظيف؟ تبقى النسخة القديمة محفوظة.`,
+    `${titleFr} existe déjà pour cet employé :\n${lines}\n\nCréer une nouvelle copie pour cet emploi ? L'ancienne reste conservée.`,
   );
 }

@@ -75,6 +75,8 @@ export function EmployeesList({
   assignments,
   fallback,
   initialQuery,
+  hideFilters = false,
+  emptyHint,
   view,
   onViewChange,
   pending,
@@ -89,6 +91,9 @@ export function EmployeesList({
   /** Site and job title from the employee file, when no open contract gives them. */
   fallback: (row: HrEmployeeFiche, code: "fiche_affectation" | "fiche_poste") => string;
   initialQuery: string;
+  /** The page filter already narrowed `rows`. */
+  hideFilters?: boolean;
+  emptyHint?: string | null;
   view: Exclude<EmployeeView, "table">;
   onViewChange: (v: EmployeeView) => void;
   pending: boolean;
@@ -192,26 +197,28 @@ export function EmployeesList({
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative max-w-md min-w-[260px] flex-1">
-          <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-foreground/40" aria-hidden />
-          <input
-            type="search"
-            aria-label="Rechercher un employé"
-            placeholder="Nom, matricule ou poste…"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setPage(0);
-            }}
-            className="h-[42px] w-full rounded-xl border border-border/80 bg-surface pr-3.5 pl-10 text-sm text-foreground outline-none transition placeholder:text-foreground/40 focus:border-brand focus:ring-4 focus:ring-brand/10"
-          />
-        </div>
+        {hideFilters ? null : (
+          <div className="relative max-w-md min-w-[260px] flex-1">
+            <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-foreground/40" aria-hidden />
+            <input
+              type="search"
+              aria-label="Rechercher un employé"
+              placeholder="Nom, matricule ou poste…"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPage(0);
+              }}
+              className="h-[42px] w-full rounded-xl border border-border/80 bg-surface pr-3.5 pl-10 text-sm text-foreground outline-none transition placeholder:text-foreground/40 focus:border-brand focus:ring-4 focus:ring-brand/10"
+            />
+          </div>
+        )}
         <div className="ml-auto">
           <EmployeeViewSwitch value={view} onChange={onViewChange} />
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      {hideFilters ? null : <div className="flex flex-wrap items-center gap-2">
         <Chip
           on={site === null}
           onClick={() => {
@@ -256,7 +263,7 @@ export function EmployeesList({
             {STATUS[s]?.label ?? s}
           </Chip>
         ))}
-      </div>
+      </div>}
 
       {!filtered.length ? (
         <div className={cn(RH_CARD, "flex flex-col items-center p-12 text-center")}>
@@ -264,9 +271,12 @@ export function EmployeesList({
             <SearchX className="h-6 w-6" aria-hidden />
           </span>
           <p className="mt-4 font-medium text-foreground">Aucun employé trouvé</p>
-          <button type="button" onClick={reset} className="mt-3 text-sm font-medium text-brand hover:underline">
-            Réinitialiser les filtres
-          </button>
+          {emptyHint ? <p className="mt-2 max-w-sm text-sm text-foreground/60">{emptyHint}</p> : null}
+          {hideFilters ? null : (
+            <button type="button" onClick={reset} className="mt-3 text-sm font-medium text-brand hover:underline">
+              Réinitialiser les filtres
+            </button>
+          )}
         </div>
       ) : view === "list" ? (
         <div className={cn(RH_CARD, "overflow-hidden")}>
