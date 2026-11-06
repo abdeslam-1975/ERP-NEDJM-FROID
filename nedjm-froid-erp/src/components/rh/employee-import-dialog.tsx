@@ -305,8 +305,9 @@ export function EmployeeImportDialog({
 
             {counts.mismatch || counts.conflict ? (
               <RhAlert tone="danger">
-                Le matricule écrit dans le fichier est conservé. 10/07 reste le dixième embauché de 2007.
-                Une ligne n&apos;est pas importée seulement si son numéro appartient à une autre personne.
+                Le numéro écrit dans le fichier est importé tel quel. L&apos;application ne
+                propose pas un autre matricule. Seuls les doublons de numéro entre deux personnes
+                distinctes restent exclus.
               </RhAlert>
             ) : counts.confirm ? (
               <RhAlert tone="warning">

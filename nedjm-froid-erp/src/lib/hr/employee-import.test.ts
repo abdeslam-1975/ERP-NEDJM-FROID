@@ -153,7 +153,7 @@ describe("matricules", () => {
     });
   }
 
-  it("keeps one matricule when the NSS or the NIN is the same", () => {
+  it("writes the file matricule for a known person on import", () => {
     const rows = planned(
       [
         ["99/26", "Benali", "Karim", "123456789012", "", "12/03/1985", "02/01/2026"],
@@ -162,8 +162,18 @@ describe("matricules", () => {
       [{ id: "emp-1", matricule: "05/24", nss: "123456789012", nin: "123456789012345678", last_name: "BENALI", first_name: "KARIM" }],
     );
     expect(rows.map((r) => [r.status, r.matricule, r.expectedMatricule, r.employeeId])).toEqual([
-      ["mismatch", "99/26", "05/24", "emp-1"],
-      ["exists", "05/24", "05/24", "emp-1"],
+      ["exists", "99/26", "99/26", "emp-1"],
+      ["exists", "99/26", "99/26", "emp-1"],
+    ]);
+  });
+
+  it("keeps a file serial even when a stored fiche suggests another number", () => {
+    const rows = planned(
+      [["072/08", "Moulai", "Abdelghani", "", "", "01/01/1980", "15/03/2008"]],
+      [{ id: "emp-1", matricule: "071/08", last_name: "MOULAI", first_name: "ABDELGHANI", birth_date: "1980-01-01", hired_at: "2008-03-15" }],
+    );
+    expect(rows.map((r) => [r.status, r.matricule, r.expectedMatricule, r.employeeId])).toEqual([
+      ["exists", "072/08", "072/08", "emp-1"],
     ]);
   });
 

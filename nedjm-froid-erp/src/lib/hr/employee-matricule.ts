@@ -138,9 +138,9 @@ function peek(counters: Map<string, Counter>, yy: string): string {
 /**
  * One matricule per person. NIN, then NSS, decides it is the same employee.
  * A close name plus the same birth date is only a suggestion. An exact name is the same person.
- * A matricule written in the file is kept, including when hire dates are not sorted by serial.
- * 10/07 is the tenth hiring of 2007, and it stays 10/07. Empty cells still follow the hire
- * year: max + 1, no gap filling, sheet order when the dates are equal.
+ * On file import, the matricule written in the file is the only number used. 072/08 stays
+ * 072/08 even if a stored fiche or a generated sequence suggests another value. Empty cells
+ * still follow the hire year: max + 1, no gap filling, sheet order when the dates are equal.
  */
 export function applyEmployeeMatricules(
   rows: ImportRow[],
@@ -400,12 +400,14 @@ export function applyEmployeeMatricules(
     const firstHired = lead?.hired ?? "";
     const fileYear = fileMat ? matriculeFullYear(fileMat) : null;
     const hireYear = Number(firstHired.slice(0, 4)) || null;
+    // Import: the file number always wins. Live fiche: a return may keep the first number.
     const keepStored = Boolean(
-      stored &&
+      !fromFile &&
+        stored &&
         (keepsFirstEmploymentNumber({ matricule: stored, hired_at: firstHired }) ||
           (hireYear !== null && matriculeFullYear(stored) === hireYear && fileYear !== hireYear)),
     );
-    const chosen = keepStored ? stored : fileMat || stored;
+    const chosen = fromFile && fileMat ? fileMat : keepStored ? stored : fileMat || stored;
     if (!chosen) continue;
     const key = matriculeKey(chosen);
     if (!key) continue;
@@ -529,7 +531,14 @@ export function applyEmployeeMatricules(
     }
     const fileKey = matriculeKey(slot.fileMat);
     const wantedKey = matriculeKey(wanted);
-    if ((status === "new" || status === "exists") && slot.fileMat && wanted && fileKey !== wantedKey) {
+    // Import never rewrites a written matricule. Live fiche still refuses a wrong manual number.
+    if (
+      !fromFile &&
+      (status === "new" || status === "exists") &&
+      slot.fileMat &&
+      wanted &&
+      fileKey !== wantedKey
+    ) {
       status = "mismatch";
       message = `Matricule du fichier ${slot.fileMat}, matricule attendu ${wanted}. Le numéro suit l'année d'embauche, sans combler les trous.`;
     }
