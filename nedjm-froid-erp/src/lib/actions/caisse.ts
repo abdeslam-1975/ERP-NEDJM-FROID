@@ -496,7 +496,10 @@ export async function deleteCaisseOperation(operationId: string): Promise<Action
     null,
   );
   refresh();
-  return { ok: true, data: { message: `✅ Opération N° ${existing.data.op_number} supprimée.` } };
+  return {
+    ok: true,
+    data: { message: `✅ Opération N° ${existing.data.op_number} supprimée. Les numéros ont été réordonnés.` },
+  };
 }
 
 export async function getCaissePhoto(operationId: string): Promise<ActionResult<{ url: string }>> {
