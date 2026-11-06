@@ -895,80 +895,135 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
 
       {adminOpen ? (
         <div className="overlay">
-          <div className="modal">
+          <div className="modal modal-admin">
             <div className="modal-head slate">
               <strong>Contrôle des droits</strong>
               <button type="button" className="close-x" onClick={() => setAdminOpen(false)}>×</button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body admin-body">
               {openingsOnly ? null : (
-                <>
-              <p className="hint">L’administrateur (SUPER_ADMIN / ADMIN_FINANCE) voit toujours tout et peut modifier les soldes d’ouverture. Pour un autre employé, cochez ce qu’il a le droit de faire. « Ouverture » lui délègue la date et les soldes d’ouverture.</p>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Nom</th><th>Email</th><th>Dates libres</th><th>Acheter pour autrui</th><th>Voir achats des autres</th><th>Opérations caisse</th><th>Modifier / Supprimer</th><th>Ouverture</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {adminUsers.map((user, index) => (
-                    <tr key={`${user.userId || user.buyerId}-${user.name}`}>
-                      <td>{user.name}</td>
-                      <td>{user.email}</td>
-                      {user.isAdmin ? <td colSpan={6}>Admin — voit tout (droits non modifiables)</td> : (
-                        <>
-                          {(["datesLibres", "buyForOthers", "seeAll", "caisseOps", "canEdit", "manageOpenings"] as const).map((key) => (
-                            <td key={key}><input type="checkbox" checked={user[key]} disabled={key === "manageOpenings" && !user.userId} onChange={(event) => setAdminUsers((current) => current.map((row, i) => i === index ? { ...row, [key]: event.target.checked } : row))} /></td>
-                          ))}
-                        </>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="toolbar" style={{ margin: "12px 0" }}>
-                <button type="button" className="btn-action btn-green" onClick={() => void saveRights()}>Enregistrer les droits</button>
-                <button type="button" className="btn-light" onClick={() => notify("Trier caisse", "Les mouvements sont déjà dans le journal du mois. Rien à copier.")}>Trier caisse → mois</button>
-              </div>
-                </>
+                <section className="admin-section">
+                  <p className="hint admin-intro">
+                    L’administrateur voit toujours tout. Pour chaque employé, cochez ce qu’il a le droit de faire.
+                    « Ouverture » délègue la date et les soldes d’ouverture (déjà inclus pour SUPER_ADMIN / ADMIN_FINANCE).
+                  </p>
+                  <div className="admin-table-wrap">
+                    <table className="admin-table rights-table">
+                      <thead>
+                        <tr>
+                          <th>Nom</th>
+                          <th>Email</th>
+                          <th>Dates libres</th>
+                          <th>Acheter pour autrui</th>
+                          <th>Voir achats des autres</th>
+                          <th>Opérations caisse</th>
+                          <th>Modifier / Supprimer</th>
+                          <th>Ouverture</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminUsers.map((user, index) => (
+                          <tr key={`${user.userId || user.buyerId}-${user.name}`}>
+                            <td className="admin-name">{user.name}</td>
+                            <td>
+                              <input
+                                className="admin-email"
+                                type="email"
+                                value={user.email}
+                                disabled={user.isAdmin}
+                                onChange={(event) => setAdminUsers((current) => current.map((row, i) => (i === index ? { ...row, email: event.target.value } : row)))}
+                              />
+                            </td>
+                            {user.isAdmin ? (
+                              <td colSpan={6}>
+                                <span className="admin-badge">Admin — voit tout (droits non modifiables)</span>
+                              </td>
+                            ) : (
+                              (["datesLibres", "buyForOthers", "seeAll", "caisseOps", "canEdit", "manageOpenings"] as const).map((key) => (
+                                <td key={key} className="admin-check">
+                                  <input
+                                    type="checkbox"
+                                    checked={user[key]}
+                                    disabled={key === "manageOpenings" && !user.userId}
+                                    onChange={(event) => setAdminUsers((current) => current.map((row, i) => (i === index ? { ...row, [key]: event.target.checked } : row)))}
+                                  />
+                                </td>
+                              ))
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="admin-actions">
+                    <button type="button" className="btn-action btn-green" onClick={() => void saveRights()}>Enregistrer les droits</button>
+                    <button type="button" className="btn-outline-blue" onClick={() => notify("Trier caisse", "Les mouvements sont déjà dans le journal du mois. Rien à copier.")}>Trier caisse → mois</button>
+                  </div>
+                </section>
               )}
+
               {flags?.canManageOpenings ? (
-                <>
-              <h6>Soldes d’ouverture — {formatDateFr(openingDate)}</h6>
-              <p className="hint">Modifiez la date et le reste chez chaque acheteur. Le total doit égaler le solde d’ouverture de la caisse. Un montant à 0 ou vide retire cet acheteur de l’ouverture après confirmation.</p>
-              <label className="hint">Date d’ouverture <input type="date" value={openingDate} onChange={(event) => setOpeningDate(event.target.value)} /></label>
-              <table>
-                <thead><tr><th>Acheteur</th><th>Solde (DA)</th></tr></thead>
-                <tbody>
-                  {openings.map((row, index) => (
-                    <tr key={row.name}>
-                      <td>{row.name}</td>
-                      <td><input type="number" min="0" step="0.01" value={row.amount} onChange={(event) => setOpenings((current) => current.map((item, i) => i === index ? { ...item, amount: event.target.value } : item))} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="panel-head">
-                <span className="pill">Total (= caisse ouverture) : {formatDa(openingTotal)} DA</span>
-                <button type="button" className="btn-action btn-green" onClick={() => void saveOpenings()}>Modifier les soldes d’ouverture</button>
-              </div>
-                </>
+                <section className="admin-section">
+                  <h6 className="admin-section-title">Soldes d’ouverture — {formatDateFr(openingDate)}</h6>
+                  <p className="hint">
+                    Saisie manuelle du reste chez chaque acheteur. Le total doit égaler le solde d’ouverture de la caisse.
+                    Un montant à 0 ou vide retire cet acheteur de l’ouverture après confirmation.
+                  </p>
+                  <label className="admin-date-field">
+                    Date d’ouverture
+                    <input type="date" value={openingDate} onChange={(event) => setOpeningDate(event.target.value)} />
+                  </label>
+                  <div className="admin-table-wrap openings-wrap">
+                    <table className="admin-table openings-table">
+                      <thead>
+                        <tr>
+                          <th>Acheteur</th>
+                          <th>Solde (DA)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {openings.map((row, index) => (
+                          <tr key={row.name}>
+                            <td className="admin-name">{row.name}</td>
+                            <td>
+                              <input
+                                className="opening-amount"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={row.amount}
+                                onChange={(event) => setOpenings((current) => current.map((item, i) => (i === index ? { ...item, amount: event.target.value } : item)))}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="openings-foot">
+                    <span className="pill openings-total">Total (= caisse ouverture) : {formatDa(openingTotal)} DA</span>
+                    <button type="button" className="btn-action btn-green" onClick={() => void saveOpenings()}>Modifier les soldes d’ouverture</button>
+                  </div>
+                </section>
               ) : null}
+
               {openingsOnly ? null : (
-                <>
-              <h6>Ajouter un utilisateur</h6>
-              <div className="grid-3">
-                <input placeholder="Nom" value={newName} onChange={(event) => setNewName(event.target.value)} />
-                <input placeholder="Email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} />
-                <input placeholder="Mot de passe 6 car." maxLength={6} value={newPass} onChange={(event) => setNewPass(event.target.value)} />
-                <select value={newAccess} onChange={(event) => setNewAccess(event.target.value)}><option value="">Date limitée</option><option value="OPEN">Dates libres</option></select>
-                <select value={newRole} onChange={(event) => setNewRole(event.target.value)}><option value="">Employé</option><option value="MASTER">Acheter pour autrui</option></select>
-                <select value={newJournal} onChange={(event) => setNewJournal(event.target.value)}><option value="">Ses achats seulement</option><option value="ALL">Voir achats des autres</option></select>
-                <select value={newCaisse} onChange={(event) => setNewCaisse(event.target.value)}><option value="">Sans caisse</option><option value="CAISSE">Opérations caisse</option></select>
-                <select value={newEdit} onChange={(event) => setNewEdit(event.target.value)}><option value="">Sans modification</option><option value="EDIT">Modifier / Supprimer</option></select>
-              </div>
-              <button type="button" className="btn-action btn-navy" onClick={() => void addBuyer()}>Ajouter</button>
-                </>
+                <section className="admin-section">
+                  <h6 className="admin-section-title">Ajouter un utilisateur</h6>
+                  <div className="add-user-identity">
+                    <input placeholder="Nom" value={newName} onChange={(event) => setNewName(event.target.value)} />
+                    <input placeholder="Email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} />
+                    <input placeholder="Mot de passe 6 car." maxLength={6} value={newPass} onChange={(event) => setNewPass(event.target.value)} />
+                  </div>
+                  <div className="add-user-rights">
+                    <select value={newAccess} onChange={(event) => setNewAccess(event.target.value)}><option value="">Date limitée</option><option value="OPEN">Dates libres</option></select>
+                    <select value={newRole} onChange={(event) => setNewRole(event.target.value)}><option value="">Employé</option><option value="MASTER">Acheter pour autrui</option></select>
+                    <select value={newJournal} onChange={(event) => setNewJournal(event.target.value)}><option value="">Ses achats seulement</option><option value="ALL">Voir achats des autres</option></select>
+                    <select value={newCaisse} onChange={(event) => setNewCaisse(event.target.value)}><option value="">Sans caisse</option><option value="CAISSE">Opérations caisse</option></select>
+                    <select value={newEdit} onChange={(event) => setNewEdit(event.target.value)}><option value="">Sans modification</option><option value="EDIT">Modifier / Supprimer</option></select>
+                  </div>
+                  <button type="button" className="btn-action btn-add-user" onClick={() => void addBuyer()}>Ajouter</button>
+                </section>
               )}
             </div>
           </div>

@@ -79,7 +79,88 @@
 .caisse-app .close-x { border: 0; background: transparent; color: #fff; font-size: 20px; cursor: pointer; }
 .caisse-app .hint { color: #64748b; font-size: 12px; }
 .caisse-app .selected { background: #ecfdf5; }
+
+/* Admin modal — Contrôle des droits (layout aligned with the reference desk) */
+.caisse-app .modal.modal-admin { width: min(1180px, 100%); }
+.caisse-app .admin-body { display: flex; flex-direction: column; gap: 22px; padding: 18px 20px 22px; }
+.caisse-app .admin-section { display: flex; flex-direction: column; gap: 10px; }
+.caisse-app .admin-intro { margin: 0; line-height: 1.45; }
+.caisse-app .admin-section-title {
+  margin: 0; font-size: 1.05rem; font-weight: 800; color: #111827;
+}
+.caisse-app .admin-table-wrap {
+  overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px;
+}
+.caisse-app .admin-table { width: 100%; border-collapse: collapse; background: #fff; }
+.caisse-app .admin-table thead th {
+  background: #111827; color: #fff; font-size: 12px; font-weight: 700;
+  padding: 10px 12px; text-align: left; white-space: nowrap; border: 0;
+}
+.caisse-app .admin-table tbody td {
+  padding: 8px 12px; border-bottom: 1px solid #eef2f7; vertical-align: middle;
+  font-size: 13px; color: #111827;
+}
+.caisse-app .admin-table tbody tr:last-child td { border-bottom: 0; }
+.caisse-app .admin-name { font-weight: 700; white-space: nowrap; }
+.caisse-app .admin-email {
+  width: min(220px, 100%); border: 1px solid #d1d5db !important; border-radius: 6px !important;
+  padding: 6px 10px !important; background: #fff; font-size: 12px;
+}
+.caisse-app .admin-email:disabled { background: #f3f4f6; color: #6b7280; }
+.caisse-app .admin-check { text-align: center; }
+.caisse-app .admin-check input { width: 16px; height: 16px; accent-color: #2563eb; cursor: pointer; }
+.caisse-app .admin-badge {
+  display: inline-block; background: #fde68a; color: #92400e; border: 1px solid #f59e0b;
+  border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 700;
+}
+.caisse-app .admin-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.caisse-app .btn-outline-blue {
+  background: #fff; color: #1d4ed8; border: 1.5px solid #3b82f6; border-radius: 8px;
+  padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.caisse-app .btn-outline-blue:hover { background: #eff6ff; }
+.caisse-app .admin-date-field {
+  display: inline-flex; flex-direction: column; gap: 4px; width: fit-content;
+  font-size: 12px; font-weight: 700; color: #64748b;
+}
+.caisse-app .admin-date-field input { min-width: 180px; }
+.caisse-app .openings-wrap { max-width: 520px; }
+.caisse-app .openings-table thead th:last-child,
+.caisse-app .openings-table tbody td:last-child { text-align: right; }
+.caisse-app .opening-amount {
+  width: 160px; text-align: right; border: 1px solid #d1d5db !important;
+  border-radius: 6px !important; padding: 7px 10px !important; background: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.caisse-app .openings-foot {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 12px; max-width: 720px;
+}
+.caisse-app .openings-total {
+  font-size: 0.9rem; padding: 8px 12px; border-radius: 8px;
+}
+.caisse-app .add-user-identity {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;
+}
+.caisse-app .add-user-rights {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px;
+}
+.caisse-app .add-user-identity input,
+.caisse-app .add-user-rights select {
+  width: 100%; border: 1px solid #d1d5db !important; border-radius: 6px !important;
+  padding: 8px 10px !important; background: #fff; font-size: 13px;
+}
+.caisse-app .btn-add-user {
+  align-self: flex-start; background: #1d4ed8; color: #fff; border: 0;
+  border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.caisse-app .btn-add-user:hover { background: #1e40af; }
+
 @media (max-width: 800px) {
   .caisse-app .kpi-grid, .caisse-app .grid-3 { grid-template-columns: 1fr; }
   .caisse-app .kpi-value { font-size: 1.1rem; }
+  .caisse-app .add-user-identity,
+  .caisse-app .add-user-rights { grid-template-columns: 1fr; }
+  .caisse-app .openings-wrap { max-width: none; }
+  .caisse-app .openings-foot { max-width: none; }
 }
