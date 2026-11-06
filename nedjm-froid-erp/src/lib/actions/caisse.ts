@@ -81,7 +81,8 @@ async function clientOrError(): Promise<{ supabase: ServerClient; flags: CaisseF
       canSeeAllJournal: !!ctx.canSeeAllJournal,
       canSeeCaisse: !!ctx.canSeeCaisse,
       canManage: !!ctx.canManage,
-      canManageOpenings: workspace.isSuperAdmin || (!manage.error && !!manage.data),
+      // Caisse admin (SUPER_ADMIN / ADMIN_FINANCE) or a delegated « Ouverture » right.
+      canManageOpenings: !!ctx.isAdmin || (!manage.error && !!manage.data),
       userName: String(ctx.userName || workspace.fullName),
     },
   };
@@ -700,7 +701,9 @@ export async function getCaisseOpeningForm(): Promise<
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
   const { supabase, flags } = gate;
-  if (!flags.canManageOpenings) return fail("Réservé au super administrateur ou à la personne qu'il a déléguée");
+  if (!flags.canManageOpenings) {
+    return fail("Réservé à l’administrateur caisse ou à la personne déléguée (Ouverture)");
+  }
   const [openingsRes, buyersRes, settingsRes] = await Promise.all([
     supabase.from("caisse_journal_openings").select("buyer_name, amount"),
     supabase.from("caisse_journal_buyers").select("name").eq("active", true),
@@ -769,7 +772,9 @@ export async function saveCaisseOpenings(
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
   const { supabase, flags } = gate;
-  if (!flags.canManageOpenings) return fail("Réservé au super administrateur ou à la personne qu'il a déléguée");
+  if (!flags.canManageOpenings) {
+    return fail("Réservé à l’administrateur caisse ou à la personne déléguée (Ouverture)");
+  }
   const date = openingDate && /^\d{4}-\d{2}-\d{2}$/.test(openingDate) ? openingDate : null;
   if (date) {
     const savedDate = await supabase.from("caisse_settings").update({ opening_date: date }).eq("id", 1);

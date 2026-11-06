@@ -7,7 +7,7 @@ export type CaisseFlags = {
   canSeeAllJournal: boolean;
   canSeeCaisse: boolean;
   canManage: boolean;
-  /** Super admin, or a user they ticked « soldes et date d'ouverture ». */
+  /** Caisse admin (SUPER_ADMIN / ADMIN_FINANCE), or a user with delegated « Ouverture ». */
   canManageOpenings: boolean;
   userName: string;
 };

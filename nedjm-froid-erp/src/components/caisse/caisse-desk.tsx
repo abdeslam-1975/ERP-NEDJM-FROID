@@ -393,10 +393,16 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   }
 
   async function saveOpenings() {
-    const result = await saveCaisseOpenings(
-      openings.map((row) => ({ name: row.name, amount: Number(row.amount) || 0 })),
-      openingDate,
+    const payload = openings.map((row) => ({ name: row.name, amount: Number(row.amount) || 0 }));
+    const kept = payload.filter((row) => row.amount > 0);
+    const total = kept.reduce((sum, row) => sum + row.amount, 0);
+    const answer = await confirmBox(
+      "Modifier les soldes d’ouverture ?",
+      `Date : ${formatDateFr(openingDate)}\n${kept.length} acheteur(s) avec solde\nTotal (= caisse ouverture) : ${formatDa(total)} DA\n\nLes montants à 0 ou vides seront retirés de l’ouverture.`,
+      "Oui, enregistrer",
     );
+    if (answer === null) return;
+    const result = await saveCaisseOpenings(payload, openingDate);
     notify("Ouverture", result.ok ? result.data.message : result.error);
     if (result.ok) {
       if (openingsOnly) await openOpenings();
@@ -897,7 +903,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
             <div className="modal-body">
               {openingsOnly ? null : (
                 <>
-              <p className="hint">L’administrateur voit toujours tout. Pour chaque employé, cochez ce qu’il a le droit de faire. « Ouverture » autorise la date et les soldes d’ouverture.</p>
+              <p className="hint">L’administrateur (SUPER_ADMIN / ADMIN_FINANCE) voit toujours tout et peut modifier les soldes d’ouverture. Pour un autre employé, cochez ce qu’il a le droit de faire. « Ouverture » lui délègue la date et les soldes d’ouverture.</p>
               <table>
                 <thead>
                   <tr>
@@ -929,7 +935,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
               {flags?.canManageOpenings ? (
                 <>
               <h6>Soldes d’ouverture — {formatDateFr(openingDate)}</h6>
-              <p className="hint">Date et reste chez chaque acheteur. Le total doit égaler le solde d’ouverture de la caisse.</p>
+              <p className="hint">Modifiez la date et le reste chez chaque acheteur. Le total doit égaler le solde d’ouverture de la caisse. Un montant à 0 ou vide retire cet acheteur de l’ouverture après confirmation.</p>
               <label className="hint">Date d’ouverture <input type="date" value={openingDate} onChange={(event) => setOpeningDate(event.target.value)} /></label>
               <table>
                 <thead><tr><th>Acheteur</th><th>Solde (DA)</th></tr></thead>
@@ -944,7 +950,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
               </table>
               <div className="panel-head">
                 <span className="pill">Total (= caisse ouverture) : {formatDa(openingTotal)} DA</span>
-                <button type="button" className="btn-action btn-green" onClick={() => void saveOpenings()}>Enregistrer les soldes d’ouverture</button>
+                <button type="button" className="btn-action btn-green" onClick={() => void saveOpenings()}>Modifier les soldes d’ouverture</button>
               </div>
                 </>
               ) : null}
