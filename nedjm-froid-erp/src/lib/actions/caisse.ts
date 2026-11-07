@@ -68,7 +68,10 @@ async function clientOrError(): Promise<{ supabase: ServerClient; flags: CaisseF
   if (error) return fail(error.message);
   if (!data || typeof data !== "object") return fail("Accès caisse refusé.");
   const ctx = data as Record<string, unknown>;
-  const manage = await supabase.rpc("caisse_can_manage_openings");
+  const [manageOpenings, manageLists] = await Promise.all([
+    supabase.rpc("caisse_can_manage_openings"),
+    supabase.rpc("caisse_can_manage_lists"),
+  ]);
   return {
     supabase,
     today: String(ctx.today || algiersToday()),
@@ -82,7 +85,8 @@ async function clientOrError(): Promise<{ supabase: ServerClient; flags: CaisseF
       canSeeCaisse: !!ctx.canSeeCaisse,
       canManage: !!ctx.canManage,
       // Caisse admin (SUPER_ADMIN / ADMIN_FINANCE) or a delegated « Ouverture » right.
-      canManageOpenings: !!ctx.isAdmin || (!manage.error && !!manage.data),
+      canManageOpenings: !!ctx.isAdmin || (!manageOpenings.error && !!manageOpenings.data),
+      canManageLists: !!ctx.isAdmin || (!manageLists.error && !!manageLists.data),
       userName: String(ctx.userName || workspace.fullName),
     },
   };
@@ -646,25 +650,36 @@ export async function unlockCaisseDay(input: { date: string; reason: string }): 
 }
 
 export async function getCaisseAdmin(): Promise<
-  ActionResult<{ users: CaisseAdminUser[]; openings: { name: string; amount: number }[]; openingDate: string; total: number }>
+  ActionResult<{
+    users: CaisseAdminUser[];
+    openings: { name: string; amount: number }[];
+    openingDate: string;
+    total: number;
+    lists: { affectations: string[]; units: string[]; matricules: string[] };
+  }>
 > {
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
   const { supabase, flags } = gate;
   if (!flags.isAdmin) return fail("Réservé à l’administrateur");
-  const [usersRes, buyersRes, openingsRes, rightsRes, settingsRes] = await Promise.all([
+  const [usersRes, buyersRes, openingsRes, rightsRes, settingsRes, listsRes] = await Promise.all([
     supabase.rpc("caisse_admin_users"),
     supabase.from("caisse_journal_buyers").select("id, name, email, user_id, dates_libres, buy_for_others, see_all, caisse_ops, can_edit").eq("active", true),
     supabase.from("caisse_journal_openings").select("buyer_name, amount"),
-    supabase.from("caisse_rights").select("user_id, manage_openings"),
+    supabase.from("caisse_rights").select("user_id, manage_openings, manage_lists"),
     supabase.from("caisse_settings").select("opening_date").eq("id", 1).maybeSingle(),
+    supabase.from("caisse_lists").select("list_key, label, sort_order").order("sort_order"),
   ]);
   if (usersRes.error) return fail(usersRes.error.message);
   if (buyersRes.error) return fail(buyersRes.error.message);
   if (openingsRes.error) return fail(openingsRes.error.message);
+  if (listsRes.error) return fail(listsRes.error.message);
   const linked = new Set((buyersRes.data ?? []).map((row) => row.user_id).filter(Boolean));
-  const manageByUser = new Map(
-    (rightsRes.error ? [] : (rightsRes.data ?? [])).map((row) => [row.user_id, !!row.manage_openings]),
+  const rightsByUser = new Map(
+    (rightsRes.error ? [] : (rightsRes.data ?? [])).map((row) => [
+      row.user_id,
+      { manageOpenings: !!row.manage_openings, manageLists: !!row.manage_lists },
+    ]),
   );
   const openingDate = settingsRes.error || !settingsRes.data?.opening_date
     ? OPENING_BALANCE_DATE
@@ -690,7 +705,8 @@ export async function getCaisseAdmin(): Promise<
     seeAll: !!user.seeAll,
     caisseOps: !!user.caisseOps,
     canEdit: !!user.canEdit,
-    manageOpenings: manageByUser.get(user.userId) ?? false,
+    manageOpenings: rightsByUser.get(user.userId)?.manageOpenings ?? false,
+    manageLists: rightsByUser.get(user.userId)?.manageLists ?? false,
   }));
   for (const buyer of buyersRes.data ?? []) {
     if (buyer.user_id && linked.has(buyer.user_id)) continue;
@@ -706,6 +722,7 @@ export async function getCaisseAdmin(): Promise<
       caisseOps: !!buyer.caisse_ops,
       canEdit: !!buyer.can_edit,
       manageOpenings: false,
+      manageLists: false,
     });
   }
   users.sort((a, b) => a.name.localeCompare(b.name, "fr"));
@@ -716,9 +733,20 @@ export async function getCaisseAdmin(): Promise<
     .filter((name) => !isCaissePrincipaleName(name))
     .sort((a, b) => a.localeCompare(b, "fr"))
     .map((name) => ({ name, amount: openingMap.get(name) || 0 }));
+  const lists = listsRes.data ?? [];
   return {
     ok: true,
-    data: { users, openings, openingDate, total: openings.reduce((sum, row) => sum + (row.amount > 0 ? row.amount : 0), 0) },
+    data: {
+      users,
+      openings,
+      openingDate,
+      total: openings.reduce((sum, row) => sum + (row.amount > 0 ? row.amount : 0), 0),
+      lists: {
+        affectations: lists.filter((row) => row.list_key === "AFFECTATION").map((row) => row.label),
+        units: lists.filter((row) => row.list_key === "UNIT").map((row) => row.label),
+        matricules: lists.filter((row) => row.list_key === "MATRICULE").map((row) => row.label),
+      },
+    },
   };
 }
 
@@ -770,6 +798,7 @@ export async function saveCaisseRights(rows: CaisseAdminUser[]): Promise<ActionR
         caisse_ops: !!row.caisseOps,
         can_edit: !!row.canEdit,
         manage_openings: !!row.manageOpenings,
+        manage_lists: !!row.manageLists,
       });
       if (saved.error) return fail(saved.error.message);
     } else if (row.buyerId) {
@@ -873,6 +902,64 @@ export async function addCaisseBuyer(input: {
   await logAction(supabase, "USER_ADD", "", "", "Users", `Nouvel utilisateur: ${name}`, null);
   refresh();
   return { ok: true, data: { message: "✅ Utilisateur ajouté" } };
+}
+
+const LIST_KEYS = ["AFFECTATION", "UNIT", "MATRICULE"] as const;
+type CaisseListKey = (typeof LIST_KEYS)[number];
+
+function normalizeListLabel(label: string): string {
+  return label.trim().replace(/\s+/g, " ");
+}
+
+export async function addCaisseListItem(
+  listKey: CaisseListKey,
+  label: string,
+): Promise<ActionResult<{ message: string; label: string }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.canManageLists) return fail("Réservé à l’administrateur caisse ou à la personne déléguée (Listes)");
+  if (!LIST_KEYS.includes(listKey)) return fail("Liste inconnue");
+  const value = normalizeListLabel(label);
+  if (!value || value.length > 120) return fail("Libellé invalide (1 à 120 caractères)");
+  const maxOrder = await supabase
+    .from("caisse_lists")
+    .select("sort_order")
+    .eq("list_key", listKey)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (maxOrder.error) return fail(maxOrder.error.message);
+  const sortOrder = (maxOrder.data?.sort_order ?? 0) + 10;
+  const inserted = await supabase.from("caisse_lists").insert({ list_key: listKey, label: value, sort_order: sortOrder });
+  if (inserted.error) {
+    if (inserted.error.code === "23505") return fail("Cette valeur existe déjà dans la liste");
+    return fail(inserted.error.message);
+  }
+  await logAction(supabase, "LIST_ADD", listKey, "", "Listes", `Ajout ${listKey}: ${value}`, null);
+  refresh();
+  return { ok: true, data: { message: `✅ « ${value} » ajouté`, label: value } };
+}
+
+export async function removeCaisseListItem(
+  listKey: CaisseListKey,
+  label: string,
+): Promise<ActionResult<{ message: string }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.canManageLists) return fail("Réservé à l’administrateur caisse ou à la personne déléguée (Listes)");
+  if (!LIST_KEYS.includes(listKey)) return fail("Liste inconnue");
+  const value = normalizeListLabel(label);
+  if (!value) return fail("Libellé invalide");
+  if (listKey === "AFFECTATION" && value.toUpperCase() === "PARC ROULANT") {
+    return fail("PARC ROULANT est une affectation système et ne peut pas être retirée");
+  }
+  const removed = await supabase.from("caisse_lists").delete().eq("list_key", listKey).eq("label", value);
+  if (removed.error) return fail(removed.error.message);
+  await logAction(supabase, "LIST_DEL", listKey, "", "Listes", `Retrait ${listKey}: ${value}`, null);
+  refresh();
+  return { ok: true, data: { message: `✅ « ${value} » retiré de la liste` } };
 }
 
 export async function getCaisseAudit(): Promise<ActionResult<CaisseAuditRow[]>> {

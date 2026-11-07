@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { logoutAction } from "@/lib/actions/auth";
 import {
   addCaisseBuyer,
+  addCaisseListItem,
   closeCaisseDay,
   deleteCaisseOperation,
   getCaisseAdmin,
@@ -12,6 +13,7 @@ import {
   getCaisseDashboard,
   getCaisseOpeningForm,
   getCaissePhoto,
+  removeCaisseListItem,
   saveCaisseFinance,
   saveCaisseOpenings,
   saveCaissePurchase,
@@ -90,9 +92,16 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   const [closeNote, setCloseNote] = useState("");
   const [adminOpen, setAdminOpen] = useState(false);
   const [openingsOnly, setOpeningsOnly] = useState(false);
+  const [listsOnly, setListsOnly] = useState(false);
   const [openingDate, setOpeningDate] = useState(initial?.openingDate ?? "");
   const [adminUsers, setAdminUsers] = useState<CaisseAdminUser[]>([]);
   const [openings, setOpenings] = useState<{ name: string; amount: string }[]>([]);
+  const [adminLists, setAdminLists] = useState<{ affectations: string[]; units: string[]; matricules: string[] }>({
+    affectations: [],
+    units: [],
+    matricules: [],
+  });
+  const [listDraft, setListDraft] = useState({ affectation: "", unit: "", matricule: "" });
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newPass, setNewPass] = useState("");
@@ -384,7 +393,10 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     setAdminUsers(result.data.users);
     setOpenings(result.data.openings.map((row) => ({ name: row.name, amount: row.amount ? String(row.amount) : "" })));
     setOpeningDate(result.data.openingDate);
+    setAdminLists(result.data.lists);
+    setListDraft({ affectation: "", unit: "", matricule: "" });
     setOpeningsOnly(false);
+    setListsOnly(false);
     setAdminOpen(true);
   }
 
@@ -394,7 +406,71 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     setOpenings(result.data.openings.map((row) => ({ name: row.name, amount: row.amount ? String(row.amount) : "" })));
     setOpeningDate(result.data.openingDate);
     setOpeningsOnly(true);
+    setListsOnly(false);
     setAdminOpen(true);
+  }
+
+  async function openLists() {
+    if (flags?.isAdmin) {
+      const result = await getCaisseAdmin();
+      if (!result.ok) return notify("Erreur", result.error);
+      setAdminLists(result.data.lists);
+    } else if (data) {
+      setAdminLists({
+        affectations: data.affectations,
+        units: data.units,
+        matricules: data.matricules,
+      });
+    } else {
+      return notify("Erreur", "Listes indisponibles");
+    }
+    setListDraft({ affectation: "", unit: "", matricule: "" });
+    setOpeningsOnly(false);
+    setListsOnly(true);
+    setAdminOpen(true);
+  }
+
+  async function addListValue(listKey: "AFFECTATION" | "UNIT" | "MATRICULE", raw: string) {
+    const result = await addCaisseListItem(listKey, raw);
+    notify("Listes", result.ok ? result.data.message : result.error);
+    if (!result.ok) return null;
+    await reload();
+    if (listsOnly || flags?.isAdmin) {
+      if (flags?.isAdmin && !listsOnly) await openAdmin();
+      else await openLists();
+    }
+    return result.data.label;
+  }
+
+  async function removeListValue(listKey: "AFFECTATION" | "UNIT" | "MATRICULE", label: string) {
+    const answer = await confirmBox("Retirer de la liste ?", `« ${label} » sera retiré de la liste déroulante.`, "Oui, retirer");
+    if (answer === null) return;
+    const result = await removeCaisseListItem(listKey, label);
+    notify("Listes", result.ok ? result.data.message : result.error);
+    if (!result.ok) return;
+    await reload();
+    if (affectation === label) setAffectation("");
+    if (matricule === label) setMatricule("");
+    if (listsOnly) await openLists();
+    else if (flags?.isAdmin) await openAdmin();
+  }
+
+  async function pickOrAddList(
+    listKey: "AFFECTATION" | "UNIT" | "MATRICULE",
+    value: string,
+    apply: (label: string) => void,
+  ) {
+    if (value !== "__ADD__") {
+      apply(value);
+      return;
+    }
+    if (!flags?.canManageLists) return;
+    const title =
+      listKey === "AFFECTATION" ? "Nouvelle affectation" : listKey === "MATRICULE" ? "Nouveau matricule" : "Nouvelle unité";
+    const label = await confirmBox(title, "Saisissez le libellé à ajouter à la liste.", "Ajouter", true);
+    if (label === null || !label.trim()) return;
+    const created = await addListValue(listKey, label);
+    if (created) apply(created);
   }
 
   async function saveRights() {
@@ -643,6 +719,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
           {flags?.canSeeCaisse || flags?.isAdmin ? <button type="button" className="btn-action btn-teal" onClick={() => void openClose()}>CLÔTURE</button> : null}
           {flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openAdmin()}>ADMIN</button> : null}
           {flags?.canManageOpenings && !flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openOpenings()}>OUVERTURE</button> : null}
+          {flags?.canManageLists && !flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openLists()}>LISTES</button> : null}
           {flags?.isAdmin ? <button type="button" className="btn-action btn-brown" onClick={() => void openAudit()}>AUDIT</button> : null}
         </div>
         <div className="toolbar">
@@ -751,9 +828,10 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                 </div>
                 <div className="field">
                   <label>Affectation</label>
-                  <select value={affectation} onChange={(event) => setAffectation(event.target.value)}>
+                  <select value={affectation} onChange={(event) => void pickOrAddList("AFFECTATION", event.target.value, setAffectation)}>
                     <option value="">-- Sélectionner --</option>
                     {data.affectations.map((name) => <option key={name}>{name}</option>)}
+                    {flags?.canManageLists ? <option value="__ADD__">+ Ajouter une affectation…</option> : null}
                   </select>
                 </div>
                 {flags?.isMaster || flags?.isAdmin ? (
@@ -767,9 +845,10 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                 {affectation === "PARC ROULANT" ? (
                   <div className="field">
                     <label>Matricule</label>
-                    <select value={matricule} onChange={(event) => setMatricule(event.target.value)}>
+                    <select value={matricule} onChange={(event) => void pickOrAddList("MATRICULE", event.target.value, setMatricule)}>
                       <option value="">-- Sélectionner --</option>
                       {data.matricules.map((name) => <option key={name}>{name}</option>)}
+                      {flags?.canManageLists ? <option value="__ADD__">+ Ajouter un matricule…</option> : null}
                     </select>
                   </div>
                 ) : null}
@@ -783,8 +862,14 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                       <td><input value={item.desc} onChange={(event) => updateItem(index, { desc: event.target.value })} /></td>
                       <td><input value={item.itemVal} disabled={!affectation.toUpperCase().startsWith("CONTRAT")} onChange={(event) => updateItem(index, { itemVal: event.target.value })} /></td>
                       <td>
-                        <select value={item.unit} onChange={(event) => updateItem(index, { unit: event.target.value })}>
+                        <select
+                          value={item.unit}
+                          onChange={(event) => {
+                            void pickOrAddList("UNIT", event.target.value, (label) => updateItem(index, { unit: label }));
+                          }}
+                        >
                           {data.units.map((unit) => <option key={unit}>{unit}</option>)}
+                          {flags?.canManageLists ? <option value="__ADD__">+ Ajouter…</option> : null}
                         </select>
                       </td>
                       <td><input type="number" min="0" step="any" value={item.qte} onChange={(event) => updateItem(index, { qte: event.target.value })} /></td>
@@ -907,15 +992,16 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         <div className="overlay">
           <div className="modal modal-admin">
             <div className="modal-head slate">
-              <strong>Contrôle des droits</strong>
+              <strong>{listsOnly ? "Listes déroulantes" : openingsOnly ? "Soldes d’ouverture" : "Contrôle des droits"}</strong>
               <button type="button" className="close-x" onClick={() => setAdminOpen(false)}>×</button>
             </div>
             <div className="modal-body admin-body">
-              {openingsOnly ? null : (
+              {openingsOnly || listsOnly ? null : (
                 <section className="admin-section">
                   <p className="hint admin-intro">
                     L’administrateur voit toujours tout. Pour chaque employé, cochez ce qu’il a le droit de faire.
-                    « Ouverture » délègue la date et les soldes d’ouverture (déjà inclus pour SUPER_ADMIN / ADMIN_FINANCE).
+                    « Ouverture » délègue les soldes d’ouverture ; « Listes » délègue Affectation / Parc roulant / Unités
+                    (déjà inclus pour SUPER_ADMIN / ADMIN_FINANCE).
                   </p>
                   <div className="admin-table-wrap">
                     <table className="admin-table rights-table">
@@ -929,6 +1015,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                           <th>Opérations caisse</th>
                           <th>Modifier / Supprimer</th>
                           <th>Ouverture</th>
+                          <th>Listes</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -945,16 +1032,16 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                               />
                             </td>
                             {user.isAdmin ? (
-                              <td colSpan={6}>
+                              <td colSpan={7}>
                                 <span className="admin-badge">Admin — voit tout (droits non modifiables)</span>
                               </td>
                             ) : (
-                              (["datesLibres", "buyForOthers", "seeAll", "caisseOps", "canEdit", "manageOpenings"] as const).map((key) => (
+                              (["datesLibres", "buyForOthers", "seeAll", "caisseOps", "canEdit", "manageOpenings", "manageLists"] as const).map((key) => (
                                 <td key={key} className="admin-check">
                                   <input
                                     type="checkbox"
                                     checked={user[key]}
-                                    disabled={key === "manageOpenings" && !user.userId}
+                                    disabled={(key === "manageOpenings" || key === "manageLists") && !user.userId}
                                     onChange={(event) => setAdminUsers((current) => current.map((row, i) => (i === index ? { ...row, [key]: event.target.checked } : row)))}
                                   />
                                 </td>
@@ -972,7 +1059,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                 </section>
               )}
 
-              {flags?.canManageOpenings ? (
+              {flags?.canManageOpenings && !listsOnly ? (
                 <section className="admin-section">
                   <h6 className="admin-section-title">Soldes d’ouverture — {formatDateFr(openingDate)}</h6>
                   <p className="hint">
@@ -1017,7 +1104,52 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                 </section>
               ) : null}
 
-              {openingsOnly ? null : (
+              {flags?.canManageLists ? (
+                <section className="admin-section">
+                  <h6 className="admin-section-title">Listes déroulantes</h6>
+                  <p className="hint">Affectation, matricules Parc roulant et unités. Les personnes cochées « Listes » peuvent aussi les gérer.</p>
+                  {(
+                    [
+                      { key: "AFFECTATION" as const, title: "Affectation", items: adminLists.affectations, draftKey: "affectation" as const },
+                      { key: "MATRICULE" as const, title: "Matricules (Parc roulant)", items: adminLists.matricules, draftKey: "matricule" as const },
+                      { key: "UNIT" as const, title: "Unités", items: adminLists.units, draftKey: "unit" as const },
+                    ]
+                  ).map((block) => (
+                    <div key={block.key} className="list-editor">
+                      <div className="list-editor-head">{block.title}</div>
+                      <div className="list-editor-add">
+                        <input
+                          placeholder="Nouveau libellé"
+                          value={listDraft[block.draftKey]}
+                          onChange={(event) => setListDraft((current) => ({ ...current, [block.draftKey]: event.target.value }))}
+                        />
+                        <button
+                          type="button"
+                          className="btn-action btn-green"
+                          onClick={() => {
+                            const value = listDraft[block.draftKey];
+                            void addListValue(block.key, value).then((created) => {
+                              if (created) setListDraft((current) => ({ ...current, [block.draftKey]: "" }));
+                            });
+                          }}
+                        >
+                          Ajouter
+                        </button>
+                      </div>
+                      <ul className="list-editor-items">
+                        {block.items.map((item) => (
+                          <li key={item}>
+                            <span>{item}</span>
+                            <button type="button" className="btn-light" onClick={() => void removeListValue(block.key, item)}>Retirer</button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </section>
+              ) : null}
+
+              {openingsOnly || listsOnly ? null : (
                 <section className="admin-section">
                   <h6 className="admin-section-title">Ajouter un utilisateur</h6>
                   <div className="add-user-identity">
@@ -1083,7 +1215,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
             <div className="modal-body">
               <h6>{ask.title}</h6>
               <p>{ask.text}</p>
-              {ask.reason ? <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Ex. saisie en retard" /> : null}
+              {ask.reason ? <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Saisir…" /> : null}
             </div>
             <div className="modal-foot">
               <button type="button" className="btn-light" onClick={() => { ask.resolve(null); setAsk(null); }}>Annuler</button>

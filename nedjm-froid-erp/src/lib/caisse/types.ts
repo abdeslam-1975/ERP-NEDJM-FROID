@@ -9,6 +9,8 @@ export type CaisseFlags = {
   canManage: boolean;
   /** Caisse admin (SUPER_ADMIN / ADMIN_FINANCE), or a user with delegated « Ouverture ». */
   canManageOpenings: boolean;
+  /** Caisse admin, or a user with delegated « Listes » (affectation / matricule / unité). */
+  canManageLists: boolean;
   userName: string;
 };
 
@@ -90,6 +92,7 @@ export type CaisseAdminUser = {
   caisseOps: boolean;
   canEdit: boolean;
   manageOpenings: boolean;
+  manageLists: boolean;
 };
 
 export type CaisseAuditRow = {

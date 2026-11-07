@@ -155,6 +155,21 @@
   border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer;
 }
 .caisse-app .btn-add-user:hover { background: #1e40af; }
+.caisse-app .list-editor {
+  border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #fafafa;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.caisse-app .list-editor-head { font-weight: 800; color: #111827; font-size: 13px; }
+.caisse-app .list-editor-add { display: flex; flex-wrap: wrap; gap: 8px; }
+.caisse-app .list-editor-add input {
+  flex: 1; min-width: 180px; border: 1px solid #d1d5db !important; border-radius: 6px !important;
+  padding: 7px 10px !important;
+}
+.caisse-app .list-editor-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.caisse-app .list-editor-items li {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: #fff; border: 1px solid #eef2f7; border-radius: 6px; padding: 6px 10px; font-size: 13px;
+}
 
 @media (max-width: 800px) {
   .caisse-app .kpi-grid, .caisse-app .grid-3 { grid-template-columns: 1fr; }
