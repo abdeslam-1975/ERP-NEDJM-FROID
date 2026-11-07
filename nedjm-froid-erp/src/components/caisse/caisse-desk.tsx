@@ -992,7 +992,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         <div className="overlay">
           <div className="modal modal-admin">
             <div className="modal-head slate">
-              <strong>{listsOnly ? "Listes déroulantes" : openingsOnly ? "Soldes d’ouverture" : "Contrôle des droits"}</strong>
+              <strong>{listsOnly ? "Listes déroulantes" : openingsOnly ? "Soldes d’ouverture" : "Contrôle des droits · Listes"}</strong>
               <button type="button" className="close-x" onClick={() => setAdminOpen(false)}>×</button>
             </div>
             <div className="modal-body admin-body">
