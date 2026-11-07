@@ -161,6 +161,19 @@ async function logAction(
   });
 }
 
+/** After insert/update, N° may change once operations are ordered by op_date. */
+async function refreshOperationNumber(
+  supabase: ServerClient,
+  operationId: string,
+): Promise<{ ok: true; op: number } | { ok: false; error: string }> {
+  const renumbered = await supabase.rpc("caisse_renumber_active_operations");
+  if (renumbered.error) return { ok: false, error: renumbered.error.message };
+  const row = await supabase.from("caisse_operations").select("op_number").eq("id", operationId).maybeSingle();
+  if (row.error) return { ok: false, error: row.error.message };
+  if (row.data?.op_number == null) return { ok: false, error: "Opération introuvable après réordonnancement." };
+  return { ok: true, op: Number(row.data.op_number) };
+}
+
 function photoFromItems(items: PurchaseInput["items"]): { data: string | null; label: string; error: string | null } {
   let data: string | null = null;
   let label = "";
@@ -380,9 +393,11 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
       const removed = await supabase.from("caisse_lines").delete().eq("operation_id", input.operationId);
       if (removed.error) return fail(removed.error.message);
       await writeLines(supabase, input.operationId, "ACHAT", input.items);
-      await logAction(supabase, "UPDATE", "ACHAT", updated.data.op_number, sheetNameFromIso(input.date), `Modification achat | Acheteur: ${buyer}`, grand);
+      const numbered = await refreshOperationNumber(supabase, input.operationId);
+      if (!numbered.ok) return fail(`❌ ${numbered.error}`);
+      await logAction(supabase, "UPDATE", "ACHAT", numbered.op, sheetNameFromIso(input.date), `Modification achat | Acheteur: ${buyer}`, grand);
       refresh();
-      return { ok: true, data: { message: `✅ Opération N° ${updated.data.op_number} mise à jour.` } };
+      return { ok: true, data: { message: `✅ Opération N° ${numbered.op} mise à jour.` } };
     }
     const inserted = await supabase
       .from("caisse_operations")
@@ -392,17 +407,19 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
     if (inserted.error) return fail(`❌ ${inserted.error.message}`);
     if (!inserted.data) return fail("❌ Enregistrement refusé.");
     await writeLines(supabase, inserted.data.id, "ACHAT", input.items);
+    const numbered = await refreshOperationNumber(supabase, inserted.data.id);
+    if (!numbered.ok) return fail(`❌ ${numbered.error}`);
     await logAction(
       supabase,
       "CREATE",
       "ACHAT",
-      inserted.data.op_number,
+      numbered.op,
       sheetNameFromIso(input.date),
       `Acheteur: ${buyer} | ${input.affectation} | ${input.items.length} ligne(s)`,
       grand,
     );
     refresh();
-    return { ok: true, data: { message: `✅ Opération effectuée avec succès (N° ${inserted.data.op_number} → ${sheetNameFromIso(input.date)})` } };
+    return { ok: true, data: { message: `✅ Opération effectuée avec succès (N° ${numbered.op} → ${sheetNameFromIso(input.date)})` } };
   } catch (error) {
     return fail(error instanceof Error ? `❌ ${error.message}` : "❌ Erreur");
   }
@@ -446,20 +463,24 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
       const removed = await supabase.from("caisse_lines").delete().eq("operation_id", input.operationId);
       if (removed.error) return fail(removed.error.message);
       await writeLines(supabase, input.operationId, kind, [line]);
-      await logAction(supabase, "UPDATE", kind, updated.data.op_number, sheetNameFromIso(input.date), `Modification caisse | ${beneficiary}`, amount);
+      const numbered = await refreshOperationNumber(supabase, input.operationId);
+      if (!numbered.ok) return fail(`❌ ${numbered.error}`);
+      await logAction(supabase, "UPDATE", kind, numbered.op, sheetNameFromIso(input.date), `Modification caisse | ${beneficiary}`, amount);
       refresh();
-      return { ok: true, data: { message: `✅ Mouvement de caisse N° ${updated.data.op_number} mis à jour.` } };
+      return { ok: true, data: { message: `✅ Mouvement de caisse N° ${numbered.op} mis à jour.` } };
     }
     const inserted = await supabase.from("caisse_operations").insert({ ...header, created_by: userId }).select("id, op_number").maybeSingle();
     if (inserted.error) return fail(`❌ ${inserted.error.message}`);
     if (!inserted.data) return fail("❌ Enregistrement refusé.");
     await writeLines(supabase, inserted.data.id, kind, [line]);
+    const numbered = await refreshOperationNumber(supabase, inserted.data.id);
+    if (!numbered.ok) return fail(`❌ ${numbered.error}`);
     const { data: solde } = await supabase.rpc("caisse_system_solde");
     await logAction(
       supabase,
       "CAISSE",
       kind,
-      inserted.data.op_number,
+      numbered.op,
       "Caisse_Centrale",
       kind === "ALIMENTATION" ? "Alimentation Caisse" : `Transfert vers: ${beneficiary}`,
       amount,
@@ -468,8 +489,8 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
     const balance = Number(solde) || 0;
     const message =
       kind === "ALIMENTATION"
-        ? `✅ Alimentation enregistrée (n° ${inserted.data.op_number}) — Solde: ${balance.toFixed(2)} DA`
-        : `✅ Transfert vers ${beneficiary} (n° ${inserted.data.op_number})\n(✅ Tiré vers: ${sheetNameFromIso(input.date)})`;
+        ? `✅ Alimentation enregistrée (n° ${numbered.op}) — Solde: ${balance.toFixed(2)} DA`
+        : `✅ Transfert vers ${beneficiary} (n° ${numbered.op})\n(✅ Tiré vers: ${sheetNameFromIso(input.date)})`;
     return { ok: true, data: { message } };
   } catch (error) {
     return fail(error instanceof Error ? `❌ ${error.message}` : "❌ Erreur");
