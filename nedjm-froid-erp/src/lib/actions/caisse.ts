@@ -161,17 +161,24 @@ async function logAction(
   });
 }
 
-/** After insert/update, N° may change once operations are ordered by op_date. */
+/**
+ * After insert/update, N° may change once operations are ordered by op_date.
+ * Falls back to fallbackOp if renumber fails so a successful write is never reported as lost.
+ */
 async function refreshOperationNumber(
   supabase: ServerClient,
   operationId: string,
-): Promise<{ ok: true; op: number } | { ok: false; error: string }> {
+  fallbackOp: number,
+): Promise<{ op: number; renumbered: boolean; warning?: string }> {
   const renumbered = await supabase.rpc("caisse_renumber_active_operations");
-  if (renumbered.error) return { ok: false, error: renumbered.error.message };
+  if (renumbered.error) {
+    return { op: fallbackOp, renumbered: false, warning: renumbered.error.message };
+  }
   const row = await supabase.from("caisse_operations").select("op_number").eq("id", operationId).maybeSingle();
-  if (row.error) return { ok: false, error: row.error.message };
-  if (row.data?.op_number == null) return { ok: false, error: "Opération introuvable après réordonnancement." };
-  return { ok: true, op: Number(row.data.op_number) };
+  if (row.error || row.data?.op_number == null) {
+    return { op: fallbackOp, renumbered: false, warning: row.error?.message || "N° final introuvable" };
+  }
+  return { op: Number(row.data.op_number), renumbered: true };
 }
 
 function photoFromItems(items: PurchaseInput["items"]): { data: string | null; label: string; error: string | null } {
@@ -393,8 +400,7 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
       const removed = await supabase.from("caisse_lines").delete().eq("operation_id", input.operationId);
       if (removed.error) return fail(removed.error.message);
       await writeLines(supabase, input.operationId, "ACHAT", input.items);
-      const numbered = await refreshOperationNumber(supabase, input.operationId);
-      if (!numbered.ok) return fail(`❌ ${numbered.error}`);
+      const numbered = await refreshOperationNumber(supabase, input.operationId, updated.data.op_number);
       await logAction(supabase, "UPDATE", "ACHAT", numbered.op, sheetNameFromIso(input.date), `Modification achat | Acheteur: ${buyer}`, grand);
       refresh();
       return { ok: true, data: { message: `✅ Opération N° ${numbered.op} mise à jour.` } };
@@ -407,8 +413,7 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
     if (inserted.error) return fail(`❌ ${inserted.error.message}`);
     if (!inserted.data) return fail("❌ Enregistrement refusé.");
     await writeLines(supabase, inserted.data.id, "ACHAT", input.items);
-    const numbered = await refreshOperationNumber(supabase, inserted.data.id);
-    if (!numbered.ok) return fail(`❌ ${numbered.error}`);
+    const numbered = await refreshOperationNumber(supabase, inserted.data.id, inserted.data.op_number);
     await logAction(
       supabase,
       "CREATE",
@@ -463,8 +468,7 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
       const removed = await supabase.from("caisse_lines").delete().eq("operation_id", input.operationId);
       if (removed.error) return fail(removed.error.message);
       await writeLines(supabase, input.operationId, kind, [line]);
-      const numbered = await refreshOperationNumber(supabase, input.operationId);
-      if (!numbered.ok) return fail(`❌ ${numbered.error}`);
+      const numbered = await refreshOperationNumber(supabase, input.operationId, updated.data.op_number);
       await logAction(supabase, "UPDATE", kind, numbered.op, sheetNameFromIso(input.date), `Modification caisse | ${beneficiary}`, amount);
       refresh();
       return { ok: true, data: { message: `✅ Mouvement de caisse N° ${numbered.op} mis à jour.` } };
@@ -473,8 +477,7 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
     if (inserted.error) return fail(`❌ ${inserted.error.message}`);
     if (!inserted.data) return fail("❌ Enregistrement refusé.");
     await writeLines(supabase, inserted.data.id, kind, [line]);
-    const numbered = await refreshOperationNumber(supabase, inserted.data.id);
-    if (!numbered.ok) return fail(`❌ ${numbered.error}`);
+    const numbered = await refreshOperationNumber(supabase, inserted.data.id, inserted.data.op_number);
     const { data: solde } = await supabase.rpc("caisse_system_solde");
     await logAction(
       supabase,

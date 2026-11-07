@@ -263,19 +263,24 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       return notify("Attention", "Ajoutez au moins une photo pour cette opération (une seule suffit)");
     }
     setBusy(true);
-    const result = await saveCaissePurchase({
-      operationId: editId || undefined,
-      date: opDate,
-      affectation,
-      immatriculation: matricule,
-      buyer: flags.isMaster || flags.isAdmin ? buyer : null,
-      items: pending,
-    });
-    setBusy(false);
-    if (!result.ok) return notify("Résultat", result.error);
-    notify("Résultat", result.data.message);
-    setOpOpen(false);
-    await reload();
+    try {
+      const result = await saveCaissePurchase({
+        operationId: editId || undefined,
+        date: opDate,
+        affectation,
+        immatriculation: matricule,
+        buyer: flags.isMaster || flags.isAdmin ? buyer : null,
+        items: pending,
+      });
+      if (!result.ok) return notify("Résultat", result.error);
+      notify("Résultat", result.data.message);
+      setOpOpen(false);
+      await reload();
+    } catch (error) {
+      notify("Résultat", error instanceof Error ? error.message : "Enregistrement interrompu. Vérifiez le journal puis réessayez.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function openFinance() {
@@ -301,20 +306,25 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     if (!Number.isFinite(amount) || amount <= 0) return notify("Erreur", "Montant invalide");
     if (finType === "OUT" && !finBuyer) return notify("Erreur", "Choisissez un bénéficiaire");
     setBusy(true);
-    const result = await saveCaisseFinance({
-      operationId: financeEdit || undefined,
-      type: finType,
-      date: finDate,
-      amount,
-      method: finMethod,
-      ref: finRef,
-      beneficiary: finBuyer,
-    });
-    setBusy(false);
-    if (!result.ok) return notify("Résultat", result.error);
-    notify("Résultat", result.data.message);
-    setFinanceOpen(false);
-    await reload();
+    try {
+      const result = await saveCaisseFinance({
+        operationId: financeEdit || undefined,
+        type: finType,
+        date: finDate,
+        amount,
+        method: finMethod,
+        ref: finRef,
+        beneficiary: finBuyer,
+      });
+      if (!result.ok) return notify("Résultat", result.error);
+      notify("Résultat", result.data.message);
+      setFinanceOpen(false);
+      await reload();
+    } catch (error) {
+      notify("Résultat", error instanceof Error ? error.message : "Enregistrement interrompu. Vérifiez le journal puis réessayez.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function removeOperation(line: JournalLine) {
