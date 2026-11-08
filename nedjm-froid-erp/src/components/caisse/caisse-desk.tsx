@@ -102,6 +102,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     matricules: [],
   });
   const [listDraft, setListDraft] = useState({ affectation: "", unit: "", matricule: "" });
+  const [listSearch, setListSearch] = useState({ affectation: "", unit: "", matricule: "" });
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newPass, setNewPass] = useState("");
@@ -395,6 +396,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     setOpeningDate(result.data.openingDate);
     setAdminLists(result.data.lists);
     setListDraft({ affectation: "", unit: "", matricule: "" });
+    setListSearch({ affectation: "", unit: "", matricule: "" });
     setOpeningsOnly(false);
     setListsOnly(false);
     setAdminOpen(true);
@@ -425,6 +427,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       return notify("Erreur", "Listes indisponibles");
     }
     setListDraft({ affectation: "", unit: "", matricule: "" });
+    setListSearch({ affectation: "", unit: "", matricule: "" });
     setOpeningsOnly(false);
     setListsOnly(true);
     setAdminOpen(true);
@@ -1114,9 +1117,17 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                       { key: "MATRICULE" as const, title: "Matricules (Parc roulant)", items: adminLists.matricules, draftKey: "matricule" as const },
                       { key: "UNIT" as const, title: "Unités", items: adminLists.units, draftKey: "unit" as const },
                     ]
-                  ).map((block) => (
+                  ).map((block) => {
+                    const query = listSearch[block.draftKey].trim().toLowerCase();
+                    const visible = query
+                      ? block.items.filter((item) => item.toLowerCase().includes(query))
+                      : block.items;
+                    return (
                     <div key={block.key} className="list-editor">
-                      <div className="list-editor-head">{block.title}</div>
+                      <div className="list-editor-head">
+                        <span>{block.title}</span>
+                        <span className="list-editor-count">{visible.length}/{block.items.length}</span>
+                      </div>
                       <div className="list-editor-add">
                         <input
                           placeholder="Nouveau libellé"
@@ -1136,16 +1147,29 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                           Ajouter
                         </button>
                       </div>
+                      <input
+                        className="list-editor-search"
+                        placeholder="Rechercher pour modifier / retirer…"
+                        value={listSearch[block.draftKey]}
+                        onChange={(event) => setListSearch((current) => ({ ...current, [block.draftKey]: event.target.value }))}
+                      />
                       <ul className="list-editor-items">
-                        {block.items.map((item) => (
-                          <li key={item}>
-                            <span>{item}</span>
-                            <button type="button" className="btn-light" onClick={() => void removeListValue(block.key, item)}>Retirer</button>
+                        {visible.length === 0 ? (
+                          <li className="list-editor-empty">
+                            <span>{block.items.length === 0 ? "Aucun élément" : "Aucun résultat"}</span>
                           </li>
-                        ))}
+                        ) : (
+                          visible.map((item) => (
+                            <li key={item}>
+                              <span>{item}</span>
+                              <button type="button" className="btn-light" onClick={() => void removeListValue(block.key, item)}>Retirer</button>
+                            </li>
+                          ))
+                        )}
                       </ul>
                     </div>
-                  ))}
+                    );
+                  })}
                 </section>
               ) : null}
 
