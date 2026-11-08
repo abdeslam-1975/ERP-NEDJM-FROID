@@ -159,16 +159,29 @@
   border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #fafafa;
   display: flex; flex-direction: column; gap: 8px;
 }
-.caisse-app .list-editor-head { font-weight: 800; color: #111827; font-size: 13px; }
+.caisse-app .list-editor-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-weight: 800; color: #111827; font-size: 13px;
+}
+.caisse-app .list-editor-count { font-weight: 600; color: #6b7280; font-size: 12px; }
 .caisse-app .list-editor-add { display: flex; flex-wrap: wrap; gap: 8px; }
-.caisse-app .list-editor-add input {
+.caisse-app .list-editor-add input,
+.caisse-app .list-editor-search {
   flex: 1; min-width: 180px; border: 1px solid #d1d5db !important; border-radius: 6px !important;
   padding: 7px 10px !important;
 }
-.caisse-app .list-editor-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.caisse-app .list-editor-search { width: 100%; background: #fff !important; }
+.caisse-app .list-editor-items {
+  list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px;
+  max-height: 220px; overflow: auto; border: 1px solid #eef2f7; border-radius: 6px;
+  background: #fff; padding: 6px;
+}
 .caisse-app .list-editor-items li {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   background: #fff; border: 1px solid #eef2f7; border-radius: 6px; padding: 6px 10px; font-size: 13px;
+}
+.caisse-app .list-editor-items li.list-editor-empty {
+  justify-content: center; color: #6b7280; border-style: dashed;
 }
 
 @media (max-width: 800px) {
