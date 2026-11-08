@@ -6,6 +6,7 @@ import {
   addCaisseBuyer,
   addCaisseListItem,
   closeCaisseDay,
+  deleteCaisseBuyer,
   deleteCaisseOperation,
   getCaisseAdmin,
   getCaisseAudit,
@@ -18,7 +19,9 @@ import {
   saveCaisseOpenings,
   saveCaissePurchase,
   saveCaisseRights,
+  setCaisseBuyerActive,
   unlockCaisseDay,
+  updateCaisseBuyerProfile,
 } from "@/lib/actions/caisse";
 import { formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
 import type { CaisseAdminUser, CaisseAuditRow, CaisseDashboard, CloseStatus, JournalLine, PurchaseItemInput } from "@/lib/caisse/types";
@@ -520,6 +523,84 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     }
   }
 
+  async function editBuyer(user: CaisseAdminUser) {
+    if (user.isAdmin) return notify("Accès", "Le compte admin n’est pas modifiable ici.");
+    setReason(user.name);
+    const nextName = await confirmBox(
+      "Modifier l’acheteur",
+      `Nom actuel : ${user.name}\nEmail : ${user.email || "—"}\n\nSaisissez le nouveau nom (exact, tel qu’il doit apparaître dans le journal).`,
+      "Enregistrer",
+      true,
+    );
+    if (nextName === null) return;
+    const name = nextName.trim();
+    if (!name) return notify("Attention", "Nom obligatoire");
+    setReason(user.email || "");
+    const nextEmail = await confirmBox(
+      "Modifier l’email",
+      `Laissez vide pour conserver « ${user.email || "—"} ».`,
+      "Continuer",
+      true,
+    );
+    if (nextEmail === null) return;
+    const result = await updateCaisseBuyerProfile({
+      userId: user.userId,
+      buyerId: user.buyerId,
+      name,
+      email: nextEmail.trim() || user.email,
+    });
+    notify("Acheteur", result.ok ? result.data.message : result.error);
+    if (result.ok) {
+      await openAdmin();
+      await reload();
+    }
+  }
+
+  async function toggleBuyerActive(user: CaisseAdminUser) {
+    if (user.isAdmin) return notify("Accès", "Le compte admin reste toujours actif.");
+    const activate = !user.active;
+    const answer = await confirmBox(
+      activate ? "Réactiver l’acheteur ?" : "Désactiver l’acheteur ?",
+      activate
+        ? `« ${user.name} » réapparaîtra dans les listes acheteurs.`
+        : `« ${user.name} » disparaîtra des listes acheteurs (opérations passées conservées).`,
+      activate ? "Oui, réactiver" : "Oui, désactiver",
+    );
+    if (answer === null) return;
+    const result = await setCaisseBuyerActive({
+      userId: user.userId,
+      buyerId: user.buyerId,
+      active: activate,
+    });
+    notify("Acheteur", result.ok ? result.data.message : result.error);
+    if (result.ok) {
+      await openAdmin();
+      await reload();
+    }
+  }
+
+  async function removeBuyer(user: CaisseAdminUser) {
+    if (user.isAdmin) return notify("Accès", "Impossible de supprimer un admin ici.");
+    if (user.userId) {
+      return notify(
+        "Suppression",
+        "Compte ERP lié : utilisez Désactiver. La suppression du compte se fait dans Paramètres → Utilisateurs.",
+      );
+    }
+    const answer = await confirmBox(
+      "Supprimer l’acheteur ?",
+      `« ${user.name} » sera retiré définitivement s’il n’a aucune opération ni solde d’ouverture.`,
+      "Oui, supprimer",
+    );
+    if (answer === null) return;
+    const result = await deleteCaisseBuyer({ buyerId: user.buyerId });
+    notify("Acheteur", result.ok ? result.data.message : result.error);
+    if (result.ok) {
+      await openAdmin();
+      await reload();
+    }
+  }
+
   async function openAudit() {
     const result = await getCaisseAudit();
     if (!result.ok) return notify("Audit", result.error);
@@ -1012,6 +1093,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                         <tr>
                           <th>Nom</th>
                           <th>Email</th>
+                          <th>Statut</th>
                           <th>Dates libres</th>
                           <th>Acheter pour autrui</th>
                           <th>Voir achats des autres</th>
@@ -1019,11 +1101,12 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                           <th>Modifier / Supprimer</th>
                           <th>Ouverture</th>
                           <th>Listes</th>
+                          <th>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
                         {adminUsers.map((user, index) => (
-                          <tr key={`${user.userId || user.buyerId}-${user.name}`}>
+                          <tr key={`${user.userId || user.buyerId}-${user.name}`} className={user.active ? undefined : "admin-row-inactive"}>
                             <td className="admin-name">{user.name}</td>
                             <td>
                               <input
@@ -1033,6 +1116,11 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                                 disabled={user.isAdmin}
                                 onChange={(event) => setAdminUsers((current) => current.map((row, i) => (i === index ? { ...row, email: event.target.value } : row)))}
                               />
+                            </td>
+                            <td>
+                              <span className={`admin-status ${user.active ? "on" : "off"}`}>
+                                {user.isAdmin ? "Admin" : user.active ? "Actif" : "Inactif"}
+                              </span>
                             </td>
                             {user.isAdmin ? (
                               <td colSpan={7}>
@@ -1050,6 +1138,19 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                                 </td>
                               ))
                             )}
+                            <td className="admin-row-actions">
+                              {user.isAdmin ? (
+                                <span className="hint">—</span>
+                              ) : (
+                                <>
+                                  <button type="button" className="btn-light" onClick={() => void editBuyer(user)}>Modifier</button>
+                                  <button type="button" className="btn-light" onClick={() => void toggleBuyerActive(user)}>
+                                    {user.active ? "Désactiver" : "Activer"}
+                                  </button>
+                                  <button type="button" className="btn-light btn-danger-text" onClick={() => void removeBuyer(user)}>Supprimer</button>
+                                </>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
