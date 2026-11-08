@@ -86,6 +86,7 @@ export type CaisseAdminUser = {
   name: string;
   email: string;
   isAdmin: boolean;
+  active: boolean;
   datesLibres: boolean;
   buyForOthers: boolean;
   seeAll: boolean;

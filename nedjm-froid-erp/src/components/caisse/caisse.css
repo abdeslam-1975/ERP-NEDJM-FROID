@@ -155,6 +155,18 @@
   border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer;
 }
 .caisse-app .btn-add-user:hover { background: #1e40af; }
+.caisse-app .admin-row-inactive td { opacity: 0.72; background: #f9fafb; }
+.caisse-app .admin-status {
+  display: inline-block; min-width: 64px; text-align: center;
+  border-radius: 999px; padding: 3px 8px; font-size: 11px; font-weight: 700;
+}
+.caisse-app .admin-status.on { background: #dcfce7; color: #166534; }
+.caisse-app .admin-status.off { background: #fee2e2; color: #991b1b; }
+.caisse-app .admin-row-actions {
+  display: flex; flex-wrap: wrap; gap: 4px; min-width: 210px;
+}
+.caisse-app .admin-row-actions .btn-light { padding: 4px 8px; font-size: 11px; }
+.caisse-app .btn-danger-text { color: #b91c1c !important; border-color: #fecaca !important; }
 .caisse-app .list-editor {
   border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; background: #fafafa;
   display: flex; flex-direction: column; gap: 8px;
