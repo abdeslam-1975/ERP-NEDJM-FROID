@@ -734,9 +734,10 @@ export async function getCaisseAdmin(): Promise<
   }
   users.sort((a, b) => a.name.localeCompare(b.name, "fr"));
   const openingMap = new Map((openingsRes.data ?? []).map((row) => [row.buyer_name, Number(row.amount) || 0]));
+  // Admins (SUPER_ADMIN / ADMIN_FINANCE) can also hold an opening float as acheteurs.
   const openingNames = new Set(
     users
-      .filter((user) => user.active && !user.isAdmin && !isCaissePrincipaleName(user.name))
+      .filter((user) => user.active && !isCaissePrincipaleName(user.name))
       .map((user) => user.name),
   );
   for (const name of openingMap.keys()) openingNames.add(name);
@@ -770,9 +771,10 @@ export async function getCaisseOpeningForm(): Promise<
   if (!flags.canManageOpenings) {
     return fail("Réservé à l’administrateur caisse ou à la personne déléguée (Ouverture)");
   }
-  const [openingsRes, buyersRes, settingsRes] = await Promise.all([
+  const [openingsRes, buyersRes, directoryRes, settingsRes] = await Promise.all([
     supabase.from("caisse_journal_openings").select("buyer_name, amount"),
     supabase.from("caisse_journal_buyers").select("name").eq("active", true),
+    supabase.rpc("caisse_name_directory"),
     supabase.from("caisse_settings").select("opening_date").eq("id", 1).maybeSingle(),
   ]);
   if (openingsRes.error) return fail(openingsRes.error.message);
@@ -782,6 +784,11 @@ export async function getCaisseOpeningForm(): Promise<
   const names = new Set<string>();
   for (const buyer of buyersRes.data ?? []) {
     if (!isCaissePrincipaleName(buyer.name)) names.add(buyer.name);
+  }
+  if (!directoryRes.error) {
+    for (const row of (directoryRes.data ?? []) as { name: string }[]) {
+      if (row.name && !isCaissePrincipaleName(row.name)) names.add(row.name);
+    }
   }
   const amounts = new Map((openingsRes.data ?? []).map((row) => [row.buyer_name, Number(row.amount) || 0]));
   for (const name of amounts.keys()) if (!isCaissePrincipaleName(name)) names.add(name);
