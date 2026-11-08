@@ -524,11 +524,12 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   }
 
   async function editBuyer(user: CaisseAdminUser) {
-    if (user.isAdmin) return notify("Accès", "Le compte admin n’est pas modifiable ici.");
     setReason(user.name);
     const nextName = await confirmBox(
-      "Modifier l’acheteur",
-      `Nom actuel : ${user.name}\nEmail : ${user.email || "—"}\n\nSaisissez le nouveau nom (exact, tel qu’il doit apparaître dans le journal).`,
+      user.isAdmin ? "Modifier le nom admin" : "Modifier l’acheteur",
+      `Nom actuel : ${user.name}\nEmail : ${user.email || "—"}\n\nSaisissez le nouveau nom (exact, tel qu’il doit apparaître dans le journal / listes acheteurs).${
+        user.isAdmin ? "\nLes droits Admin restent inchangés." : ""
+      }`,
       "Enregistrer",
       true,
     );
@@ -1139,11 +1140,11 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                               ))
                             )}
                             <td className="admin-row-actions">
+                              <button type="button" className="btn-light" onClick={() => void editBuyer(user)}>Modifier</button>
                               {user.isAdmin ? (
-                                <span className="hint">—</span>
+                                <span className="hint">Droits admin</span>
                               ) : (
                                 <>
-                                  <button type="button" className="btn-light" onClick={() => void editBuyer(user)}>Modifier</button>
                                   <button type="button" className="btn-light" onClick={() => void toggleBuyerActive(user)}>
                                     {user.active ? "Désactiver" : "Activer"}
                                   </button>
