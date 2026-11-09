@@ -533,6 +533,7 @@ export function EmployeesManager({
             getRowId={(r) => r.id}
             searchable={false}
             columnToggle={false}
+            pageSize={0}
             maxHeight="70vh"
             emptyTitle="Aucun employé"
             emptyBody={staffFilter.emptyHint ?? undefined}
