@@ -191,8 +191,10 @@ function photoFromItems(items: PurchaseInput["items"]): { data: string | null; l
   for (const item of items) {
     const photo = item.photoDataUrl?.trim() || "";
     if (!photo) continue;
-    if (!photo.startsWith("data:image/")) return { data: null, label: "", error: "La photo du bon doit être une image." };
-    if (photo.length > 1_500_000) return { data: null, label: "", error: "Photo trop lourde (1 Mo maximum)." };
+    if (!photo.startsWith("data:image/") && !photo.startsWith("data:application/pdf")) {
+      return { data: null, label: "", error: "Le bon doit être une image ou un PDF." };
+    }
+    if (photo.length > 1_500_000) return { data: null, label: "", error: "Bon trop lourd (1 Mo maximum)." };
     if (!data) {
       data = photo;
       label = "Voir Bon";
