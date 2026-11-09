@@ -413,7 +413,9 @@ export function applyEmployeeMatricules(
     if (!key) continue;
     const prior = claimed.get(key);
     if (prior && prior !== group) {
-      for (const slot of members(group)) {
+      // Both people keep the same number in the report so the pair is visible.
+      for (const slot of [...members(prior), ...members(group)]) {
+        if (slot.status === "invalid" || slot.status === "conflict") continue;
         slot.status = "duplicate";
         slot.message = `Matricule ${chosen} déjà utilisé par une autre personne.`;
         slot.candidate = null;

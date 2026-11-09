@@ -213,7 +213,7 @@ export function EmployeeImportDialog({
     <RhModal
       size="xl"
       title="Importer l'ancienne base"
-      subtitle="Excel (.xlsx) ou CSV. Même NSS ou NIN : le matricule existant est conservé et la fiche est mise à jour. L'ancienne fiche PDF reste archivée."
+      subtitle="Excel (.xlsx) ou CSV. Le matricule écrit dans le fichier est importé tel quel pour toute la base. Cliquez un état du rapport pour voir ses lignes."
       onClose={onClose}
       footer={
         step === "file" ? (
@@ -276,7 +276,9 @@ export function EmployeeImportDialog({
                   aria-pressed={statusFilter === s}
                   onClick={() => {
                     setStatusFilter((current) => (current === s ? null : s));
-                    reportRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    requestAnimationFrame(() => {
+                      reportRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                    });
                   }}
                   className={cn(
                     "rounded-full px-3 py-1 text-sm font-medium disabled:cursor-default disabled:opacity-40",
@@ -302,28 +304,28 @@ export function EmployeeImportDialog({
                 </select>
               </label>
             </div>
+            <p className="text-xs text-foreground/50">
+              Cliquez un état (Doublon, Matricule…) pour afficher uniquement ses lignes sous le rapport.
+            </p>
 
-            {counts.mismatch || counts.conflict ? (
-              <RhAlert tone="danger">
-                Le numéro écrit dans le fichier est importé tel quel. L&apos;application ne
-                propose pas un autre matricule. Seuls les doublons de numéro entre deux personnes
-                distinctes restent exclus.
-              </RhAlert>
-            ) : counts.confirm ? (
+            <RhAlert tone="success">
+              Import de toute la base : le matricule écrit dans le fichier est conservé tel quel.
+              {ready.length ? ` ${ready.length} ligne${ready.length > 1 ? "s" : ""} prête${ready.length > 1 ? "s" : ""} à importer.` : ""}
+              {counts.duplicate
+                ? ` ${counts.duplicate} doublon${counts.duplicate > 1 ? "s" : ""} : les deux personnes du même numéro apparaissent dans Doublon.`
+                : ""}
+            </RhAlert>
+
+            {counts.confirm ? (
               <RhAlert tone="warning">
                 Des noms se ressemblent. Confirmez chaque ligne : même personne, ou personne différente.
               </RhAlert>
-            ) : counts.duplicate ? (
-              <RhAlert tone="warning">
-                Un même matricule est porté par deux personnes. Ces lignes ne sont pas importées.
+            ) : null}
+
+            {counts.mismatch || counts.conflict ? (
+              <RhAlert tone="danger">
+                Des lignes restent bloquées (matricule ou conflit). Ouvrez l&apos;état concerné pour les voir.
               </RhAlert>
-            ) : rows.some((r) => r.warnings.some((w) => w.includes("ordre non vérifié"))) ? (
-              <RhAlert tone="warning">
-                Les matricules présents sont conservés. Les lignes sans date d&apos;embauche n&apos;ont pas été
-                réordonnées.
-              </RhAlert>
-            ) : rows.length ? (
-              <RhAlert tone="success">Les matricules du fichier sont corrects.</RhAlert>
             ) : null}
 
             {unmatchedRequired.length ? (
@@ -333,42 +335,18 @@ export function EmployeeImportDialog({
               </RhAlert>
             ) : null}
 
-            <section className="rounded-2xl border border-border/70 bg-surface p-4">
-              <h3 className="mb-3 text-sm font-semibold text-foreground">Correspondance des colonnes</h3>
-              <div className="grid gap-x-4 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-                {Array.from({ length: width }, (_, col) => {
-                  const header = matrix[headerRow]?.[col] || `Colonne ${col + 1}`;
-                  const sample = matrix.slice(headerRow + 1).find((r) => r[col]?.trim())?.[col] ?? "";
-                  return (
-                    <label key={col} className="min-w-0">
-                      <span className="flex items-baseline justify-between gap-2 text-xs">
-                        <span className="truncate font-medium text-foreground" title={header}>
-                          {header}
-                        </span>
-                        <span className="truncate text-foreground/40" title={sample}>
-                          {sample}
-                        </span>
-                      </span>
-                      <select
-                        className={cn(rhInput, "mt-1 h-9", mapping[col] ? "border-brand/50" : "text-foreground/45")}
-                        value={mapping[col] ?? ""}
-                        onChange={(e) => changeMapping(col, e.target.value)}
-                      >
-                        <option value="">— Ignorer —</option>
-                        {targets.map((t) => (
-                          <option key={t.code} value={t.code}>
-                            {t.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  );
-                })}
-              </div>
-            </section>
-
             <section ref={reportRef} className="overflow-hidden rounded-2xl border border-border/70 bg-surface">
-              <div>
+              <div className="flex items-center justify-between gap-2 border-b border-border/50 px-3 py-2">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {statusFilter ? `Rapport · ${STATUS[statusFilter].label}` : "Rapport"}
+                </h3>
+                {statusFilter ? (
+                  <button type="button" className="text-xs underline text-foreground/60" onClick={() => setStatusFilter(null)}>
+                    Tout le tableau
+                  </button>
+                ) : null}
+              </div>
+              <div className="max-h-[min(55vh,32rem)] overflow-auto">
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-surface-muted text-left text-xs text-foreground/55">
                     <tr>
@@ -443,12 +421,41 @@ export function EmployeeImportDialog({
                 {statusFilter
                   ? `${STATUS[statusFilter].label} : ${shown.length} ligne${shown.length > 1 ? "s" : ""}.`
                   : `Rapport complet : ${rows.length} ligne${rows.length > 1 ? "s" : ""}.`}
-                {statusFilter ? (
-                  <button type="button" className="ms-2 underline" onClick={() => setStatusFilter(null)}>
-                    Tout le tableau
-                  </button>
-                ) : null}
               </p>
+            </section>
+
+            <section className="rounded-2xl border border-border/70 bg-surface p-4">
+              <h3 className="mb-3 text-sm font-semibold text-foreground">Correspondance des colonnes</h3>
+              <div className="grid gap-x-4 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                {Array.from({ length: width }, (_, col) => {
+                  const header = matrix[headerRow]?.[col] || `Colonne ${col + 1}`;
+                  const sample = matrix.slice(headerRow + 1).find((r) => r[col]?.trim())?.[col] ?? "";
+                  return (
+                    <label key={col} className="min-w-0">
+                      <span className="flex items-baseline justify-between gap-2 text-xs">
+                        <span className="truncate font-medium text-foreground" title={header}>
+                          {header}
+                        </span>
+                        <span className="truncate text-foreground/40" title={sample}>
+                          {sample}
+                        </span>
+                      </span>
+                      <select
+                        className={cn(rhInput, "mt-1 h-9", mapping[col] ? "border-brand/50" : "text-foreground/45")}
+                        value={mapping[col] ?? ""}
+                        onChange={(e) => changeMapping(col, e.target.value)}
+                      >
+                        <option value="">— Ignorer —</option>
+                        {targets.map((t) => (
+                          <option key={t.code} value={t.code}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  );
+                })}
+              </div>
             </section>
           </>
         ) : null}

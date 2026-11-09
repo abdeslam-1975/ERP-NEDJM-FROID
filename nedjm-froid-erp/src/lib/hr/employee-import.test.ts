@@ -103,7 +103,7 @@ describe("buildImportRows", () => {
 
   it("classifies each line and skips empty ones", () => {
     expect(rows.map((r) => [r.line, r.status])).toEqual([
-      [2, "new"],
+      [2, "duplicate"],
       [3, "exists"],
       [4, "duplicate"],
       [5, "new"],
@@ -174,6 +174,20 @@ describe("matricules", () => {
     );
     expect(rows.map((r) => [r.status, r.matricule, r.expectedMatricule, r.employeeId])).toEqual([
       ["exists", "072/08", "072/08", "emp-1"],
+    ]);
+  });
+
+  it("lists both people when the same file matricule is used twice", () => {
+    const rows = planned(
+      [
+        ["010/07", "Ami", "Nora", "", "", "01/01/1980", "01/03/2007"],
+        ["010/07", "Boudia", "Ali", "", "", "02/02/1981", "15/03/2007"],
+      ],
+      [],
+    );
+    expect(rows.map((r) => [r.status, r.matricule, r.name])).toEqual([
+      ["duplicate", "010/07", "AMI NORA"],
+      ["duplicate", "010/07", "BOUDIA ALI"],
     ]);
   });
 
