@@ -149,18 +149,29 @@ describe("buildImportRows", () => {
     const planned = buildImportRows({
       matrix: sheet,
       headerRow: 0,
-      mapping: guessMapping(sheet[0], fields),
+      mapping: guessMapping(sheet[0], fields, sheet.slice(1)),
       fields,
       catalogs: statusCatalogs,
       existing: [],
       today: "2026-11-05",
     });
-    expect(guessMapping(sheet[0], fields).at(-1)).toBe("status");
+    expect(guessMapping(sheet[0], fields, sheet.slice(1)).at(-1)).toBe("status");
     expect(planned.map((r) => [r.values.matricule, r.values.status])).toEqual([
       ["01/24", "ACTIVE"],
       ["02/24", "DISABLED"],
       ["03/24", "DISABLED"],
     ]);
+  });
+
+  it("detects the status column from cell values when the header is unknown", () => {
+    const sheet = [
+      ["Matricule", "Nom", "Prénom", "Col X"],
+      ["01/24", "Ami", "Nora", "active"],
+      ["02/24", "Boudia", "Ali", "desactive"],
+      ["03/24", "Kaci", "Omar", "active"],
+      ["04/24", "Said", "Lina", "desactive"],
+    ];
+    expect(guessMapping(sheet[0], fields, sheet.slice(1)).at(-1)).toBe("status");
   });
 });
 

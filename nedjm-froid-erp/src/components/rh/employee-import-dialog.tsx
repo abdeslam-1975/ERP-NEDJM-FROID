@@ -126,9 +126,10 @@ export function EmployeeImportDialog({
         return;
       }
       const header = findHeaderRow(res.data.matrix, fields);
+      const body = res.data.matrix.slice(header + 1);
       setMatrix(res.data.matrix);
       setHeaderRow(header);
-      setMapping(guessMapping(res.data.matrix[header] ?? [], fields));
+      setMapping(guessMapping(res.data.matrix[header] ?? [], fields, body));
       setLinks({});
       setFixes({});
       setStatusFilter(null);
@@ -138,7 +139,7 @@ export function EmployeeImportDialog({
 
   function changeHeaderRow(index: number) {
     setHeaderRow(index);
-    setMapping(guessMapping(matrix[index] ?? [], fields));
+    setMapping(guessMapping(matrix[index] ?? [], fields, matrix.slice(index + 1)));
     setLinks({});
     setFixes({});
   }
@@ -320,6 +321,9 @@ export function EmployeeImportDialog({
               {counts.duplicate
                 ? ` ${counts.duplicate} doublon${counts.duplicate > 1 ? "s" : ""} inclus : les deux personnes du même numéro sont créées, à contrôler ensuite.`
                 : ""}
+              {mapping.includes("status")
+                ? ` Statut lu dans le fichier : ${rows.filter((r) => r.values.status === "ACTIVE").length} actifs, ${rows.filter((r) => r.values.status && r.values.status !== "ACTIVE").length} non actifs.`
+                : " Colonne Statut non trouvée : choisissez-la dans la correspondance (souvent la dernière)."}
             </RhAlert>
 
             {counts.confirm ? (
@@ -359,6 +363,7 @@ export function EmployeeImportDialog({
                       <th className="px-3 py-2 font-medium">Ligne</th>
                       <th className="px-3 py-2 font-medium">Matricule</th>
                       <th className="px-3 py-2 font-medium">Nom</th>
+                      <th className="px-3 py-2 font-medium">Statut</th>
                       <th className="px-3 py-2 font-medium">État</th>
                       <th className="px-3 py-2 font-medium">Remarques</th>
                     </tr>
@@ -366,7 +371,7 @@ export function EmployeeImportDialog({
                   <tbody>
                     {shown.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-3 py-6 text-center text-sm text-foreground/50">
+                        <td colSpan={6} className="px-3 py-6 text-center text-sm text-foreground/50">
                           Aucune ligne dans cet état.
                         </td>
                       </tr>
@@ -381,6 +386,15 @@ export function EmployeeImportDialog({
                           ) : null}
                         </td>
                         <td className="px-3 py-2 font-medium">{r.name || "—"}</td>
+                        <td className="px-3 py-2 tabular-nums text-xs">
+                          {r.values.status === "ACTIVE"
+                            ? "Actif"
+                            : r.values.status === "DISABLED"
+                              ? "Désactivé"
+                              : r.values.status === "INACTIVE"
+                                ? "Inactif"
+                                : r.values.status || "—"}
+                        </td>
                         <td className="px-3 py-2">
                           <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap", STATUS[r.status].tone)}>
                             {STATUS[r.status].label}

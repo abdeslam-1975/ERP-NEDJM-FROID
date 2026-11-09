@@ -108,14 +108,46 @@ function headerTarget(header: string, fields: HrEmployeeField[]): string | null 
 }
 
 /** Column → target code, each target used once (the first column wins). */
-export function guessMapping(headers: string[], fields: HrEmployeeField[]): (string | null)[] {
+export function guessMapping(
+  headers: string[],
+  fields: HrEmployeeField[],
+  sampleRows: string[][] = [],
+): (string | null)[] {
   const used = new Set<string>();
-  return headers.map((h) => {
+  const mapping = headers.map((h) => {
     const target = headerTarget(h, fields);
     if (!target || used.has(target)) return null;
     used.add(target);
     return target;
   });
+  // Last-resort: a free column whose cells are mostly active / desactive / oui / non.
+  if (!mapping.includes("status") && fields.some((f) => f.is_active && f.code === "status") && sampleRows.length) {
+    let bestCol = -1;
+    let bestHits = 0;
+    const width = Math.max(headers.length, ...sampleRows.map((row) => row.length));
+    for (let col = 0; col < width; col += 1) {
+      if (mapping[col]) continue;
+      let filled = 0;
+      let hits = 0;
+      for (const row of sampleRows.slice(0, 120)) {
+        const raw = (row[col] ?? "").trim();
+        if (!raw) continue;
+        filled += 1;
+        if (matchEmployeeStatus(raw, [])) hits += 1;
+      }
+      if (filled < 3 || hits < Math.max(3, Math.floor(filled * 0.5))) continue;
+      // Prefer the rightmost column when scores are equal (often the status column).
+      if (hits > bestHits || (hits === bestHits && col > bestCol)) {
+        bestHits = hits;
+        bestCol = col;
+      }
+    }
+    if (bestCol >= 0) {
+      while (mapping.length <= bestCol) mapping.push(null);
+      mapping[bestCol] = "status";
+    }
+  }
+  return mapping;
 }
 
 /** Index of the header row: the one, among the first rows, whose cells match the most fields. */
