@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import {
-  ChevronLeft,
   ChevronRight,
   FolderOpen,
   LayoutGrid,
@@ -34,9 +33,6 @@ const STATUS: Record<string, { label: string; className: string }> = {
   INACTIVE: { label: "Inactif", className: "bg-slate-100 text-slate-600 dark:bg-white/5 dark:text-slate-300" },
   DISABLED: { label: "Désactivé", className: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300" },
 };
-
-const PAGE_SIZE = 12;
-
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -107,7 +103,6 @@ export function EmployeesList({
   const [query, setQuery] = useState(initialQuery);
   const [site, setSite] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const [page, setPage] = useState(0);
 
   const people = useMemo(() => {
     const byEmployee = new Map(assignments.map((a) => [a.employee_id, a]));
@@ -136,15 +131,12 @@ export function EmployeesList({
     );
   }, [people, query, site, status]);
 
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const current = Math.min(page, pages - 1);
-  const shown = filtered.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE);
+  const shown = filtered;
 
   function reset() {
     setQuery("");
     setSite(null);
     setStatus(null);
-    setPage(0);
   }
 
   function statusSelect(row: HrEmployeeFiche) {
@@ -205,10 +197,7 @@ export function EmployeesList({
               aria-label="Rechercher un employé"
               placeholder="Nom, matricule ou poste…"
               value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setPage(0);
-              }}
+              onChange={(e) => setQuery(e.target.value)}
               className="h-[42px] w-full rounded-xl border border-border/80 bg-surface pr-3.5 pl-10 text-sm text-foreground outline-none transition placeholder:text-foreground/40 focus:border-brand focus:ring-4 focus:ring-brand/10"
             />
           </div>
@@ -221,10 +210,7 @@ export function EmployeesList({
       {hideFilters ? null : <div className="flex flex-wrap items-center gap-2">
         <Chip
           on={site === null}
-          onClick={() => {
-            setSite(null);
-            setPage(0);
-          }}
+          onClick={() => setSite(null)}
         >
           <MapPin className="h-3.5 w-3.5" aria-hidden />
           Tous les chantiers
@@ -233,10 +219,7 @@ export function EmployeesList({
           <Chip
             key={s}
             on={site === s}
-            onClick={() => {
-              setSite(s);
-              setPage(0);
-            }}
+            onClick={() => setSite(s)}
           >
             {s}
           </Chip>
@@ -244,10 +227,7 @@ export function EmployeesList({
         <span className="mx-1 h-6 w-px bg-border" />
         <Chip
           on={status === null}
-          onClick={() => {
-            setStatus(null);
-            setPage(0);
-          }}
+          onClick={() => setStatus(null)}
         >
           Tous statuts
         </Chip>
@@ -255,10 +235,7 @@ export function EmployeesList({
           <Chip
             key={s}
             on={status === s}
-            onClick={() => {
-              setStatus(s);
-              setPage(0);
-            }}
+            onClick={() => setStatus(s)}
           >
             {STATUS[s]?.label ?? s}
           </Chip>
@@ -280,9 +257,9 @@ export function EmployeesList({
         </div>
       ) : view === "list" ? (
         <div className={cn(RH_CARD, "overflow-hidden")}>
-          <div className="overflow-x-auto">
+          <div className="max-h-[70vh] overflow-auto">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-surface">
                 <tr className="border-b border-border/70 text-left text-xs text-foreground/50">
                   <th className="px-6 py-4 font-medium">Employé</th>
                   <th className="px-3 py-4 font-medium">Matricule</th>
@@ -338,11 +315,14 @@ export function EmployeesList({
               </tbody>
             </table>
           </div>
-          <Pager total={filtered.length} all={rows.length} page={current} pages={pages} onPage={setPage} />
+          <div className="border-t border-border/70 px-6 py-3.5 text-sm text-foreground/50">
+            {filtered.length} employé{filtered.length > 1 ? "s" : ""}
+            {filtered.length !== rows.length ? ` sur ${rows.length}` : ""}
+          </div>
         </div>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+          <div className="grid max-h-[70vh] gap-4 overflow-auto sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {shown.map((p) => (
               <div
                 key={p.row.id}
@@ -370,57 +350,12 @@ export function EmployeesList({
               </div>
             ))}
           </div>
-          {pages > 1 ? (
-            <div className={cn(RH_CARD, "overflow-hidden")}>
-              <Pager total={filtered.length} all={rows.length} page={current} pages={pages} onPage={setPage} />
-            </div>
-          ) : null}
+          <div className={cn(RH_CARD, "px-6 py-3.5 text-sm text-foreground/50")}>
+            {filtered.length} employé{filtered.length > 1 ? "s" : ""}
+            {filtered.length !== rows.length ? ` sur ${rows.length}` : ""}
+          </div>
         </>
       )}
-    </div>
-  );
-}
-
-function Pager({
-  total,
-  all,
-  page,
-  pages,
-  onPage,
-}: {
-  total: number;
-  all: number;
-  page: number;
-  pages: number;
-  onPage: (page: number) => void;
-}) {
-  const from = page * PAGE_SIZE + 1;
-  const to = Math.min(total, (page + 1) * PAGE_SIZE);
-  return (
-    <div className="flex items-center justify-between border-t border-border/70 px-6 py-3.5 text-sm text-foreground/50">
-      <span>
-        {pages > 1 ? `${from}–${to} sur ${total}` : `${total} sur ${all}`}
-      </span>
-      <div className="flex gap-1">
-        <button
-          type="button"
-          aria-label="Page précédente"
-          disabled={page === 0}
-          onClick={() => onPage(page - 1)}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg transition hover:bg-brand/[0.08] hover:text-brand disabled:opacity-30 disabled:hover:bg-transparent"
-        >
-          <ChevronLeft className="h-4 w-4" aria-hidden />
-        </button>
-        <button
-          type="button"
-          aria-label="Page suivante"
-          disabled={page >= pages - 1}
-          onClick={() => onPage(page + 1)}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg transition hover:bg-brand/[0.08] hover:text-brand disabled:opacity-30 disabled:hover:bg-transparent"
-        >
-          <ChevronRight className="h-4 w-4" aria-hidden />
-        </button>
-      </div>
     </div>
   );
 }
