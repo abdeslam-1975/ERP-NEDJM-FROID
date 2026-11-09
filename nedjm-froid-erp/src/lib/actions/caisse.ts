@@ -68,7 +68,10 @@ async function clientOrError(): Promise<{ supabase: ServerClient; flags: CaisseF
   if (error) return fail(error.message);
   if (!data || typeof data !== "object") return fail("Accès caisse refusé.");
   const ctx = data as Record<string, unknown>;
-  const manage = await supabase.rpc("caisse_can_manage_openings");
+  const [manageOpenings, manageLists] = await Promise.all([
+    supabase.rpc("caisse_can_manage_openings"),
+    supabase.rpc("caisse_can_manage_lists"),
+  ]);
   return {
     supabase,
     today: String(ctx.today || algiersToday()),
@@ -81,7 +84,9 @@ async function clientOrError(): Promise<{ supabase: ServerClient; flags: CaisseF
       canSeeAllJournal: !!ctx.canSeeAllJournal,
       canSeeCaisse: !!ctx.canSeeCaisse,
       canManage: !!ctx.canManage,
-      canManageOpenings: workspace.isSuperAdmin || (!manage.error && !!manage.data),
+      // Caisse admin (SUPER_ADMIN / ADMIN_FINANCE) or a delegated « Ouverture » right.
+      canManageOpenings: !!ctx.isAdmin || (!manageOpenings.error && !!manageOpenings.data),
+      canManageLists: !!ctx.isAdmin || (!manageLists.error && !!manageLists.data),
       userName: String(ctx.userName || workspace.fullName),
     },
   };
@@ -158,6 +163,26 @@ async function logAction(
     p_detail: detail,
     p_amount: amount,
   });
+}
+
+/**
+ * After insert/update, N° may change once operations are ordered by op_date.
+ * Falls back to fallbackOp if renumber fails so a successful write is never reported as lost.
+ */
+async function refreshOperationNumber(
+  supabase: ServerClient,
+  operationId: string,
+  fallbackOp: number,
+): Promise<{ op: number; renumbered: boolean; warning?: string }> {
+  const renumbered = await supabase.rpc("caisse_renumber_active_operations");
+  if (renumbered.error) {
+    return { op: fallbackOp, renumbered: false, warning: renumbered.error.message };
+  }
+  const row = await supabase.from("caisse_operations").select("op_number").eq("id", operationId).maybeSingle();
+  if (row.error || row.data?.op_number == null) {
+    return { op: fallbackOp, renumbered: false, warning: row.error?.message || "N° final introuvable" };
+  }
+  return { op: Number(row.data.op_number), renumbered: true };
 }
 
 function photoFromItems(items: PurchaseInput["items"]): { data: string | null; label: string; error: string | null } {
@@ -259,7 +284,7 @@ export async function getCaisseDashboard(filter?: {
   }
   names.add(flags.userName);
   for (const row of buyerRes.data ?? []) if (row.name) names.add(row.name);
-  for (const line of allLines) if (line.buyer && !isCaissePrincipaleName(line.buyer)) names.add(line.buyer);
+  // Inactive buyers stay out of selection lists (even if present on archived operations).
   const userList = [...names].filter((name) => !isCaissePrincipaleName(name)).sort((a, b) => a.localeCompare(b, "fr"));
   const months = [...new Set(allLines.map((line) => line.sheetName).filter((name) => name && name !== "—"))];
   if (!months.includes(sheetNameFromIso(today))) months.push(sheetNameFromIso(today));
@@ -379,9 +404,10 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
       const removed = await supabase.from("caisse_lines").delete().eq("operation_id", input.operationId);
       if (removed.error) return fail(removed.error.message);
       await writeLines(supabase, input.operationId, "ACHAT", input.items);
-      await logAction(supabase, "UPDATE", "ACHAT", updated.data.op_number, sheetNameFromIso(input.date), `Modification achat | Acheteur: ${buyer}`, grand);
+      const numbered = await refreshOperationNumber(supabase, input.operationId, updated.data.op_number);
+      await logAction(supabase, "UPDATE", "ACHAT", numbered.op, sheetNameFromIso(input.date), `Modification achat | Acheteur: ${buyer}`, grand);
       refresh();
-      return { ok: true, data: { message: `✅ Opération N° ${updated.data.op_number} mise à jour.` } };
+      return { ok: true, data: { message: `✅ Opération N° ${numbered.op} mise à jour.` } };
     }
     const inserted = await supabase
       .from("caisse_operations")
@@ -391,17 +417,18 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
     if (inserted.error) return fail(`❌ ${inserted.error.message}`);
     if (!inserted.data) return fail("❌ Enregistrement refusé.");
     await writeLines(supabase, inserted.data.id, "ACHAT", input.items);
+    const numbered = await refreshOperationNumber(supabase, inserted.data.id, inserted.data.op_number);
     await logAction(
       supabase,
       "CREATE",
       "ACHAT",
-      inserted.data.op_number,
+      numbered.op,
       sheetNameFromIso(input.date),
       `Acheteur: ${buyer} | ${input.affectation} | ${input.items.length} ligne(s)`,
       grand,
     );
     refresh();
-    return { ok: true, data: { message: `✅ Opération effectuée avec succès (N° ${inserted.data.op_number} → ${sheetNameFromIso(input.date)})` } };
+    return { ok: true, data: { message: `✅ Opération effectuée avec succès (N° ${numbered.op} → ${sheetNameFromIso(input.date)})` } };
   } catch (error) {
     return fail(error instanceof Error ? `❌ ${error.message}` : "❌ Erreur");
   }
@@ -445,20 +472,22 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
       const removed = await supabase.from("caisse_lines").delete().eq("operation_id", input.operationId);
       if (removed.error) return fail(removed.error.message);
       await writeLines(supabase, input.operationId, kind, [line]);
-      await logAction(supabase, "UPDATE", kind, updated.data.op_number, sheetNameFromIso(input.date), `Modification caisse | ${beneficiary}`, amount);
+      const numbered = await refreshOperationNumber(supabase, input.operationId, updated.data.op_number);
+      await logAction(supabase, "UPDATE", kind, numbered.op, sheetNameFromIso(input.date), `Modification caisse | ${beneficiary}`, amount);
       refresh();
-      return { ok: true, data: { message: `✅ Mouvement de caisse N° ${updated.data.op_number} mis à jour.` } };
+      return { ok: true, data: { message: `✅ Mouvement de caisse N° ${numbered.op} mis à jour.` } };
     }
     const inserted = await supabase.from("caisse_operations").insert({ ...header, created_by: userId }).select("id, op_number").maybeSingle();
     if (inserted.error) return fail(`❌ ${inserted.error.message}`);
     if (!inserted.data) return fail("❌ Enregistrement refusé.");
     await writeLines(supabase, inserted.data.id, kind, [line]);
+    const numbered = await refreshOperationNumber(supabase, inserted.data.id, inserted.data.op_number);
     const { data: solde } = await supabase.rpc("caisse_system_solde");
     await logAction(
       supabase,
       "CAISSE",
       kind,
-      inserted.data.op_number,
+      numbered.op,
       "Caisse_Centrale",
       kind === "ALIMENTATION" ? "Alimentation Caisse" : `Transfert vers: ${beneficiary}`,
       amount,
@@ -467,8 +496,8 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
     const balance = Number(solde) || 0;
     const message =
       kind === "ALIMENTATION"
-        ? `✅ Alimentation enregistrée (n° ${inserted.data.op_number}) — Solde: ${balance.toFixed(2)} DA`
-        : `✅ Transfert vers ${beneficiary} (n° ${inserted.data.op_number})\n(✅ Tiré vers: ${sheetNameFromIso(input.date)})`;
+        ? `✅ Alimentation enregistrée (n° ${numbered.op}) — Solde: ${balance.toFixed(2)} DA`
+        : `✅ Transfert vers ${beneficiary} (n° ${numbered.op})\n(✅ Tiré vers: ${sheetNameFromIso(input.date)})`;
     return { ok: true, data: { message } };
   } catch (error) {
     return fail(error instanceof Error ? `❌ ${error.message}` : "❌ Erreur");
@@ -495,7 +524,10 @@ export async function deleteCaisseOperation(operationId: string): Promise<Action
     null,
   );
   refresh();
-  return { ok: true, data: { message: `✅ Opération N° ${existing.data.op_number} supprimée.` } };
+  return {
+    ok: true,
+    data: { message: `✅ Opération N° ${existing.data.op_number} supprimée. Les numéros ont été réordonnés.` },
+  };
 }
 
 export async function getCaissePhoto(operationId: string): Promise<ActionResult<{ url: string }>> {
@@ -618,25 +650,40 @@ export async function unlockCaisseDay(input: { date: string; reason: string }): 
 }
 
 export async function getCaisseAdmin(): Promise<
-  ActionResult<{ users: CaisseAdminUser[]; openings: { name: string; amount: number }[]; openingDate: string; total: number }>
+  ActionResult<{
+    users: CaisseAdminUser[];
+    openings: { name: string; amount: number }[];
+    openingDate: string;
+    total: number;
+    lists: { affectations: string[]; units: string[]; matricules: string[] };
+  }>
 > {
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
   const { supabase, flags } = gate;
   if (!flags.isAdmin) return fail("Réservé à l’administrateur");
-  const [usersRes, buyersRes, openingsRes, rightsRes, settingsRes] = await Promise.all([
+  const [usersRes, buyersRes, openingsRes, rightsRes, settingsRes, listsRes] = await Promise.all([
     supabase.rpc("caisse_admin_users"),
-    supabase.from("caisse_journal_buyers").select("id, name, email, user_id, dates_libres, buy_for_others, see_all, caisse_ops, can_edit").eq("active", true),
+    supabase.from("caisse_journal_buyers").select("id, name, email, user_id, dates_libres, buy_for_others, see_all, caisse_ops, can_edit, active"),
     supabase.from("caisse_journal_openings").select("buyer_name, amount"),
-    supabase.from("caisse_rights").select("user_id, manage_openings"),
+    supabase.from("caisse_rights").select("user_id, manage_openings, manage_lists, caisse_active"),
     supabase.from("caisse_settings").select("opening_date").eq("id", 1).maybeSingle(),
+    supabase.from("caisse_lists").select("list_key, label, sort_order").order("sort_order"),
   ]);
   if (usersRes.error) return fail(usersRes.error.message);
   if (buyersRes.error) return fail(buyersRes.error.message);
   if (openingsRes.error) return fail(openingsRes.error.message);
+  if (listsRes.error) return fail(listsRes.error.message);
   const linked = new Set((buyersRes.data ?? []).map((row) => row.user_id).filter(Boolean));
-  const manageByUser = new Map(
-    (rightsRes.error ? [] : (rightsRes.data ?? [])).map((row) => [row.user_id, !!row.manage_openings]),
+  const rightsByUser = new Map(
+    (rightsRes.error ? [] : (rightsRes.data ?? [])).map((row) => [
+      row.user_id,
+      {
+        manageOpenings: !!row.manage_openings,
+        manageLists: !!row.manage_lists,
+        active: row.caisse_active !== false,
+      },
+    ]),
   );
   const openingDate = settingsRes.error || !settingsRes.data?.opening_date
     ? OPENING_BALANCE_DATE
@@ -651,18 +698,21 @@ export async function getCaisseAdmin(): Promise<
     seeAll: boolean;
     caisseOps: boolean;
     canEdit: boolean;
+    active?: boolean;
   }[]).map((user) => ({
     userId: user.userId,
     buyerId: null,
     name: user.name,
     email: user.email || "",
     isAdmin: !!user.isAdmin,
+    active: user.active !== false && (rightsByUser.get(user.userId)?.active ?? true),
     datesLibres: !!user.datesLibres,
     buyForOthers: !!user.buyForOthers,
     seeAll: !!user.seeAll,
     caisseOps: !!user.caisseOps,
     canEdit: !!user.canEdit,
-    manageOpenings: manageByUser.get(user.userId) ?? false,
+    manageOpenings: rightsByUser.get(user.userId)?.manageOpenings ?? false,
+    manageLists: rightsByUser.get(user.userId)?.manageLists ?? false,
   }));
   for (const buyer of buyersRes.data ?? []) {
     if (buyer.user_id && linked.has(buyer.user_id)) continue;
@@ -672,25 +722,43 @@ export async function getCaisseAdmin(): Promise<
       name: buyer.name,
       email: buyer.email || "",
       isAdmin: false,
+      active: buyer.active !== false,
       datesLibres: !!buyer.dates_libres,
       buyForOthers: !!buyer.buy_for_others,
       seeAll: !!buyer.see_all,
       caisseOps: !!buyer.caisse_ops,
       canEdit: !!buyer.can_edit,
       manageOpenings: false,
+      manageLists: false,
     });
   }
   users.sort((a, b) => a.name.localeCompare(b.name, "fr"));
   const openingMap = new Map((openingsRes.data ?? []).map((row) => [row.buyer_name, Number(row.amount) || 0]));
-  const openingNames = new Set(users.filter((user) => !user.isAdmin && !isCaissePrincipaleName(user.name)).map((user) => user.name));
+  // Admins (SUPER_ADMIN / ADMIN_FINANCE) can also hold an opening float as acheteurs.
+  const openingNames = new Set(
+    users
+      .filter((user) => user.active && !isCaissePrincipaleName(user.name))
+      .map((user) => user.name),
+  );
   for (const name of openingMap.keys()) openingNames.add(name);
   const openings = [...openingNames]
     .filter((name) => !isCaissePrincipaleName(name))
     .sort((a, b) => a.localeCompare(b, "fr"))
     .map((name) => ({ name, amount: openingMap.get(name) || 0 }));
+  const lists = listsRes.data ?? [];
   return {
     ok: true,
-    data: { users, openings, openingDate, total: openings.reduce((sum, row) => sum + (row.amount > 0 ? row.amount : 0), 0) },
+    data: {
+      users,
+      openings,
+      openingDate,
+      total: openings.reduce((sum, row) => sum + (row.amount > 0 ? row.amount : 0), 0),
+      lists: {
+        affectations: lists.filter((row) => row.list_key === "AFFECTATION").map((row) => row.label),
+        units: lists.filter((row) => row.list_key === "UNIT").map((row) => row.label),
+        matricules: lists.filter((row) => row.list_key === "MATRICULE").map((row) => row.label),
+      },
+    },
   };
 }
 
@@ -700,10 +768,13 @@ export async function getCaisseOpeningForm(): Promise<
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
   const { supabase, flags } = gate;
-  if (!flags.canManageOpenings) return fail("Réservé au super administrateur ou à la personne qu'il a déléguée");
-  const [openingsRes, buyersRes, settingsRes] = await Promise.all([
+  if (!flags.canManageOpenings) {
+    return fail("Réservé à l’administrateur caisse ou à la personne déléguée (Ouverture)");
+  }
+  const [openingsRes, buyersRes, directoryRes, settingsRes] = await Promise.all([
     supabase.from("caisse_journal_openings").select("buyer_name, amount"),
     supabase.from("caisse_journal_buyers").select("name").eq("active", true),
+    supabase.rpc("caisse_name_directory"),
     supabase.from("caisse_settings").select("opening_date").eq("id", 1).maybeSingle(),
   ]);
   if (openingsRes.error) return fail(openingsRes.error.message);
@@ -713,6 +784,11 @@ export async function getCaisseOpeningForm(): Promise<
   const names = new Set<string>();
   for (const buyer of buyersRes.data ?? []) {
     if (!isCaissePrincipaleName(buyer.name)) names.add(buyer.name);
+  }
+  if (!directoryRes.error) {
+    for (const row of (directoryRes.data ?? []) as { name: string }[]) {
+      if (row.name && !isCaissePrincipaleName(row.name)) names.add(row.name);
+    }
   }
   const amounts = new Map((openingsRes.data ?? []).map((row) => [row.buyer_name, Number(row.amount) || 0]));
   for (const name of amounts.keys()) if (!isCaissePrincipaleName(name)) names.add(name);
@@ -740,6 +816,8 @@ export async function saveCaisseRights(rows: CaisseAdminUser[]): Promise<ActionR
         caisse_ops: !!row.caisseOps,
         can_edit: !!row.canEdit,
         manage_openings: !!row.manageOpenings,
+        manage_lists: !!row.manageLists,
+        caisse_active: row.active !== false,
       });
       if (saved.error) return fail(saved.error.message);
     } else if (row.buyerId) {
@@ -752,6 +830,7 @@ export async function saveCaisseRights(rows: CaisseAdminUser[]): Promise<ActionR
           see_all: !!row.seeAll,
           caisse_ops: !!row.caisseOps,
           can_edit: !!row.canEdit,
+          active: row.active !== false,
         })
         .eq("id", row.buyerId);
       if (saved.error) return fail(saved.error.message);
@@ -769,7 +848,9 @@ export async function saveCaisseOpenings(
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
   const { supabase, flags } = gate;
-  if (!flags.canManageOpenings) return fail("Réservé au super administrateur ou à la personne qu'il a déléguée");
+  if (!flags.canManageOpenings) {
+    return fail("Réservé à l’administrateur caisse ou à la personne déléguée (Ouverture)");
+  }
   const date = openingDate && /^\d{4}-\d{2}-\d{2}$/.test(openingDate) ? openingDate : null;
   if (date) {
     const savedDate = await supabase.from("caisse_settings").update({ opening_date: date }).eq("id", 1);
@@ -841,6 +922,207 @@ export async function addCaisseBuyer(input: {
   await logAction(supabase, "USER_ADD", "", "", "Users", `Nouvel utilisateur: ${name}`, null);
   refresh();
   return { ok: true, data: { message: "✅ Utilisateur ajouté" } };
+}
+
+export async function updateCaisseBuyerProfile(input: {
+  userId?: string | null;
+  buyerId?: string | null;
+  name: string;
+  email?: string;
+}): Promise<ActionResult<{ message: string }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.isAdmin) return fail("Réservé à l’administrateur");
+  const name = input.name?.trim();
+  if (!name) return fail("Nom obligatoire");
+  const email = input.email?.trim().toLowerCase() || "";
+
+  if (input.userId) {
+    const current = await supabase.from("sys_users").select("id, full_name, email").eq("id", input.userId).maybeSingle();
+    if (current.error) return fail(current.error.message);
+    if (!current.data) return fail("Utilisateur introuvable");
+    const oldName = String(current.data.full_name || "").trim();
+    if (oldName !== name) {
+      const renamed = await supabase.rpc("caisse_rename_buyer", { p_old: oldName, p_new: name });
+      if (renamed.error) return fail(renamed.error.message);
+      const savedName = await supabase.from("sys_users").update({ full_name: name }).eq("id", input.userId);
+      if (savedName.error) return fail(savedName.error.message);
+    }
+    if (email) {
+      const savedEmail = await supabase.from("sys_users").update({ email }).eq("id", input.userId);
+      if (savedEmail.error) return fail(savedEmail.error.message);
+    }
+    await logAction(supabase, "USER_EDIT", "", "", "Users", `Profil modifié: ${oldName} → ${name}`, null);
+  } else if (input.buyerId) {
+    const current = await supabase.from("caisse_journal_buyers").select("id, name, email").eq("id", input.buyerId).maybeSingle();
+    if (current.error) return fail(current.error.message);
+    if (!current.data) return fail("Acheteur introuvable");
+    const oldName = String(current.data.name || "").trim();
+    if (oldName !== name) {
+      const renamed = await supabase.rpc("caisse_rename_buyer", { p_old: oldName, p_new: name });
+      if (renamed.error) return fail(renamed.error.message);
+    }
+    const saved = await supabase
+      .from("caisse_journal_buyers")
+      .update({ name, email: email || null })
+      .eq("id", input.buyerId);
+    if (saved.error) return fail(saved.error.message);
+    await logAction(supabase, "USER_EDIT", "", "", "Users", `Acheteur modifié: ${oldName} → ${name}`, null);
+  } else {
+    return fail("Cible manquante");
+  }
+  refresh();
+  return { ok: true, data: { message: `✅ Informations enregistrées pour « ${name} »` } };
+}
+
+export async function setCaisseBuyerActive(input: {
+  userId?: string | null;
+  buyerId?: string | null;
+  active: boolean;
+}): Promise<ActionResult<{ message: string }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.isAdmin) return fail("Réservé à l’administrateur");
+  const active = !!input.active;
+
+  if (input.userId) {
+    const current = await supabase.from("sys_users").select("full_name").eq("id", input.userId).maybeSingle();
+    if (current.error) return fail(current.error.message);
+    if (!current.data) return fail("Utilisateur introuvable");
+    const saved = await supabase.from("caisse_rights").upsert({
+      user_id: input.userId,
+      caisse_active: active,
+    });
+    if (saved.error) return fail(saved.error.message);
+    await logAction(
+      supabase,
+      active ? "USER_ON" : "USER_OFF",
+      "",
+      "",
+      "Users",
+      `${active ? "Réactivé" : "Désactivé"}: ${current.data.full_name}`,
+      null,
+    );
+  } else if (input.buyerId) {
+    const current = await supabase.from("caisse_journal_buyers").select("name").eq("id", input.buyerId).maybeSingle();
+    if (current.error) return fail(current.error.message);
+    if (!current.data) return fail("Acheteur introuvable");
+    const saved = await supabase.from("caisse_journal_buyers").update({ active }).eq("id", input.buyerId);
+    if (saved.error) return fail(saved.error.message);
+    await logAction(
+      supabase,
+      active ? "USER_ON" : "USER_OFF",
+      "",
+      "",
+      "Users",
+      `${active ? "Réactivé" : "Désactivé"}: ${current.data.name}`,
+      null,
+    );
+  } else {
+    return fail("Cible manquante");
+  }
+  refresh();
+  return {
+    ok: true,
+    data: { message: active ? "✅ Acheteur réactivé (visible dans les listes)" : "✅ Acheteur désactivé (masqué des listes)" },
+  };
+}
+
+export async function deleteCaisseBuyer(input: {
+  userId?: string | null;
+  buyerId?: string | null;
+}): Promise<ActionResult<{ message: string }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.isAdmin) return fail("Réservé à l’administrateur");
+
+  if (input.userId) {
+    return fail("Compte ERP lié : utilisez Désactiver. La suppression se fait depuis Paramètres → Utilisateurs.");
+  }
+  if (!input.buyerId) return fail("Cible manquante");
+
+  const current = await supabase.from("caisse_journal_buyers").select("id, name").eq("id", input.buyerId).maybeSingle();
+  if (current.error) return fail(current.error.message);
+  if (!current.data) return fail("Acheteur introuvable");
+  const name = String(current.data.name || "").trim();
+
+  const usedOps = await supabase.from("caisse_operations").select("id", { count: "exact", head: true }).eq("buyer_name", name);
+  if (usedOps.error) return fail(usedOps.error.message);
+  if ((usedOps.count ?? 0) > 0) {
+    return fail("Impossible de supprimer : des opérations existent. Désactivez l’acheteur à la place.");
+  }
+  const usedOpen = await supabase.from("caisse_journal_openings").select("buyer_name", { count: "exact", head: true }).eq("buyer_name", name);
+  if (usedOpen.error) return fail(usedOpen.error.message);
+  if ((usedOpen.count ?? 0) > 0) {
+    return fail("Impossible de supprimer : un solde d’ouverture existe. Désactivez l’acheteur ou mettez le solde à 0.");
+  }
+
+  const removed = await supabase.from("caisse_journal_buyers").delete().eq("id", input.buyerId);
+  if (removed.error) return fail(removed.error.message);
+  await logAction(supabase, "USER_DEL", "", "", "Users", `Acheteur supprimé: ${name}`, null);
+  refresh();
+  return { ok: true, data: { message: `✅ « ${name} » supprimé` } };
+}
+
+const LIST_KEYS = ["AFFECTATION", "UNIT", "MATRICULE"] as const;
+type CaisseListKey = (typeof LIST_KEYS)[number];
+
+function normalizeListLabel(label: string): string {
+  return label.trim().replace(/\s+/g, " ");
+}
+
+export async function addCaisseListItem(
+  listKey: CaisseListKey,
+  label: string,
+): Promise<ActionResult<{ message: string; label: string }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.canManageLists) return fail("Réservé à l’administrateur caisse ou à la personne déléguée (Listes)");
+  if (!LIST_KEYS.includes(listKey)) return fail("Liste inconnue");
+  const value = normalizeListLabel(label);
+  if (!value || value.length > 120) return fail("Libellé invalide (1 à 120 caractères)");
+  const maxOrder = await supabase
+    .from("caisse_lists")
+    .select("sort_order")
+    .eq("list_key", listKey)
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (maxOrder.error) return fail(maxOrder.error.message);
+  const sortOrder = (maxOrder.data?.sort_order ?? 0) + 10;
+  const inserted = await supabase.from("caisse_lists").insert({ list_key: listKey, label: value, sort_order: sortOrder });
+  if (inserted.error) {
+    if (inserted.error.code === "23505") return fail("Cette valeur existe déjà dans la liste");
+    return fail(inserted.error.message);
+  }
+  await logAction(supabase, "LIST_ADD", listKey, "", "Listes", `Ajout ${listKey}: ${value}`, null);
+  refresh();
+  return { ok: true, data: { message: `✅ « ${value} » ajouté`, label: value } };
+}
+
+export async function removeCaisseListItem(
+  listKey: CaisseListKey,
+  label: string,
+): Promise<ActionResult<{ message: string }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.canManageLists) return fail("Réservé à l’administrateur caisse ou à la personne déléguée (Listes)");
+  if (!LIST_KEYS.includes(listKey)) return fail("Liste inconnue");
+  const value = normalizeListLabel(label);
+  if (!value) return fail("Libellé invalide");
+  if (listKey === "AFFECTATION" && value.toUpperCase() === "PARC ROULANT") {
+    return fail("PARC ROULANT est une affectation système et ne peut pas être retirée");
+  }
+  const removed = await supabase.from("caisse_lists").delete().eq("list_key", listKey).eq("label", value);
+  if (removed.error) return fail(removed.error.message);
+  await logAction(supabase, "LIST_DEL", listKey, "", "Listes", `Retrait ${listKey}: ${value}`, null);
+  refresh();
+  return { ok: true, data: { message: `✅ « ${value} » retiré de la liste` } };
 }
 
 export async function getCaisseAudit(): Promise<ActionResult<CaisseAuditRow[]>> {

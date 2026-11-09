@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { logoutAction } from "@/lib/actions/auth";
 import {
   addCaisseBuyer,
+  addCaisseListItem,
   closeCaisseDay,
+  deleteCaisseBuyer,
   deleteCaisseOperation,
   getCaisseAdmin,
   getCaisseAudit,
@@ -12,11 +14,14 @@ import {
   getCaisseDashboard,
   getCaisseOpeningForm,
   getCaissePhoto,
+  removeCaisseListItem,
   saveCaisseFinance,
   saveCaisseOpenings,
   saveCaissePurchase,
   saveCaisseRights,
+  setCaisseBuyerActive,
   unlockCaisseDay,
+  updateCaisseBuyerProfile,
 } from "@/lib/actions/caisse";
 import { formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
 import type { CaisseAdminUser, CaisseAuditRow, CaisseDashboard, CloseStatus, JournalLine, PurchaseItemInput } from "@/lib/caisse/types";
@@ -90,9 +95,17 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   const [closeNote, setCloseNote] = useState("");
   const [adminOpen, setAdminOpen] = useState(false);
   const [openingsOnly, setOpeningsOnly] = useState(false);
+  const [listsOnly, setListsOnly] = useState(false);
   const [openingDate, setOpeningDate] = useState(initial?.openingDate ?? "");
   const [adminUsers, setAdminUsers] = useState<CaisseAdminUser[]>([]);
   const [openings, setOpenings] = useState<{ name: string; amount: string }[]>([]);
+  const [adminLists, setAdminLists] = useState<{ affectations: string[]; units: string[]; matricules: string[] }>({
+    affectations: [],
+    units: [],
+    matricules: [],
+  });
+  const [listDraft, setListDraft] = useState({ affectation: "", unit: "", matricule: "" });
+  const [listSearch, setListSearch] = useState({ affectation: "", unit: "", matricule: "" });
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newPass, setNewPass] = useState("");
@@ -263,19 +276,24 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       return notify("Attention", "Ajoutez au moins une photo pour cette opération (une seule suffit)");
     }
     setBusy(true);
-    const result = await saveCaissePurchase({
-      operationId: editId || undefined,
-      date: opDate,
-      affectation,
-      immatriculation: matricule,
-      buyer: flags.isMaster || flags.isAdmin ? buyer : null,
-      items: pending,
-    });
-    setBusy(false);
-    if (!result.ok) return notify("Résultat", result.error);
-    notify("Résultat", result.data.message);
-    setOpOpen(false);
-    await reload();
+    try {
+      const result = await saveCaissePurchase({
+        operationId: editId || undefined,
+        date: opDate,
+        affectation,
+        immatriculation: matricule,
+        buyer: flags.isMaster || flags.isAdmin ? buyer : null,
+        items: pending,
+      });
+      if (!result.ok) return notify("Résultat", result.error);
+      notify("Résultat", result.data.message);
+      setOpOpen(false);
+      await reload();
+    } catch (error) {
+      notify("Résultat", error instanceof Error ? error.message : "Enregistrement interrompu. Vérifiez le journal puis réessayez.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function openFinance() {
@@ -301,20 +319,25 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     if (!Number.isFinite(amount) || amount <= 0) return notify("Erreur", "Montant invalide");
     if (finType === "OUT" && !finBuyer) return notify("Erreur", "Choisissez un bénéficiaire");
     setBusy(true);
-    const result = await saveCaisseFinance({
-      operationId: financeEdit || undefined,
-      type: finType,
-      date: finDate,
-      amount,
-      method: finMethod,
-      ref: finRef,
-      beneficiary: finBuyer,
-    });
-    setBusy(false);
-    if (!result.ok) return notify("Résultat", result.error);
-    notify("Résultat", result.data.message);
-    setFinanceOpen(false);
-    await reload();
+    try {
+      const result = await saveCaisseFinance({
+        operationId: financeEdit || undefined,
+        type: finType,
+        date: finDate,
+        amount,
+        method: finMethod,
+        ref: finRef,
+        beneficiary: finBuyer,
+      });
+      if (!result.ok) return notify("Résultat", result.error);
+      notify("Résultat", result.data.message);
+      setFinanceOpen(false);
+      await reload();
+    } catch (error) {
+      notify("Résultat", error instanceof Error ? error.message : "Enregistrement interrompu. Vérifiez le journal puis réessayez.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function removeOperation(line: JournalLine) {
@@ -374,7 +397,11 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     setAdminUsers(result.data.users);
     setOpenings(result.data.openings.map((row) => ({ name: row.name, amount: row.amount ? String(row.amount) : "" })));
     setOpeningDate(result.data.openingDate);
+    setAdminLists(result.data.lists);
+    setListDraft({ affectation: "", unit: "", matricule: "" });
+    setListSearch({ affectation: "", unit: "", matricule: "" });
     setOpeningsOnly(false);
+    setListsOnly(false);
     setAdminOpen(true);
   }
 
@@ -384,7 +411,72 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     setOpenings(result.data.openings.map((row) => ({ name: row.name, amount: row.amount ? String(row.amount) : "" })));
     setOpeningDate(result.data.openingDate);
     setOpeningsOnly(true);
+    setListsOnly(false);
     setAdminOpen(true);
+  }
+
+  async function openLists() {
+    if (flags?.isAdmin) {
+      const result = await getCaisseAdmin();
+      if (!result.ok) return notify("Erreur", result.error);
+      setAdminLists(result.data.lists);
+    } else if (data) {
+      setAdminLists({
+        affectations: data.affectations,
+        units: data.units,
+        matricules: data.matricules,
+      });
+    } else {
+      return notify("Erreur", "Listes indisponibles");
+    }
+    setListDraft({ affectation: "", unit: "", matricule: "" });
+    setListSearch({ affectation: "", unit: "", matricule: "" });
+    setOpeningsOnly(false);
+    setListsOnly(true);
+    setAdminOpen(true);
+  }
+
+  async function addListValue(listKey: "AFFECTATION" | "UNIT" | "MATRICULE", raw: string) {
+    const result = await addCaisseListItem(listKey, raw);
+    notify("Listes", result.ok ? result.data.message : result.error);
+    if (!result.ok) return null;
+    await reload();
+    if (listsOnly || flags?.isAdmin) {
+      if (flags?.isAdmin && !listsOnly) await openAdmin();
+      else await openLists();
+    }
+    return result.data.label;
+  }
+
+  async function removeListValue(listKey: "AFFECTATION" | "UNIT" | "MATRICULE", label: string) {
+    const answer = await confirmBox("Retirer de la liste ?", `« ${label} » sera retiré de la liste déroulante.`, "Oui, retirer");
+    if (answer === null) return;
+    const result = await removeCaisseListItem(listKey, label);
+    notify("Listes", result.ok ? result.data.message : result.error);
+    if (!result.ok) return;
+    await reload();
+    if (affectation === label) setAffectation("");
+    if (matricule === label) setMatricule("");
+    if (listsOnly) await openLists();
+    else if (flags?.isAdmin) await openAdmin();
+  }
+
+  async function pickOrAddList(
+    listKey: "AFFECTATION" | "UNIT" | "MATRICULE",
+    value: string,
+    apply: (label: string) => void,
+  ) {
+    if (value !== "__ADD__") {
+      apply(value);
+      return;
+    }
+    if (!flags?.canManageLists) return;
+    const title =
+      listKey === "AFFECTATION" ? "Nouvelle affectation" : listKey === "MATRICULE" ? "Nouveau matricule" : "Nouvelle unité";
+    const label = await confirmBox(title, "Saisissez le libellé à ajouter à la liste.", "Ajouter", true);
+    if (label === null || !label.trim()) return;
+    const created = await addListValue(listKey, label);
+    if (created) apply(created);
   }
 
   async function saveRights() {
@@ -393,10 +485,16 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   }
 
   async function saveOpenings() {
-    const result = await saveCaisseOpenings(
-      openings.map((row) => ({ name: row.name, amount: Number(row.amount) || 0 })),
-      openingDate,
+    const payload = openings.map((row) => ({ name: row.name, amount: Number(row.amount) || 0 }));
+    const kept = payload.filter((row) => row.amount > 0);
+    const total = kept.reduce((sum, row) => sum + row.amount, 0);
+    const answer = await confirmBox(
+      "Modifier les soldes d’ouverture ?",
+      `Date : ${formatDateFr(openingDate)}\n${kept.length} acheteur(s) avec solde\nTotal (= caisse ouverture) : ${formatDa(total)} DA\n\nLes montants à 0 ou vides seront retirés de l’ouverture.`,
+      "Oui, enregistrer",
     );
+    if (answer === null) return;
+    const result = await saveCaisseOpenings(payload, openingDate);
     notify("Ouverture", result.ok ? result.data.message : result.error);
     if (result.ok) {
       if (openingsOnly) await openOpenings();
@@ -422,6 +520,85 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       setNewEmail("");
       setNewPass("");
       await openAdmin();
+    }
+  }
+
+  async function editBuyer(user: CaisseAdminUser) {
+    setReason(user.name);
+    const nextName = await confirmBox(
+      user.isAdmin ? "Modifier le nom admin" : "Modifier l’acheteur",
+      `Nom actuel : ${user.name}\nEmail : ${user.email || "—"}\n\nSaisissez le nouveau nom (exact, tel qu’il doit apparaître dans le journal / listes acheteurs).${
+        user.isAdmin ? "\nLes droits Admin restent inchangés." : ""
+      }`,
+      "Enregistrer",
+      true,
+    );
+    if (nextName === null) return;
+    const name = nextName.trim();
+    if (!name) return notify("Attention", "Nom obligatoire");
+    setReason(user.email || "");
+    const nextEmail = await confirmBox(
+      "Modifier l’email",
+      `Laissez vide pour conserver « ${user.email || "—"} ».`,
+      "Continuer",
+      true,
+    );
+    if (nextEmail === null) return;
+    const result = await updateCaisseBuyerProfile({
+      userId: user.userId,
+      buyerId: user.buyerId,
+      name,
+      email: nextEmail.trim() || user.email,
+    });
+    notify("Acheteur", result.ok ? result.data.message : result.error);
+    if (result.ok) {
+      await openAdmin();
+      await reload();
+    }
+  }
+
+  async function toggleBuyerActive(user: CaisseAdminUser) {
+    if (user.isAdmin) return notify("Accès", "Le compte admin reste toujours actif.");
+    const activate = !user.active;
+    const answer = await confirmBox(
+      activate ? "Réactiver l’acheteur ?" : "Désactiver l’acheteur ?",
+      activate
+        ? `« ${user.name} » réapparaîtra dans les listes acheteurs.`
+        : `« ${user.name} » disparaîtra des listes acheteurs (opérations passées conservées).`,
+      activate ? "Oui, réactiver" : "Oui, désactiver",
+    );
+    if (answer === null) return;
+    const result = await setCaisseBuyerActive({
+      userId: user.userId,
+      buyerId: user.buyerId,
+      active: activate,
+    });
+    notify("Acheteur", result.ok ? result.data.message : result.error);
+    if (result.ok) {
+      await openAdmin();
+      await reload();
+    }
+  }
+
+  async function removeBuyer(user: CaisseAdminUser) {
+    if (user.isAdmin) return notify("Accès", "Impossible de supprimer un admin ici.");
+    if (user.userId) {
+      return notify(
+        "Suppression",
+        "Compte ERP lié : utilisez Désactiver. La suppression du compte se fait dans Paramètres → Utilisateurs.",
+      );
+    }
+    const answer = await confirmBox(
+      "Supprimer l’acheteur ?",
+      `« ${user.name} » sera retiré définitivement s’il n’a aucune opération ni solde d’ouverture.`,
+      "Oui, supprimer",
+    );
+    if (answer === null) return;
+    const result = await deleteCaisseBuyer({ buyerId: user.buyerId });
+    notify("Acheteur", result.ok ? result.data.message : result.error);
+    if (result.ok) {
+      await openAdmin();
+      await reload();
     }
   }
 
@@ -627,6 +804,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
           {flags?.canSeeCaisse || flags?.isAdmin ? <button type="button" className="btn-action btn-teal" onClick={() => void openClose()}>CLÔTURE</button> : null}
           {flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openAdmin()}>ADMIN</button> : null}
           {flags?.canManageOpenings && !flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openOpenings()}>OUVERTURE</button> : null}
+          {flags?.canManageLists && !flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openLists()}>LISTES</button> : null}
           {flags?.isAdmin ? <button type="button" className="btn-action btn-brown" onClick={() => void openAudit()}>AUDIT</button> : null}
         </div>
         <div className="toolbar">
@@ -735,9 +913,10 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                 </div>
                 <div className="field">
                   <label>Affectation</label>
-                  <select value={affectation} onChange={(event) => setAffectation(event.target.value)}>
+                  <select value={affectation} onChange={(event) => void pickOrAddList("AFFECTATION", event.target.value, setAffectation)}>
                     <option value="">-- Sélectionner --</option>
                     {data.affectations.map((name) => <option key={name}>{name}</option>)}
+                    {flags?.canManageLists ? <option value="__ADD__">+ Ajouter une affectation…</option> : null}
                   </select>
                 </div>
                 {flags?.isMaster || flags?.isAdmin ? (
@@ -751,9 +930,10 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                 {affectation === "PARC ROULANT" ? (
                   <div className="field">
                     <label>Matricule</label>
-                    <select value={matricule} onChange={(event) => setMatricule(event.target.value)}>
+                    <select value={matricule} onChange={(event) => void pickOrAddList("MATRICULE", event.target.value, setMatricule)}>
                       <option value="">-- Sélectionner --</option>
                       {data.matricules.map((name) => <option key={name}>{name}</option>)}
+                      {flags?.canManageLists ? <option value="__ADD__">+ Ajouter un matricule…</option> : null}
                     </select>
                   </div>
                 ) : null}
@@ -767,8 +947,14 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                       <td><input value={item.desc} onChange={(event) => updateItem(index, { desc: event.target.value })} /></td>
                       <td><input value={item.itemVal} disabled={!affectation.toUpperCase().startsWith("CONTRAT")} onChange={(event) => updateItem(index, { itemVal: event.target.value })} /></td>
                       <td>
-                        <select value={item.unit} onChange={(event) => updateItem(index, { unit: event.target.value })}>
+                        <select
+                          value={item.unit}
+                          onChange={(event) => {
+                            void pickOrAddList("UNIT", event.target.value, (label) => updateItem(index, { unit: label }));
+                          }}
+                        >
                           {data.units.map((unit) => <option key={unit}>{unit}</option>)}
+                          {flags?.canManageLists ? <option value="__ADD__">+ Ajouter…</option> : null}
                         </select>
                       </td>
                       <td><input type="number" min="0" step="any" value={item.qte} onChange={(event) => updateItem(index, { qte: event.target.value })} /></td>
@@ -889,80 +1075,223 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
 
       {adminOpen ? (
         <div className="overlay">
-          <div className="modal">
+          <div className="modal modal-admin">
             <div className="modal-head slate">
-              <strong>Contrôle des droits</strong>
+              <strong>{listsOnly ? "Listes déroulantes" : openingsOnly ? "Soldes d’ouverture" : "Contrôle des droits · Listes"}</strong>
               <button type="button" className="close-x" onClick={() => setAdminOpen(false)}>×</button>
             </div>
-            <div className="modal-body">
-              {openingsOnly ? null : (
-                <>
-              <p className="hint">L’administrateur voit toujours tout. Pour chaque employé, cochez ce qu’il a le droit de faire. « Ouverture » autorise la date et les soldes d’ouverture.</p>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Nom</th><th>Email</th><th>Dates libres</th><th>Acheter pour autrui</th><th>Voir achats des autres</th><th>Opérations caisse</th><th>Modifier / Supprimer</th><th>Ouverture</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {adminUsers.map((user, index) => (
-                    <tr key={`${user.userId || user.buyerId}-${user.name}`}>
-                      <td>{user.name}</td>
-                      <td>{user.email}</td>
-                      {user.isAdmin ? <td colSpan={6}>Admin — voit tout (droits non modifiables)</td> : (
-                        <>
-                          {(["datesLibres", "buyForOthers", "seeAll", "caisseOps", "canEdit", "manageOpenings"] as const).map((key) => (
-                            <td key={key}><input type="checkbox" checked={user[key]} disabled={key === "manageOpenings" && !user.userId} onChange={(event) => setAdminUsers((current) => current.map((row, i) => i === index ? { ...row, [key]: event.target.checked } : row))} /></td>
-                          ))}
-                        </>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="toolbar" style={{ margin: "12px 0" }}>
-                <button type="button" className="btn-action btn-green" onClick={() => void saveRights()}>Enregistrer les droits</button>
-                <button type="button" className="btn-light" onClick={() => notify("Trier caisse", "Les mouvements sont déjà dans le journal du mois. Rien à copier.")}>Trier caisse → mois</button>
-              </div>
-                </>
+            <div className="modal-body admin-body">
+              {openingsOnly || listsOnly ? null : (
+                <section className="admin-section">
+                  <p className="hint admin-intro">
+                    L’administrateur voit toujours tout. Pour chaque employé, cochez ce qu’il a le droit de faire.
+                    « Ouverture » délègue les soldes d’ouverture ; « Listes » délègue Affectation / Parc roulant / Unités
+                    (déjà inclus pour SUPER_ADMIN / ADMIN_FINANCE).
+                  </p>
+                  <div className="admin-table-wrap">
+                    <table className="admin-table rights-table">
+                      <thead>
+                        <tr>
+                          <th>Nom</th>
+                          <th>Email</th>
+                          <th>Statut</th>
+                          <th>Dates libres</th>
+                          <th>Acheter pour autrui</th>
+                          <th>Voir achats des autres</th>
+                          <th>Opérations caisse</th>
+                          <th>Modifier / Supprimer</th>
+                          <th>Ouverture</th>
+                          <th>Listes</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminUsers.map((user, index) => (
+                          <tr key={`${user.userId || user.buyerId}-${user.name}`} className={user.active ? undefined : "admin-row-inactive"}>
+                            <td className="admin-name">{user.name}</td>
+                            <td>
+                              <input
+                                className="admin-email"
+                                type="email"
+                                value={user.email}
+                                disabled={user.isAdmin}
+                                onChange={(event) => setAdminUsers((current) => current.map((row, i) => (i === index ? { ...row, email: event.target.value } : row)))}
+                              />
+                            </td>
+                            <td>
+                              <span className={`admin-status ${user.active ? "on" : "off"}`}>
+                                {user.isAdmin ? "Admin" : user.active ? "Actif" : "Inactif"}
+                              </span>
+                            </td>
+                            {user.isAdmin ? (
+                              <td colSpan={7}>
+                                <span className="admin-badge">Admin — voit tout (droits non modifiables)</span>
+                              </td>
+                            ) : (
+                              (["datesLibres", "buyForOthers", "seeAll", "caisseOps", "canEdit", "manageOpenings", "manageLists"] as const).map((key) => (
+                                <td key={key} className="admin-check">
+                                  <input
+                                    type="checkbox"
+                                    checked={user[key]}
+                                    disabled={(key === "manageOpenings" || key === "manageLists") && !user.userId}
+                                    onChange={(event) => setAdminUsers((current) => current.map((row, i) => (i === index ? { ...row, [key]: event.target.checked } : row)))}
+                                  />
+                                </td>
+                              ))
+                            )}
+                            <td className="admin-row-actions">
+                              <button type="button" className="btn-light" onClick={() => void editBuyer(user)}>Modifier</button>
+                              {user.isAdmin ? (
+                                <span className="hint">Droits admin</span>
+                              ) : (
+                                <>
+                                  <button type="button" className="btn-light" onClick={() => void toggleBuyerActive(user)}>
+                                    {user.active ? "Désactiver" : "Activer"}
+                                  </button>
+                                  <button type="button" className="btn-light btn-danger-text" onClick={() => void removeBuyer(user)}>Supprimer</button>
+                                </>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="admin-actions">
+                    <button type="button" className="btn-action btn-green" onClick={() => void saveRights()}>Enregistrer les droits</button>
+                    <button type="button" className="btn-outline-blue" onClick={() => notify("Trier caisse", "Les mouvements sont déjà dans le journal du mois. Rien à copier.")}>Trier caisse → mois</button>
+                  </div>
+                </section>
               )}
-              {flags?.canManageOpenings ? (
-                <>
-              <h6>Soldes d’ouverture — {formatDateFr(openingDate)}</h6>
-              <p className="hint">Date et reste chez chaque acheteur. Le total doit égaler le solde d’ouverture de la caisse.</p>
-              <label className="hint">Date d’ouverture <input type="date" value={openingDate} onChange={(event) => setOpeningDate(event.target.value)} /></label>
-              <table>
-                <thead><tr><th>Acheteur</th><th>Solde (DA)</th></tr></thead>
-                <tbody>
-                  {openings.map((row, index) => (
-                    <tr key={row.name}>
-                      <td>{row.name}</td>
-                      <td><input type="number" min="0" step="0.01" value={row.amount} onChange={(event) => setOpenings((current) => current.map((item, i) => i === index ? { ...item, amount: event.target.value } : item))} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="panel-head">
-                <span className="pill">Total (= caisse ouverture) : {formatDa(openingTotal)} DA</span>
-                <button type="button" className="btn-action btn-green" onClick={() => void saveOpenings()}>Enregistrer les soldes d’ouverture</button>
-              </div>
-                </>
+
+              {flags?.canManageOpenings && !listsOnly ? (
+                <section className="admin-section">
+                  <h6 className="admin-section-title">Soldes d’ouverture — {formatDateFr(openingDate)}</h6>
+                  <p className="hint">
+                    Saisie manuelle du reste chez chaque acheteur. Le total doit égaler le solde d’ouverture de la caisse.
+                    Un montant à 0 ou vide retire cet acheteur de l’ouverture après confirmation.
+                  </p>
+                  <label className="admin-date-field">
+                    Date d’ouverture
+                    <input type="date" value={openingDate} onChange={(event) => setOpeningDate(event.target.value)} />
+                  </label>
+                  <div className="admin-table-wrap openings-wrap">
+                    <table className="admin-table openings-table">
+                      <thead>
+                        <tr>
+                          <th>Acheteur</th>
+                          <th>Solde (DA)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {openings.map((row, index) => (
+                          <tr key={row.name}>
+                            <td className="admin-name">{row.name}</td>
+                            <td>
+                              <input
+                                className="opening-amount"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={row.amount}
+                                onChange={(event) => setOpenings((current) => current.map((item, i) => (i === index ? { ...item, amount: event.target.value } : item)))}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="openings-foot">
+                    <span className="pill openings-total">Total (= caisse ouverture) : {formatDa(openingTotal)} DA</span>
+                    <button type="button" className="btn-action btn-green" onClick={() => void saveOpenings()}>Modifier les soldes d’ouverture</button>
+                  </div>
+                </section>
               ) : null}
-              {openingsOnly ? null : (
-                <>
-              <h6>Ajouter un utilisateur</h6>
-              <div className="grid-3">
-                <input placeholder="Nom" value={newName} onChange={(event) => setNewName(event.target.value)} />
-                <input placeholder="Email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} />
-                <input placeholder="Mot de passe 6 car." maxLength={6} value={newPass} onChange={(event) => setNewPass(event.target.value)} />
-                <select value={newAccess} onChange={(event) => setNewAccess(event.target.value)}><option value="">Date limitée</option><option value="OPEN">Dates libres</option></select>
-                <select value={newRole} onChange={(event) => setNewRole(event.target.value)}><option value="">Employé</option><option value="MASTER">Acheter pour autrui</option></select>
-                <select value={newJournal} onChange={(event) => setNewJournal(event.target.value)}><option value="">Ses achats seulement</option><option value="ALL">Voir achats des autres</option></select>
-                <select value={newCaisse} onChange={(event) => setNewCaisse(event.target.value)}><option value="">Sans caisse</option><option value="CAISSE">Opérations caisse</option></select>
-                <select value={newEdit} onChange={(event) => setNewEdit(event.target.value)}><option value="">Sans modification</option><option value="EDIT">Modifier / Supprimer</option></select>
-              </div>
-              <button type="button" className="btn-action btn-navy" onClick={() => void addBuyer()}>Ajouter</button>
-                </>
+
+              {flags?.canManageLists ? (
+                <section className="admin-section">
+                  <h6 className="admin-section-title">Listes déroulantes</h6>
+                  <p className="hint">Affectation, matricules Parc roulant et unités. Les personnes cochées « Listes » peuvent aussi les gérer.</p>
+                  {(
+                    [
+                      { key: "AFFECTATION" as const, title: "Affectation", items: adminLists.affectations, draftKey: "affectation" as const },
+                      { key: "MATRICULE" as const, title: "Matricules (Parc roulant)", items: adminLists.matricules, draftKey: "matricule" as const },
+                      { key: "UNIT" as const, title: "Unités", items: adminLists.units, draftKey: "unit" as const },
+                    ]
+                  ).map((block) => {
+                    const query = listSearch[block.draftKey].trim().toLowerCase();
+                    const visible = query
+                      ? block.items.filter((item) => item.toLowerCase().includes(query))
+                      : block.items;
+                    return (
+                    <div key={block.key} className="list-editor">
+                      <div className="list-editor-head">
+                        <span>{block.title}</span>
+                        <span className="list-editor-count">{visible.length}/{block.items.length}</span>
+                      </div>
+                      <div className="list-editor-add">
+                        <input
+                          placeholder="Nouveau libellé"
+                          value={listDraft[block.draftKey]}
+                          onChange={(event) => setListDraft((current) => ({ ...current, [block.draftKey]: event.target.value }))}
+                        />
+                        <button
+                          type="button"
+                          className="btn-action btn-green"
+                          onClick={() => {
+                            const value = listDraft[block.draftKey];
+                            void addListValue(block.key, value).then((created) => {
+                              if (created) setListDraft((current) => ({ ...current, [block.draftKey]: "" }));
+                            });
+                          }}
+                        >
+                          Ajouter
+                        </button>
+                      </div>
+                      <input
+                        className="list-editor-search"
+                        placeholder="Rechercher pour modifier / retirer…"
+                        value={listSearch[block.draftKey]}
+                        onChange={(event) => setListSearch((current) => ({ ...current, [block.draftKey]: event.target.value }))}
+                      />
+                      <ul className="list-editor-items">
+                        {visible.length === 0 ? (
+                          <li className="list-editor-empty">
+                            <span>{block.items.length === 0 ? "Aucun élément" : "Aucun résultat"}</span>
+                          </li>
+                        ) : (
+                          visible.map((item) => (
+                            <li key={item}>
+                              <span>{item}</span>
+                              <button type="button" className="btn-light" onClick={() => void removeListValue(block.key, item)}>Retirer</button>
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                    </div>
+                    );
+                  })}
+                </section>
+              ) : null}
+
+              {openingsOnly || listsOnly ? null : (
+                <section className="admin-section">
+                  <h6 className="admin-section-title">Ajouter un utilisateur</h6>
+                  <div className="add-user-identity">
+                    <input placeholder="Nom" value={newName} onChange={(event) => setNewName(event.target.value)} />
+                    <input placeholder="Email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} />
+                    <input placeholder="Mot de passe 6 car." maxLength={6} value={newPass} onChange={(event) => setNewPass(event.target.value)} />
+                  </div>
+                  <div className="add-user-rights">
+                    <select value={newAccess} onChange={(event) => setNewAccess(event.target.value)}><option value="">Date limitée</option><option value="OPEN">Dates libres</option></select>
+                    <select value={newRole} onChange={(event) => setNewRole(event.target.value)}><option value="">Employé</option><option value="MASTER">Acheter pour autrui</option></select>
+                    <select value={newJournal} onChange={(event) => setNewJournal(event.target.value)}><option value="">Ses achats seulement</option><option value="ALL">Voir achats des autres</option></select>
+                    <select value={newCaisse} onChange={(event) => setNewCaisse(event.target.value)}><option value="">Sans caisse</option><option value="CAISSE">Opérations caisse</option></select>
+                    <select value={newEdit} onChange={(event) => setNewEdit(event.target.value)}><option value="">Sans modification</option><option value="EDIT">Modifier / Supprimer</option></select>
+                  </div>
+                  <button type="button" className="btn-action btn-add-user" onClick={() => void addBuyer()}>Ajouter</button>
+                </section>
               )}
             </div>
           </div>
@@ -1012,7 +1341,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
             <div className="modal-body">
               <h6>{ask.title}</h6>
               <p>{ask.text}</p>
-              {ask.reason ? <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Ex. saisie en retard" /> : null}
+              {ask.reason ? <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Saisir…" /> : null}
             </div>
             <div className="modal-foot">
               <button type="button" className="btn-light" onClick={() => { ask.resolve(null); setAsk(null); }}>Annuler</button>
