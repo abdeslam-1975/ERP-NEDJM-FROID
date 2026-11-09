@@ -146,6 +146,28 @@ export async function importEmployeeRows(input: unknown): Promise<ActionResult<E
         }
         values.matricule = next;
         pool.push(next);
+      } else {
+        // Same file number on two people: free the holder so this line can be created too.
+        const incomingMat = values.matricule.trim();
+        const { data: holders, error: holdError } = await supabase
+          .from("hr_employees")
+          .select("id, matricule")
+          .in("matricule", matriculeVariants(incomingMat))
+          .limit(5);
+        if (holdError) {
+          results.push({ line: row.line, ok: false, error: holdError.message });
+          continue;
+        }
+        const holder = (holders ?? []).find((item) => matriculeKey(item.matricule) === matriculeKey(incomingMat));
+        if (holder) {
+          const temporary = `~${holder.id}`;
+          const { error: parkError } = await supabase.from("hr_employees").update({ matricule: temporary }).eq("id", holder.id);
+          if (parkError) {
+            results.push({ line: row.line, ok: false, error: "Matricule déjà utilisé." });
+            continue;
+          }
+          parked = { id: holder.id, matricule: holder.matricule };
+        }
       }
     }
     const payload = employeePayloadFromValues(
@@ -175,6 +197,9 @@ export async function importEmployeeRows(input: unknown): Promise<ActionResult<E
           ? "Nouvelle fiche PDF archivée, l'ancienne est conservée."
           : `Fiche mise à jour. PDF non archivé : ${archived.error}`;
       }
+    } else if (parked) {
+      // Keep the previous holder on a temporary matricule so both people exist; review later.
+      note = `Matricule ${values.matricule} repris. L'autre fiche est passée en ~${parked.id} ; à contrôler dans le rapport.`;
     }
     results.push({ line: row.line, ok: true, matricule: values.matricule, id: saved.data.id, note });
   }

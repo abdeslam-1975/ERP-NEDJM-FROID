@@ -177,7 +177,7 @@ describe("matricules", () => {
     ]);
   });
 
-  it("lists both people when the same file matricule is used twice", () => {
+  it("lists both people when the same file matricule is used twice and keeps their number", () => {
     const rows = planned(
       [
         ["010/07", "Ami", "Nora", "", "", "01/01/1980", "01/03/2007"],
@@ -185,9 +185,9 @@ describe("matricules", () => {
       ],
       [],
     );
-    expect(rows.map((r) => [r.status, r.matricule, r.name])).toEqual([
-      ["duplicate", "010/07", "AMI NORA"],
-      ["duplicate", "010/07", "BOUDIA ALI"],
+    expect(rows.map((r) => [r.status, r.matricule, r.values.matricule, r.name])).toEqual([
+      ["duplicate", "010/07", "010/07", "AMI NORA"],
+      ["duplicate", "010/07", "010/07", "BOUDIA ALI"],
     ]);
   });
 

@@ -98,7 +98,13 @@ export function EmployeeImportDialog({
   const ready = useMemo(
     () =>
       rows
-        .filter((r) => r.status === "new" || (r.status === "exists" && (r.employeeId || r.leadLine)))
+        .filter(
+          (r) =>
+            r.status === "new" ||
+            r.status === "duplicate" ||
+            r.status === "mismatch" ||
+            (r.status === "exists" && (r.employeeId || r.leadLine || Boolean(r.matricule))),
+        )
         .slice()
         .sort(
           (a, b) =>
@@ -309,10 +315,10 @@ export function EmployeeImportDialog({
             </p>
 
             <RhAlert tone="success">
-              Import de toute la base : le matricule écrit dans le fichier est conservé tel quel.
+              Toute la base est importée avec le matricule du fichier.
               {ready.length ? ` ${ready.length} ligne${ready.length > 1 ? "s" : ""} prête${ready.length > 1 ? "s" : ""} à importer.` : ""}
               {counts.duplicate
-                ? ` ${counts.duplicate} doublon${counts.duplicate > 1 ? "s" : ""} : les deux personnes du même numéro apparaissent dans Doublon.`
+                ? ` ${counts.duplicate} doublon${counts.duplicate > 1 ? "s" : ""} inclus : les deux personnes du même numéro sont créées, à contrôler ensuite.`
                 : ""}
             </RhAlert>
 

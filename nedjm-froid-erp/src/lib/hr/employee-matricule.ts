@@ -413,13 +413,19 @@ export function applyEmployeeMatricules(
     if (!key) continue;
     const prior = claimed.get(key);
     if (prior && prior !== group) {
-      // Both people keep the same number in the report so the pair is visible.
+      // Both people stay visible. On file import they remain importable with that number.
       for (const slot of [...members(prior), ...members(group)]) {
         if (slot.status === "invalid" || slot.status === "conflict") continue;
         slot.status = "duplicate";
-        slot.message = `Matricule ${chosen} déjà utilisé par une autre personne.`;
+        slot.message = fromFile
+          ? `Matricule ${chosen} porté par deux personnes dans le fichier. Les deux lignes sont importées ; contrôlez-les ensuite dans le rapport.`
+          : `Matricule ${chosen} déjà utilisé par une autre personne.`;
         slot.candidate = null;
       }
+      if (!fromFile) continue;
+      expected.set(group, chosen);
+      const partsDup = readMatricule(chosen);
+      if (partsDup) note(counters, partsDup);
       continue;
     }
     claimed.set(key, group);
@@ -463,10 +469,17 @@ export function applyEmployeeMatricules(
     if (fileMat && key && used.has(key)) {
       for (const slot of members(group)) {
         slot.status = "duplicate";
-        slot.message = `Matricule ${fileMat} déjà utilisé par une autre personne.`;
+        slot.message = fromFile
+          ? `Matricule ${fileMat} porté par deux personnes dans le fichier. Les deux lignes sont importées ; contrôlez-les ensuite dans le rapport.`
+          : `Matricule ${fileMat} déjà utilisé par une autre personne.`;
         slot.candidate = null;
       }
-      expected.set(group, peek(counters, parts?.yy || currentYear2(today)));
+      if (fromFile) {
+        expected.set(group, fileMat);
+        if (parts) note(counters, parts);
+      } else {
+        expected.set(group, peek(counters, parts?.yy || currentYear2(today)));
+      }
       continue;
     }
     if (fileMat) {
@@ -561,9 +574,14 @@ export function applyEmployeeMatricules(
     }
     const issues = [...slot.row.issues];
     if (message && (status === "mismatch" || status === "conflict" || status === "duplicate")) issues.push(message);
-    const matricule = status === "mismatch" || status === "duplicate" || status === "conflict" ? slot.fileMat : wanted || slot.fileMat;
+    const matricule =
+      status === "mismatch" || status === "duplicate" || status === "conflict"
+        ? slot.fileMat || wanted
+        : wanted || slot.fileMat;
     const values = { ...slot.row.values };
-    if (matricule && (status === "new" || status === "exists")) values.matricule = matricule;
+    if (matricule && (status === "new" || status === "exists" || (fromFile && status === "duplicate"))) {
+      values.matricule = matricule;
+    }
     return {
       ...slot.row,
       status,
