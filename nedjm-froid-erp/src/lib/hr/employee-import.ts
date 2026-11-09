@@ -55,7 +55,17 @@ const ALIASES: Record<string, string[]> = {
   id_number: ["n piece", "cni", "n cni", "carte d identite", "n carte d identite"],
   blood_code: ["groupe sanguin", "gs", "g sanguin"],
   email: ["mail", "e mail", "courriel"],
-  status: ["statut", "etat"],
+  status: [
+    "statut",
+    "etat",
+    "status",
+    "active",
+    "actif",
+    "activite",
+    "etat employe",
+    "statut employe",
+    "situation professionnelle",
+  ],
 };
 
 export type ImportTarget = { code: string; label: string };
@@ -167,17 +177,8 @@ function catalogCode(raw: string, kind: string, catalogs: CatalogItem[]): string
   return prefixed?.code ?? null;
 }
 
-const STATUS_WORDS: [string, string[]][] = [
-  ["ACTIVE", ["active", "actif", "en poste", "en activite", "نشط", "يعمل"]],
-  ["INACTIVE", ["inactive", "inactif", "sorti", "parti", "demission", "licencie", "fin de contrat", "غير نشط"]],
-  ["SUSPENDED", ["suspendu", "suspended", "موقوف"]],
-];
-
 function statusCode(raw: string): string | null {
-  const norm = normalizeHeader(raw);
-  const upper = raw.trim().toUpperCase();
-  if (["ACTIVE", "INACTIVE", "SUSPENDED", "DISABLED", "INVITED"].includes(upper)) return upper;
-  return STATUS_WORDS.find(([, words]) => words.includes(norm))?.[0] ?? null;
+  return matchEmployeeStatus(raw, []);
 }
 
 export type ImportRowStatus =
@@ -262,8 +263,7 @@ export function buildImportRows(input: {
       const field = byCode.get(code);
       if (!field) return;
       if (code === "status") {
-        const fromList = statusItems.length ? matchEmployeeStatus(raw, catalogs) : null;
-        const s = fromList ?? (statusItems.length ? null : statusCode(raw));
+        const s = matchEmployeeStatus(raw, catalogs) ?? statusCode(raw);
         if (s) values.status = s;
         else warnings.push(`${header} : « ${raw} » non reconnu, statut ${fallbackStatus}`);
         return;

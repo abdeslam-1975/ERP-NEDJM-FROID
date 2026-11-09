@@ -55,19 +55,42 @@ export function nextActivityStatus(current: string, catalogs: StatusChoice[]): s
 function norm(value: string): string {
   return value
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u0300-\u036f\u0640\u064b-\u0652]/g, "")
+    .replace(/[^a-z0-9\u0600-\u06ff]+/gi, " ")
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 }
 
-/** Match an Excel cell to a catalog code (code, French label or Arabic label). */
+/** Usual Excel spellings for each catalog code. */
+const STATUS_ALIASES: Record<string, string[]> = {
+  ACTIVE: ["active", "actif", "actife", "en poste", "en activite", "activite", "working", "نشط", "يعمل"],
+  INACTIVE: ["inactive", "inactif", "inactivee", "inactife", "sorti", "parti", "demission", "licencie", "fin de contrat", "غير نشط"],
+  DISABLED: ["disabled", "desactive", "desactivee", "desactive", "desactivee", "off", "معطل"],
+  SUSPENDED: ["suspended", "suspendu", "suspendue", "موقوف"],
+  INVITED: ["invited", "invite", "invitee", "مدعو"],
+};
+
+/** Match an Excel cell to a catalog code (code, French/Arabic label, or usual spelling). */
 export function matchEmployeeStatus(raw: string, catalogs: StatusChoice[]): string | null {
   const items = employeeStatusItems(catalogs);
-  if (!items.length) return null;
   const folded = norm(raw);
   const upper = raw.trim().toUpperCase();
-  const hit = items.find(
-    (item) => item.code === upper || norm(item.label_fr ?? "") === folded || norm(item.label_ar ?? "") === folded,
-  );
-  return hit?.code ?? null;
+  if (!folded && !upper) return null;
+
+  if (items.length) {
+    const hit = items.find(
+      (item) => item.code === upper || norm(item.label_fr ?? "") === folded || norm(item.label_ar ?? "") === folded,
+    );
+    if (hit) return hit.code;
+    for (const item of items) {
+      const aliases = STATUS_ALIASES[item.code] ?? [];
+      if (aliases.includes(folded)) return item.code;
+    }
+  }
+
+  for (const [code, aliases] of Object.entries(STATUS_ALIASES)) {
+    if (code === upper || aliases.includes(folded)) return code;
+  }
+  return null;
 }

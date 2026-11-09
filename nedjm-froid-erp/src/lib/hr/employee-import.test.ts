@@ -132,6 +132,36 @@ describe("buildImportRows", () => {
     expect(r.warnings.join(" ")).toMatch(/date illisible/);
     expect(rows[4].issues[0]).toMatch(/Nom/);
   });
+
+  it("reads active and desactive from the last column", () => {
+    const statusCatalogs = [
+      ...catalogs,
+      { kind: "employee_status", code: "ACTIVE", label_fr: "Actif", label_ar: "نشط" },
+      { kind: "employee_status", code: "DISABLED", label_fr: "Désactivé", label_ar: "معطّل" },
+      { kind: "employee_status", code: "INACTIVE", label_fr: "Inactif", label_ar: "غير نشط" },
+    ] as CatalogItem[];
+    const sheet = [
+      ["Matricule", "Nom", "Prénom", "Active"],
+      ["01/24", "Ami", "Nora", "active"],
+      ["02/24", "Boudia", "Ali", "desactive"],
+      ["03/24", "Kaci", "Omar", "Désactivé"],
+    ];
+    const planned = buildImportRows({
+      matrix: sheet,
+      headerRow: 0,
+      mapping: guessMapping(sheet[0], fields),
+      fields,
+      catalogs: statusCatalogs,
+      existing: [],
+      today: "2026-11-05",
+    });
+    expect(guessMapping(sheet[0], fields).at(-1)).toBe("status");
+    expect(planned.map((r) => [r.values.matricule, r.values.status])).toEqual([
+      ["01/24", "ACTIVE"],
+      ["02/24", "DISABLED"],
+      ["03/24", "DISABLED"],
+    ]);
+  });
 });
 
 describe("matricules", () => {
