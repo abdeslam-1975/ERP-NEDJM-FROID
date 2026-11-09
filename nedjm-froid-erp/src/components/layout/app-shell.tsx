@@ -21,6 +21,7 @@ export async function AppShell({
   nav,
   subnav,
   tools,
+  fit = false,
   children,
 }: {
   title: string;
@@ -30,6 +31,8 @@ export async function AppShell({
   subnav?: ReactNode;
   /** Module-specific buttons of the top bar. */
   tools?: ReactNode;
+  /** Keep this screen inside the window, with no page scrollbar. */
+  fit?: boolean;
   children: ReactNode;
 }) {
   const workspace = await getWorkspaceProfile();
@@ -64,7 +67,7 @@ export async function AppShell({
         userMode={layout.prefs.mode}
         defaultMode={layout.design?.default_mode ?? null}
       >
-        <div className="relative isolate flex min-h-screen bg-background text-foreground">
+        <div className={`relative isolate flex bg-background text-foreground ${fit ? "h-dvh overflow-hidden" : "min-h-screen"}`}>
           <div aria-hidden className="ui-app-glow pointer-events-none fixed inset-0 -z-10 print:hidden" />
           <Sidebar
             user={{
@@ -75,7 +78,7 @@ export async function AppShell({
             sites={workspace.accessibleSites}
             activeSiteId={workspace.activeSite?.id ?? null}
           />
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className={`flex min-w-0 flex-1 flex-col ${fit ? "min-h-0" : ""}`}>
             <Topbar
               title={title}
               nav={nav}
@@ -83,7 +86,7 @@ export async function AppShell({
               tools={tools}
               notifications={notifications?.ok ? notifications.data.rows : []}
             />
-            <main className="flex-1 px-4 pt-7 pb-8 sm:px-6">
+            <main className={fit ? "flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-3 pb-3 sm:px-6" : "flex-1 px-4 pt-7 pb-8 sm:px-6"}>
               {settingsGroups ? (
                 <SettingsFrame groups={settingsGroups}>
                   <PageTransition>{children}</PageTransition>

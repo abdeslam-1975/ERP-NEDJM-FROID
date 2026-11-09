@@ -65,10 +65,10 @@ export default async function DashboardPage({
   ];
 
   return (
-    <AppShell title="Tableau de Bord">
-      <div className="space-y-8">
+    <AppShell title="Tableau de Bord" fit>
+      <div className="flex h-full min-h-0 flex-col gap-3">
         {notice ? (
-          <p className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          <p className="shrink-0 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
             {notice}
           </p>
         ) : null}
@@ -80,7 +80,7 @@ export default async function DashboardPage({
           />
         ) : (
           <>
-            <section className="flex flex-wrap items-start justify-between gap-4">
+            <section className="flex shrink-0 flex-wrap items-start justify-between gap-4">
               <div className="max-w-2xl">
                 <p dir="rtl" className="text-sm font-medium text-brand">
                   لوحة القيادة
@@ -105,10 +105,7 @@ export default async function DashboardPage({
               </div>
             </section>
             <CompletenessKpis items={kpis} />
-          </>
-        )}
-
-        <section className="rounded-[1.75rem] border border-border/70 bg-surface p-6 shadow-[var(--card-shadow)] sm:p-7">
+        <section className="min-h-0 flex-1 overflow-hidden rounded-[1.75rem] border border-border/70 bg-surface p-5 shadow-[var(--card-shadow)]">
           <h3 className="font-display text-lg font-semibold">
             <span className="flex items-center justify-end gap-2.5">
               <span dir="rtl">نطاق المواقع</span>
@@ -129,7 +126,7 @@ export default async function DashboardPage({
               `sys_user_site_roles`.
             </div>
           ) : (
-            <ul className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <ul className="mt-4 grid gap-3 overflow-hidden sm:grid-cols-2 xl:grid-cols-3">
               {workspace.accessibleSites.map((site) => {
                 const isActive = workspace.activeSite?.id === site.id;
                 return (
@@ -168,16 +165,8 @@ export default async function DashboardPage({
             </ul>
           )}
         </section>
-
-        <footer className="rounded-[1.75rem] border border-border/70 bg-surface px-6 py-5 text-center shadow-[var(--card-shadow)]">
-          <span className="mx-auto mb-3 block h-1 w-10 rounded-full bg-brand" aria-hidden />
-          <p>
-            <span dir="rtl" className="block text-sm text-foreground/65">
-              خبرة نجم فرويد في خدمة مشاريعكم
-            </span>
-            <span className="text-sm text-foreground/50">Nedjm Froid… L&apos;expertise au service de vos projets</span>
-          </p>
-        </footer>
+          </>
+        )}
       </div>
     </AppShell>
   );

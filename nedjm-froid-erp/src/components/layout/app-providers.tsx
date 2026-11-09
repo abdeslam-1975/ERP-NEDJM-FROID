@@ -68,7 +68,7 @@ export function PageTransition({ children }: { children: ReactNode }) {
   const animations = useContext(AnimationsContext);
   if (!animations) return <>{children}</>;
   return (
-    <motion.div key={pathname} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.22, ease: "easeOut" }}>
+    <motion.div className="h-full min-h-0" key={pathname} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.22, ease: "easeOut" }}>
       {children}
     </motion.div>
   );
