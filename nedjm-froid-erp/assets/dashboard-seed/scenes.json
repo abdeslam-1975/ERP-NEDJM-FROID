@@ -1,0 +1,44 @@
+{
+  "scenes": [
+    {
+      "id": "6f1c2a10-7b31-4a1e-9c11-0a0d10000004",
+      "file": "infrastructure.webp",
+      "titleAr": "منشآت التبريد والتكييف",
+      "titleFr": "Infrastructures de réfrigération",
+      "captionAr": "مشروع رورد نوس",
+      "captionFr": "SH/DP Rhourd Nouss"
+    },
+    {
+      "id": "6f1c2a10-7b31-4a1e-9c11-0a0d10000005",
+      "file": "equipes.png",
+      "titleAr": "فرق نجم فرويد في الميدان",
+      "titleFr": "Équipes NEDJM FROID sur site",
+      "captionAr": "الجودة والسلامة والبيئة",
+      "captionFr": "ISO 9001 · ISO 45001 · ISO 14001"
+    },
+    {
+      "id": "6f1c2a10-7b31-4a1e-9c11-0a0d10000002",
+      "file": "maintenance.webp",
+      "titleAr": "صيانة التبريد والتكييف",
+      "titleFr": "Maintenance froid et climatisation",
+      "captionAr": "مشروع رود الباغل",
+      "captionFr": "SH/DP DR Rhourde El Baguel"
+    },
+    {
+      "id": "6f1c2a10-7b31-4a1e-9c11-0a0d10000003",
+      "file": "electricite.jpg",
+      "titleAr": "الكهرباء الصناعية",
+      "titleFr": "Électricité industrielle",
+      "captionAr": "مشروع حوض بركاوي",
+      "captionFr": "SH/DP DR Haoued Berkaoui"
+    },
+    {
+      "id": "6f1c2a10-7b31-4a1e-9c11-0a0d10000001",
+      "file": "chambres.png",
+      "titleAr": "غرف تبريد حسب الطلب",
+      "titleFr": "Chambres froides sur mesure",
+      "captionAr": "تصميم الغرف الباردة وتصنيعها وتركيبها",
+      "captionFr": "Conception, fabrication et installation"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import {
   Gauge,
   History,
   IdCard,
+  ImageIcon,
   KeyRound,
   Landmark,
   LayoutGrid,
@@ -36,6 +37,7 @@ const ICONS: Record<SettingsIcon, LucideIcon> = {
   grid: LayoutGrid,
   key: KeyRound,
   palette: Palette,
+  image: ImageIcon,
   lock: Lock,
   history: History,
 };

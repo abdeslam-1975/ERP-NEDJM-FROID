@@ -51,7 +51,7 @@ const NAV_ICONS: Record<UiIcon, LucideIcon> = {
 
 export function NavIcon({ name }: { name: UiIcon }) {
   const Icon = NAV_ICONS[name];
-  return Icon ? <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} aria-hidden /> : null;
+  return Icon ? <Icon className="size-[1.125rem]" strokeWidth={1.8} aria-hidden /> : null;
 }
 
 const COLLAPSED_KEY = "nf-sidebar-collapsed";
@@ -113,7 +113,7 @@ export function Sidebar({
   }
 
   const footButton =
-    "flex h-10 flex-1 items-center justify-center gap-2 rounded-xl text-[13px] font-medium text-white/70 transition hover:bg-white/[0.08] hover:text-white";
+    "flex h-10 flex-1 items-center justify-center gap-2 rounded-xl text-[0.8125rem] font-medium text-white/70 transition hover:bg-white/[0.08] hover:text-white";
 
   return (
     <aside
@@ -128,7 +128,7 @@ export function Sidebar({
         </span>
         {!collapsed ? (
           <div className="min-w-0 leading-tight">
-            <p className="truncate text-[17px] font-semibold tracking-tight text-white">{appName}</p>
+            <p className="truncate text-[1.0625rem] font-semibold tracking-tight text-white">{appName}</p>
             <p className="truncate text-xs text-white/55">{appSubtitle}</p>
           </div>
         ) : null}
@@ -183,7 +183,7 @@ export function Sidebar({
         {!collapsed ? <SiteSwitcher sites={sites} activeSiteId={activeSiteId} variant="sidebar" /> : null}
         <div className={cn("flex gap-1", collapsed && "flex-col")}>
           <button type="button" onClick={toggleTheme} title="Thème clair / sombre" className={footButton}>
-            {dark ? <Sun className="h-[18px] w-[18px]" aria-hidden /> : <Moon className="h-[18px] w-[18px]" aria-hidden />}
+            {dark ? <Sun className="size-[1.125rem]" aria-hidden /> : <Moon className="size-[1.125rem]" aria-hidden />}
             {!collapsed ? "Thème" : null}
           </button>
           <button
@@ -193,9 +193,9 @@ export function Sidebar({
             className={footButton}
           >
             {collapsed ? (
-              <PanelLeftOpen className="h-[18px] w-[18px]" aria-hidden />
+              <PanelLeftOpen className="size-[1.125rem]" aria-hidden />
             ) : (
-              <PanelLeftClose className="h-[18px] w-[18px]" aria-hidden />
+              <PanelLeftClose className="size-[1.125rem]" aria-hidden />
             )}
             {!collapsed ? "Réduire" : null}
           </button>

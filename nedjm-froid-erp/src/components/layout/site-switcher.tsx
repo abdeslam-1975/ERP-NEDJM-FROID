@@ -32,7 +32,7 @@ export function SiteSwitcher({
         <span className="sr-only">Site actif</span>
         <MapPin className="pointer-events-none absolute left-3 h-4 w-4 text-white/60" aria-hidden />
         <select
-          className="h-10 w-full cursor-pointer appearance-none truncate rounded-xl bg-white/[0.07] pr-8 pl-9 text-[13px] font-medium text-white ring-1 ring-white/10 outline-none ring-inset transition hover:bg-white/[0.12] focus:ring-white/30 disabled:opacity-60 [&>option]:bg-surface [&>option]:text-foreground"
+          className="h-10 w-full cursor-pointer appearance-none truncate rounded-xl bg-white/[0.07] pr-8 pl-9 text-[0.8125rem] font-medium text-white ring-1 ring-white/10 outline-none ring-inset transition hover:bg-white/[0.12] focus:ring-white/30 disabled:opacity-60 [&>option]:bg-surface [&>option]:text-foreground"
           value={activeSiteId ?? ""}
           disabled={pending}
           onChange={(e) => change(e.target.value)}

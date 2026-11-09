@@ -85,6 +85,17 @@
   --color-ring: var(--color-brand);
 }
 
+/*
+ * One scale for every screen. 1rem is 16px on a 1920px-wide window — the
+ * reference look — and shrinks with the window, down to 13px. Spacing, type
+ * and the sidebar (all in rem) keep the same proportions on a laptop and
+ * when Windows display scaling makes the CSS viewport smaller. A wider
+ * monitor stays at 16px so the layout does not grow past that reference.
+ */
+html {
+  font-size: clamp(13px, calc(100dvw / 120), 16px);
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -197,6 +208,10 @@ body {
 }
 
 @media print {
+  html {
+    font-size: 16px;
+  }
+
   .data-table tbody > tr:hover > td {
     background-color: transparent;
   }
@@ -289,12 +304,33 @@ body {
   from { transform: scaleX(0); }
 }
 
+@keyframes ui-hero-drift {
+  from { transform: scale(1.07); }
+  to { transform: scale(1); }
+}
+
+@keyframes ui-hero-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.ui-hero-drift {
+  animation: ui-hero-drift 14s var(--ease-out-soft) both;
+}
+
+.ui-hero-progress {
+  transform-origin: left center;
+  animation: ui-hero-progress linear both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ui-stagger > *,
   .ui-draw,
   .ui-fade,
   .ui-ring,
-  .ui-grow-x {
+  .ui-grow-x,
+  .ui-hero-drift,
+  .ui-hero-progress {
     animation: none;
   }
 

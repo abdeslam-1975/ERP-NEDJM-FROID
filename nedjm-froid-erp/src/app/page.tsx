@@ -1,6 +1,8 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { AlertBadge } from "@/components/castle/alert-badge";
+import { CinematicHero } from "@/components/dashboard/cinematic-hero";
 import { CompletenessKpis } from "@/components/castle/completeness-kpis";
+import { loadDashboardScenes } from "@/lib/actions/dashboard-showcase";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { redirect } from "next/navigation";
 
@@ -19,42 +21,42 @@ export default async function DashboardPage({
 }) {
   const workspace = await getWorkspaceProfile();
   if (!workspace) redirect("/login");
-  const { error } = await searchParams;
+  const [{ error }, scenes] = await Promise.all([searchParams, loadDashboardScenes()]);
   const notice = error ? REDIRECT_NOTICES[error] : undefined;
 
   const kpis = [
     {
+      labelAr: "الدور الرئيسي",
       label: "Rôle principal",
       value:
         workspace.roles.find((r) => r.siteId === null)?.roleCode ??
         workspace.roles[0]?.roleCode ??
         "—",
-      hint: workspace.isSuperAdmin
-        ? "Périmètre global SUPER_ADMIN"
-        : "Périmètre selon affectations site",
+      hintAr: workspace.isSuperAdmin ? "نطاق عام" : "حسب مواقع التكليف",
+      hint: workspace.isSuperAdmin ? "Périmètre global SUPER_ADMIN" : "Périmètre selon affectations site",
       tone: "ok" as const,
     },
     {
+      labelAr: "المواقع المتاحة",
       label: "Sites accessibles",
       value: String(workspace.accessibleSites.length),
+      hintAr: workspace.accessibleSites.length === 0 ? "لا توجد ورشة في النطاق" : undefined,
       hint:
         workspace.accessibleSites.length === 0
           ? "Aucun chantier dans le périmètre"
           : workspace.accessibleSites.map((s) => s.nameFr).join(", "),
-      tone:
-        workspace.accessibleSites.length === 0
-          ? ("warn" as const)
-          : ("ok" as const),
+      tone: workspace.accessibleSites.length === 0 ? ("warn" as const) : ("ok" as const),
     },
     {
+      labelAr: "الموقع النشط",
       label: "Site actif",
       value: workspace.activeSite?.nameFr ?? "—",
-      hint: workspace.activeSite?.nameAr
-        ? workspace.activeSite.nameAr
-        : "Sélectionnez un site dans la barre supérieure",
+      hintAr: workspace.activeSite?.nameAr ?? "اختر موقعاً من الشريط العلوي",
+      hint: workspace.activeSite ? "Site sélectionné" : "Sélectionnez un site dans la barre supérieure",
       tone: workspace.activeSite ? ("ok" as const) : ("warn" as const),
     },
     {
+      labelAr: "حالة الحساب",
       label: "Statut compte",
       value: workspace.status,
       hint: workspace.email,
@@ -70,54 +72,59 @@ export default async function DashboardPage({
             {notice}
           </p>
         ) : null}
-        <section className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-2xl">
-            <p className="text-sm font-medium text-brand">
-              Perspective Château · لوحة القيادة
-            </p>
-            <h2 className="mt-1 font-display text-3xl font-semibold tracking-tight">
-              Bienvenue, {workspace.fullName}
-            </h2>
-            <p className="mt-2 text-base text-foreground/70">
-              Espace de travail NEDJM FROID. Les données opérationnelles sont
-              filtrées selon vos rôles (`sys_user_site_roles`) et le site actif
-              sélectionné (référentiel `ref_sites`).
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {workspace.isSuperAdmin ? (
-              <AlertBadge label="SUPER_ADMIN" tone="info" />
-            ) : (
-              <AlertBadge label="Accès site" tone="warning" />
-            )}
-            {workspace.activeSite ? (
-              <AlertBadge
-                label={workspace.activeSite.nameFr}
-                tone="success"
-              />
-            ) : (
-              <AlertBadge label="Site non sélectionné" tone="critical" />
-            )}
-          </div>
-        </section>
+        {scenes.length > 0 ? (
+          <CinematicHero
+            canEdit={workspace.isSuperAdmin}
+            scenes={scenes}
+            kpis={kpis.map(({ labelAr, label, value, hintAr, hint }) => ({ labelAr, label, value, hintAr, hint }))}
+          />
+        ) : (
+          <>
+            <section className="flex flex-wrap items-start justify-between gap-4">
+              <div className="max-w-2xl">
+                <p dir="rtl" className="text-sm font-medium text-brand">
+                  لوحة القيادة
+                </p>
+                <p className="text-xs text-foreground/45">Perspective Château</p>
+                <h2 dir="rtl" className="mt-2 font-display text-3xl font-semibold tracking-tight">
+                  مرحباً، {workspace.fullName}
+                </h2>
+                <p className="text-sm text-foreground/55">Bienvenue, {workspace.fullName}</p>
+                <p className="mt-2 text-base text-foreground/70">
+                  Espace de travail NEDJM FROID. Les données opérationnelles sont filtrées selon vos rôles
+                  (`sys_user_site_roles`) et le site actif sélectionné (référentiel `ref_sites`).
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {workspace.isSuperAdmin ? <AlertBadge label="SUPER_ADMIN" tone="info" /> : <AlertBadge label="Accès site" tone="warning" />}
+                {workspace.activeSite ? (
+                  <AlertBadge label={workspace.activeSite.nameFr} tone="success" />
+                ) : (
+                  <AlertBadge label="Site non sélectionné" tone="critical" />
+                )}
+              </div>
+            </section>
+            <CompletenessKpis items={kpis} />
+          </>
+        )}
 
-        <CompletenessKpis items={kpis} />
-
-        <section className="rounded-lg border border-border bg-surface p-6">
+        <section className="rounded-[1.75rem] border border-border/70 bg-surface p-6 shadow-[var(--card-shadow)] sm:p-7">
           <h3 className="font-display text-lg font-semibold">
-            Périmètre sites
-            <span className="ml-2 text-sm font-normal text-foreground/55">
-              نطاق المواقع
+            <span className="flex items-center justify-end gap-2.5">
+              <span dir="rtl">نطاق المواقع</span>
+              <span className="h-5 w-1 rounded-full bg-brand" aria-hidden />
             </span>
+            <span className="mt-0.5 block text-right text-sm font-normal text-foreground/45">Périmètre sites</span>
           </h3>
-          <p className="mt-1 text-sm text-foreground/65">
-            Exemples cibles métier : Hassi Messaoud, Sétif, Istanbul — créez-les
-            dans Gestion des Sites. Le site actif guide le filtrage applicatif ;
-            PostgreSQL RLS reste la source de vérité.
+          <p dir="rtl" className="mt-3 text-right text-sm leading-relaxed text-foreground/70">
+            المواقع المتاحة لهذا الحساب. الموقع النشط هو الذي يصفّي بيانات العمل.
+          </p>
+          <p className="mt-1 text-right text-sm text-foreground/50">
+            Chantiers ouverts pour ce compte. Le site actif filtre les données de travail.
           </p>
 
           {workspace.accessibleSites.length === 0 ? (
-            <div className="mt-6 flex min-h-40 items-center justify-center rounded-md border border-dashed border-border bg-surface-muted px-4 text-center text-sm text-foreground/60">
+            <div className="mt-6 flex min-h-40 items-center justify-center rounded-2xl border border-dashed border-border bg-surface-muted px-4 text-center text-sm text-foreground/60">
               Aucun chantier accessible. Créez un site ou vérifiez
               `sys_user_site_roles`.
             </div>
@@ -128,24 +135,30 @@ export default async function DashboardPage({
                 return (
                   <li
                     key={site.id}
-                    className={`rounded-lg border p-4 ${
+                    className={`rounded-2xl border p-4 text-right transition ${
                       isActive
-                        ? "border-brand bg-brand-muted"
-                        : "border-border bg-background"
+                        ? "border-brand/40 bg-brand-muted shadow-[var(--card-shadow)]"
+                        : "border-border/80 bg-background"
                     }`}
                   >
-                    <p className="font-semibold text-foreground">{site.nameFr}</p>
                     {site.nameAr ? (
-                      <p className="text-sm text-foreground/60" dir="rtl">
+                      <p className="font-semibold text-foreground" dir="rtl">
                         {site.nameAr}
                       </p>
                     ) : null}
-                    <p className="mt-2 font-mono text-xs text-brand">{site.code}</p>
+                    <p className={site.nameAr ? "text-sm text-foreground/55" : "font-semibold text-foreground"} dir="ltr">
+                      {site.nameFr}
+                    </p>
+                    <p className="mt-3 font-mono text-xs tracking-wide text-brand">{site.code}</p>
                     {site.wilaya ? (
                       <p className="mt-1 text-xs text-foreground/55">{site.wilaya}</p>
                     ) : null}
                     {isActive ? (
-                      <p className="mt-2 text-xs font-semibold text-brand">
+                      <p className="mt-3 inline-flex rounded-full bg-brand px-2.5 py-1 text-[0.7rem] font-semibold text-white">
+                        <span dir="rtl">الموقع النشط</span>
+                        <span className="mx-1.5 opacity-60" aria-hidden>
+                          ·
+                        </span>
                         Site actif
                       </p>
                     ) : null}
@@ -155,6 +168,16 @@ export default async function DashboardPage({
             </ul>
           )}
         </section>
+
+        <footer className="rounded-[1.75rem] border border-border/70 bg-surface px-6 py-5 text-center shadow-[var(--card-shadow)]">
+          <span className="mx-auto mb-3 block h-1 w-10 rounded-full bg-brand" aria-hidden />
+          <p>
+            <span dir="rtl" className="block text-sm text-foreground/65">
+              خبرة نجم فرويد في خدمة مشاريعكم
+            </span>
+            <span className="text-sm text-foreground/50">Nedjm Froid… L&apos;expertise au service de vos projets</span>
+          </p>
+        </footer>
       </div>
     </AppShell>
   );

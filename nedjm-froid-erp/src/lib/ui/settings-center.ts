@@ -22,6 +22,7 @@ export type SettingsIcon =
   | "grid"
   | "key"
   | "palette"
+  | "image"
   | "lock"
   | "history";
 
@@ -215,6 +216,16 @@ export const SETTINGS_GROUPS: SettingsGroupDef[] = [
         href: "/parametres/interface",
         icon: "palette",
         keywords: "theme couleurs menu onglets",
+        superAdminOnly: true,
+      },
+      {
+        id: "accueil",
+        labelFr: "Accueil",
+        labelAr: "الاستقبال",
+        descriptionFr: "Images et textes du bandeau sur le tableau de bord.",
+        href: "/parametres/accueil",
+        icon: "image",
+        keywords: "dashboard accueil hero scenes images bandeau",
         superAdminOnly: true,
       },
     ],
