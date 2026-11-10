@@ -28,8 +28,8 @@ function isBonFileName(name: string): boolean {
   return BON_FILE_RE.test(name);
 }
 
-async function* iterateBonFiles(fileList: FileList | File[]): AsyncGenerator<File> {
-  for (const file of Array.from(fileList)) {
+async function* iterateBonFiles(files: File[]): AsyncGenerator<File> {
+  for (const file of files) {
     const lower = file.name.toLowerCase();
     if (lower.endsWith(".zip") || file.type === "application/zip" || file.type === "application/x-zip-compressed") {
       if (file.size > MAX_ZIP_BYTES) {
@@ -71,6 +71,7 @@ export function CaisseBulkBonsPanel({
   const [progress, setProgress] = useState("");
   const [results, setResults] = useState<RowResult[]>([]);
   const [targets, setTargets] = useState<BonAttachTarget[]>([]);
+  const [pickedLabel, setPickedLabel] = useState("");
 
   async function processOne(
     file: File,
@@ -162,12 +163,16 @@ export function CaisseBulkBonsPanel({
     };
   }
 
-  async function runImport(fileList: FileList | null) {
-    if (!fileList?.length) return;
+  async function runImport(files: File[]) {
+    if (!files.length) {
+      onNotify("Bons", "Aucun fichier sélectionné");
+      return;
+    }
     if (!month) return onNotify("Mois", "Choisissez un mois");
     setBusy(true);
     setResults([]);
-    setProgress("Chargement des opérations…");
+    setPickedLabel(`${files.length} fichier(s) sélectionné(s)`);
+    setProgress(`Préparation — ${files.length} fichier(s)…`);
     try {
       const listed = await listCaisseBonAttachTargets(month);
       if (!listed.ok) {
@@ -175,13 +180,14 @@ export function CaisseBulkBonsPanel({
         return;
       }
       setTargets(listed.data.targets);
+      setProgress(`Opérations chargées (${listed.data.withoutPhoto} sans photo) — démarrage OCR…`);
 
       const nextResults: RowResult[] = [];
       let linkedCount = 0;
       let pool = [...listed.data.targets];
       let index = 0;
 
-      for await (const file of iterateBonFiles(fileList)) {
+      for await (const file of iterateBonFiles(files)) {
         index += 1;
         setProgress(`OCR ${index} — ${file.name}`);
         try {
@@ -268,37 +274,46 @@ export function CaisseBulkBonsPanel({
             ))}
           </select>
         </label>
-        <label className="field">
+        <div className="field">
           <span>Fichiers / ZIP</span>
-          <input
-            type="file"
-            multiple
-            accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip"
-            disabled={busy || !month}
-            onChange={(event) => {
-              const files = event.target.files;
-              event.target.value = "";
-              void runImport(files);
-            }}
-          />
-        </label>
-        <label className="field">
+          <label className={`btn-light bulk-pick-btn${busy || !month ? " disabled" : ""}`}>
+            Choisir des fichiers…
+            <input
+              type="file"
+              multiple
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip"
+              disabled={busy || !month}
+              hidden
+              onChange={(event) => {
+                const files = Array.from(event.target.files || []);
+                event.target.value = "";
+                void runImport(files);
+              }}
+            />
+          </label>
+        </div>
+        <div className="field">
           <span>Dossier (recommandé si archive lourde)</span>
-          <input
-            type="file"
-            multiple
-            // @ts-expect-error webkitdirectory is supported in Chromium/Edge
-            webkitdirectory=""
-            directory=""
-            disabled={busy || !month}
-            onChange={(event) => {
-              const files = event.target.files;
-              event.target.value = "";
-              void runImport(files);
-            }}
-          />
-        </label>
+          <label className={`btn-light bulk-pick-btn${busy || !month ? " disabled" : ""}`}>
+            Choisir un dossier…
+            <input
+              type="file"
+              multiple
+              // @ts-expect-error webkitdirectory is supported in Chromium/Edge
+              webkitdirectory=""
+              directory=""
+              disabled={busy || !month}
+              hidden
+              onChange={(event) => {
+                const files = Array.from(event.target.files || []);
+                event.target.value = "";
+                void runImport(files);
+              }}
+            />
+          </label>
+        </div>
       </div>
+      {pickedLabel ? <p className="hint">{pickedLabel}</p> : null}
       {progress ? <p className="hint bulk-bons-progress">{progress}{targets.length ? ` · ${targets.filter((t) => !t.hasPhoto).length} sans photo` : ""}</p> : null}
       {results.length ? (
         <div className="admin-table-wrap">
