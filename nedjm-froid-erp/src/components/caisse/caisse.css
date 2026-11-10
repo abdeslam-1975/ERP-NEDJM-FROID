@@ -231,6 +231,47 @@
 .caisse-app .preview-bon.ok { background: #dcfce7; color: #166534; font-weight: 700; }
 .caisse-app .preview-bon.unknown,
 .caisse-app .preview-bon.checking { background: #fef3c7; color: #92400e; font-weight: 700; }
+
+/* Journal : colorer uniquement la case BON (pas toute la ligne) */
+.caisse-app .bon-journal-actions {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+}
+.caisse-app .bon-journal-cell.warn,
+.caisse-app td.bon-journal-cell.warn {
+  background: #ffedd5 !important;
+}
+.caisse-app .bon-journal-cell.bad,
+.caisse-app td.bon-journal-cell.bad {
+  background: #fecaca !important;
+}
+.caisse-app .bon-journal-cell.unknown,
+.caisse-app td.bon-journal-cell.unknown {
+  background: #fef3c7 !important;
+}
+.caisse-app .bon-journal-btn.warn {
+  border-color: #fb923c !important;
+  color: #c2410c !important;
+  font-weight: 800;
+}
+.caisse-app .bon-journal-btn.bad {
+  border-color: #ef4444 !important;
+  color: #b91c1c !important;
+  background: #fee2e2 !important;
+  font-weight: 800;
+}
+.caisse-app .bon-journal-btn.unknown {
+  border-color: #f59e0b !important;
+  color: #a16207 !important;
+  font-weight: 700;
+}
+.caisse-app .bon-confirm-btn {
+  border-color: #86efac !important;
+  color: #166534 !important;
+  background: #ecfdf5 !important;
+  font-size: 11px !important;
+  padding: 4px 8px !important;
+  font-weight: 800;
+}
 .caisse-app .list-editor-items {
   list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px;
   max-height: 220px; overflow: auto; border: 1px solid #eef2f7; border-radius: 6px;

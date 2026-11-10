@@ -36,6 +36,8 @@ export type JournalLine = {
   buyer: string;
   bon: string;
   hasPhoto: boolean;
+  /** ok | warn | bad | unknown — null si pas de contrôle */
+  bonMatchStatus?: "ok" | "warn" | "bad" | "unknown" | null;
 };
 
 export type CloseStatus = {
@@ -124,6 +126,8 @@ export type PurchaseInput = {
   immatriculation: string;
   buyer: string | null;
   items: PurchaseItemInput[];
+  /** Résultat contrôle OCR du bon (côté client) */
+  bonMatchStatus?: "ok" | "warn" | "bad" | "unknown" | null;
 };
 
 export type FinanceInput = {
