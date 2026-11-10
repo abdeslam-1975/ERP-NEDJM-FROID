@@ -24,6 +24,7 @@ import {
   unlockCaisseDay,
   updateCaisseBuyerProfile,
 } from "@/lib/actions/caisse";
+import { CaisseBulkBonsPanel } from "@/components/caisse/caisse-bulk-bons";
 import { evaluateBonMatch, type BonCheckStatus } from "@/lib/caisse/bon-check";
 import { prepareAndReadBon } from "@/lib/caisse/bon-ocr";
 import { formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
@@ -111,6 +112,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   const [physical, setPhysical] = useState("");
   const [closeNote, setCloseNote] = useState("");
   const [adminOpen, setAdminOpen] = useState(false);
+  const [bulkBonsOpen, setBulkBonsOpen] = useState(false);
   const [openingsOnly, setOpeningsOnly] = useState(false);
   const [listsOnly, setListsOnly] = useState(false);
   const [openingDate, setOpeningDate] = useState(initial?.openingDate ?? "");
@@ -953,6 +955,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
           {flags?.canSeeCaisse || flags?.isAdmin ? <button type="button" className="btn-action btn-purple" onClick={() => void openFinance()}>CAISSE</button> : null}
           {flags?.canSeeCaisse || flags?.isAdmin ? <button type="button" className="btn-action btn-teal" onClick={() => void openClose()}>CLÔTURE</button> : null}
           {flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openAdmin()}>ADMIN</button> : null}
+          {flags?.isAdmin ? <button type="button" className="btn-action btn-purple" onClick={() => setBulkBonsOpen(true)}>BONS PDF</button> : null}
           {flags?.canManageOpenings && !flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openOpenings()}>OUVERTURE</button> : null}
           {flags?.canManageLists && !flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openLists()}>LISTES</button> : null}
           {flags?.isAdmin ? <button type="button" className="btn-action btn-brown" onClick={() => void openAudit()}>AUDIT</button> : null}
@@ -1266,6 +1269,27 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
               {closeState.canUnlock ? <button type="button" className="btn-light" onClick={() => void reopen()}>Rouvrir (admin)</button> : null}
               <button type="button" className="btn-light" onClick={() => setCloseOpen(false)}>Fermer</button>
               {closeState.canClose ? <button type="button" className="btn-action btn-green" onClick={() => void confirmClose()}>Clôturer la journée</button> : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {bulkBonsOpen ? (
+        <div className="overlay">
+          <div className="modal modal-admin">
+            <div className="modal-head slate">
+              <strong>Import massif des bons</strong>
+              <button type="button" className="close-x" onClick={() => setBulkBonsOpen(false)}>×</button>
+            </div>
+            <div className="modal-body admin-body">
+              <CaisseBulkBonsPanel
+                months={data.months}
+                initialMonth={data.month}
+                onNotify={notify}
+                onDone={async () => {
+                  await reload();
+                }}
+              />
             </div>
           </div>
         </div>
