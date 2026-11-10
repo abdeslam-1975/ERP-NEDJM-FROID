@@ -233,6 +233,9 @@
 .caisse-app .preview-bon.checking { background: #fef3c7; color: #92400e; font-weight: 700; }
 
 /* Journal : colorer uniquement la case BON (pas toute la ligne) */
+.caisse-app .bon-journal-actions {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+}
 .caisse-app .bon-journal-cell.warn,
 .caisse-app td.bon-journal-cell.warn {
   background: #ffedd5 !important;
@@ -260,6 +263,14 @@
   border-color: #f59e0b !important;
   color: #a16207 !important;
   font-weight: 700;
+}
+.caisse-app .bon-confirm-btn {
+  border-color: #86efac !important;
+  color: #166534 !important;
+  background: #ecfdf5 !important;
+  font-size: 11px !important;
+  padding: 4px 8px !important;
+  font-weight: 800;
 }
 .caisse-app .list-editor-items {
   list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px;

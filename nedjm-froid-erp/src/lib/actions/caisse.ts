@@ -636,6 +636,46 @@ export async function getCaissePhoto(
   return { ok: true, data: { url: data.photo_data, archiveName } };
 }
 
+/** Admin : valider manuellement le bon (OCR faux positif) → statut ok, plus d’alerte couleur. */
+export async function confirmCaisseBonMatch(
+  operationId: string,
+): Promise<ActionResult<{ message: string }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.isAdmin) return fail("❌ Réservé à l’administrateur");
+  if (!operationId?.trim()) return fail("❌ Opération invalide");
+  const existing = await supabase
+    .from("caisse_operations")
+    .select("id, op_number, op_date, has_photo, bon_match_status")
+    .eq("id", operationId)
+    .maybeSingle();
+  if (existing.error) return fail(existing.error.message);
+  if (!existing.data) return fail("❌ Opération introuvable.");
+  if (!existing.data.has_photo) return fail("❌ Aucun bon à valider.");
+  const updated = await supabase
+    .from("caisse_operations")
+    .update({ bon_match_status: "ok", bon_label: "Voir Bon" })
+    .eq("id", operationId);
+  if (updated.error) {
+    if (/bon_match_status/i.test(updated.error.message)) {
+      return fail("❌ Colonne bon_match_status absente — exécutez la migration SQL d’abord.");
+    }
+    return fail(updated.error.message);
+  }
+  await logAction(
+    supabase,
+    "UPDATE",
+    "ACHAT",
+    existing.data.op_number,
+    sheetNameFromIso(String(existing.data.op_date).slice(0, 10)),
+    `Validation manuelle du bon (admin) | était: ${existing.data.bon_match_status || "—"}`,
+    null,
+  );
+  refresh();
+  return { ok: true, data: { message: `✅ Bon N° ${existing.data.op_number} marqué conforme.` } };
+}
+
 export async function getCaisseClose(date: string): Promise<ActionResult<CloseStatus>> {
   const gate = await clientOrError();
   if ("ok" in gate) return gate;

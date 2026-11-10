@@ -6,6 +6,7 @@ import {
   addCaisseBuyer,
   addCaisseListItem,
   closeCaisseDay,
+  confirmCaisseBonMatch,
   deleteCaisseBuyer,
   deleteCaisseOperation,
   getCaisseAdmin,
@@ -665,6 +666,24 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     link.click();
   }
 
+  async function confirmBonMatch(operationId: string) {
+    if (!flags?.isAdmin) return notify("Accès", "Réservé à l’administrateur");
+    const answer = await confirmBox(
+      "Valider le bon",
+      "Confirmer que date et montant du bon correspondent à l’opération ? L’alerte couleur (rouge/orange) disparaîtra.",
+      "Conforme",
+    );
+    if (!answer) return;
+    setBusy(true);
+    try {
+      const result = await confirmCaisseBonMatch(operationId);
+      notify("Bon", result.ok ? result.data.message : result.error);
+      if (result.ok) await reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function exportPdf() {
     if (!visibleRows.length) return notify("Info", "Aucune opération");
     const escape = (value: unknown) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;");
@@ -1015,22 +1034,34 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                   <td>{row.buyer}</td>
                   <td className={row.hasPhoto && row.bonMatchStatus && row.bonMatchStatus !== "ok" ? `bon-journal-cell ${row.bonMatchStatus}` : undefined}>
                     {row.hasPhoto ? (
-                      <button
-                        type="button"
-                        className={`btn-light bon-journal-btn${row.bonMatchStatus && row.bonMatchStatus !== "ok" ? ` ${row.bonMatchStatus}` : ""}`}
-                        title={
-                          row.bonMatchStatus === "bad"
-                            ? "Écart date et montant du bon"
-                            : row.bonMatchStatus === "warn"
-                              ? "Écart date ou montant du bon"
-                              : row.bonMatchStatus === "unknown"
-                                ? "Bon à vérifier"
-                                : "Voir le bon"
-                        }
-                        onClick={() => void showPhoto(row.operationId)}
-                      >
-                        Voir
-                      </button>
+                      <div className="bon-journal-actions">
+                        <button
+                          type="button"
+                          className={`btn-light bon-journal-btn${row.bonMatchStatus && row.bonMatchStatus !== "ok" ? ` ${row.bonMatchStatus}` : ""}`}
+                          title={
+                            row.bonMatchStatus === "bad"
+                              ? "Écart date et montant du bon"
+                              : row.bonMatchStatus === "warn"
+                                ? "Écart date ou montant du bon"
+                                : row.bonMatchStatus === "unknown"
+                                  ? "Bon à vérifier"
+                                  : "Voir le bon"
+                          }
+                          onClick={() => void showPhoto(row.operationId)}
+                        >
+                          Voir
+                        </button>
+                        {flags?.isAdmin && row.isFirst && row.bonMatchStatus && row.bonMatchStatus !== "ok" ? (
+                          <button
+                            type="button"
+                            className="btn-light bon-confirm-btn"
+                            title="Valider manuellement le bon (admin)"
+                            onClick={() => void confirmBonMatch(row.operationId)}
+                          >
+                            Conforme
+                          </button>
+                        ) : null}
+                      </div>
                     ) : (
                       row.bon || "—"
                     )}
