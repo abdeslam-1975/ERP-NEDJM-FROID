@@ -10,7 +10,7 @@ import { formatDa, formatDateFr } from "@/lib/caisse/soldes";
 
 type RowResult = {
   fileName: string;
-  status: "linked" | "ambiguous" | "already" | "none" | "unreadable" | "error";
+  status: "linked" | "ambiguous" | "already" | "none" | "unreadable" | "error" | "skipped";
   message: string;
   detectedDate: string | null;
   detectedAmount: number | null;
@@ -20,27 +20,39 @@ type RowResult = {
 };
 
 const BON_FILE_RE = /\.(pdf|png|jpe?g|webp)$/i;
+/** Au-delà, demander un dossier ou plusieurs petits ZIP. */
+const MAX_ZIP_BYTES = 150 * 1024 * 1024;
+const MAX_SINGLE_FILE_BYTES = 40 * 1024 * 1024;
 
-async function collectBonFiles(fileList: FileList | File[]): Promise<File[]> {
-  const out: File[] = [];
+function isBonFileName(name: string): boolean {
+  return BON_FILE_RE.test(name);
+}
+
+async function* iterateBonFiles(fileList: FileList | File[]): AsyncGenerator<File> {
   for (const file of Array.from(fileList)) {
-    const name = file.name.toLowerCase();
-    if (name.endsWith(".zip")) {
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith(".zip") || file.type === "application/zip" || file.type === "application/x-zip-compressed") {
+      if (file.size > MAX_ZIP_BYTES) {
+        throw new Error(
+          `ZIP trop volumineux (${(file.size / (1024 * 1024)).toFixed(0)} Mo). Divisez en plusieurs ZIP (20–40 bons) ou utilisez « Dossier ».`,
+        );
+      }
       const zip = await JSZip.loadAsync(await file.arrayBuffer());
-      const entries = Object.values(zip.files).filter((entry) => !entry.dir && BON_FILE_RE.test(entry.name));
+      const entries = Object.values(zip.files)
+        .filter((entry) => !entry.dir && isBonFileName(entry.name))
+        .sort((a, b) => a.name.localeCompare(b.name, "fr"));
       for (const entry of entries) {
         const blob = await entry.async("blob");
         const base = entry.name.split("/").pop() || entry.name;
         const type = base.toLowerCase().endsWith(".pdf") ? "application/pdf" : blob.type || "application/octet-stream";
-        out.push(new File([blob], base, { type }));
+        yield new File([blob], base, { type });
       }
       continue;
     }
-    if (BON_FILE_RE.test(name) || file.type.startsWith("image/") || file.type === "application/pdf") {
-      out.push(file);
+    if (isBonFileName(file.name) || file.type.startsWith("image/") || file.type === "application/pdf") {
+      yield file;
     }
   }
-  return out;
 }
 
 export function CaisseBulkBonsPanel({
@@ -60,6 +72,96 @@ export function CaisseBulkBonsPanel({
   const [results, setResults] = useState<RowResult[]>([]);
   const [targets, setTargets] = useState<BonAttachTarget[]>([]);
 
+  async function processOne(
+    file: File,
+    pool: BonAttachTarget[],
+  ): Promise<{ row: RowResult; pool: BonAttachTarget[]; linked: boolean }> {
+    if (file.size > MAX_SINGLE_FILE_BYTES) {
+      return {
+        linked: false,
+        pool,
+        row: {
+          fileName: file.name,
+          status: "skipped",
+          message: `Fichier trop lourd (${(file.size / (1024 * 1024)).toFixed(1)} Mo) — ignorez ou compressez`,
+          detectedDate: null,
+          detectedAmount: null,
+          matches: [],
+        },
+      };
+    }
+
+    const prepared = await prepareAndReadBon(file);
+    const fields = prepared.extract.rawText ? prepared.extract : extractBonFields(prepared.rawText);
+    const matched = matchBonToOperations(pool, fields.preferredDate, fields.preferredAmount);
+
+    if (matched.status === "unique" && matched.matches[0]) {
+      const target = matched.matches[0];
+      const attached = await attachCaisseBonPhoto({
+        operationId: target.operationId,
+        photoDataUrl: prepared.dataUrl,
+        bonMatchStatus: "ok",
+      });
+      if (!attached.ok) {
+        return {
+          linked: false,
+          pool,
+          row: {
+            fileName: file.name,
+            status: "error",
+            message: attached.error,
+            detectedDate: fields.preferredDate,
+            detectedAmount: fields.preferredAmount,
+            matches: matched.matches,
+            photoDataUrl: prepared.dataUrl,
+          },
+        };
+      }
+      return {
+        linked: true,
+        pool: pool.map((row) => (row.operationId === target.operationId ? { ...row, hasPhoto: true } : row)),
+        row: {
+          fileName: file.name,
+          status: "linked",
+          message: attached.data.message,
+          detectedDate: fields.preferredDate,
+          detectedAmount: fields.preferredAmount,
+          matches: matched.matches,
+          linkedOp: attached.data.op,
+        },
+      };
+    }
+
+    const label =
+      matched.status === "ambiguous"
+        ? "Plusieurs opérations possibles — choix manuel"
+        : matched.status === "already"
+          ? "Déjà un bon sur l’opération correspondante"
+          : matched.status === "unreadable"
+            ? "Date/montant non lus sur le fichier"
+            : "Aucune opération (date+montant)";
+    return {
+      linked: false,
+      pool,
+      row: {
+        fileName: file.name,
+        status:
+          matched.status === "ambiguous"
+            ? "ambiguous"
+            : matched.status === "already"
+              ? "already"
+              : matched.status === "unreadable"
+                ? "unreadable"
+                : "none",
+        message: label,
+        detectedDate: fields.preferredDate,
+        detectedAmount: fields.preferredAmount,
+        matches: matched.matches,
+        photoDataUrl: prepared.dataUrl,
+      },
+    };
+  }
+
   async function runImport(fileList: FileList | null) {
     if (!fileList?.length) return;
     if (!month) return onNotify("Mois", "Choisissez un mois");
@@ -73,77 +175,20 @@ export function CaisseBulkBonsPanel({
         return;
       }
       setTargets(listed.data.targets);
-      setProgress(`Préparation des fichiers (sans photo: ${listed.data.withoutPhoto})…`);
-      const files = await collectBonFiles(fileList);
-      if (!files.length) {
-        onNotify("Bons", "Aucun PDF/image trouvé");
-        return;
-      }
 
       const nextResults: RowResult[] = [];
       let linkedCount = 0;
       let pool = [...listed.data.targets];
+      let index = 0;
 
-      for (let index = 0; index < files.length; index += 1) {
-        const file = files[index]!;
-        setProgress(`Lecture OCR ${index + 1}/${files.length} — ${file.name}`);
+      for await (const file of iterateBonFiles(fileList)) {
+        index += 1;
+        setProgress(`OCR ${index} — ${file.name}`);
         try {
-          const prepared = await prepareAndReadBon(file);
-          const fields = prepared.extract.rawText ? prepared.extract : extractBonFields(prepared.rawText);
-          const matched = matchBonToOperations(pool, fields.preferredDate, fields.preferredAmount);
-
-          if (matched.status === "unique" && matched.matches[0]) {
-            const target = matched.matches[0];
-            const attached = await attachCaisseBonPhoto({
-              operationId: target.operationId,
-              photoDataUrl: prepared.dataUrl,
-              bonMatchStatus: "ok",
-            });
-            if (!attached.ok) {
-              nextResults.push({
-                fileName: file.name,
-                status: "error",
-                message: attached.error,
-                detectedDate: fields.preferredDate,
-                detectedAmount: fields.preferredAmount,
-                matches: matched.matches,
-                photoDataUrl: prepared.dataUrl,
-              });
-            } else {
-              linkedCount += 1;
-              pool = pool.map((row) =>
-                row.operationId === target.operationId ? { ...row, hasPhoto: true } : row,
-              );
-              nextResults.push({
-                fileName: file.name,
-                status: "linked",
-                message: attached.data.message,
-                detectedDate: fields.preferredDate,
-                detectedAmount: fields.preferredAmount,
-                matches: matched.matches,
-                linkedOp: attached.data.op,
-              });
-            }
-          } else {
-            const label =
-              matched.status === "ambiguous"
-                ? "Plusieurs opérations possibles — choix manuel"
-                : matched.status === "already"
-                  ? "Déjà un bon sur l’opération correspondante"
-                  : matched.status === "unreadable"
-                    ? "Date/montant non lus sur le fichier"
-                    : "Aucune opération (date+montant)";
-            nextResults.push({
-              fileName: file.name,
-              status: matched.status === "ambiguous" ? "ambiguous" : matched.status === "already" ? "already" : matched.status === "unreadable" ? "unreadable" : "none",
-              message: label,
-              detectedDate: fields.preferredDate,
-              detectedAmount: fields.preferredAmount,
-              matches: matched.matches,
-              photoDataUrl: prepared.dataUrl,
-            });
-          }
-          setResults([...nextResults]);
+          const outcome = await processOne(file, pool);
+          pool = outcome.pool;
+          if (outcome.linked) linkedCount += 1;
+          nextResults.push(outcome.row);
         } catch (error) {
           nextResults.push({
             fileName: file.name,
@@ -153,14 +198,21 @@ export function CaisseBulkBonsPanel({
             detectedAmount: null,
             matches: [],
           });
-          setResults([...nextResults]);
         }
+        setResults([...nextResults]);
+        setTargets(pool);
       }
 
-      setTargets(pool);
-      setProgress(`Terminé — ${linkedCount} bon(s) lié(s) / ${files.length} fichier(s)`);
-      onNotify("Import bons", `${linkedCount} lié(s) automatiquement sur ${files.length}.`);
+      if (!index) {
+        onNotify("Bons", "Aucun PDF/image trouvé");
+        return;
+      }
+
+      setProgress(`Terminé — ${linkedCount} bon(s) lié(s) / ${index} fichier(s)`);
+      onNotify("Import bons", `${linkedCount} lié(s) automatiquement sur ${index}.`);
       await onDone();
+    } catch (error) {
+      onNotify("Bons", error instanceof Error ? error.message : "Import interrompu");
     } finally {
       setBusy(false);
     }
@@ -202,10 +254,10 @@ export function CaisseBulkBonsPanel({
 
   return (
     <div className="bulk-bons">
-      <h6 className="admin-section-title">Import massif des bons (PDF / images / ZIP)</h6>
+      <h6 className="admin-section-title">Import massif des bons (PDF / images / ZIP / dossier)</h6>
       <p className="hint">
-        Lecture automatique date + montant, rattachement à l’achat du mois. Un seul match → lien auto.
-        Ambigu / illisible → choix manuel. Les opérations qui ont déjà un bon ne sont pas écrasées.
+        Si un seul ZIP est trop gros : utilisez <strong>Dossier</strong>, ou plusieurs ZIP de 20–40 bons.
+        Lecture date + montant → rattachement auto (sans écraser un bon déjà présent).
       </p>
       <div className="bulk-bons-controls">
         <label className="field">
@@ -217,11 +269,27 @@ export function CaisseBulkBonsPanel({
           </select>
         </label>
         <label className="field">
-          <span>Fichiers</span>
+          <span>Fichiers / ZIP</span>
           <input
             type="file"
             multiple
             accept=".pdf,.png,.jpg,.jpeg,.webp,.zip,application/pdf,image/*,application/zip"
+            disabled={busy || !month}
+            onChange={(event) => {
+              const files = event.target.files;
+              event.target.value = "";
+              void runImport(files);
+            }}
+          />
+        </label>
+        <label className="field">
+          <span>Dossier (recommandé si archive lourde)</span>
+          <input
+            type="file"
+            multiple
+            // @ts-expect-error webkitdirectory is supported in Chromium/Edge
+            webkitdirectory=""
+            directory=""
             disabled={busy || !month}
             onChange={(event) => {
               const files = event.target.files;

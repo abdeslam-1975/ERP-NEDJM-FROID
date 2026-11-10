@@ -200,7 +200,7 @@ function photoFromItems(items: PurchaseInput["items"]): { data: string | null; l
     if (!photo.startsWith("data:image/") && !photo.startsWith("data:application/pdf")) {
       return { data: null, label: "", error: "Le bon doit être une image ou un PDF." };
     }
-    if (photo.length > 1_500_000) return { data: null, label: "", error: "Bon trop lourd (1 Mo maximum)." };
+    if (photo.length > 3_800_000) return { data: null, label: "", error: "Bon trop lourd (limite ~3,5 Mo)." };
     if (!data) {
       data = photo;
       label = "";
@@ -737,7 +737,7 @@ export async function attachCaisseBonPhoto(input: {
   if (!photo.startsWith("data:image/") && !photo.startsWith("data:application/pdf")) {
     return fail("❌ Le bon doit être une image ou un PDF.");
   }
-  if (photo.length > 1_500_000) return fail("❌ Bon trop lourd (1 Mo maximum).");
+  if (photo.length > 3_800_000) return fail("❌ Bon trop lourd (limite ~3,5 Mo).");
 
   const existing = await supabase
     .from("caisse_operations")
