@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
+import type { BonAttachTarget } from "@/lib/caisse/bon-bulk-match";
 import {
   algiersToday,
   computeSoldesBundle,
@@ -674,6 +675,114 @@ export async function confirmCaisseBonMatch(
   );
   refresh();
   return { ok: true, data: { message: `✅ Bon N° ${existing.data.op_number} marqué conforme.` } };
+}
+
+/** Admin : liste des achats d’un mois pour rattacher les bons en masse. */
+export async function listCaisseBonAttachTargets(
+  monthSheet: string,
+): Promise<ActionResult<{ targets: BonAttachTarget[]; withoutPhoto: number }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.isAdmin) return fail("❌ Réservé à l’administrateur");
+  if (!monthSheet?.trim() || monthSheet === "TOUS") return fail("❌ Choisissez un mois");
+
+  const opsRes = await supabase
+    .from("caisse_operations")
+    .select("id, op_number, op_date, kind, has_photo, buyer_name, lines:caisse_lines(qty, unit_price)")
+    .eq("kind", "ACHAT")
+    .order("op_date", { ascending: true })
+    .limit(5000);
+  if (opsRes.error) return fail(opsRes.error.message);
+
+  const targets: BonAttachTarget[] = [];
+  for (const op of opsRes.data ?? []) {
+    const date = String(op.op_date).slice(0, 10);
+    if (sheetNameFromIso(date) !== monthSheet) continue;
+    const amount = (op.lines || []).reduce(
+      (sum: number, line: { qty: number; unit_price: number }) => sum + Number(line.qty) * Number(line.unit_price),
+      0,
+    );
+    targets.push({
+      operationId: op.id,
+      op: Number(op.op_number),
+      date,
+      amount: Math.round(amount * 100) / 100,
+      buyer: op.buyer_name || "",
+      hasPhoto: !!op.has_photo,
+    });
+  }
+  return {
+    ok: true,
+    data: {
+      targets,
+      withoutPhoto: targets.filter((row) => !row.hasPhoto).length,
+    },
+  };
+}
+
+/** Admin : attache un bon (image data URL) à une opération ACHAT. */
+export async function attachCaisseBonPhoto(input: {
+  operationId: string;
+  photoDataUrl: string;
+  bonMatchStatus?: PurchaseInput["bonMatchStatus"];
+  replaceExisting?: boolean;
+}): Promise<ActionResult<{ message: string; op: number; archiveName: string }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.isAdmin) return fail("❌ Réservé à l’administrateur");
+
+  const photo = input.photoDataUrl?.trim() || "";
+  if (!photo.startsWith("data:image/") && !photo.startsWith("data:application/pdf")) {
+    return fail("❌ Le bon doit être une image ou un PDF.");
+  }
+  if (photo.length > 1_500_000) return fail("❌ Bon trop lourd (1 Mo maximum).");
+
+  const existing = await supabase
+    .from("caisse_operations")
+    .select("id, op_number, op_date, kind, has_photo")
+    .eq("id", input.operationId)
+    .maybeSingle();
+  if (existing.error) return fail(existing.error.message);
+  if (!existing.data) return fail("❌ Opération introuvable.");
+  if (existing.data.kind !== "ACHAT") return fail("❌ Uniquement pour les achats.");
+  if (existing.data.has_photo && !input.replaceExisting) {
+    return fail(`❌ L’opération N° ${existing.data.op_number} a déjà un bon.`);
+  }
+
+  const updated = await supabase
+    .from("caisse_operations")
+    .update({ photo_data: photo, bon_label: "Voir Bon" })
+    .eq("id", input.operationId);
+  if (updated.error) return fail(updated.error.message);
+
+  const archiveName = await applyBonDisplayAndMatch(
+    supabase,
+    input.operationId,
+    Number(existing.data.op_number),
+    String(existing.data.op_date).slice(0, 10),
+    true,
+    input.bonMatchStatus ?? "unknown",
+  );
+  await logAction(
+    supabase,
+    "UPDATE",
+    "ACHAT",
+    existing.data.op_number,
+    sheetNameFromIso(String(existing.data.op_date).slice(0, 10)),
+    `Rattachement bon (import masse) | ${archiveName}`,
+    null,
+  );
+  refresh();
+  return {
+    ok: true,
+    data: {
+      op: Number(existing.data.op_number),
+      archiveName,
+      message: `✅ Bon lié à N° ${existing.data.op_number}`,
+    },
+  };
 }
 
 export async function getCaisseClose(date: string): Promise<ActionResult<CloseStatus>> {
