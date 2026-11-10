@@ -3,17 +3,40 @@
 import { createWorker, PSM } from "tesseract.js";
 import { extractBonFields, type BonExtract } from "@/lib/caisse/bon-check";
 
-const MAX_DATA_URL_CHARS = 1_450_000;
+/** Aligné sur la contrainte DB (~4 Mo) et bodySizeLimit server actions. */
+export const MAX_BON_DATA_URL_CHARS = 3_800_000;
 
-async function canvasToJpegDataUrl(canvas: HTMLCanvasElement, quality = 0.82): Promise<string> {
+async function canvasToJpegDataUrl(canvas: HTMLCanvasElement, quality = 0.72): Promise<string> {
+  let working = canvas;
   let q = quality;
-  let url = canvas.toDataURL("image/jpeg", q);
-  while (url.length > MAX_DATA_URL_CHARS && q > 0.45) {
+  let url = working.toDataURL("image/jpeg", q);
+  while (url.length > MAX_BON_DATA_URL_CHARS && q > 0.32) {
     q -= 0.08;
-    url = canvas.toDataURL("image/jpeg", q);
+    url = working.toDataURL("image/jpeg", q);
   }
-  if (url.length > MAX_DATA_URL_CHARS) {
-    throw new Error("Bon trop lourd après compression (1 Mo max).");
+  // Si encore trop lourd : réduire la résolution puis recompresser.
+  let side = Math.max(working.width, working.height);
+  while (url.length > MAX_BON_DATA_URL_CHARS && side > 700) {
+    side = Math.round(side * 0.75);
+    const scale = side / Math.max(canvas.width, canvas.height);
+    const smaller = document.createElement("canvas");
+    smaller.width = Math.max(1, Math.round(canvas.width * scale));
+    smaller.height = Math.max(1, Math.round(canvas.height * scale));
+    const ctx = smaller.getContext("2d");
+    if (!ctx) break;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, smaller.width, smaller.height);
+    ctx.drawImage(canvas, 0, 0, smaller.width, smaller.height);
+    working = smaller;
+    q = 0.65;
+    url = working.toDataURL("image/jpeg", q);
+    while (url.length > MAX_BON_DATA_URL_CHARS && q > 0.28) {
+      q -= 0.07;
+      url = working.toDataURL("image/jpeg", q);
+    }
+  }
+  if (url.length > MAX_BON_DATA_URL_CHARS) {
+    throw new Error("Bon trop lourd après compression (limite serveur).");
   }
   return url;
 }
@@ -28,7 +51,7 @@ async function fileToImageBitmap(file: File): Promise<ImageBitmap> {
 async function rasterizeImageFile(file: File): Promise<string> {
   const bitmap = await fileToImageBitmap(file);
   try {
-    const maxSide = 1800;
+    const maxSide = 1400;
     const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(bitmap.width * scale));
@@ -38,7 +61,7 @@ async function rasterizeImageFile(file: File): Promise<string> {
     ctx.fillStyle = "#fff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    return canvasToJpegDataUrl(canvas);
+    return canvasToJpegDataUrl(canvas, 0.7);
   } finally {
     bitmap.close();
   }
@@ -54,7 +77,7 @@ async function rasterizePdfFile(file: File): Promise<string> {
   try {
     const page = await doc.getPage(1);
     const base = page.getViewport({ scale: 1 });
-    const scale = Math.min(2, 1600 / Math.max(base.width, base.height));
+    const scale = Math.min(1.6, 1400 / Math.max(base.width, base.height));
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement("canvas");
     canvas.width = Math.ceil(viewport.width);
@@ -62,7 +85,7 @@ async function rasterizePdfFile(file: File): Promise<string> {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas indisponible");
     await page.render({ canvasContext: ctx, viewport, canvas }).promise;
-    return canvasToJpegDataUrl(canvas, 0.85);
+    return canvasToJpegDataUrl(canvas, 0.7);
   } finally {
     await doc.destroy();
   }
