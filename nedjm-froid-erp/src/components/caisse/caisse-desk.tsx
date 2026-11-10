@@ -46,6 +46,7 @@ type ItemDraft = {
   bonDetectedAmount: number | null;
   bonCandidateDates: string[];
   bonCandidateAmounts: number[];
+  bonRawText: string;
 };
 
 type Toast = { title: string; text: string };
@@ -67,6 +68,7 @@ function emptyItem(unit: string): ItemDraft {
     bonDetectedAmount: null,
     bonCandidateDates: [],
     bonCandidateAmounts: [],
+    bonRawText: "",
   };
 }
 
@@ -698,7 +700,8 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       item.bonCandidateDates.length ||
       item.bonCandidateAmounts.length ||
       item.bonDetectedDate != null ||
-      item.bonDetectedAmount != null
+      item.bonDetectedAmount != null ||
+      item.bonRawText
     ) {
       const checked = evaluateBonMatch({
         opDate,
@@ -707,6 +710,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         detectedAmount: item.bonDetectedAmount,
         candidateDates: item.bonCandidateDates,
         candidateAmounts: item.bonCandidateAmounts,
+        rawText: item.bonRawText,
       });
       return { status: checked.status, message: checked.message };
     }
@@ -724,6 +728,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       bonDetectedAmount: null,
       bonCandidateDates: [],
       bonCandidateAmounts: [],
+      bonRawText: "",
     });
     try {
       const prepared = await prepareAndReadBon(file);
@@ -734,6 +739,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         detectedAmount: prepared.extract.preferredAmount,
         candidateDates: prepared.extract.dates,
         candidateAmounts: prepared.extract.amounts,
+        rawText: prepared.rawText || prepared.extract.rawText,
       });
       updateItem(index, {
         photoDataUrl: prepared.dataUrl,
@@ -745,9 +751,11 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         bonDetectedAmount: checked.detectedAmount,
         bonCandidateDates: prepared.extract.dates,
         bonCandidateAmounts: prepared.extract.amounts,
+        bonRawText: prepared.rawText || prepared.extract.rawText || "",
       });
       if (checked.status === "warn") notify("Contrôle bon", checked.message);
       else if (checked.status === "unknown") notify("Contrôle bon", checked.message);
+      else if (checked.status === "ok") notify("Contrôle bon", checked.message);
     } catch (error) {
       updateItem(index, {
         photoDataUrl: "",
@@ -759,6 +767,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         bonDetectedAmount: null,
         bonCandidateDates: [],
         bonCandidateAmounts: [],
+        bonRawText: "",
       });
       notify("Bon", error instanceof Error ? error.message : "Lecture du bon impossible");
     }
