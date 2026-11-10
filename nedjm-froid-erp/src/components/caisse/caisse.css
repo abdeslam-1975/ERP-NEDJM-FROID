@@ -279,6 +279,13 @@
 }
 .caisse-app .bulk-row.skipped td { background: #f1f5f9; color: #64748b; }
 .caisse-app .bulk-bons-progress { font-weight: 700; color: #334155; }
+.caisse-app .bulk-pick-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 38px; cursor: pointer; text-align: center;
+}
+.caisse-app .bulk-pick-btn.disabled {
+  opacity: 0.55; pointer-events: none; cursor: not-allowed;
+}
 .caisse-app .bulk-row.linked td { background: #ecfdf5; }
 .caisse-app .bulk-row.ambiguous td { background: #fff7ed; }
 .caisse-app .bulk-row.none td,
