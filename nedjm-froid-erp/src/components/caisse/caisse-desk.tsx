@@ -25,7 +25,7 @@ import {
 } from "@/lib/actions/caisse";
 import { evaluateBonMatch, type BonCheckStatus } from "@/lib/caisse/bon-check";
 import { prepareAndReadBon } from "@/lib/caisse/bon-ocr";
-import { formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
+import { formatBonLabel, formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
 import type { CaisseAdminUser, CaisseAuditRow, CaisseDashboard, CloseStatus, JournalLine, PurchaseItemInput } from "@/lib/caisse/types";
 import "./caisse.css";
 
@@ -46,6 +46,7 @@ type ItemDraft = {
   bonDetectedAmount: number | null;
   bonCandidateDates: string[];
   bonCandidateAmounts: number[];
+  bonRawText: string;
 };
 
 type Toast = { title: string; text: string };
@@ -67,6 +68,7 @@ function emptyItem(unit: string): ItemDraft {
     bonDetectedAmount: null,
     bonCandidateDates: [],
     bonCandidateAmounts: [],
+    bonRawText: "",
   };
 }
 
@@ -294,7 +296,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     }
     const bonWarn = items
       .map((item) => ({ item, check: resolveBonCheck(item) }))
-      .find(({ check }) => check.status === "warn" || check.status === "unknown");
+      .find(({ check }) => check.status === "bad" || check.status === "warn" || check.status === "unknown");
     setBusy(true);
     try {
       const result = await saveCaissePurchase({
@@ -698,7 +700,8 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       item.bonCandidateDates.length ||
       item.bonCandidateAmounts.length ||
       item.bonDetectedDate != null ||
-      item.bonDetectedAmount != null
+      item.bonDetectedAmount != null ||
+      item.bonRawText
     ) {
       const checked = evaluateBonMatch({
         opDate,
@@ -707,6 +710,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         detectedAmount: item.bonDetectedAmount,
         candidateDates: item.bonCandidateDates,
         candidateAmounts: item.bonCandidateAmounts,
+        rawText: item.bonRawText,
       });
       return { status: checked.status, message: checked.message };
     }
@@ -724,6 +728,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       bonDetectedAmount: null,
       bonCandidateDates: [],
       bonCandidateAmounts: [],
+      bonRawText: "",
     });
     try {
       const prepared = await prepareAndReadBon(file);
@@ -734,10 +739,12 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         detectedAmount: prepared.extract.preferredAmount,
         candidateDates: prepared.extract.dates,
         candidateAmounts: prepared.extract.amounts,
+        rawText: prepared.rawText || prepared.extract.rawText,
       });
+      const named = formatBonLabel(editOp, opDate);
       updateItem(index, {
         photoDataUrl: prepared.dataUrl,
-        photoName: file.name,
+        photoName: named,
         keepPhoto: false,
         bonStatus: checked.status,
         bonMessage: checked.message,
@@ -745,9 +752,11 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         bonDetectedAmount: checked.detectedAmount,
         bonCandidateDates: prepared.extract.dates,
         bonCandidateAmounts: prepared.extract.amounts,
+        bonRawText: prepared.rawText || prepared.extract.rawText || "",
       });
-      if (checked.status === "warn") notify("Contrôle bon", checked.message);
-      else if (checked.status === "unknown") notify("Contrôle bon", checked.message);
+      if (checked.status === "bad" || checked.status === "warn" || checked.status === "unknown" || checked.status === "ok") {
+        notify("Contrôle bon", checked.message);
+      }
     } catch (error) {
       updateItem(index, {
         photoDataUrl: "",
@@ -759,6 +768,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         bonDetectedAmount: null,
         bonCandidateDates: [],
         bonCandidateAmounts: [],
+        bonRawText: "",
       });
       notify("Bon", error instanceof Error ? error.message : "Lecture du bon impossible");
     }
@@ -980,7 +990,20 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                   <td>{amount == null ? "" : formatDa(amount)}</td>
                   <td>{row.prixBon == null ? "" : formatDa(row.prixBon)}</td>
                   <td>{row.buyer}</td>
-                  <td>{row.hasPhoto ? <button type="button" className="btn-light" onClick={() => void showPhoto(row.operationId)}>Voir</button> : row.bon || "—"}</td>
+                  <td>
+                    {row.hasPhoto ? (
+                      <button
+                        type="button"
+                        className="btn-light"
+                        title={row.bon || formatBonLabel(row.op, row.date)}
+                        onClick={() => void showPhoto(row.operationId)}
+                      >
+                        {row.bon && row.bon !== "Voir Bon" ? row.bon : "Voir"}
+                      </button>
+                    ) : (
+                      row.bon || "—"
+                    )}
+                  </td>
                   <td>
                     {flags?.canManage && row.isFirst ? (
                       <>
@@ -1036,7 +1059,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                   </div>
                 ) : null}
               </div>
-              <p className="hint">Détails des achats — 1 bon (PDF ou image) suffit pour toute l&apos;opération. En cas d&apos;écart date/montant : avertissement coloré, sans blocage.</p>
+              <p className="hint">Détails des achats — 1 bon (PDF ou image) suffit. Vert = OK · Orange = date ou montant différent · Rouge = les deux différents (sans blocage).</p>
               <table>
                 <thead><tr><th>Désignation</th><th>Item</th><th>Unité</th><th>Qté</th><th>Prix</th><th>Bon</th><th></th></tr></thead>
                 <tbody>
@@ -1070,7 +1093,11 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                               void attachBon(index, file);
                             }}
                           />
-                          <small>{item.photoName}</small>
+                          <small>
+                            {item.photoDataUrl || item.keepPhoto || item.photoName
+                              ? formatBonLabel(editOp, opDate)
+                              : item.photoName}
+                          </small>
                           {bon.message ? <span className="bon-check-msg">{bon.message}</span> : null}
                         </div>
                       </td>
@@ -1099,7 +1126,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                         <td>{item.price ? formatDa(Number(item.price)) : "—"}</td>
                         <td>{index === 0 ? formatDa(totalBon) : "—"}</td>
                         <td>{buyer || flags?.userName}</td>
-                        <td className={bon.status !== "idle" ? `preview-bon ${bon.status}` : undefined}>{item.photoName || "—"}</td>
+                        <td className={bon.status !== "idle" ? `preview-bon ${bon.status}` : undefined}>
+                          {item.photoDataUrl || item.keepPhoto || item.photoName ? formatBonLabel(editOp, opDate) : "—"}
+                        </td>
                       </tr>
                       );
                     })}

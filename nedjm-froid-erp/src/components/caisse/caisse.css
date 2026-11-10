@@ -197,10 +197,17 @@
   background: #ecfdf5;
   border-color: #86efac;
 }
+/* Orange = un seul écart (date OU montant) */
 .caisse-app .bon-cell.warn {
   background: #fff7ed;
   border-color: #fdba74;
   box-shadow: inset 0 0 0 1px #fb923c;
+}
+/* Rouge = date ET montant différents de l'opération */
+.caisse-app .bon-cell.bad {
+  background: #fef2f2;
+  border-color: #f87171;
+  box-shadow: inset 0 0 0 1px #ef4444;
 }
 .caisse-app .bon-cell.unknown,
 .caisse-app .bon-cell.checking {
@@ -216,9 +223,11 @@
 }
 .caisse-app .bon-cell.ok .bon-check-msg { color: #166534; }
 .caisse-app .bon-cell.warn .bon-check-msg { color: #c2410c; }
+.caisse-app .bon-cell.bad .bon-check-msg { color: #b91c1c; }
 .caisse-app .bon-cell.unknown .bon-check-msg,
 .caisse-app .bon-cell.checking .bon-check-msg { color: #a16207; }
 .caisse-app .preview-bon.warn { background: #ffedd5; color: #9a3412; font-weight: 800; }
+.caisse-app .preview-bon.bad { background: #fecaca; color: #991b1b; font-weight: 800; }
 .caisse-app .preview-bon.ok { background: #dcfce7; color: #166534; font-weight: 700; }
 .caisse-app .preview-bon.unknown,
 .caisse-app .preview-bon.checking { background: #fef3c7; color: #92400e; font-weight: 700; }

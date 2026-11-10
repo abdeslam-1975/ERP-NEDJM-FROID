@@ -1,10 +1,12 @@
-export type BonCheckStatus = "idle" | "checking" | "ok" | "warn" | "unknown";
+/** ok=match · warn=one of date/amount differs · bad=both differ · unknown=unreadable */
+export type BonCheckStatus = "idle" | "checking" | "ok" | "warn" | "bad" | "unknown";
 
 export type BonExtract = {
   dates: string[];
   amounts: number[];
   preferredDate: string | null;
   preferredAmount: number | null;
+  rawText: string;
 };
 
 export type BonCheckResult = {
@@ -26,10 +28,16 @@ function fixOcrDigits(raw: string): string {
     .replace(/[Bb]/g, "8");
 }
 
+function normalizeOcrText(text: string): string {
+  return fixOcrDigits(text)
+    .replace(/\u00a0/g, " ")
+    .replace(/[–—]/g, "-");
+}
+
 /** Dates ISO from FR / ISO patterns commonly found on Algerian receipts. */
 export function extractIsoDates(text: string): string[] {
   const out: string[] = [];
-  const fixed = fixOcrDigits(text);
+  const fixed = normalizeOcrText(text);
   for (const m of fixed.matchAll(/\b((?:19|20)\d{2})[.\-/](0[1-9]|1[0-2])[.\-/](0[1-9]|[12]\d|3[01])\b/g)) {
     out.push(`${m[1]}-${m[2]}-${m[3]}`);
   }
@@ -40,7 +48,7 @@ export function extractIsoDates(text: string): string[] {
 }
 
 function parseAmountToken(raw: string): number | null {
-  let token = raw.trim().replace(/\s/g, "");
+  let token = raw.trim().replace(/[\s\u00a0]/g, "");
   if (!token) return null;
   if (token.includes(",") && token.includes(".")) {
     // 1.178,50 or 1,178.50
@@ -54,27 +62,117 @@ function parseAmountToken(raw: string): number | null {
   return Math.round(value * 100) / 100;
 }
 
+/** Long integers without decimals are usually document / invoice numbers, not totals. */
+function looksLikeDocumentNumber(token: string, value: number): boolean {
+  const compact = token.replace(/[\s\u00a0]/g, "");
+  if (/[.,]/.test(compact)) return false;
+  if (compact.length >= 6) return true;
+  if (value >= 100_000) return true;
+  return false;
+}
+
+const AMOUNT_TOKEN = String.raw`(\d{1,3}(?:[ .\u00a0]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)`;
+
 /** Collect monetary amounts; prefer values near TOTAL / TTC / NET labels. */
 export function extractAmounts(text: string): { all: number[]; preferred: number | null } {
-  const fixed = fixOcrDigits(text);
+  const fixed = normalizeOcrText(text);
   const all: number[] = [];
-  const re = /(?<!\d)(\d{1,3}(?:[ .\u00a0]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)(?!\d)/g;
+  const re = new RegExp(String.raw`(?<!\d)${AMOUNT_TOKEN}(?!\d)`, "g");
   for (const m of fixed.matchAll(re)) {
-    const value = parseAmountToken(m[1] || "");
-    if (value != null && value >= 1) all.push(value);
+    const token = m[1] || "";
+    const value = parseAmountToken(token);
+    if (value == null || value < 1) continue;
+    if (looksLikeDocumentNumber(token, value)) continue;
+    all.push(value);
   }
   const unique = [...new Set(all)];
 
-  const labelRe =
-    /(?:total\s*ttc|net\s*[àa]\s*payer|montant\s*ttc|montant\s*total|prix\s*bon|total\s*general|total\s*général|\btotal\b|\bttc\b|المبلغ|المجموع)\s*[:\-]?\s*(\d{1,3}(?:[ .\u00a0]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)/gi;
   const labeled: number[] = [];
+  const labelRe = new RegExp(
+    String.raw`(?:total\s*ttc|net\s*[àa]\s*payer|montant\s*ttc|montant\s*total|prix\s*bon|total\s*general|total\s*général|total\s*ht|\btotaux\b|\btotal\b|\bttc\b|المبلغ|المجموع)\s*[:\-]?\s*${AMOUNT_TOKEN}?`,
+    "gi",
+  );
   for (const m of fixed.matchAll(labelRe)) {
-    const value = parseAmountToken(m[1] || "");
-    if (value != null) labeled.push(value);
+    if (m[1]) {
+      const value = parseAmountToken(m[1]);
+      if (value != null && !looksLikeDocumentNumber(m[1], value)) labeled.push(value);
+      continue;
+    }
+    // Label found but amount on the next line (common on scanned bons).
+    const after = fixed.slice(m.index! + m[0].length, m.index! + m[0].length + 80);
+    const next = after.match(new RegExp(String.raw`${AMOUNT_TOKEN}`));
+    if (next?.[1]) {
+      const value = parseAmountToken(next[1]);
+      if (value != null && !looksLikeDocumentNumber(next[1], value)) labeled.push(value);
+    }
   }
 
-  const preferred = labeled.at(-1) ?? (unique.length ? Math.max(...unique) : null);
+  const moneyLike = unique.filter((value) => value >= 10 || labeled.includes(value));
+  const preferred =
+    labeled.at(-1) ??
+    (moneyLike.length ? Math.max(...moneyLike) : unique.length ? Math.max(...unique) : null);
   return { all: unique, preferred };
+}
+
+export function amountVariants(amount: number): string[] {
+  const rounded = Math.round(amount * 100) / 100;
+  const fixed2 = rounded.toFixed(2);
+  const [intPart, dec = "00"] = fixed2.split(".");
+  const withSpaces = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  const variants = new Set<string>([
+    fixed2,
+    fixed2.replace(".", ","),
+    `${withSpaces},${dec}`,
+    `${withSpaces}.${dec}`,
+    intPart,
+    withSpaces,
+  ]);
+  if (dec === "00") {
+    variants.add(`${intPart},00`);
+    variants.add(`${intPart}.00`);
+    variants.add(`${withSpaces},00`);
+    variants.add(`${withSpaces}.00`);
+  }
+  return [...variants];
+}
+
+/** True if OCR text clearly contains the operation amount (even when structured parse missed it). */
+export function textMentionsAmount(text: string, amount: number): boolean {
+  if (!Number.isFinite(amount) || amount <= 0) return false;
+  const fixed = normalizeOcrText(text).replace(/\u00a0/g, " ");
+  for (const variant of amountVariants(amount)) {
+    const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, String.raw`[\s\u00a0]*`);
+    const re = new RegExp(String.raw`(?<!\d)${escaped}(?!\d)`);
+    if (re.test(fixed)) return true;
+  }
+  return false;
+}
+
+export function textMentionsDate(text: string, isoDate: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return false;
+  const [y, m, d] = isoDate.split("-");
+  const fixed = normalizeOcrText(text);
+  const patterns = [
+    `${d}/${m}/${y}`,
+    `${d}-${m}-${y}`,
+    `${d}.${m}.${y}`,
+    `${y}-${m}-${d}`,
+    `${y}/${m}/${d}`,
+  ];
+  return patterns.some((pattern) => fixed.includes(pattern));
+}
+
+function preferredDateFromText(text: string, dates: string[]): string | null {
+  if (!dates.length) return null;
+  const fixed = normalizeOcrText(text);
+  const labeled = fixed.match(
+    /date\s*(?:piece|pi[eè]ce|facture|bon)?\s*[:\-]?\s*(0[1-9]|[12]\d|3[01])[.\-/](0[1-9]|1[0-2])[.\-/]((?:19|20)\d{2})/i,
+  );
+  if (labeled) {
+    const iso = `${labeled[3]}-${labeled[2]}-${labeled[1]}`;
+    if (dates.includes(iso)) return iso;
+  }
+  return dates[0] ?? null;
 }
 
 export function extractBonFields(text: string): BonExtract {
@@ -83,8 +181,9 @@ export function extractBonFields(text: string): BonExtract {
   return {
     dates,
     amounts: amounts.all,
-    preferredDate: dates[0] ?? null,
+    preferredDate: preferredDateFromText(text, dates),
     preferredAmount: amounts.preferred,
+    rawText: text,
   };
 }
 
@@ -99,6 +198,7 @@ export function evaluateBonMatch(input: {
   detectedAmount: number | null;
   candidateDates?: string[];
   candidateAmounts?: number[];
+  rawText?: string;
 }): BonCheckResult {
   const dates = input.candidateDates?.length
     ? input.candidateDates
@@ -110,11 +210,18 @@ export function evaluateBonMatch(input: {
     : input.detectedAmount != null
       ? [input.detectedAmount]
       : [];
+  const rawText = input.rawText || "";
 
-  const dateMatch = dates.length ? dates.includes(input.opDate) : null;
-  const amountMatch = amounts.length
+  let dateMatch: boolean | null = dates.length ? dates.includes(input.opDate) : null;
+  let amountMatch: boolean | null = amounts.length
     ? amounts.some((value) => amountsClose(value, input.opAmount))
     : null;
+
+  // Fallback: scanned PDF OCR often mangles layout but still shows the exact total/date.
+  if (rawText) {
+    if (dateMatch !== true && textMentionsDate(rawText, input.opDate)) dateMatch = true;
+    if (amountMatch !== true && textMentionsAmount(rawText, input.opAmount)) amountMatch = true;
+  }
 
   const detectedDate =
     (dateMatch ? input.opDate : null) ||
@@ -123,7 +230,8 @@ export function evaluateBonMatch(input: {
     null;
   const detectedAmount =
     (amountMatch
-      ? amounts.find((value) => amountsClose(value, input.opAmount)) ?? null
+      ? amounts.find((value) => amountsClose(value, input.opAmount)) ??
+        (amountMatch ? input.opAmount : null)
       : null) ||
     input.detectedAmount ||
     amounts[0] ||
@@ -153,9 +261,12 @@ export function evaluateBonMatch(input: {
   }
 
   if (problems.length) {
+    const bothWrong = dateMatch === false && amountMatch === false;
     return {
-      status: "warn",
-      message: `Attention admin : ${problems.join(" · ")}`,
+      status: bothWrong ? "bad" : "warn",
+      message: bothWrong
+        ? `Écart total — date et montant du bon ≠ opération (${problems.join(" · ")})`
+        : `Attention admin : ${problems.join(" · ")}`,
       dateMatch,
       amountMatch,
       detectedDate,
@@ -167,7 +278,7 @@ export function evaluateBonMatch(input: {
     (dateMatch === null && amountMatch === true) || (dateMatch === true && amountMatch === null);
   if (partialUnknown) {
     return {
-      status: "warn",
+      status: "unknown",
       message:
         dateMatch === null
           ? "Montant OK, date non lue sur le bon — vérifiez la date."

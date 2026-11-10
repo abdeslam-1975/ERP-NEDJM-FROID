@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { evaluateBonMatch, extractBonFields } from "@/lib/caisse/bon-check";
+import {
+  evaluateBonMatch,
+  extractBonFields,
+  textMentionsAmount,
+} from "@/lib/caisse/bon-check";
+
+const ABISCOM_LIKE = `
+ABISCOM
+Vente au Comptoir No : VCC26045503
+Date : 31/01/2026
+Mode de paiement : CASH
+Désignation Quantité PU HT Total HT
+25-0140 AGRAFEUSE METALLIQUE DE BUREAU 1.00 600.00 600.00
+Totaux 600.00
+TVA 0.00
+Timbre 0.00
+NET A PAYER 600,00
+SIX CENTS DINARS ET ZERO CENTIMES
+`;
 
 describe("extractBonFields", () => {
   it("reads FR date and labeled total", () => {
@@ -13,34 +31,85 @@ describe("extractBonFields", () => {
     expect(fields.preferredAmount).toBe(12450.75);
   });
 
-  it("falls back to largest amount when no label", () => {
+  it("ignores invoice numbers like VCC26045503 and keeps 600", () => {
+    const fields = extractBonFields(ABISCOM_LIKE);
+    expect(fields.preferredDate).toBe("2026-01-31");
+    expect(fields.preferredAmount).toBe(600);
+    expect(fields.amounts).toContain(600);
+    expect(fields.amounts).not.toContain(26045503);
+  });
+
+  it("falls back to largest plausible amount when no label", () => {
     const text = `Article 200,00\nAutre 3500,50\n`;
     const fields = extractBonFields(text);
     expect(fields.preferredAmount).toBe(3500.5);
   });
 });
 
+describe("textMentionsAmount", () => {
+  it("finds 600,00 even with OCR spacing", () => {
+    expect(textMentionsAmount("NET A PAYER\n600,00", 600)).toBe(true);
+    expect(textMentionsAmount("total 1 250,50 DA", 1250.5)).toBe(true);
+  });
+});
+
 describe("evaluateBonMatch", () => {
-  it("marks ok when date and amount match", () => {
+  it("marks ok for ABISCOM-like bon vs operation 600 / 31-01-2026", () => {
+    const fields = extractBonFields(ABISCOM_LIKE);
     const result = evaluateBonMatch({
-      opDate: "2026-01-15",
-      opAmount: 12450.75,
-      detectedDate: "2026-01-15",
-      detectedAmount: 12450.75,
+      opDate: "2026-01-31",
+      opAmount: 600,
+      detectedDate: fields.preferredDate,
+      detectedAmount: fields.preferredAmount,
+      candidateDates: fields.dates,
+      candidateAmounts: fields.amounts,
+      rawText: fields.rawText,
     });
     expect(result.status).toBe("ok");
+    expect(result.dateMatch).toBe(true);
+    expect(result.amountMatch).toBe(true);
   });
 
-  it("warns on amount mismatch without blocking semantics", () => {
+  it("marks ok when structured parse misses amount but raw text contains it", () => {
+    const result = evaluateBonMatch({
+      opDate: "2026-01-31",
+      opAmount: 600,
+      detectedDate: "2026-01-31",
+      detectedAmount: 26045503,
+      candidateDates: ["2026-01-31"],
+      candidateAmounts: [26045503, 1],
+      rawText: "Date : 31/01/2026\nNET A PAYER 600,00",
+    });
+    expect(result.status).toBe("ok");
+    expect(result.amountMatch).toBe(true);
+  });
+
+  it("uses orange warn when only amount differs", () => {
     const result = evaluateBonMatch({
       opDate: "2026-01-15",
       opAmount: 1000,
       detectedDate: "2026-01-15",
       detectedAmount: 1200,
+      rawText: "Date 15/01/2026 total 1200,00",
     });
     expect(result.status).toBe("warn");
     expect(result.amountMatch).toBe(false);
     expect(result.dateMatch).toBe(true);
+  });
+
+  it("uses red bad when both date and amount differ", () => {
+    const result = evaluateBonMatch({
+      opDate: "2026-01-15",
+      opAmount: 1000,
+      detectedDate: "2026-01-20",
+      detectedAmount: 1200,
+      candidateDates: ["2026-01-20"],
+      candidateAmounts: [1200],
+      rawText: "Date 20/01/2026 total 1200,00",
+    });
+    expect(result.status).toBe("bad");
+    expect(result.dateMatch).toBe(false);
+    expect(result.amountMatch).toBe(false);
   });
 
   it("accepts amount among candidates", () => {

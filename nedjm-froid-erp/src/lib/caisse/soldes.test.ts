@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeSoldesBundle, recomputePeriodFromDates, sheetNameFromIso, type MoneyRow } from "@/lib/caisse/soldes";
+import { computeSoldesBundle, formatBonLabel, recomputePeriodFromDates, sheetNameFromIso, type MoneyRow } from "@/lib/caisse/soldes";
 
 function row(partial: Partial<MoneyRow> & Pick<MoneyRow, "type" | "date" | "buyer">): MoneyRow {
   return {
@@ -91,5 +91,13 @@ describe("recomputePeriodFromDates", () => {
       soldeFin: 1000 + 500 - 100,
       alim: 0,
     });
+  });
+});
+
+describe("formatBonLabel", () => {
+  it("names the bon from operation number and month", () => {
+    expect(formatBonLabel(102, "2026-01-31")).toBe("Bon_N102_JANVIER_2026");
+    expect(formatBonLabel(5, "2026-02-10")).toBe("Bon_N5_FEVRIER_2026");
+    expect(formatBonLabel(null, "2026-01-15")).toBe("Bon_N-_JANVIER_2026");
   });
 });
