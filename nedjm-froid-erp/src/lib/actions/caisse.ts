@@ -38,6 +38,7 @@ type OperationRow = {
   buyer_name: string;
   bon_label: string;
   has_photo: boolean;
+  bon_match_status?: string | null;
   method: string | null;
   reference: string | null;
   lines: {
@@ -128,6 +129,9 @@ function toJournal(op: OperationRow): { lines: JournalLine[]; money: MoneyRow } 
       buyer: op.buyer_name,
       bon: op.bon_label || "",
       hasPhoto: isFirst && !!op.has_photo,
+      bonMatchStatus: isFirst
+        ? ((op.bon_match_status as JournalLine["bonMatchStatus"]) ?? null)
+        : null,
     };
   });
   const first = journal[0];
@@ -204,18 +208,41 @@ function photoFromItems(items: PurchaseInput["items"]): { data: string | null; l
   return { data, label, error: null };
 }
 
-async function applyBonLabel(
+function normalizeBonMatchStatus(
+  value: PurchaseInput["bonMatchStatus"],
+): "ok" | "warn" | "bad" | "unknown" | null {
+  if (value === "ok" || value === "warn" || value === "bad" || value === "unknown") return value;
+  return null;
+}
+
+/** Libellé affiché = Voir Bon ; le nom d’archive Bon_N… est calculé à l’export/téléchargement. */
+async function applyBonDisplayAndMatch(
   supabase: ServerClient,
   operationId: string,
   opNumber: number,
   isoDate: string,
   hasPhoto: boolean,
+  matchStatus: PurchaseInput["bonMatchStatus"],
 ): Promise<string> {
-  if (!hasPhoto) return "";
-  const label = formatBonLabel(opNumber, isoDate);
-  const updated = await supabase.from("caisse_operations").update({ bon_label: label }).eq("id", operationId);
+  if (!hasPhoto) {
+    const cleared = await supabase
+      .from("caisse_operations")
+      .update({ bon_label: "", bon_match_status: null })
+      .eq("id", operationId);
+    if (cleared.error) throw new Error(cleared.error.message);
+    return "";
+  }
+  const archiveName = formatBonLabel(opNumber, isoDate);
+  const status = normalizeBonMatchStatus(matchStatus) ?? "unknown";
+  let updated = await supabase
+    .from("caisse_operations")
+    .update({ bon_label: "Voir Bon", bon_match_status: status })
+    .eq("id", operationId);
+  if (updated.error && /bon_match_status/i.test(updated.error.message)) {
+    updated = await supabase.from("caisse_operations").update({ bon_label: "Voir Bon" }).eq("id", operationId);
+  }
   if (updated.error) throw new Error(updated.error.message);
-  return label;
+  return archiveName;
 }
 
 function validatePurchase(input: PurchaseInput, flags: CaisseFlags): string | null {
@@ -250,14 +277,23 @@ export async function getCaisseDashboard(filter?: {
   const buyer = filter?.buyer || "TOUS";
   const type = filter?.type || "TOUS";
 
-  const [opsRes, openRes, listRes, buyerRes, closeRes] = await Promise.all([
-    supabase
+  const opsSelectWithMatch =
+    "id, op_number, kind, op_date, affectation, matricule, buyer_name, bon_label, has_photo, bon_match_status, method, reference, lines:caisse_lines(line_no, designation, item_val, unit, qty, unit_price)";
+  const opsSelectLegacy =
+    "id, op_number, kind, op_date, affectation, matricule, buyer_name, bon_label, has_photo, method, reference, lines:caisse_lines(line_no, designation, item_val, unit, qty, unit_price)";
+  let opsRes: { data: unknown; error: { message: string } | null } = await supabase
+    .from("caisse_operations")
+    .select(opsSelectWithMatch)
+    .order("op_date", { ascending: false })
+    .limit(3000);
+  if (opsRes.error && /bon_match_status/i.test(opsRes.error.message)) {
+    opsRes = await supabase
       .from("caisse_operations")
-      .select(
-        "id, op_number, kind, op_date, affectation, matricule, buyer_name, bon_label, has_photo, method, reference, lines:caisse_lines(line_no, designation, item_val, unit, qty, unit_price)",
-      )
+      .select(opsSelectLegacy)
       .order("op_date", { ascending: false })
-      .limit(3000),
+      .limit(3000);
+  }
+  const [openRes, listRes, buyerRes, closeRes] = await Promise.all([
     supabase.from("caisse_journal_openings").select("buyer_name, amount"),
     supabase.from("caisse_lists").select("list_key, label, sort_order").order("sort_order"),
     supabase.from("caisse_journal_buyers").select("name").eq("active", true),
@@ -398,15 +434,25 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
     photo_data: photo.data,
   };
   const grand = input.items.reduce((sum, item) => sum + item.qte * item.price, 0);
+  let matchStatus = normalizeBonMatchStatus(input.bonMatchStatus);
   try {
     if (input.operationId) {
       if (!flags.canManage) return fail("❌ Accès réservé : droit Modifier/Supprimer requis.");
       let photoData = photo.data;
       if (!photoData && input.items.some((item) => item.keepPhoto)) {
-        const existing = await supabase.from("caisse_operations").select("photo_data, bon_label").eq("id", input.operationId).maybeSingle();
+        const existing = await supabase
+          .from("caisse_operations")
+          .select("photo_data, bon_label, bon_match_status")
+          .eq("id", input.operationId)
+          .maybeSingle();
         if (existing.error) return fail(existing.error.message);
         photoData = existing.data?.photo_data ?? null;
         if (!photoData) return fail("❌ Photo du bon obligatoire (au moins une par opération)");
+        if (matchStatus == null) {
+          matchStatus = normalizeBonMatchStatus(
+            existing.data?.bon_match_status as PurchaseInput["bonMatchStatus"],
+          );
+        }
       }
       const updated = await supabase
         .from("caisse_operations")
@@ -420,10 +466,25 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
       if (removed.error) return fail(removed.error.message);
       await writeLines(supabase, input.operationId, "ACHAT", input.items);
       const numbered = await refreshOperationNumber(supabase, input.operationId, updated.data.op_number);
-      const bonName = await applyBonLabel(supabase, input.operationId, numbered.op, input.date, !!photoData);
-      await logAction(supabase, "UPDATE", "ACHAT", numbered.op, sheetNameFromIso(input.date), `Modification achat | Acheteur: ${buyer}${bonName ? ` | ${bonName}` : ""}`, grand);
+      const archiveName = await applyBonDisplayAndMatch(
+        supabase,
+        input.operationId,
+        numbered.op,
+        input.date,
+        !!photoData,
+        matchStatus,
+      );
+      await logAction(
+        supabase,
+        "UPDATE",
+        "ACHAT",
+        numbered.op,
+        sheetNameFromIso(input.date),
+        `Modification achat | Acheteur: ${buyer}${archiveName ? ` | archive ${archiveName}` : ""}`,
+        grand,
+      );
       refresh();
-      return { ok: true, data: { message: `✅ Opération N° ${numbered.op} mise à jour.${bonName ? `\n📎 ${bonName}` : ""}` } };
+      return { ok: true, data: { message: `✅ Opération N° ${numbered.op} mise à jour.` } };
     }
     const inserted = await supabase
       .from("caisse_operations")
@@ -434,21 +495,28 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
     if (!inserted.data) return fail("❌ Enregistrement refusé.");
     await writeLines(supabase, inserted.data.id, "ACHAT", input.items);
     const numbered = await refreshOperationNumber(supabase, inserted.data.id, inserted.data.op_number);
-    const bonName = await applyBonLabel(supabase, inserted.data.id, numbered.op, input.date, !!photo.data);
+    const archiveName = await applyBonDisplayAndMatch(
+      supabase,
+      inserted.data.id,
+      numbered.op,
+      input.date,
+      !!photo.data,
+      matchStatus,
+    );
     await logAction(
       supabase,
       "CREATE",
       "ACHAT",
       numbered.op,
       sheetNameFromIso(input.date),
-      `Acheteur: ${buyer} | ${input.affectation} | ${input.items.length} ligne(s)${bonName ? ` | ${bonName}` : ""}`,
+      `Acheteur: ${buyer} | ${input.affectation} | ${input.items.length} ligne(s)${archiveName ? ` | archive ${archiveName}` : ""}`,
       grand,
     );
     refresh();
     return {
       ok: true,
       data: {
-        message: `✅ Opération effectuée avec succès (N° ${numbered.op} → ${sheetNameFromIso(input.date)})${bonName ? `\n📎 ${bonName}` : ""}`,
+        message: `✅ Opération effectuée avec succès (N° ${numbered.op} → ${sheetNameFromIso(input.date)})`,
       },
     };
   } catch (error) {
@@ -552,13 +620,20 @@ export async function deleteCaisseOperation(operationId: string): Promise<Action
   };
 }
 
-export async function getCaissePhoto(operationId: string): Promise<ActionResult<{ url: string }>> {
+export async function getCaissePhoto(
+  operationId: string,
+): Promise<ActionResult<{ url: string; archiveName: string }>> {
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
-  const { data, error } = await gate.supabase.from("caisse_operations").select("photo_data").eq("id", operationId).maybeSingle();
+  const { data, error } = await gate.supabase
+    .from("caisse_operations")
+    .select("photo_data, op_number, op_date")
+    .eq("id", operationId)
+    .maybeSingle();
   if (error) return fail(error.message);
   if (!data?.photo_data) return fail("Bon introuvable.");
-  return { ok: true, data: { url: data.photo_data } };
+  const archiveName = formatBonLabel(data.op_number, String(data.op_date).slice(0, 10));
+  return { ok: true, data: { url: data.photo_data, archiveName } };
 }
 
 export async function getCaisseClose(date: string): Promise<ActionResult<CloseStatus>> {

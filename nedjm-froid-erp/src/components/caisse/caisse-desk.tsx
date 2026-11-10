@@ -25,7 +25,7 @@ import {
 } from "@/lib/actions/caisse";
 import { evaluateBonMatch, type BonCheckStatus } from "@/lib/caisse/bon-check";
 import { prepareAndReadBon } from "@/lib/caisse/bon-ocr";
-import { formatBonLabel, formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
+import { formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
 import type { CaisseAdminUser, CaisseAuditRow, CaisseDashboard, CloseStatus, JournalLine, PurchaseItemInput } from "@/lib/caisse/types";
 import "./caisse.css";
 
@@ -133,6 +133,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditRows, setAuditRows] = useState<CaisseAuditRow[]>([]);
   const [photoUrl, setPhotoUrl] = useState("");
+  const [photoArchiveName, setPhotoArchiveName] = useState("");
 
   const flags = data?.flags;
   const today = data?.today || "";
@@ -257,11 +258,17 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         unit: row.unit || data.units[0] || "U",
         qte: String(row.qty ?? ""),
         price: row.price == null ? "" : String(row.price),
-        photoName: row.hasPhoto ? row.bon || "Bon actuel" : "",
+        photoName: row.hasPhoto ? "Bon actuel" : "",
         photoDataUrl: "",
         keepPhoto: row.hasPhoto,
-        bonStatus: row.hasPhoto ? "unknown" : "idle",
-        bonMessage: row.hasPhoto ? "Bon existant — rechargez le fichier pour contrôler date/montant." : "",
+        bonStatus: row.hasPhoto ? (row.bonMatchStatus || "unknown") : "idle",
+        bonMessage: row.hasPhoto
+          ? row.bonMatchStatus === "ok"
+            ? "Bon existant conforme."
+            : row.bonMatchStatus === "bad" || row.bonMatchStatus === "warn"
+              ? "Bon existant avec écart — rechargez pour recontrôler."
+              : "Bon existant — rechargez le fichier pour contrôler date/montant."
+          : "",
       })),
     );
     setOpOpen(true);
@@ -294,9 +301,11 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     if (!pending.some((item) => item.photoDataUrl || item.keepPhoto)) {
       return notify("Attention", "Ajoutez au moins un bon (PDF ou image) pour cette opération (un seul suffit)");
     }
-    const bonWarn = items
-      .map((item) => ({ item, check: resolveBonCheck(item) }))
-      .find(({ check }) => check.status === "bad" || check.status === "warn" || check.status === "unknown");
+    const bonChecks = items.map((item) => resolveBonCheck(item));
+    const bonWarn = bonChecks.find((check) => check.status === "bad" || check.status === "warn" || check.status === "unknown");
+    const bonMatchStatus =
+      bonChecks.find((check) => check.status === "bad" || check.status === "warn" || check.status === "ok" || check.status === "unknown")
+        ?.status ?? null;
     setBusy(true);
     try {
       const result = await saveCaissePurchase({
@@ -306,10 +315,11 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         immatriculation: matricule,
         buyer: flags.isMaster || flags.isAdmin ? buyer : null,
         items: pending,
+        bonMatchStatus: bonMatchStatus === "checking" || bonMatchStatus === "idle" ? null : bonMatchStatus,
       });
       if (!result.ok) return notify("Résultat", result.error);
-      if (bonWarn?.check.message) {
-        notify("Enregistré avec avertissement", `${result.data.message}\n${bonWarn.check.message}`);
+      if (bonWarn?.message) {
+        notify("Enregistré avec avertissement", `${result.data.message}\n${bonWarn.message}`);
       } else {
         notify("Résultat", result.data.message);
       }
@@ -639,6 +649,20 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     const result = await getCaissePhoto(operationId);
     if (!result.ok) return notify("Bon", result.error);
     setPhotoUrl(result.data.url);
+    setPhotoArchiveName(result.data.archiveName || "");
+  }
+
+  function downloadPhotoArchive() {
+    if (!photoUrl || !photoArchiveName) return;
+    const link = document.createElement("a");
+    link.href = photoUrl;
+    const ext = photoUrl.startsWith("data:application/pdf")
+      ? "pdf"
+      : photoUrl.startsWith("data:image/png")
+        ? "png"
+        : "jpg";
+    link.download = `${photoArchiveName}.${ext}`;
+    link.click();
   }
 
   function exportPdf() {
@@ -741,10 +765,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         candidateAmounts: prepared.extract.amounts,
         rawText: prepared.rawText || prepared.extract.rawText,
       });
-      const named = formatBonLabel(editOp, opDate);
       updateItem(index, {
         photoDataUrl: prepared.dataUrl,
-        photoName: named,
+        photoName: file.name,
         keepPhoto: false,
         bonStatus: checked.status,
         bonMessage: checked.message,
@@ -990,15 +1013,23 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                   <td>{amount == null ? "" : formatDa(amount)}</td>
                   <td>{row.prixBon == null ? "" : formatDa(row.prixBon)}</td>
                   <td>{row.buyer}</td>
-                  <td>
+                  <td className={row.hasPhoto && row.bonMatchStatus && row.bonMatchStatus !== "ok" ? `bon-journal-cell ${row.bonMatchStatus}` : undefined}>
                     {row.hasPhoto ? (
                       <button
                         type="button"
-                        className="btn-light"
-                        title={row.bon || formatBonLabel(row.op, row.date)}
+                        className={`btn-light bon-journal-btn${row.bonMatchStatus && row.bonMatchStatus !== "ok" ? ` ${row.bonMatchStatus}` : ""}`}
+                        title={
+                          row.bonMatchStatus === "bad"
+                            ? "Écart date et montant du bon"
+                            : row.bonMatchStatus === "warn"
+                              ? "Écart date ou montant du bon"
+                              : row.bonMatchStatus === "unknown"
+                                ? "Bon à vérifier"
+                                : "Voir le bon"
+                        }
                         onClick={() => void showPhoto(row.operationId)}
                       >
-                        {row.bon && row.bon !== "Voir Bon" ? row.bon : "Voir"}
+                        Voir
                       </button>
                     ) : (
                       row.bon || "—"
@@ -1093,11 +1124,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                               void attachBon(index, file);
                             }}
                           />
-                          <small>
-                            {item.photoDataUrl || item.keepPhoto || item.photoName
-                              ? formatBonLabel(editOp, opDate)
-                              : item.photoName}
-                          </small>
+                          <small>{item.photoName}</small>
                           {bon.message ? <span className="bon-check-msg">{bon.message}</span> : null}
                         </div>
                       </td>
@@ -1127,7 +1154,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                         <td>{index === 0 ? formatDa(totalBon) : "—"}</td>
                         <td>{buyer || flags?.userName}</td>
                         <td className={bon.status !== "idle" ? `preview-bon ${bon.status}` : undefined}>
-                          {item.photoDataUrl || item.keepPhoto || item.photoName ? formatBonLabel(editOp, opDate) : "—"}
+                          {item.photoName || "—"}
                         </td>
                       </tr>
                       );
@@ -1464,12 +1491,21 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       ) : null}
 
       {photoUrl ? (
-        <div className="overlay" onClick={() => setPhotoUrl("")}>
+        <div className="overlay" onClick={() => { setPhotoUrl(""); setPhotoArchiveName(""); }}>
           <div className="modal narrow" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-head green"><strong>Bon / pièce jointe</strong><button type="button" className="close-x" onClick={() => setPhotoUrl("")}>×</button></div>
+            <div className="modal-head green">
+              <strong>Bon / pièce jointe</strong>
+              <button type="button" className="close-x" onClick={() => { setPhotoUrl(""); setPhotoArchiveName(""); }}>×</button>
+            </div>
             <div className="modal-body" style={{ textAlign: "center" }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={photoUrl} alt="Bon" style={{ maxWidth: "100%", maxHeight: "70vh" }} />
+              {photoArchiveName ? (
+                <p className="hint" style={{ marginTop: 12 }}>
+                  Archive : <strong>{photoArchiveName}</strong>{" "}
+                  <button type="button" className="btn-light" onClick={downloadPhotoArchive}>Télécharger</button>
+                </p>
+              ) : null}
             </div>
           </div>
         </div>
