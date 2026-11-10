@@ -84,7 +84,7 @@ describe("evaluateBonMatch", () => {
     expect(result.amountMatch).toBe(true);
   });
 
-  it("warns on amount mismatch without blocking semantics", () => {
+  it("uses orange warn when only amount differs", () => {
     const result = evaluateBonMatch({
       opDate: "2026-01-15",
       opAmount: 1000,
@@ -95,6 +95,21 @@ describe("evaluateBonMatch", () => {
     expect(result.status).toBe("warn");
     expect(result.amountMatch).toBe(false);
     expect(result.dateMatch).toBe(true);
+  });
+
+  it("uses red bad when both date and amount differ", () => {
+    const result = evaluateBonMatch({
+      opDate: "2026-01-15",
+      opAmount: 1000,
+      detectedDate: "2026-01-20",
+      detectedAmount: 1200,
+      candidateDates: ["2026-01-20"],
+      candidateAmounts: [1200],
+      rawText: "Date 20/01/2026 total 1200,00",
+    });
+    expect(result.status).toBe("bad");
+    expect(result.dateMatch).toBe(false);
+    expect(result.amountMatch).toBe(false);
   });
 
   it("accepts amount among candidates", () => {

@@ -296,7 +296,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     }
     const bonWarn = items
       .map((item) => ({ item, check: resolveBonCheck(item) }))
-      .find(({ check }) => check.status === "warn" || check.status === "unknown");
+      .find(({ check }) => check.status === "bad" || check.status === "warn" || check.status === "unknown");
     setBusy(true);
     try {
       const result = await saveCaissePurchase({
@@ -753,9 +753,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         bonCandidateAmounts: prepared.extract.amounts,
         bonRawText: prepared.rawText || prepared.extract.rawText || "",
       });
-      if (checked.status === "warn") notify("Contrôle bon", checked.message);
-      else if (checked.status === "unknown") notify("Contrôle bon", checked.message);
-      else if (checked.status === "ok") notify("Contrôle bon", checked.message);
+      if (checked.status === "bad" || checked.status === "warn" || checked.status === "unknown" || checked.status === "ok") {
+        notify("Contrôle bon", checked.message);
+      }
     } catch (error) {
       updateItem(index, {
         photoDataUrl: "",
@@ -1045,7 +1045,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                   </div>
                 ) : null}
               </div>
-              <p className="hint">Détails des achats — 1 bon (PDF ou image) suffit pour toute l&apos;opération. En cas d&apos;écart date/montant : avertissement coloré, sans blocage.</p>
+              <p className="hint">Détails des achats — 1 bon (PDF ou image) suffit. Vert = OK · Orange = date ou montant différent · Rouge = les deux différents (sans blocage).</p>
               <table>
                 <thead><tr><th>Désignation</th><th>Item</th><th>Unité</th><th>Qté</th><th>Prix</th><th>Bon</th><th></th></tr></thead>
                 <tbody>

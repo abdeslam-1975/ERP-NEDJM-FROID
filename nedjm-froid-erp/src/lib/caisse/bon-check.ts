@@ -1,4 +1,5 @@
-export type BonCheckStatus = "idle" | "checking" | "ok" | "warn" | "unknown";
+/** ok=match · warn=one of date/amount differs · bad=both differ · unknown=unreadable */
+export type BonCheckStatus = "idle" | "checking" | "ok" | "warn" | "bad" | "unknown";
 
 export type BonExtract = {
   dates: string[];
@@ -260,9 +261,12 @@ export function evaluateBonMatch(input: {
   }
 
   if (problems.length) {
+    const bothWrong = dateMatch === false && amountMatch === false;
     return {
-      status: "warn",
-      message: `Attention admin : ${problems.join(" · ")}`,
+      status: bothWrong ? "bad" : "warn",
+      message: bothWrong
+        ? `Écart total — date et montant du bon ≠ opération (${problems.join(" · ")})`
+        : `Attention admin : ${problems.join(" · ")}`,
       dateMatch,
       amountMatch,
       detectedDate,
