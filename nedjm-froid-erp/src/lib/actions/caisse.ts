@@ -8,6 +8,7 @@ import {
   isCaissePrincipaleName,
   OPENING_BALANCE_DATE,
   monthSortKey,
+  formatBonLabel,
   sheetNameFromIso,
   type MoneyRow,
 } from "@/lib/caisse/soldes";
@@ -197,10 +198,24 @@ function photoFromItems(items: PurchaseInput["items"]): { data: string | null; l
     if (photo.length > 1_500_000) return { data: null, label: "", error: "Bon trop lourd (1 Mo maximum)." };
     if (!data) {
       data = photo;
-      label = "Voir Bon";
+      label = "";
     }
   }
   return { data, label, error: null };
+}
+
+async function applyBonLabel(
+  supabase: ServerClient,
+  operationId: string,
+  opNumber: number,
+  isoDate: string,
+  hasPhoto: boolean,
+): Promise<string> {
+  if (!hasPhoto) return "";
+  const label = formatBonLabel(opNumber, isoDate);
+  const updated = await supabase.from("caisse_operations").update({ bon_label: label }).eq("id", operationId);
+  if (updated.error) throw new Error(updated.error.message);
+  return label;
 }
 
 function validatePurchase(input: PurchaseInput, flags: CaisseFlags): string | null {
@@ -379,7 +394,7 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
     affectation: input.affectation,
     matricule: input.affectation === "PARC ROULANT" ? input.immatriculation : "",
     buyer_name: buyer,
-    bon_label: photo.label || "Voir Bon",
+    bon_label: "",
     photo_data: photo.data,
   };
   const grand = input.items.reduce((sum, item) => sum + item.qte * item.price, 0);
@@ -387,17 +402,15 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
     if (input.operationId) {
       if (!flags.canManage) return fail("❌ Accès réservé : droit Modifier/Supprimer requis.");
       let photoData = photo.data;
-      let bonLabel = photo.label || "Voir Bon";
       if (!photoData && input.items.some((item) => item.keepPhoto)) {
         const existing = await supabase.from("caisse_operations").select("photo_data, bon_label").eq("id", input.operationId).maybeSingle();
         if (existing.error) return fail(existing.error.message);
         photoData = existing.data?.photo_data ?? null;
-        bonLabel = existing.data?.bon_label || bonLabel;
         if (!photoData) return fail("❌ Photo du bon obligatoire (au moins une par opération)");
       }
       const updated = await supabase
         .from("caisse_operations")
-        .update({ ...header, photo_data: photoData, bon_label: bonLabel })
+        .update({ ...header, photo_data: photoData })
         .eq("id", input.operationId)
         .select("id, op_number")
         .maybeSingle();
@@ -407,9 +420,10 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
       if (removed.error) return fail(removed.error.message);
       await writeLines(supabase, input.operationId, "ACHAT", input.items);
       const numbered = await refreshOperationNumber(supabase, input.operationId, updated.data.op_number);
-      await logAction(supabase, "UPDATE", "ACHAT", numbered.op, sheetNameFromIso(input.date), `Modification achat | Acheteur: ${buyer}`, grand);
+      const bonName = await applyBonLabel(supabase, input.operationId, numbered.op, input.date, !!photoData);
+      await logAction(supabase, "UPDATE", "ACHAT", numbered.op, sheetNameFromIso(input.date), `Modification achat | Acheteur: ${buyer}${bonName ? ` | ${bonName}` : ""}`, grand);
       refresh();
-      return { ok: true, data: { message: `✅ Opération N° ${numbered.op} mise à jour.` } };
+      return { ok: true, data: { message: `✅ Opération N° ${numbered.op} mise à jour.${bonName ? `\n📎 ${bonName}` : ""}` } };
     }
     const inserted = await supabase
       .from("caisse_operations")
@@ -420,17 +434,23 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
     if (!inserted.data) return fail("❌ Enregistrement refusé.");
     await writeLines(supabase, inserted.data.id, "ACHAT", input.items);
     const numbered = await refreshOperationNumber(supabase, inserted.data.id, inserted.data.op_number);
+    const bonName = await applyBonLabel(supabase, inserted.data.id, numbered.op, input.date, !!photo.data);
     await logAction(
       supabase,
       "CREATE",
       "ACHAT",
       numbered.op,
       sheetNameFromIso(input.date),
-      `Acheteur: ${buyer} | ${input.affectation} | ${input.items.length} ligne(s)`,
+      `Acheteur: ${buyer} | ${input.affectation} | ${input.items.length} ligne(s)${bonName ? ` | ${bonName}` : ""}`,
       grand,
     );
     refresh();
-    return { ok: true, data: { message: `✅ Opération effectuée avec succès (N° ${numbered.op} → ${sheetNameFromIso(input.date)})` } };
+    return {
+      ok: true,
+      data: {
+        message: `✅ Opération effectuée avec succès (N° ${numbered.op} → ${sheetNameFromIso(input.date)})${bonName ? `\n📎 ${bonName}` : ""}`,
+      },
+    };
   } catch (error) {
     return fail(error instanceof Error ? `❌ ${error.message}` : "❌ Erreur");
   }

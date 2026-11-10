@@ -25,7 +25,7 @@ import {
 } from "@/lib/actions/caisse";
 import { evaluateBonMatch, type BonCheckStatus } from "@/lib/caisse/bon-check";
 import { prepareAndReadBon } from "@/lib/caisse/bon-ocr";
-import { formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
+import { formatBonLabel, formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
 import type { CaisseAdminUser, CaisseAuditRow, CaisseDashboard, CloseStatus, JournalLine, PurchaseItemInput } from "@/lib/caisse/types";
 import "./caisse.css";
 
@@ -741,9 +741,10 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         candidateAmounts: prepared.extract.amounts,
         rawText: prepared.rawText || prepared.extract.rawText,
       });
+      const named = formatBonLabel(editOp, opDate);
       updateItem(index, {
         photoDataUrl: prepared.dataUrl,
-        photoName: file.name,
+        photoName: named,
         keepPhoto: false,
         bonStatus: checked.status,
         bonMessage: checked.message,
@@ -989,7 +990,20 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                   <td>{amount == null ? "" : formatDa(amount)}</td>
                   <td>{row.prixBon == null ? "" : formatDa(row.prixBon)}</td>
                   <td>{row.buyer}</td>
-                  <td>{row.hasPhoto ? <button type="button" className="btn-light" onClick={() => void showPhoto(row.operationId)}>Voir</button> : row.bon || "—"}</td>
+                  <td>
+                    {row.hasPhoto ? (
+                      <button
+                        type="button"
+                        className="btn-light"
+                        title={row.bon || formatBonLabel(row.op, row.date)}
+                        onClick={() => void showPhoto(row.operationId)}
+                      >
+                        {row.bon && row.bon !== "Voir Bon" ? row.bon : "Voir"}
+                      </button>
+                    ) : (
+                      row.bon || "—"
+                    )}
+                  </td>
                   <td>
                     {flags?.canManage && row.isFirst ? (
                       <>
@@ -1079,7 +1093,11 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                               void attachBon(index, file);
                             }}
                           />
-                          <small>{item.photoName}</small>
+                          <small>
+                            {item.photoDataUrl || item.keepPhoto || item.photoName
+                              ? formatBonLabel(editOp, opDate)
+                              : item.photoName}
+                          </small>
                           {bon.message ? <span className="bon-check-msg">{bon.message}</span> : null}
                         </div>
                       </td>
@@ -1108,7 +1126,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                         <td>{item.price ? formatDa(Number(item.price)) : "—"}</td>
                         <td>{index === 0 ? formatDa(totalBon) : "—"}</td>
                         <td>{buyer || flags?.userName}</td>
-                        <td className={bon.status !== "idle" ? `preview-bon ${bon.status}` : undefined}>{item.photoName || "—"}</td>
+                        <td className={bon.status !== "idle" ? `preview-bon ${bon.status}` : undefined}>
+                          {item.photoDataUrl || item.keepPhoto || item.photoName ? formatBonLabel(editOp, opDate) : "—"}
+                        </td>
                       </tr>
                       );
                     })}

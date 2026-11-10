@@ -89,6 +89,20 @@ export function sheetNameFromIso(iso: string): string {
   return `${MONTH_NAMES[index]} ${year}`;
 }
 
+/** Nom standard du bon : Bon_N102_JANVIER_2026 */
+export function formatBonLabel(opNumber: number | string | null | undefined, isoDate: string): string {
+  const sheet = sheetNameFromIso(isoDate);
+  const monthToken = sheet
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "")
+    .toUpperCase();
+  const n = Number(opNumber);
+  const opPart = Number.isFinite(n) && n > 0 ? `N${Math.trunc(n)}` : "N-";
+  return `Bon_${opPart}_${monthToken || "MOIS"}`;
+}
+
 export function monthSortKey(name: string): number {
   const year = Number(String(name).match(/(20\d{2})/)?.[1] ?? 0);
   const clean = String(name).toUpperCase().replace(/É/g, "E").replace(/È/g, "E");
