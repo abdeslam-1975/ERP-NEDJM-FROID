@@ -64,6 +64,11 @@ describe("textMentionsAmount", () => {
     expect(textMentionsAmount("NET A PAYER\n600,00", 600)).toBe(true);
     expect(textMentionsAmount("total 1 250,50 DA", 1250.5)).toBe(true);
   });
+
+  it("matches amount within 1 DA tolerance via parsed OCR totals", () => {
+    expect(textMentionsAmount("TOTAL TTC 1 000,00 DA", 1000)).toBe(true);
+    expect(textMentionsAmount("NET 999,50", 1000)).toBe(true);
+  });
 });
 
 describe("evaluateBonMatch", () => {

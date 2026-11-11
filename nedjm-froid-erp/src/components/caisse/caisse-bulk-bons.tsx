@@ -177,16 +177,26 @@ export function CaisseBulkBonsPanel({
     if (!month) return onNotify("Mois", "Choisissez un mois");
     setBusy(true);
     setResults([]);
-    setPickedLabel(`${files.length} fichier(s) sélectionné(s)`);
-    setProgress(`Préparation — ${files.length} fichier(s)…`);
+    setPickedLabel(`${files.length} fichier(s) · mois ${month}`);
+    setProgress(`Préparation — mois ${month} · ${files.length} fichier(s)…`);
     try {
       const listed = await listCaisseBonAttachTargets(month);
       if (!listed.ok) {
         onNotify("Bons", listed.error);
         return;
       }
+      if (!listed.data.targets.length) {
+        onNotify("Mois", `Aucune opération ACHAT pour « ${month} ». Vérifiez le mois sélectionné.`);
+        return;
+      }
+      if (!listed.data.withoutPhoto) {
+        onNotify("Bons", `Toutes les opérations de « ${month} » ont déjà un bon.`);
+        return;
+      }
       setTargets(listed.data.targets);
-      setProgress(`Opérations chargées (${listed.data.withoutPhoto} sans photo) — démarrage OCR…`);
+      setProgress(
+        `${month} : ${listed.data.targets.length} achat(s), ${listed.data.withoutPhoto} sans photo — lecture…`,
+      );
 
       const nextResults: RowResult[] = [];
       let linkedCount = 0;
@@ -268,12 +278,12 @@ export function CaisseBulkBonsPanel({
     <div className="bulk-bons">
       <h6 className="admin-section-title">Import massif des bons (PDF / images / ZIP / dossier)</h6>
       <p className="hint">
-        Si un seul ZIP est trop gros : utilisez <strong>Dossier</strong>, ou plusieurs ZIP de 20–40 bons.
-        Lecture date + montant → rattachement auto (sans écraser un bon déjà présent).
+        Important : choisissez le <strong>même mois</strong> que les bons (ex. JANVIER 2026). Sinon aucun
+        rattachement. ZIP trop gros → <strong>Dossier</strong> ou plusieurs petits ZIP.
       </p>
       <div className="bulk-bons-controls">
         <label className="field">
-          <span>Mois</span>
+          <span>Mois des bons</span>
           <select value={month} onChange={(event) => setMonth(event.target.value)} disabled={busy}>
             {months.filter((name) => name !== "TOUS").map((name) => (
               <option key={name} value={name}>{name}</option>

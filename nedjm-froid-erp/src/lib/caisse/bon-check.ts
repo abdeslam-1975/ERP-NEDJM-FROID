@@ -18,7 +18,8 @@ export type BonCheckResult = {
   detectedAmount: number | null;
 };
 
-const AMOUNT_TOLERANCE = 0.05;
+/** Tolérance OCR / arrondi lignes (ex. 1 000 vs 1000,00). */
+const AMOUNT_TOLERANCE = 1.01;
 
 /** Corrige O/I/l/S… seulement dans un jeton qui commence par un chiffre (pas la fin de « total »). */
 function fixOcrDigitsInNumberTokens(raw: string): string {
@@ -172,6 +173,17 @@ export function textMentionsAmount(text: string, amount: number): boolean {
     const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, String.raw`[\s\u00a0]*`);
     const re = new RegExp(String.raw`(?<!\d)${escaped}(?!\d)`);
     if (re.test(fixed)) return true;
+  }
+  // Reparse OCR amounts (espaces / virgules bizarres) et comparer numériquement
+  const parsed = extractAmounts(fixed);
+  if (parsed.all.some((value) => amountsClose(value, amount))) return true;
+  // Forme compacte : 1250.5 → "12505" / "125050" dans le flux de chiffres
+  const compactText = fixed.replace(/[^\d]/g, "");
+  const cents = Math.round(amount * 100);
+  const asInt = Math.round(amount);
+  const needles = [`${cents}`, `${asInt}00`, `${asInt}`];
+  for (const needle of needles) {
+    if (needle.length >= 3 && compactText.includes(needle)) return true;
   }
   return false;
 }

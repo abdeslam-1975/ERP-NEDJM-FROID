@@ -47,6 +47,40 @@ async function fileToImageBitmap(file: File): Promise<ImageBitmap> {
   return createImageBitmap(file);
 }
 
+function isPdfFile(file: File): boolean {
+  const type = file.type || "";
+  const name = file.name.toLowerCase();
+  return type === "application/pdf" || name.endsWith(".pdf");
+}
+
+async function loadPdfDocument(file: File) {
+  const pdfjs = await import("pdfjs-dist");
+  pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+  const data = new Uint8Array(await file.arrayBuffer());
+  return pdfjs.getDocument({ data }).promise;
+}
+
+/** Texte natif du PDF (factures numériques) — bien plus fiable que l’OCR image. */
+async function extractPdfPlainText(file: File): Promise<string> {
+  const doc = await loadPdfDocument(file);
+  try {
+    const maxPages = Math.min(doc.numPages, 2);
+    const chunks: string[] = [];
+    for (let i = 1; i <= maxPages; i += 1) {
+      const page = await doc.getPage(i);
+      const content = await page.getTextContent();
+      const line = content.items
+        .map((item) => ("str" in item ? String(item.str) : ""))
+        .filter(Boolean)
+        .join(" ");
+      if (line.trim()) chunks.push(line);
+    }
+    return chunks.join("\n").trim();
+  } finally {
+    await doc.destroy();
+  }
+}
+
 async function contrastCanvas(source: HTMLCanvasElement): Promise<HTMLCanvasElement> {
   const canvas = document.createElement("canvas");
   canvas.width = source.width;
@@ -68,13 +102,9 @@ async function contrastCanvas(source: HTMLCanvasElement): Promise<HTMLCanvasElem
 async function rasterizeToCanvas(file: File, maxSide: number): Promise<HTMLCanvasElement> {
   const type = file.type || "";
   const name = file.name.toLowerCase();
-  const isPdf = type === "application/pdf" || name.endsWith(".pdf");
 
-  if (isPdf) {
-    const pdfjs = await import("pdfjs-dist");
-    pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
-    const data = new Uint8Array(await file.arrayBuffer());
-    const doc = await pdfjs.getDocument({ data }).promise;
+  if (isPdfFile(file)) {
+    const doc = await loadPdfDocument(file);
     try {
       const page = await doc.getPage(1);
       const base = page.getViewport({ scale: 1 });
@@ -151,28 +181,47 @@ export type PreparedBon = {
 };
 
 /**
- * OCR sur une image plus nette, puis compression séparée pour le stockage.
- * Cela évite de lire un JPEG trop compressé (montants mal reconnus).
+ * 1) Texte natif PDF si disponible
+ * 2) sinon OCR haute résolution + contraste
+ * 3) compression séparée pour le stockage
  */
 export async function prepareAndReadBon(
   file: File,
   onProgress?: (pct: number) => void,
 ): Promise<PreparedBon> {
-  const canvas = await rasterizeToCanvas(file, 2000);
   onProgress?.(2);
-  const ocrCanvas = await contrastCanvas(canvas);
-  const ocrUrl = ocrCanvas.toDataURL("image/jpeg", 0.92);
-  onProgress?.(4);
-  let rawText = await ocrDataUrl(ocrUrl, (pct) => onProgress?.(Math.max(4, Math.round(pct * 0.7))), "auto");
-  let extract = extractBonFields(rawText);
-  // 2e passe si date/montant absents (scans inclinés / colonnes)
-  if (!extract.preferredAmount && !extract.amounts.length) {
-    const sparse = await ocrDataUrl(ocrUrl, (pct) => onProgress?.(70 + Math.round(pct * 0.25)), "sparse");
-    if (sparse.trim()) {
-      rawText = `${rawText}\n${sparse}`.trim();
-      extract = extractBonFields(rawText);
+  let rawText = "";
+  if (isPdfFile(file)) {
+    try {
+      rawText = await extractPdfPlainText(file);
+    } catch {
+      rawText = "";
     }
   }
+
+  let extract = rawText ? extractBonFields(rawText) : extractBonFields("");
+  const hasUsefulExtract = Boolean(extract.preferredAmount || extract.amounts.length || extract.dates.length);
+
+  const canvas = await rasterizeToCanvas(file, hasUsefulExtract ? 1400 : 2000);
+  onProgress?.(8);
+
+  if (!hasUsefulExtract) {
+    const ocrCanvas = await contrastCanvas(canvas);
+    const ocrUrl = ocrCanvas.toDataURL("image/jpeg", 0.92);
+    onProgress?.(12);
+    rawText = await ocrDataUrl(ocrUrl, (pct) => onProgress?.(Math.max(12, Math.round(pct * 0.7))), "auto");
+    extract = extractBonFields(rawText);
+    if (!extract.preferredAmount && !extract.amounts.length) {
+      const sparse = await ocrDataUrl(ocrUrl, (pct) => onProgress?.(70 + Math.round(pct * 0.25)), "sparse");
+      if (sparse.trim()) {
+        rawText = `${rawText}\n${sparse}`.trim();
+        extract = extractBonFields(rawText);
+      }
+    }
+  } else {
+    onProgress?.(90);
+  }
+
   onProgress?.(98);
   const dataUrl = await canvasToJpegDataUrl(canvas, 0.7);
   return {
