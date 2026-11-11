@@ -55,7 +55,8 @@ function isPdfFile(file: File): boolean {
 
 async function loadPdfDocument(file: File) {
   const pdfjs = await import("pdfjs-dist");
-  pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+  // Worker local (public/pdfjs) — évite les blocages CDN / unpkg en production.
+  pdfjs.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.mjs";
   const data = new Uint8Array(await file.arrayBuffer());
   return pdfjs.getDocument({ data }).promise;
 }

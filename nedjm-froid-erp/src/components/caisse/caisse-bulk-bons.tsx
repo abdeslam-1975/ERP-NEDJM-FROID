@@ -3,7 +3,7 @@
 import { useState } from "react";
 import JSZip from "jszip";
 import { attachCaisseBonPhoto, listCaisseBonAttachTargets } from "@/lib/actions/caisse";
-import { extractBonFields } from "@/lib/caisse/bon-check";
+import { extractBonFields, extractBonFieldsFromFileName } from "@/lib/caisse/bon-check";
 import { matchBonToOperations, type BonAttachTarget } from "@/lib/caisse/bon-bulk-match";
 import { prepareAndReadBon } from "@/lib/caisse/bon-ocr";
 import { formatDa, formatDateFr } from "@/lib/caisse/soldes";
@@ -94,11 +94,19 @@ export function CaisseBulkBonsPanel({
 
     const prepared = await prepareAndReadBon(file);
     const fields = prepared.extract.rawText ? prepared.extract : extractBonFields(prepared.rawText);
-    const matched = matchBonToOperations(pool, fields.preferredDate, fields.preferredAmount, {
-      candidateDates: fields.dates,
-      candidateAmounts: fields.amounts,
-      rawText: prepared.rawText || fields.rawText,
-    });
+    const fromName = extractBonFieldsFromFileName(file.name);
+    const candidateDates = [...new Set([...fields.dates, ...fromName.dates])];
+    const candidateAmounts = [...new Set([...fields.amounts, ...fromName.amounts])];
+    const matched = matchBonToOperations(
+      pool,
+      fields.preferredDate || fromName.dates[0] || null,
+      fields.preferredAmount ?? fromName.amounts[0] ?? null,
+      {
+        candidateDates,
+        candidateAmounts,
+        rawText: prepared.rawText || fields.rawText,
+      },
+    );
     const shownDate = matched.matches[0]?.date || fields.preferredDate;
     const shownAmount = matched.matches[0]?.amount ?? fields.preferredAmount;
 
@@ -139,14 +147,25 @@ export function CaisseBulkBonsPanel({
       };
     }
 
+    const ocrHint = [
+      fields.preferredDate ? `date=${fields.preferredDate}` : null,
+      fields.preferredAmount != null ? `montant=${fields.preferredAmount}` : null,
+      fields.amounts.length ? `candidats=${fields.amounts.slice(0, 5).join("|")}` : null,
+      prepared.rawText?.trim()
+        ? `ocr="${prepared.rawText.trim().replace(/\s+/g, " ").slice(0, 80)}"`
+        : "ocr=vide",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
     const label =
       matched.status === "ambiguous"
         ? "Plusieurs opérations possibles — choix manuel"
         : matched.status === "already"
           ? "Déjà un bon sur l’opération correspondante"
           : matched.status === "unreadable"
-            ? "Date/montant non lus sur le fichier"
-            : "Aucune opération trouvée — choix manuel possible";
+            ? `Date/montant non lus (${ocrHint})`
+            : `Aucune opération pour ce mois (${ocrHint})`;
     return {
       linked: false,
       pool,

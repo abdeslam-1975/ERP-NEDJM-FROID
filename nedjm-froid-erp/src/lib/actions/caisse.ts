@@ -696,21 +696,30 @@ export async function listCaisseBonAttachTargets(
   if (opsRes.error) return fail(opsRes.error.message);
 
   const targets: BonAttachTarget[] = [];
+  let emptyAmount = 0;
   for (const op of opsRes.data ?? []) {
     const date = String(op.op_date).slice(0, 10);
     if (sheetNameFromIso(date) !== monthSheet) continue;
-    const amount = (op.lines || []).reduce(
-      (sum: number, line: { qty: number; unit_price: number }) => sum + Number(line.qty) * Number(line.unit_price),
+    const lines = (op.lines || []) as { qty: number; unit_price: number }[];
+    const amount = lines.reduce(
+      (sum: number, line) => sum + Number(line.qty) * Number(line.unit_price),
       0,
     );
+    const rounded = Math.round(amount * 100) / 100;
+    if (!(rounded > 0)) emptyAmount += 1;
     targets.push({
       operationId: op.id,
       op: Number(op.op_number),
       date,
-      amount: Math.round(amount * 100) / 100,
+      amount: rounded,
       buyer: op.buyer_name || "",
       hasPhoto: !!op.has_photo,
     });
+  }
+  if (targets.length && emptyAmount === targets.length) {
+    return fail(
+      `❌ Les achats de « ${monthSheet} » n’ont pas de lignes/montants lisibles — impossible de rattacher les bons.`,
+    );
   }
   return {
     ok: true,

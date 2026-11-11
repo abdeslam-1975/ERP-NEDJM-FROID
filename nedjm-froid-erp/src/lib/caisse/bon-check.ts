@@ -215,6 +215,15 @@ function preferredDateFromText(text: string, dates: string[]): string | null {
   return dates[0] ?? null;
 }
 
+/** Dates / montants parfois présents dans le nom de fichier du scan. */
+export function extractBonFieldsFromFileName(fileName: string): Pick<BonExtract, "dates" | "amounts"> {
+  const base = fileName.replace(/\.[^.]+$/, "").replace(/[_\-]+/g, " ");
+  return {
+    dates: extractIsoDates(base),
+    amounts: extractAmounts(base).all,
+  };
+}
+
 export function extractBonFields(text: string): BonExtract {
   const dates = extractIsoDates(text);
   const amounts = extractAmounts(text);
