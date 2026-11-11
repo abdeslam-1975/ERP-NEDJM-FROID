@@ -2,8 +2,13 @@
 
 import { useState } from "react";
 import JSZip from "jszip";
-import { attachCaisseBonPhoto, listCaisseBonAttachTargets } from "@/lib/actions/caisse";
-import { extractBonFields, extractBonFieldsFromFileName } from "@/lib/caisse/bon-check";
+import { attachCaisseBonPhoto, listCaisseBonAttachTargets, readCaisseBonWithAi } from "@/lib/actions/caisse";
+import {
+  bonExtractNeedsAi,
+  extractBonFields,
+  extractBonFieldsFromFileName,
+  type BonExtract,
+} from "@/lib/caisse/bon-check";
 import { matchBonToOperations, type BonAttachTarget } from "@/lib/caisse/bon-bulk-match";
 import { prepareAndReadBon } from "@/lib/caisse/bon-ocr";
 import { formatDa, formatDateFr } from "@/lib/caisse/soldes";
@@ -93,8 +98,26 @@ export function CaisseBulkBonsPanel({
     }
 
     const prepared = await prepareAndReadBon(file);
-    const fields = prepared.extract.rawText ? prepared.extract : extractBonFields(prepared.rawText);
+    let fields: BonExtract = prepared.extract.rawText
+      ? prepared.extract
+      : extractBonFields(prepared.rawText);
     const fromName = extractBonFieldsFromFileName(file.name);
+    let aiNote = "";
+    if (bonExtractNeedsAi(fields)) {
+      const ai = await readCaisseBonWithAi({ photoDataUrl: prepared.dataUrl });
+      if (ai.ok) {
+        aiNote = " · IA";
+        fields = {
+          dates: [...new Set([...(ai.data.date ? [ai.data.date] : []), ...fields.dates])],
+          amounts: [...new Set([...(ai.data.amounts || []), ...fields.amounts, ...(ai.data.amount != null ? [ai.data.amount] : [])])],
+          preferredDate: ai.data.date || fields.preferredDate,
+          preferredAmount: ai.data.amount ?? fields.preferredAmount,
+          rawText: fields.rawText,
+        };
+      } else {
+        aiNote = ` · IA: ${ai.error}`;
+      }
+    }
     const candidateDates = [...new Set([...fields.dates, ...fromName.dates])];
     const candidateAmounts = [...new Set([...fields.amounts, ...fromName.amounts])];
     const matched = matchBonToOperations(
@@ -138,7 +161,7 @@ export function CaisseBulkBonsPanel({
         row: {
           fileName: file.name,
           status: "linked",
-          message: `${attached.data.message}${matched.strategy && matched.strategy !== "date+amount" ? ` (${matched.strategy})` : ""}`,
+          message: `${attached.data.message}${matched.strategy && matched.strategy !== "date+amount" ? ` (${matched.strategy})` : ""}${aiNote}`,
           detectedDate: shownDate,
           detectedAmount: shownAmount,
           matches: matched.matches,
@@ -160,12 +183,12 @@ export function CaisseBulkBonsPanel({
 
     const label =
       matched.status === "ambiguous"
-        ? "Plusieurs opérations possibles — choix manuel"
+        ? `Plusieurs opérations possibles — choix manuel${aiNote}`
         : matched.status === "already"
           ? "Déjà un bon sur l’opération correspondante"
           : matched.status === "unreadable"
-            ? `Date/montant non lus (${ocrHint})`
-            : `Aucune opération pour ce mois (${ocrHint})`;
+            ? `Date/montant non lus (${ocrHint})${aiNote}`
+            : `Aucune opération pour ce mois (${ocrHint})${aiNote}`;
     return {
       linked: false,
       pool,
@@ -297,8 +320,8 @@ export function CaisseBulkBonsPanel({
     <div className="bulk-bons">
       <h6 className="admin-section-title">Import massif des bons (PDF / images / ZIP / dossier)</h6>
       <p className="hint">
-        Important : choisissez le <strong>même mois</strong> que les bons (ex. JANVIER 2026). Sinon aucun
-        rattachement. ZIP trop gros → <strong>Dossier</strong> ou plusieurs petits ZIP.
+        Important : mois des bons = <strong>JANVIER 2026</strong> (pas le mois courant). Les bons
+        manuscrits passent par lecture IA (plus lent). ZIP trop gros → <strong>Dossier</strong>.
       </p>
       <div className="bulk-bons-controls">
         <label className="field">
