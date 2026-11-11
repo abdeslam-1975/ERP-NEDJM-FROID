@@ -65,6 +65,9 @@ function parseAmountToken(raw: string): number | null {
     else token = token.replace(/,/g, "");
   } else if (token.includes(",")) {
     token = token.replace(",", ".");
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(token)) {
+    // 1.300 (milliers EU sans décimales)
+    token = token.replace(/\./g, "");
   }
   const value = Number(token);
   if (!Number.isFinite(value) || value <= 0) return null;
@@ -82,7 +85,8 @@ function looksLikeDocumentNumber(token: string, value: number): boolean {
   return false;
 }
 
-const AMOUNT_TOKEN = String.raw`(\d{1,3}(?:[ .\u00a0]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)`;
+/** FR/DZ : 1 300,00 · 1.300,00 · 1300.00 · 1300 */
+const AMOUNT_TOKEN = String.raw`(\d{1,3}(?:[ .\u00a0]\d{3})+(?:[.,]\d{1,2})?|\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d+(?:[.,]\d{1,2})?)`;
 
 /** Collect monetary amounts; prefer values near TOTAL / TTC / NET labels. */
 export function extractAmounts(text: string): { all: number[]; preferred: number | null } {
@@ -148,19 +152,23 @@ export function amountVariants(amount: number): string[] {
   const fixed2 = rounded.toFixed(2);
   const [intPart, dec = "00"] = fixed2.split(".");
   const withSpaces = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  const withDots = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   const variants = new Set<string>([
     fixed2,
     fixed2.replace(".", ","),
     `${withSpaces},${dec}`,
     `${withSpaces}.${dec}`,
+    `${withDots},${dec}`,
     intPart,
     withSpaces,
+    withDots,
   ]);
   if (dec === "00") {
     variants.add(`${intPart},00`);
     variants.add(`${intPart}.00`);
     variants.add(`${withSpaces},00`);
     variants.add(`${withSpaces}.00`);
+    variants.add(`${withDots},00`);
   }
   return [...variants];
 }
@@ -234,6 +242,20 @@ export function extractBonFields(text: string): BonExtract {
     preferredAmount: amounts.preferred,
     rawText: text,
   };
+}
+
+/** OCR classique insuffisant (manuscrit / scan flou) → bascule lecture IA. */
+export function bonExtractNeedsAi(fields: BonExtract): boolean {
+  if (!fields.preferredAmount && !fields.amounts.length) return true;
+  if (!fields.preferredDate && !fields.dates.length) return true;
+  const text = (fields.rawText || "").replace(/\s+/g, " ").trim();
+  if (text.length < 40) return true;
+  // Montants OCR ridicules seuls (fragments) sans total crédible
+  const maxAmount = Math.max(fields.preferredAmount ?? 0, ...fields.amounts, 0);
+  if (maxAmount > 0 && maxAmount < 50 && !/\b(total|ttc|payer|دينار|dinar|\bda\b)/i.test(text)) {
+    return true;
+  }
+  return false;
 }
 
 export function amountsClose(a: number, b: number, tolerance = AMOUNT_TOLERANCE): boolean {
