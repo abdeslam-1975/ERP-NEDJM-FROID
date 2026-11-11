@@ -44,6 +44,19 @@ describe("extractBonFields", () => {
     const fields = extractBonFields(text);
     expect(fields.preferredAmount).toBe(3500.5);
   });
+
+  it("keeps TOTAL label readable and picks DA amount", () => {
+    const text = `Date : 12/01/2026\nTOTAL TTC : 1 250,00 DA\n`;
+    const fields = extractBonFields(text);
+    expect(fields.preferredDate).toBe("2026-01-12");
+    expect(fields.preferredAmount).toBe(1250);
+  });
+
+  it("fixes OCR zero letters inside amounts only", () => {
+    const text = `TOTAL\n6OO,OO DA`;
+    const fields = extractBonFields(text);
+    expect(fields.preferredAmount).toBe(600);
+  });
 });
 
 describe("textMentionsAmount", () => {

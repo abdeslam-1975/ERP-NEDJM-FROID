@@ -14,7 +14,6 @@ async function canvasToJpegDataUrl(canvas: HTMLCanvasElement, quality = 0.72): P
     q -= 0.08;
     url = working.toDataURL("image/jpeg", q);
   }
-  // Si encore trop lourd : réduire la résolution puis recompresser.
   let side = Math.max(working.width, working.height);
   while (url.length > MAX_BON_DATA_URL_CHARS && side > 700) {
     side = Math.round(side * 0.75);
@@ -48,72 +47,94 @@ async function fileToImageBitmap(file: File): Promise<ImageBitmap> {
   return createImageBitmap(file);
 }
 
-async function rasterizeImageFile(file: File): Promise<string> {
-  const bitmap = await fileToImageBitmap(file);
-  try {
-    const maxSide = 1400;
-    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas indisponible");
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    return canvasToJpegDataUrl(canvas, 0.7);
-  } finally {
-    bitmap.close();
+async function contrastCanvas(source: HTMLCanvasElement): Promise<HTMLCanvasElement> {
+  const canvas = document.createElement("canvas");
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return source;
+  ctx.drawImage(source, 0, 0);
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const gray = 0.299 * d[i]! + 0.587 * d[i + 1]! + 0.114 * d[i + 2]!;
+    const v = Math.max(0, Math.min(255, (gray - 128) * 1.45 + 128));
+    d[i] = d[i + 1] = d[i + 2] = v;
   }
+  ctx.putImageData(img, 0, 0);
+  return canvas;
 }
 
-async function rasterizePdfFile(file: File): Promise<string> {
-  const pdfjs = await import("pdfjs-dist");
-  // Worker via CDN (même version) pour éviter les soucis de bundling Next.js.
-  pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+async function rasterizeToCanvas(file: File, maxSide: number): Promise<HTMLCanvasElement> {
+  const type = file.type || "";
+  const name = file.name.toLowerCase();
+  const isPdf = type === "application/pdf" || name.endsWith(".pdf");
 
-  const data = new Uint8Array(await file.arrayBuffer());
-  const doc = await pdfjs.getDocument({ data }).promise;
-  try {
-    const page = await doc.getPage(1);
-    const base = page.getViewport({ scale: 1 });
-    const scale = Math.min(1.6, 1400 / Math.max(base.width, base.height));
-    const viewport = page.getViewport({ scale });
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.ceil(viewport.width);
-    canvas.height = Math.ceil(viewport.height);
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas indisponible");
-    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
-    return canvasToJpegDataUrl(canvas, 0.7);
-  } finally {
-    await doc.destroy();
+  if (isPdf) {
+    const pdfjs = await import("pdfjs-dist");
+    pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+    const data = new Uint8Array(await file.arrayBuffer());
+    const doc = await pdfjs.getDocument({ data }).promise;
+    try {
+      const page = await doc.getPage(1);
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(2.2, maxSide / Math.max(base.width, base.height));
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas indisponible");
+      await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+      return canvas;
+    } finally {
+      await doc.destroy();
+    }
   }
+
+  if (type.startsWith("image/") || /\.(jpe?g|png|webp|gif|bmp)$/i.test(name)) {
+    const bitmap = await fileToImageBitmap(file);
+    try {
+      const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas indisponible");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    } finally {
+      bitmap.close();
+    }
+  }
+
+  throw new Error("Format bon non supporté (PDF, JPG, PNG, WEBP).");
 }
 
 /** Convert image or PDF bon into a compressed JPEG data URL for storage. */
 export async function prepareBonDataUrl(file: File): Promise<string> {
-  const type = file.type || "";
-  const name = file.name.toLowerCase();
-  const isPdf = type === "application/pdf" || name.endsWith(".pdf");
-  if (isPdf) return rasterizePdfFile(file);
-  if (type.startsWith("image/") || /\.(jpe?g|png|webp|gif|bmp)$/i.test(name)) {
-    return rasterizeImageFile(file);
-  }
-  throw new Error("Format bon non supporté (PDF, JPG, PNG, WEBP).");
+  const canvas = await rasterizeToCanvas(file, 1400);
+  return canvasToJpegDataUrl(canvas, 0.7);
 }
 
-async function ocrDataUrl(dataUrl: string, onProgress?: (pct: number) => void): Promise<string> {
+async function ocrDataUrl(
+  dataUrl: string,
+  onProgress?: (pct: number) => void,
+  mode: "auto" | "sparse" = "auto",
+): Promise<string> {
   const worker = await createWorker("fra", 1, {
     logger: (m) => {
       if (m.status === "recognizing text" && typeof m.progress === "number") {
-        onProgress?.(Math.round(m.progress * 100));
+        const base = mode === "auto" ? 0 : 50;
+        onProgress?.(Math.min(99, base + Math.round(m.progress * 50)));
       }
     },
   });
   try {
     await worker.setParameters({
-      tessedit_pageseg_mode: PSM.AUTO,
+      tessedit_pageseg_mode: mode === "sparse" ? PSM.SPARSE_TEXT : PSM.AUTO,
       preserve_interword_spaces: "1",
     });
     const { data } = await worker.recognize(dataUrl);
@@ -129,16 +150,34 @@ export type PreparedBon = {
   rawText: string;
 };
 
+/**
+ * OCR sur une image plus nette, puis compression séparée pour le stockage.
+ * Cela évite de lire un JPEG trop compressé (montants mal reconnus).
+ */
 export async function prepareAndReadBon(
   file: File,
   onProgress?: (pct: number) => void,
 ): Promise<PreparedBon> {
-  const dataUrl = await prepareBonDataUrl(file);
-  onProgress?.(5);
-  const rawText = await ocrDataUrl(dataUrl, (pct) => onProgress?.(Math.max(5, pct)));
+  const canvas = await rasterizeToCanvas(file, 2000);
+  onProgress?.(2);
+  const ocrCanvas = await contrastCanvas(canvas);
+  const ocrUrl = ocrCanvas.toDataURL("image/jpeg", 0.92);
+  onProgress?.(4);
+  let rawText = await ocrDataUrl(ocrUrl, (pct) => onProgress?.(Math.max(4, Math.round(pct * 0.7))), "auto");
+  let extract = extractBonFields(rawText);
+  // 2e passe si date/montant absents (scans inclinés / colonnes)
+  if (!extract.preferredAmount && !extract.amounts.length) {
+    const sparse = await ocrDataUrl(ocrUrl, (pct) => onProgress?.(70 + Math.round(pct * 0.25)), "sparse");
+    if (sparse.trim()) {
+      rawText = `${rawText}\n${sparse}`.trim();
+      extract = extractBonFields(rawText);
+    }
+  }
+  onProgress?.(98);
+  const dataUrl = await canvasToJpegDataUrl(canvas, 0.7);
   return {
     dataUrl,
-    extract: extractBonFields(rawText),
+    extract,
     rawText,
   };
 }

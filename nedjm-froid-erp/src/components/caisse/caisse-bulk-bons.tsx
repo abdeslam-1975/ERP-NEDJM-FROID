@@ -94,14 +94,20 @@ export function CaisseBulkBonsPanel({
 
     const prepared = await prepareAndReadBon(file);
     const fields = prepared.extract.rawText ? prepared.extract : extractBonFields(prepared.rawText);
-    const matched = matchBonToOperations(pool, fields.preferredDate, fields.preferredAmount);
+    const matched = matchBonToOperations(pool, fields.preferredDate, fields.preferredAmount, {
+      candidateDates: fields.dates,
+      candidateAmounts: fields.amounts,
+      rawText: prepared.rawText || fields.rawText,
+    });
+    const shownDate = matched.matches[0]?.date || fields.preferredDate;
+    const shownAmount = matched.matches[0]?.amount ?? fields.preferredAmount;
 
     if (matched.status === "unique" && matched.matches[0]) {
       const target = matched.matches[0];
       const attached = await attachCaisseBonPhoto({
         operationId: target.operationId,
         photoDataUrl: prepared.dataUrl,
-        bonMatchStatus: "ok",
+        bonMatchStatus: matched.strategy === "date+amount" ? "ok" : "warn",
       });
       if (!attached.ok) {
         return {
@@ -111,8 +117,8 @@ export function CaisseBulkBonsPanel({
             fileName: file.name,
             status: "error",
             message: attached.error,
-            detectedDate: fields.preferredDate,
-            detectedAmount: fields.preferredAmount,
+            detectedDate: shownDate,
+            detectedAmount: shownAmount,
             matches: matched.matches,
             photoDataUrl: prepared.dataUrl,
           },
@@ -124,9 +130,9 @@ export function CaisseBulkBonsPanel({
         row: {
           fileName: file.name,
           status: "linked",
-          message: attached.data.message,
-          detectedDate: fields.preferredDate,
-          detectedAmount: fields.preferredAmount,
+          message: `${attached.data.message}${matched.strategy && matched.strategy !== "date+amount" ? ` (${matched.strategy})` : ""}`,
+          detectedDate: shownDate,
+          detectedAmount: shownAmount,
           matches: matched.matches,
           linkedOp: attached.data.op,
         },
@@ -140,7 +146,7 @@ export function CaisseBulkBonsPanel({
           ? "Déjà un bon sur l’opération correspondante"
           : matched.status === "unreadable"
             ? "Date/montant non lus sur le fichier"
-            : "Aucune opération (date+montant)";
+            : "Aucune opération trouvée — choix manuel possible";
     return {
       linked: false,
       pool,
@@ -155,8 +161,8 @@ export function CaisseBulkBonsPanel({
                 ? "unreadable"
                 : "none",
         message: label,
-        detectedDate: fields.preferredDate,
-        detectedAmount: fields.preferredAmount,
+        detectedDate: shownDate,
+        detectedAmount: shownAmount,
         matches: matched.matches,
         photoDataUrl: prepared.dataUrl,
       },
