@@ -3,7 +3,7 @@
 import { useState } from "react";
 import JSZip from "jszip";
 import { attachCaisseBonPhoto, listCaisseBonAttachTargets } from "@/lib/actions/caisse";
-import { extractBonFields } from "@/lib/caisse/bon-check";
+import { extractBonFields, extractBonFieldsFromFileName } from "@/lib/caisse/bon-check";
 import { matchBonToOperations, type BonAttachTarget } from "@/lib/caisse/bon-bulk-match";
 import { prepareAndReadBon } from "@/lib/caisse/bon-ocr";
 import { formatDa, formatDateFr } from "@/lib/caisse/soldes";
@@ -94,14 +94,28 @@ export function CaisseBulkBonsPanel({
 
     const prepared = await prepareAndReadBon(file);
     const fields = prepared.extract.rawText ? prepared.extract : extractBonFields(prepared.rawText);
-    const matched = matchBonToOperations(pool, fields.preferredDate, fields.preferredAmount);
+    const fromName = extractBonFieldsFromFileName(file.name);
+    const candidateDates = [...new Set([...fields.dates, ...fromName.dates])];
+    const candidateAmounts = [...new Set([...fields.amounts, ...fromName.amounts])];
+    const matched = matchBonToOperations(
+      pool,
+      fields.preferredDate || fromName.dates[0] || null,
+      fields.preferredAmount ?? fromName.amounts[0] ?? null,
+      {
+        candidateDates,
+        candidateAmounts,
+        rawText: prepared.rawText || fields.rawText,
+      },
+    );
+    const shownDate = matched.matches[0]?.date || fields.preferredDate;
+    const shownAmount = matched.matches[0]?.amount ?? fields.preferredAmount;
 
     if (matched.status === "unique" && matched.matches[0]) {
       const target = matched.matches[0];
       const attached = await attachCaisseBonPhoto({
         operationId: target.operationId,
         photoDataUrl: prepared.dataUrl,
-        bonMatchStatus: "ok",
+        bonMatchStatus: matched.strategy === "date+amount" ? "ok" : "warn",
       });
       if (!attached.ok) {
         return {
@@ -111,8 +125,8 @@ export function CaisseBulkBonsPanel({
             fileName: file.name,
             status: "error",
             message: attached.error,
-            detectedDate: fields.preferredDate,
-            detectedAmount: fields.preferredAmount,
+            detectedDate: shownDate,
+            detectedAmount: shownAmount,
             matches: matched.matches,
             photoDataUrl: prepared.dataUrl,
           },
@@ -124,14 +138,25 @@ export function CaisseBulkBonsPanel({
         row: {
           fileName: file.name,
           status: "linked",
-          message: attached.data.message,
-          detectedDate: fields.preferredDate,
-          detectedAmount: fields.preferredAmount,
+          message: `${attached.data.message}${matched.strategy && matched.strategy !== "date+amount" ? ` (${matched.strategy})` : ""}`,
+          detectedDate: shownDate,
+          detectedAmount: shownAmount,
           matches: matched.matches,
           linkedOp: attached.data.op,
         },
       };
     }
+
+    const ocrHint = [
+      fields.preferredDate ? `date=${fields.preferredDate}` : null,
+      fields.preferredAmount != null ? `montant=${fields.preferredAmount}` : null,
+      fields.amounts.length ? `candidats=${fields.amounts.slice(0, 5).join("|")}` : null,
+      prepared.rawText?.trim()
+        ? `ocr="${prepared.rawText.trim().replace(/\s+/g, " ").slice(0, 80)}"`
+        : "ocr=vide",
+    ]
+      .filter(Boolean)
+      .join(" · ");
 
     const label =
       matched.status === "ambiguous"
@@ -139,8 +164,8 @@ export function CaisseBulkBonsPanel({
         : matched.status === "already"
           ? "Déjà un bon sur l’opération correspondante"
           : matched.status === "unreadable"
-            ? "Date/montant non lus sur le fichier"
-            : "Aucune opération (date+montant)";
+            ? `Date/montant non lus (${ocrHint})`
+            : `Aucune opération pour ce mois (${ocrHint})`;
     return {
       linked: false,
       pool,
@@ -155,8 +180,8 @@ export function CaisseBulkBonsPanel({
                 ? "unreadable"
                 : "none",
         message: label,
-        detectedDate: fields.preferredDate,
-        detectedAmount: fields.preferredAmount,
+        detectedDate: shownDate,
+        detectedAmount: shownAmount,
         matches: matched.matches,
         photoDataUrl: prepared.dataUrl,
       },
@@ -171,16 +196,26 @@ export function CaisseBulkBonsPanel({
     if (!month) return onNotify("Mois", "Choisissez un mois");
     setBusy(true);
     setResults([]);
-    setPickedLabel(`${files.length} fichier(s) sélectionné(s)`);
-    setProgress(`Préparation — ${files.length} fichier(s)…`);
+    setPickedLabel(`${files.length} fichier(s) · mois ${month}`);
+    setProgress(`Préparation — mois ${month} · ${files.length} fichier(s)…`);
     try {
       const listed = await listCaisseBonAttachTargets(month);
       if (!listed.ok) {
         onNotify("Bons", listed.error);
         return;
       }
+      if (!listed.data.targets.length) {
+        onNotify("Mois", `Aucune opération ACHAT pour « ${month} ». Vérifiez le mois sélectionné.`);
+        return;
+      }
+      if (!listed.data.withoutPhoto) {
+        onNotify("Bons", `Toutes les opérations de « ${month} » ont déjà un bon.`);
+        return;
+      }
       setTargets(listed.data.targets);
-      setProgress(`Opérations chargées (${listed.data.withoutPhoto} sans photo) — démarrage OCR…`);
+      setProgress(
+        `${month} : ${listed.data.targets.length} achat(s), ${listed.data.withoutPhoto} sans photo — lecture…`,
+      );
 
       const nextResults: RowResult[] = [];
       let linkedCount = 0;
@@ -262,12 +297,12 @@ export function CaisseBulkBonsPanel({
     <div className="bulk-bons">
       <h6 className="admin-section-title">Import massif des bons (PDF / images / ZIP / dossier)</h6>
       <p className="hint">
-        Si un seul ZIP est trop gros : utilisez <strong>Dossier</strong>, ou plusieurs ZIP de 20–40 bons.
-        Lecture date + montant → rattachement auto (sans écraser un bon déjà présent).
+        Important : choisissez le <strong>même mois</strong> que les bons (ex. JANVIER 2026). Sinon aucun
+        rattachement. ZIP trop gros → <strong>Dossier</strong> ou plusieurs petits ZIP.
       </p>
       <div className="bulk-bons-controls">
         <label className="field">
-          <span>Mois</span>
+          <span>Mois des bons</span>
           <select value={month} onChange={(event) => setMonth(event.target.value)} disabled={busy}>
             {months.filter((name) => name !== "TOUS").map((name) => (
               <option key={name} value={name}>{name}</option>

@@ -18,20 +18,29 @@ export type BonCheckResult = {
   detectedAmount: number | null;
 };
 
-const AMOUNT_TOLERANCE = 0.05;
+/** Tolérance OCR / arrondi lignes (ex. 1 000 vs 1000,00). */
+const AMOUNT_TOLERANCE = 1.01;
 
-function fixOcrDigits(raw: string): string {
-  return raw
-    .replace(/[OoО]/g, "0")
-    .replace(/[Il|]/g, "1")
-    .replace(/[Ss]/g, "5")
-    .replace(/[Bb]/g, "8");
+/** Corrige O/I/l/S… seulement dans un jeton qui commence par un chiffre (pas la fin de « total »). */
+function fixOcrDigitsInNumberTokens(raw: string): string {
+  return raw.replace(/\d[0-9OoОοIl|SsBbZz.,\s\u00a0]*/g, (chunk) =>
+    chunk
+      .replace(/[OoОο]/g, "0")
+      .replace(/[Il|！]/g, "1")
+      .replace(/[Ss]/g, "5")
+      .replace(/[Bb]/g, "8")
+      .replace(/[Zz]/g, "2"),
+  );
 }
 
 function normalizeOcrText(text: string): string {
-  return fixOcrDigits(text)
+  return fixOcrDigitsInNumberTokens(text)
     .replace(/\u00a0/g, " ")
-    .replace(/[–—]/g, "-");
+    .replace(/[–—−]/g, "-")
+    .replace(/[•·]/g, ".")
+    // OCR colle parfois "1 2 450,00" → "12 450,00"
+    .replace(/(\d)\s(?=\d\s\d{3}\b)/g, "$1")
+    .replace(/(\d)\s([.,])\s(\d)/g, "$1$2$3");
 }
 
 /** Dates ISO from FR / ISO patterns commonly found on Algerian receipts. */
@@ -68,6 +77,8 @@ function looksLikeDocumentNumber(token: string, value: number): boolean {
   if (/[.,]/.test(compact)) return false;
   if (compact.length >= 6) return true;
   if (value >= 100_000) return true;
+  // Années ISO souvent lues comme montants
+  if (value >= 1900 && value <= 2100 && Number.isInteger(value)) return true;
   return false;
 }
 
@@ -107,10 +118,28 @@ export function extractAmounts(text: string): { all: number[]; preferred: number
     }
   }
 
+  // Montants suivis de DA / DZD / دج (très fréquent sur bons algériens)
+  const currencyRe = new RegExp(
+    String.raw`${AMOUNT_TOKEN}\s*(?:DA|DZD|D\.?A\.?|Dinars?|د\.?\s*ج)`,
+    "gi",
+  );
+  for (const m of fixed.matchAll(currencyRe)) {
+    const value = parseAmountToken(m[1] || "");
+    if (value != null && !looksLikeDocumentNumber(m[1] || "", value)) {
+      labeled.push(value);
+      if (!unique.includes(value)) unique.push(value);
+    }
+  }
+
   const moneyLike = unique.filter((value) => value >= 10 || labeled.includes(value));
-  const preferred =
-    labeled.at(-1) ??
-    (moneyLike.length ? Math.max(...moneyLike) : unique.length ? Math.max(...unique) : null);
+  // Le dernier label peut être un faux positif court (« 12 » dans « 12 450 ») → préférer le max labellisé.
+  const preferred = labeled.length
+    ? Math.max(...labeled)
+    : moneyLike.length
+      ? Math.max(...moneyLike)
+      : unique.length
+        ? Math.max(...unique)
+        : null;
   return { all: unique, preferred };
 }
 
@@ -145,6 +174,17 @@ export function textMentionsAmount(text: string, amount: number): boolean {
     const re = new RegExp(String.raw`(?<!\d)${escaped}(?!\d)`);
     if (re.test(fixed)) return true;
   }
+  // Reparse OCR amounts (espaces / virgules bizarres) et comparer numériquement
+  const parsed = extractAmounts(fixed);
+  if (parsed.all.some((value) => amountsClose(value, amount))) return true;
+  // Forme compacte : 1250.5 → "12505" / "125050" dans le flux de chiffres
+  const compactText = fixed.replace(/[^\d]/g, "");
+  const cents = Math.round(amount * 100);
+  const asInt = Math.round(amount);
+  const needles = [`${cents}`, `${asInt}00`, `${asInt}`];
+  for (const needle of needles) {
+    if (needle.length >= 3 && compactText.includes(needle)) return true;
+  }
   return false;
 }
 
@@ -173,6 +213,15 @@ function preferredDateFromText(text: string, dates: string[]): string | null {
     if (dates.includes(iso)) return iso;
   }
   return dates[0] ?? null;
+}
+
+/** Dates / montants parfois présents dans le nom de fichier du scan. */
+export function extractBonFieldsFromFileName(fileName: string): Pick<BonExtract, "dates" | "amounts"> {
+  const base = fileName.replace(/\.[^.]+$/, "").replace(/[_\-]+/g, " ");
+  return {
+    dates: extractIsoDates(base),
+    amounts: extractAmounts(base).all,
+  };
 }
 
 export function extractBonFields(text: string): BonExtract {

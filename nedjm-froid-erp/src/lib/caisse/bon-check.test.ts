@@ -44,12 +44,30 @@ describe("extractBonFields", () => {
     const fields = extractBonFields(text);
     expect(fields.preferredAmount).toBe(3500.5);
   });
+
+  it("keeps TOTAL label readable and picks DA amount", () => {
+    const text = `Date : 12/01/2026\nTOTAL TTC : 1 250,00 DA\n`;
+    const fields = extractBonFields(text);
+    expect(fields.preferredDate).toBe("2026-01-12");
+    expect(fields.preferredAmount).toBe(1250);
+  });
+
+  it("fixes OCR zero letters inside amounts only", () => {
+    const text = `TOTAL\n6OO,OO DA`;
+    const fields = extractBonFields(text);
+    expect(fields.preferredAmount).toBe(600);
+  });
 });
 
 describe("textMentionsAmount", () => {
   it("finds 600,00 even with OCR spacing", () => {
     expect(textMentionsAmount("NET A PAYER\n600,00", 600)).toBe(true);
     expect(textMentionsAmount("total 1 250,50 DA", 1250.5)).toBe(true);
+  });
+
+  it("matches amount within 1 DA tolerance via parsed OCR totals", () => {
+    expect(textMentionsAmount("TOTAL TTC 1 000,00 DA", 1000)).toBe(true);
+    expect(textMentionsAmount("NET 999,50", 1000)).toBe(true);
   });
 });
 

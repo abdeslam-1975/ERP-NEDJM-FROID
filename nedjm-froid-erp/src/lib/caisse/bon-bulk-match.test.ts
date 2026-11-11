@@ -36,8 +36,54 @@ describe("matchBonToOperations", () => {
     expect(result.matches[0]?.op).toBe(21);
   });
 
-  it("returns none / unreadable otherwise", () => {
-    expect(matchBonToOperations(rows, "2026-01-99", 1000).status).toBe("none");
-    expect(matchBonToOperations(rows, null, 1000).status).toBe("unreadable");
+  it("falls back to unique amount when date is missing", () => {
+    const result = matchBonToOperations(rows, null, 500);
+    expect(result.status).toBe("unique");
+    expect(result.matches[0]?.op).toBe(20);
+    expect(result.strategy).toBe("amount-only");
+  });
+
+  it("uses unique amount even when OCR date is wrong", () => {
+    const result = matchBonToOperations(rows, "2026-01-99", 500);
+    expect(result.status).toBe("unique");
+    expect(result.matches[0]?.op).toBe(20);
+    expect(result.strategy).toBe("amount-only");
+  });
+
+  it("marks amount-only ambiguous when several ops share the amount", () => {
+    const result = matchBonToOperations(rows, "2026-01-01", 600);
+    expect(result.status).toBe("ambiguous");
+    expect(result.strategy).toBe("amount-only");
+    expect(result.matches).toHaveLength(2);
+  });
+
+  it("uses candidate amounts when preferred amount is wrong", () => {
+    const result = matchBonToOperations(rows, "2026-01-03", 999999, {
+      candidateAmounts: [999999, 500],
+      candidateDates: ["2026-01-03"],
+    });
+    expect(result.status).toBe("unique");
+    expect(result.matches[0]?.op).toBe(20);
+  });
+
+  it("matches from raw OCR text when structured parse is weak", () => {
+    const result = matchBonToOperations(rows, null, null, {
+      rawText: "Facture\nDate : 03/01/2026\nNET A PAYER 500,00 DA",
+    });
+    expect(result.status).toBe("unique");
+    expect(result.matches[0]?.op).toBe(20);
+  });
+
+  it("prefers the largest amount when several op amounts appear as line items", () => {
+    const result = matchBonToOperations(rows, null, null, {
+      rawText: "Ligne 500,00\nAutre 1000,00 DA\nDate 03/01/2026",
+    });
+    expect(result.status).toBe("unique");
+    expect(result.matches[0]?.op).toBe(14);
+    expect(result.strategy).toBe("text-amount+date");
+  });
+
+  it("returns unreadable when nothing usable is detected", () => {
+    expect(matchBonToOperations(rows, null, null).status).toBe("unreadable");
   });
 });
