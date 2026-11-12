@@ -43,9 +43,9 @@ describe("matchBonToOperations", () => {
     expect(result.strategy).toBe("amount-only");
   });
 
-  it("uses unique amount even when OCR date is wrong", () => {
-    const result = matchBonToOperations(rows, "2026-01-99", 500);
-    expect(result.status).toBe("unique");
+  it("does not auto-link unique amount when OCR date contradicts the op", () => {
+    const result = matchBonToOperations(rows, "2026-01-20", 500);
+    expect(result.status).toBe("ambiguous");
     expect(result.matches[0]?.op).toBe(20);
     expect(result.strategy).toBe("amount-only");
   });

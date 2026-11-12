@@ -63,7 +63,8 @@ export function CaisseBulkBonsPanel({
 }: {
   months: string[];
   initialMonth: string;
-  onDone: () => Promise<void> | void;
+  /** Appelé avec le mois importé pour resynchroniser le journal. */
+  onDone: (month: string) => Promise<void> | void;
   onNotify: (title: string, text: string) => void;
 }) {
   const [month, setMonth] = useState(initialMonth === "TOUS" ? months[0] || "" : initialMonth);
@@ -249,9 +250,12 @@ export function CaisseBulkBonsPanel({
         return;
       }
 
-      setProgress(`Terminé — ${linkedCount} bon(s) lié(s) / ${index} fichier(s)`);
-      onNotify("Import bons", `${linkedCount} lié(s) automatiquement sur ${index}.`);
-      await onDone();
+      setProgress(`Terminé — ${linkedCount} bon(s) lié(s) / ${index} fichier(s) · journal → ${month}`);
+      onNotify(
+        "Import bons",
+        `${linkedCount} lié(s) automatiquement sur ${index}. Affichez le mois « ${month} » dans le journal pour voir les Voir.`,
+      );
+      await onDone(month);
     } catch (error) {
       onNotify("Bons", error instanceof Error ? error.message : "Import interrompu");
     } finally {
@@ -287,7 +291,7 @@ export function CaisseBulkBonsPanel({
         current.map((t) => (t.operationId === operationId ? { ...t, hasPhoto: true } : t)),
       );
       onNotify("Bon", attached.data.message);
-      await onDone();
+      await onDone(month);
     } finally {
       setBusy(false);
     }

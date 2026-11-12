@@ -94,16 +94,22 @@ export function matchBonToOperations(
   }
 
   // 2) Montant seul s’il ne pointe qu’une opération sans photo
-  //    (même si une date OCR erronée a fait échouer l’étape 1)
+  //    Si l’OCR a une date qui contredit l’op → pas d’auto-lien (évite faux positifs).
   if (amounts.length) {
     const byAmount = targets.filter((row) => amounts.some((amount) => amountsClose(row.amount, amount)));
     const open = byAmount.filter((row) => !row.hasPhoto);
-    if (open.length === 1) return { status: "unique", matches: open, strategy: "amount-only" };
+    if (open.length === 1) {
+      const only = open[0]!;
+      if (dates.length && !dates.includes(only.date)) {
+        return { status: "ambiguous", matches: open, strategy: "amount-only" };
+      }
+      return { status: "unique", matches: open, strategy: "amount-only" };
+    }
     if (open.length > 1) {
       const dated = dates.length ? open.filter((row) => dates.includes(row.date)) : [];
       if (dated.length === 1) return { status: "unique", matches: dated, strategy: "date+amount" };
       if (dated.length > 1) return { status: "ambiguous", matches: dated, strategy: "date+amount" };
-      // Dates OCR incorrectes : proposer le choix manuel sur le montant
+      // Dates OCR incorrectes / absentes : choix manuel sur le montant
       return { status: "ambiguous", matches: open, strategy: "amount-only" };
     }
     if (!open.length) {
