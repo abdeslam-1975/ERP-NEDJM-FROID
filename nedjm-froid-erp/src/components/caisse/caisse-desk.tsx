@@ -1035,12 +1035,12 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                   <td>{amount == null ? "" : formatDa(amount)}</td>
                   <td>{row.prixBon == null ? "" : formatDa(row.prixBon)}</td>
                   <td>{row.buyer}</td>
-                  <td className={row.hasPhoto && row.bonMatchStatus && row.bonMatchStatus !== "ok" ? `bon-journal-cell ${row.bonMatchStatus}` : undefined}>
+                  <td className={row.hasPhoto && row.bonMatchStatus ? `bon-journal-cell ${row.bonMatchStatus}` : row.hasPhoto ? "bon-journal-cell ok" : undefined}>
                     {row.hasPhoto ? (
                       <div className="bon-journal-actions">
                         <button
                           type="button"
-                          className={`btn-light bon-journal-btn${row.bonMatchStatus && row.bonMatchStatus !== "ok" ? ` ${row.bonMatchStatus}` : ""}`}
+                          className={`btn-light bon-journal-btn ${row.bonMatchStatus || "ok"}`}
                           title={
                             row.bonMatchStatus === "bad"
                               ? "Écart date et montant du bon"
@@ -1048,7 +1048,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                                 ? "Écart date ou montant du bon"
                                 : row.bonMatchStatus === "unknown"
                                   ? "Bon à vérifier"
-                                  : "Voir le bon"
+                                  : "Bon conforme — Voir"
                           }
                           onClick={() => void showPhoto(row.operationId)}
                         >
@@ -1286,8 +1286,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                 months={data.months}
                 initialMonth={data.month}
                 onNotify={notify}
-                onDone={async () => {
-                  await reload();
+                onDone={async (importedMonth) => {
+                  // Afficher le mois des bons liés (sinon le journal reste sur un autre mois).
+                  await reload({ month: importedMonth || data.month });
                 }}
               />
             </div>
