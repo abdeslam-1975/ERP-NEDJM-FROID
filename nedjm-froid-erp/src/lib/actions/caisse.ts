@@ -731,6 +731,78 @@ export async function listCaisseBonAttachTargets(
   };
 }
 
+/**
+ * Admin : retire les bons d’un mois pour recommencer l’import.
+ * mode=suspect → warn / unknown / vide (faux positifs fréquents)
+ * mode=all → tous les bons ACHAT du mois
+ */
+export async function clearCaisseMonthBonPhotos(input: {
+  monthSheet: string;
+  mode?: "suspect" | "all";
+}): Promise<ActionResult<{ cleared: number; message: string }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.isAdmin) return fail("❌ Réservé à l’administrateur");
+  const monthSheet = input.monthSheet?.trim() || "";
+  if (!monthSheet || monthSheet === "TOUS") return fail("❌ Choisissez un mois");
+  const mode = input.mode === "all" ? "all" : "suspect";
+
+  const opsRes = await supabase
+    .from("caisse_operations")
+    .select("id, op_number, op_date, kind, has_photo, bon_match_status")
+    .eq("kind", "ACHAT")
+    .eq("has_photo", true)
+    .limit(5000);
+  if (opsRes.error) return fail(opsRes.error.message);
+
+  const targets = (opsRes.data ?? []).filter((op) => {
+    const date = String(op.op_date).slice(0, 10);
+    if (sheetNameFromIso(date) !== monthSheet) return false;
+    if (mode === "all") return true;
+    const status = op.bon_match_status as string | null;
+    return status === "warn" || status === "unknown" || status === "bad" || !status;
+  });
+
+  let cleared = 0;
+  for (const op of targets) {
+    const updated = await supabase
+      .from("caisse_operations")
+      .update({ photo_data: null, bon_label: "", bon_match_status: null })
+      .eq("id", op.id);
+    if (updated.error) {
+      if (/bon_match_status/i.test(updated.error.message)) {
+        const fallback = await supabase
+          .from("caisse_operations")
+          .update({ photo_data: null, bon_label: "" })
+          .eq("id", op.id);
+        if (fallback.error) return fail(fallback.error.message);
+      } else {
+        return fail(updated.error.message);
+      }
+    }
+    cleared += 1;
+  }
+
+  await logAction(
+    supabase,
+    "UPDATE",
+    "ACHAT",
+    "",
+    monthSheet,
+    `Purge bons import (${mode}) — ${cleared} opération(s)`,
+    null,
+  );
+  refresh();
+  return {
+    ok: true,
+    data: {
+      cleared,
+      message: `✅ ${cleared} bon(s) retiré(s) de « ${monthSheet} » (${mode === "all" ? "tous" : "suspects warn/unknown"}).`,
+    },
+  };
+}
+
 /** Admin : attache un bon (image data URL) à une opération ACHAT. */
 export async function attachCaisseBonPhoto(input: {
   operationId: string;

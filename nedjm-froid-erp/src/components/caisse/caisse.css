@@ -286,6 +286,9 @@
 .caisse-app .bulk-bons-controls {
   display: grid; grid-template-columns: minmax(180px, 220px) 1fr 1fr; gap: 12px; align-items: end;
 }
+.caisse-app .bulk-bons-purge {
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
 .caisse-app .bulk-row.skipped td { background: #f1f5f9; color: #64748b; }
 .caisse-app .bulk-bons-progress { font-weight: 700; color: #334155; }
 .caisse-app .bulk-pick-btn {
