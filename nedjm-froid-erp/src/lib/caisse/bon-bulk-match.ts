@@ -29,16 +29,6 @@ function uniqById(rows: BonAttachTarget[]): BonAttachTarget[] {
   return out;
 }
 
-/** Parmi plusieurs ops dont le montant apparaît sur le bon, garder le groupe au montant le plus élevé (souvent le total). */
-function pickLargestAmountGroup(rows: BonAttachTarget[]): BonAttachTarget[] {
-  if (rows.length <= 1) return rows;
-  let best = rows[0]!.amount;
-  for (const row of rows) {
-    if (row.amount > best) best = row.amount;
-  }
-  return rows.filter((row) => amountsClose(row.amount, best));
-}
-
 function classify(matches: BonAttachTarget[], strategy: BonMatchResult["strategy"]): BonMatchResult {
   const open = matches.filter((row) => !row.hasPhoto);
   if (open.length === 1) return { status: "unique", matches: open, strategy };
@@ -51,8 +41,10 @@ function classify(matches: BonAttachTarget[], strategy: BonMatchResult["strategy
 
 /**
  * Match un bon aux achats du mois.
- * Ordre : date+montant (tous candidats) → montant seul s’il est unique →
- * présence du montant (et date) dans le texte OCR brut.
+ *
+ * Auto-lien sûr uniquement si date ET montant correspondent (1 op).
+ * Montant seul / texte partiel → suggestions manuelles (ambiguous), jamais d’auto-lien
+ * (évite d’attacher le même bon sur plusieurs opérations).
  */
 export function matchBonToOperations(
   targets: BonAttachTarget[],
@@ -82,7 +74,7 @@ export function matchBonToOperations(
     return { status: "unreadable", matches: [] };
   }
 
-  // 1) Date + montant exacts (tous les couples candidats)
+  // 1) Date + montant — seul chemin d’auto-lien
   if (dates.length && amounts.length) {
     const hits = targets.filter(
       (row) => dates.includes(row.date) && amounts.some((amount) => amountsClose(row.amount, amount)),
@@ -93,27 +85,7 @@ export function matchBonToOperations(
     }
   }
 
-  // 2) Montant seul s’il ne pointe qu’une opération sans photo
-  //    (même si une date OCR erronée a fait échouer l’étape 1)
-  if (amounts.length) {
-    const byAmount = targets.filter((row) => amounts.some((amount) => amountsClose(row.amount, amount)));
-    const open = byAmount.filter((row) => !row.hasPhoto);
-    if (open.length === 1) return { status: "unique", matches: open, strategy: "amount-only" };
-    if (open.length > 1) {
-      const dated = dates.length ? open.filter((row) => dates.includes(row.date)) : [];
-      if (dated.length === 1) return { status: "unique", matches: dated, strategy: "date+amount" };
-      if (dated.length > 1) return { status: "ambiguous", matches: dated, strategy: "date+amount" };
-      // Dates OCR incorrectes : proposer le choix manuel sur le montant
-      return { status: "ambiguous", matches: open, strategy: "amount-only" };
-    }
-    if (!open.length) {
-      const closed = byAmount.filter((row) => row.hasPhoto);
-      if (closed.length === 1) return { status: "already", matches: closed, strategy: "amount-only" };
-    }
-  }
-
-  // 3) Texte OCR : le montant de l’opération apparaît clairement
-  //    (plusieurs montants de lignes peuvent apparaître → on préfère total / plus grand)
+  // 2) Texte OCR : date + montant de l’op présents ensemble → auto-lien si unique
   if (rawText) {
     const openTargets = targets.filter((row) => !row.hasPhoto);
     const withAmountAndDate = openTargets.filter(
@@ -123,40 +95,37 @@ export function matchBonToOperations(
       return { status: "unique", matches: withAmountAndDate, strategy: "text-amount+date" };
     }
     if (withAmountAndDate.length > 1) {
-      const preferred =
-        detectedAmount != null
-          ? withAmountAndDate.filter((row) => amountsClose(row.amount, detectedAmount))
-          : amounts.length
-            ? withAmountAndDate.filter((row) => amounts.some((amount) => amountsClose(row.amount, amount)))
-            : [];
-      const narrowed = preferred.length ? preferred : pickLargestAmountGroup(withAmountAndDate);
-      const result = classify(narrowed, "text-amount+date");
-      if (result.status !== "none") return result;
+      return { status: "ambiguous", matches: withAmountAndDate, strategy: "text-amount+date" };
     }
+  }
 
-    const withAmount = openTargets.filter((row) => textMentionsAmount(rawText, row.amount));
-    const uniqueRows = uniqById(withAmount);
-    if (!uniqueRows.length) {
-      // no-op
-    } else {
-      const preferredHits =
-        detectedAmount != null
-          ? uniqueRows.filter((row) => amountsClose(row.amount, detectedAmount))
-          : amounts.length
-            ? uniqueRows.filter((row) => amounts.some((amount) => amountsClose(row.amount, amount)))
-            : [];
-      const narrowed = preferredHits.length ? preferredHits : pickLargestAmountGroup(uniqueRows);
-      const amountKeys = [...new Set(narrowed.map((row) => row.amount.toFixed(2)))];
-      if (amountKeys.length === 1 && narrowed.length === 1) {
-        return { status: "unique", matches: narrowed, strategy: "text-amount" };
-      }
-      if (narrowed.length > 1 && amountKeys.length === 1) {
-        return { status: "ambiguous", matches: narrowed, strategy: "text-amount" };
-      }
-      if (narrowed.length === 1) {
-        return { status: "unique", matches: narrowed, strategy: "text-amount" };
-      }
-    }
+  // 3) Suggestions montant seul (jamais auto-lien)
+  const suggestions: BonAttachTarget[] = [];
+  if (amounts.length) {
+    suggestions.push(
+      ...targets.filter(
+        (row) => !row.hasPhoto && amounts.some((amount) => amountsClose(row.amount, amount)),
+      ),
+    );
+  }
+  if (rawText) {
+    suggestions.push(
+      ...targets.filter((row) => !row.hasPhoto && textMentionsAmount(rawText, row.amount)),
+    );
+  }
+  const openSuggestions = uniqById(suggestions);
+  if (openSuggestions.length === 1) {
+    return { status: "ambiguous", matches: openSuggestions, strategy: "amount-only" };
+  }
+  if (openSuggestions.length > 1) {
+    return { status: "ambiguous", matches: openSuggestions, strategy: "amount-only" };
+  }
+
+  if (amounts.length) {
+    const closed = targets.filter(
+      (row) => row.hasPhoto && amounts.some((amount) => amountsClose(row.amount, amount)),
+    );
+    if (closed.length === 1) return { status: "already", matches: closed, strategy: "amount-only" };
   }
 
   if (!amounts.length && !dates.length) {

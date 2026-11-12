@@ -57,6 +57,12 @@ describe("extractBonFields", () => {
     const fields = extractBonFields(text);
     expect(fields.preferredAmount).toBe(600);
   });
+
+  it("parses European thousands with dot then comma decimals", () => {
+    const fields = extractBonFields("NET A PAYER 1.300,00 DA");
+    expect(fields.preferredAmount).toBe(1300);
+    expect(fields.amounts).toContain(1300);
+  });
 });
 
 describe("textMentionsAmount", () => {

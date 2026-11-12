@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
+import { geminiConfigured, geminiModel, generateStructured } from "@/lib/ai/gemini";
 import type { BonAttachTarget } from "@/lib/caisse/bon-bulk-match";
 import {
   algiersToday,
@@ -730,6 +731,78 @@ export async function listCaisseBonAttachTargets(
   };
 }
 
+/**
+ * Admin : retire les bons d’un mois pour recommencer l’import.
+ * mode=suspect → warn / unknown / vide (faux positifs fréquents)
+ * mode=all → tous les bons ACHAT du mois
+ */
+export async function clearCaisseMonthBonPhotos(input: {
+  monthSheet: string;
+  mode?: "suspect" | "all";
+}): Promise<ActionResult<{ cleared: number; message: string }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.isAdmin) return fail("❌ Réservé à l’administrateur");
+  const monthSheet = input.monthSheet?.trim() || "";
+  if (!monthSheet || monthSheet === "TOUS") return fail("❌ Choisissez un mois");
+  const mode = input.mode === "all" ? "all" : "suspect";
+
+  const opsRes = await supabase
+    .from("caisse_operations")
+    .select("id, op_number, op_date, kind, has_photo, bon_match_status")
+    .eq("kind", "ACHAT")
+    .eq("has_photo", true)
+    .limit(5000);
+  if (opsRes.error) return fail(opsRes.error.message);
+
+  const targets = (opsRes.data ?? []).filter((op) => {
+    const date = String(op.op_date).slice(0, 10);
+    if (sheetNameFromIso(date) !== monthSheet) return false;
+    if (mode === "all") return true;
+    const status = op.bon_match_status as string | null;
+    return status === "warn" || status === "unknown" || status === "bad" || !status;
+  });
+
+  let cleared = 0;
+  for (const op of targets) {
+    const updated = await supabase
+      .from("caisse_operations")
+      .update({ photo_data: null, bon_label: "", bon_match_status: null })
+      .eq("id", op.id);
+    if (updated.error) {
+      if (/bon_match_status/i.test(updated.error.message)) {
+        const fallback = await supabase
+          .from("caisse_operations")
+          .update({ photo_data: null, bon_label: "" })
+          .eq("id", op.id);
+        if (fallback.error) return fail(fallback.error.message);
+      } else {
+        return fail(updated.error.message);
+      }
+    }
+    cleared += 1;
+  }
+
+  await logAction(
+    supabase,
+    "UPDATE",
+    "ACHAT",
+    "",
+    monthSheet,
+    `Purge bons import (${mode}) — ${cleared} opération(s)`,
+    null,
+  );
+  refresh();
+  return {
+    ok: true,
+    data: {
+      cleared,
+      message: `✅ ${cleared} bon(s) retiré(s) de « ${monthSheet} » (${mode === "all" ? "tous" : "suspects warn/unknown"}).`,
+    },
+  };
+}
+
 /** Admin : attache un bon (image data URL) à une opération ACHAT. */
 export async function attachCaisseBonPhoto(input: {
   operationId: string;
@@ -792,6 +865,98 @@ export async function attachCaisseBonPhoto(input: {
       message: `✅ Bon lié à N° ${existing.data.op_number}`,
     },
   };
+}
+
+const BON_AI_SCHEMA = {
+  type: "object",
+  properties: {
+    date: {
+      anyOf: [{ type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, { type: "null" }],
+      description: "Date du bon au format ISO YYYY-MM-DD",
+    },
+    amount: {
+      anyOf: [{ type: "number" }, { type: "null" }],
+      description: "Montant total à payer en dinars algériens (nombre, pas de texte)",
+    },
+    amounts: {
+      type: "array",
+      items: { type: "number" },
+      description: "Autres montants visibles (lignes + total)",
+    },
+  },
+  required: ["date", "amount", "amounts"],
+} as const;
+
+/**
+ * Lecture IA (Gemini) d’un bon image — indispensable pour l’écriture manuscrite
+ * où Tesseract échoue. Admin only.
+ */
+export async function readCaisseBonWithAi(input: {
+  photoDataUrl: string;
+}): Promise<
+  ActionResult<{
+    date: string | null;
+    amount: number | null;
+    amounts: number[];
+    model: string;
+  }>
+> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { flags } = gate;
+  if (!flags.isAdmin) return fail("❌ Réservé à l’administrateur");
+  if (!geminiConfigured()) {
+    return fail("❌ Lecture IA non configurée (GEMINI_API_KEY absente sur le serveur).");
+  }
+
+  const raw = input.photoDataUrl?.trim() || "";
+  const match = /^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=\s]+)$/i.exec(raw);
+  if (!match) return fail("❌ Image bon invalide pour l’IA (JPEG/PNG/WEBP).");
+  const mime = match[1]!.toLowerCase() === "image/jpg" ? "image/jpeg" : match[1]!.toLowerCase();
+  const base64 = match[2]!.replace(/\s+/g, "");
+  if (base64.length > 2_800_000) return fail("❌ Image trop lourde pour l’analyse IA.");
+
+  try {
+    const parsed = (await generateStructured({
+      parts: [
+        {
+          text: `Tu lis un bon / reçu / facture algérien (imprimé OU manuscrit, français et/ou arabe).
+Extrais uniquement :
+- date du bon (ISO YYYY-MM-DD), ou null si illisible
+- amount = montant TOTAL / NET À PAYER / case montant (en DA), nombre décimal
+- amounts = liste des montants numériques visibles utiles (lignes + total)
+Ignore numéros de facture longs, RC, NIF, téléphone, matricules.
+Réponds strictement en JSON selon le schéma.`,
+        },
+        { inline_data: { mime_type: mime, data: base64 } },
+      ],
+      schema: BON_AI_SCHEMA,
+    })) as { date?: string | null; amount?: number | null; amounts?: unknown };
+
+    const date =
+      typeof parsed.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date) ? parsed.date : null;
+    const amount =
+      typeof parsed.amount === "number" && Number.isFinite(parsed.amount) && parsed.amount > 0
+        ? Math.round(parsed.amount * 100) / 100
+        : null;
+    const amounts = Array.isArray(parsed.amounts)
+      ? [
+          ...new Set(
+            parsed.amounts
+              .map((value) => (typeof value === "number" ? Math.round(value * 100) / 100 : NaN))
+              .filter((value) => Number.isFinite(value) && value > 0),
+          ),
+        ]
+      : [];
+    if (amount != null && !amounts.includes(amount)) amounts.push(amount);
+
+    return {
+      ok: true,
+      data: { date, amount, amounts, model: geminiModel() },
+    };
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "Lecture IA du bon impossible.");
+  }
 }
 
 export async function getCaisseClose(date: string): Promise<ActionResult<CloseStatus>> {

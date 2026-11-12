@@ -248,6 +248,15 @@
 .caisse-app td.bon-journal-cell.unknown {
   background: #fef3c7 !important;
 }
+.caisse-app .bon-journal-cell.ok {
+  background: #ecfdf5;
+}
+.caisse-app .bon-journal-btn.ok {
+  border-color: #4ade80 !important;
+  color: #166534 !important;
+  background: #ecfdf5 !important;
+  font-weight: 800;
+}
 .caisse-app .bon-journal-btn.warn {
   border-color: #fb923c !important;
   color: #c2410c !important;
@@ -276,6 +285,9 @@
 .caisse-app .bulk-bons { display: flex; flex-direction: column; gap: 12px; }
 .caisse-app .bulk-bons-controls {
   display: grid; grid-template-columns: minmax(180px, 220px) 1fr 1fr; gap: 12px; align-items: end;
+}
+.caisse-app .bulk-bons-purge {
+  display: flex; flex-wrap: wrap; gap: 8px;
 }
 .caisse-app .bulk-row.skipped td { background: #f1f5f9; color: #64748b; }
 .caisse-app .bulk-bons-progress { font-weight: 700; color: #334155; }

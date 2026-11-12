@@ -2,8 +2,18 @@
 
 import { useState } from "react";
 import JSZip from "jszip";
-import { attachCaisseBonPhoto, listCaisseBonAttachTargets } from "@/lib/actions/caisse";
-import { extractBonFields, extractBonFieldsFromFileName } from "@/lib/caisse/bon-check";
+import {
+  attachCaisseBonPhoto,
+  clearCaisseMonthBonPhotos,
+  listCaisseBonAttachTargets,
+  readCaisseBonWithAi,
+} from "@/lib/actions/caisse";
+import {
+  bonExtractNeedsAi,
+  extractBonFields,
+  extractBonFieldsFromFileName,
+  type BonExtract,
+} from "@/lib/caisse/bon-check";
 import { matchBonToOperations, type BonAttachTarget } from "@/lib/caisse/bon-bulk-match";
 import { prepareAndReadBon } from "@/lib/caisse/bon-ocr";
 import { formatDa, formatDateFr } from "@/lib/caisse/soldes";
@@ -63,7 +73,8 @@ export function CaisseBulkBonsPanel({
 }: {
   months: string[];
   initialMonth: string;
-  onDone: () => Promise<void> | void;
+  /** Appelé avec le mois importé pour resynchroniser le journal. */
+  onDone: (month: string) => Promise<void> | void;
   onNotify: (title: string, text: string) => void;
 }) {
   const [month, setMonth] = useState(initialMonth === "TOUS" ? months[0] || "" : initialMonth);
@@ -93,8 +104,26 @@ export function CaisseBulkBonsPanel({
     }
 
     const prepared = await prepareAndReadBon(file);
-    const fields = prepared.extract.rawText ? prepared.extract : extractBonFields(prepared.rawText);
+    let fields: BonExtract = prepared.extract.rawText
+      ? prepared.extract
+      : extractBonFields(prepared.rawText);
     const fromName = extractBonFieldsFromFileName(file.name);
+    let aiNote = "";
+    if (bonExtractNeedsAi(fields)) {
+      const ai = await readCaisseBonWithAi({ photoDataUrl: prepared.dataUrl });
+      if (ai.ok) {
+        aiNote = " · IA";
+        fields = {
+          dates: [...new Set([...(ai.data.date ? [ai.data.date] : []), ...fields.dates])],
+          amounts: [...new Set([...(ai.data.amounts || []), ...fields.amounts, ...(ai.data.amount != null ? [ai.data.amount] : [])])],
+          preferredDate: ai.data.date || fields.preferredDate,
+          preferredAmount: ai.data.amount ?? fields.preferredAmount,
+          rawText: fields.rawText,
+        };
+      } else {
+        aiNote = ` · IA: ${ai.error}`;
+      }
+    }
     const candidateDates = [...new Set([...fields.dates, ...fromName.dates])];
     const candidateAmounts = [...new Set([...fields.amounts, ...fromName.amounts])];
     const matched = matchBonToOperations(
@@ -110,12 +139,18 @@ export function CaisseBulkBonsPanel({
     const shownDate = matched.matches[0]?.date || fields.preferredDate;
     const shownAmount = matched.matches[0]?.amount ?? fields.preferredAmount;
 
-    if (matched.status === "unique" && matched.matches[0]) {
+    // Auto-lien uniquement date+montant (ou texte date+montant) — jamais montant seul.
+    const canAutoLink =
+      matched.status === "unique" &&
+      matched.matches[0] &&
+      (matched.strategy === "date+amount" || matched.strategy === "text-amount+date");
+
+    if (canAutoLink && matched.matches[0]) {
       const target = matched.matches[0];
       const attached = await attachCaisseBonPhoto({
         operationId: target.operationId,
         photoDataUrl: prepared.dataUrl,
-        bonMatchStatus: matched.strategy === "date+amount" ? "ok" : "warn",
+        bonMatchStatus: "ok",
       });
       if (!attached.ok) {
         return {
@@ -138,7 +173,7 @@ export function CaisseBulkBonsPanel({
         row: {
           fileName: file.name,
           status: "linked",
-          message: `${attached.data.message}${matched.strategy && matched.strategy !== "date+amount" ? ` (${matched.strategy})` : ""}`,
+          message: `${attached.data.message}${matched.strategy && matched.strategy !== "date+amount" ? ` (${matched.strategy})` : ""}${aiNote}`,
           detectedDate: shownDate,
           detectedAmount: shownAmount,
           matches: matched.matches,
@@ -160,12 +195,14 @@ export function CaisseBulkBonsPanel({
 
     const label =
       matched.status === "ambiguous"
-        ? "Plusieurs opérations possibles — choix manuel"
+        ? matched.strategy === "amount-only"
+          ? `Montant seul — choisissez N° manuellement${aiNote}`
+          : `Plusieurs opérations possibles — choix manuel${aiNote}`
         : matched.status === "already"
           ? "Déjà un bon sur l’opération correspondante"
           : matched.status === "unreadable"
-            ? `Date/montant non lus (${ocrHint})`
-            : `Aucune opération pour ce mois (${ocrHint})`;
+            ? `Date/montant non lus (${ocrHint})${aiNote}`
+            : `Aucune opération pour ce mois (${ocrHint})${aiNote}`;
     return {
       linked: false,
       pool,
@@ -249,9 +286,12 @@ export function CaisseBulkBonsPanel({
         return;
       }
 
-      setProgress(`Terminé — ${linkedCount} bon(s) lié(s) / ${index} fichier(s)`);
-      onNotify("Import bons", `${linkedCount} lié(s) automatiquement sur ${index}.`);
-      await onDone();
+      setProgress(`Terminé — ${linkedCount} bon(s) lié(s) / ${index} fichier(s) · journal → ${month}`);
+      onNotify(
+        "Import bons",
+        `${linkedCount} lié(s) automatiquement sur ${index}. Affichez le mois « ${month} » dans le journal pour voir les Voir.`,
+      );
+      await onDone(month);
     } catch (error) {
       onNotify("Bons", error instanceof Error ? error.message : "Import interrompu");
     } finally {
@@ -287,7 +327,7 @@ export function CaisseBulkBonsPanel({
         current.map((t) => (t.operationId === operationId ? { ...t, hasPhoto: true } : t)),
       );
       onNotify("Bon", attached.data.message);
-      await onDone();
+      await onDone(month);
     } finally {
       setBusy(false);
     }
@@ -297,8 +337,9 @@ export function CaisseBulkBonsPanel({
     <div className="bulk-bons">
       <h6 className="admin-section-title">Import massif des bons (PDF / images / ZIP / dossier)</h6>
       <p className="hint">
-        Important : choisissez le <strong>même mois</strong> que les bons (ex. JANVIER 2026). Sinon aucun
-        rattachement. ZIP trop gros → <strong>Dossier</strong> ou plusieurs petits ZIP.
+        Auto-lien <strong>uniquement</strong> si date + montant correspondent. Sinon choix manuel.
+        Manuscrits → lecture IA. Après de mauvais rattachements : retirez les bons suspects puis
+        réimportez.
       </p>
       <div className="bulk-bons-controls">
         <label className="field">
@@ -347,6 +388,58 @@ export function CaisseBulkBonsPanel({
             />
           </label>
         </div>
+      </div>
+      <div className="bulk-bons-purge">
+        <button
+          type="button"
+          className="btn-light"
+          disabled={busy || !month}
+          onClick={() => {
+            void (async () => {
+              if (!month) return;
+              const ok = window.confirm(
+                `Retirer les bons suspects (warn/unknown) de « ${month} » pour recommencer l’import ?`,
+              );
+              if (!ok) return;
+              setBusy(true);
+              try {
+                const result = await clearCaisseMonthBonPhotos({ monthSheet: month, mode: "suspect" });
+                if (!result.ok) return onNotify("Bons", result.error);
+                onNotify("Purge bons", result.data.message);
+                await onDone(month);
+              } finally {
+                setBusy(false);
+              }
+            })();
+          }}
+        >
+          Retirer bons suspects du mois
+        </button>
+        <button
+          type="button"
+          className="btn-light"
+          disabled={busy || !month}
+          onClick={() => {
+            void (async () => {
+              if (!month) return;
+              const ok = window.confirm(
+                `Retirer TOUS les bons ACHAT de « ${month} » ? Action irréversible pour les photos du mois.`,
+              );
+              if (!ok) return;
+              setBusy(true);
+              try {
+                const result = await clearCaisseMonthBonPhotos({ monthSheet: month, mode: "all" });
+                if (!result.ok) return onNotify("Bons", result.error);
+                onNotify("Purge bons", result.data.message);
+                await onDone(month);
+              } finally {
+                setBusy(false);
+              }
+            })();
+          }}
+        >
+          Retirer tous les bons du mois
+        </button>
       </div>
       {pickedLabel ? <p className="hint">{pickedLabel}</p> : null}
       {progress ? <p className="hint bulk-bons-progress">{progress}{targets.length ? ` · ${targets.filter((t) => !t.hasPhoto).length} sans photo` : ""}</p> : null}

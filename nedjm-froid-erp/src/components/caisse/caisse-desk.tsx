@@ -25,8 +25,9 @@ import {
   updateCaisseBuyerProfile,
 } from "@/lib/actions/caisse";
 import { CaisseBulkBonsPanel } from "@/components/caisse/caisse-bulk-bons";
-import { evaluateBonMatch, type BonCheckStatus } from "@/lib/caisse/bon-check";
+import { bonExtractNeedsAi, evaluateBonMatch, type BonCheckStatus } from "@/lib/caisse/bon-check";
 import { prepareAndReadBon } from "@/lib/caisse/bon-ocr";
+import { readCaisseBonWithAi } from "@/lib/actions/caisse";
 import { formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
 import type { CaisseAdminUser, CaisseAuditRow, CaisseDashboard, CloseStatus, JournalLine, PurchaseItemInput } from "@/lib/caisse/types";
 import "./caisse.css";
@@ -777,14 +778,33 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     });
     try {
       const prepared = await prepareAndReadBon(file);
+      let extract = prepared.extract;
+      if (bonExtractNeedsAi(extract)) {
+        const ai = await readCaisseBonWithAi({ photoDataUrl: prepared.dataUrl });
+        if (ai.ok) {
+          extract = {
+            dates: [...new Set([...(ai.data.date ? [ai.data.date] : []), ...extract.dates])],
+            amounts: [
+              ...new Set([
+                ...(ai.data.amounts || []),
+                ...extract.amounts,
+                ...(ai.data.amount != null ? [ai.data.amount] : []),
+              ]),
+            ],
+            preferredDate: ai.data.date || extract.preferredDate,
+            preferredAmount: ai.data.amount ?? extract.preferredAmount,
+            rawText: extract.rawText,
+          };
+        }
+      }
       const checked = evaluateBonMatch({
         opDate,
         opAmount: items.reduce((sum, item) => sum + (Number(item.qte) || 0) * (Number(item.price) || 0), 0),
-        detectedDate: prepared.extract.preferredDate,
-        detectedAmount: prepared.extract.preferredAmount,
-        candidateDates: prepared.extract.dates,
-        candidateAmounts: prepared.extract.amounts,
-        rawText: prepared.rawText || prepared.extract.rawText,
+        detectedDate: extract.preferredDate,
+        detectedAmount: extract.preferredAmount,
+        candidateDates: extract.dates,
+        candidateAmounts: extract.amounts,
+        rawText: prepared.rawText || extract.rawText,
       });
       updateItem(index, {
         photoDataUrl: prepared.dataUrl,
@@ -794,9 +814,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         bonMessage: checked.message,
         bonDetectedDate: checked.detectedDate,
         bonDetectedAmount: checked.detectedAmount,
-        bonCandidateDates: prepared.extract.dates,
-        bonCandidateAmounts: prepared.extract.amounts,
-        bonRawText: prepared.rawText || prepared.extract.rawText || "",
+        bonCandidateDates: extract.dates,
+        bonCandidateAmounts: extract.amounts,
+        bonRawText: prepared.rawText || extract.rawText || "",
       });
       if (checked.status === "bad" || checked.status === "warn" || checked.status === "unknown" || checked.status === "ok") {
         notify("Contrôle bon", checked.message);
@@ -1035,12 +1055,12 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                   <td>{amount == null ? "" : formatDa(amount)}</td>
                   <td>{row.prixBon == null ? "" : formatDa(row.prixBon)}</td>
                   <td>{row.buyer}</td>
-                  <td className={row.hasPhoto && row.bonMatchStatus && row.bonMatchStatus !== "ok" ? `bon-journal-cell ${row.bonMatchStatus}` : undefined}>
+                  <td className={row.hasPhoto && row.bonMatchStatus ? `bon-journal-cell ${row.bonMatchStatus}` : row.hasPhoto ? "bon-journal-cell ok" : undefined}>
                     {row.hasPhoto ? (
                       <div className="bon-journal-actions">
                         <button
                           type="button"
-                          className={`btn-light bon-journal-btn${row.bonMatchStatus && row.bonMatchStatus !== "ok" ? ` ${row.bonMatchStatus}` : ""}`}
+                          className={`btn-light bon-journal-btn ${row.bonMatchStatus || "ok"}`}
                           title={
                             row.bonMatchStatus === "bad"
                               ? "Écart date et montant du bon"
@@ -1048,7 +1068,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                                 ? "Écart date ou montant du bon"
                                 : row.bonMatchStatus === "unknown"
                                   ? "Bon à vérifier"
-                                  : "Voir le bon"
+                                  : "Bon conforme — Voir"
                           }
                           onClick={() => void showPhoto(row.operationId)}
                         >
@@ -1286,8 +1306,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                 months={data.months}
                 initialMonth={data.month}
                 onNotify={notify}
-                onDone={async () => {
-                  await reload();
+                onDone={async (importedMonth) => {
+                  // Afficher le mois des bons liés (sinon le journal reste sur un autre mois).
+                  await reload({ month: importedMonth || data.month });
                 }}
               />
             </div>
