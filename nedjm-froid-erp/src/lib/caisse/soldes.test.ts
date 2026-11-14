@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { computeSoldesBundle, formatBonLabel, recomputePeriodFromDates, sheetNameFromIso, type MoneyRow } from "@/lib/caisse/soldes";
+import {
+  computeSoldesBundle,
+  formatBonLabel,
+  monthBoundsFromSheet,
+  recomputePeriodFromDates,
+  sheetNameFromIso,
+  type MoneyRow,
+} from "@/lib/caisse/soldes";
 
 function row(partial: Partial<MoneyRow> & Pick<MoneyRow, "type" | "date" | "buyer">): MoneyRow {
   return {
@@ -99,5 +106,22 @@ describe("formatBonLabel", () => {
     expect(formatBonLabel(102, "2026-01-31")).toBe("Bon_N102_JANVIER_2026");
     expect(formatBonLabel(5, "2026-02-10")).toBe("Bon_N5_FEVRIER_2026");
     expect(formatBonLabel(null, "2026-01-15")).toBe("Bon_N-_JANVIER_2026");
+  });
+});
+
+describe("monthBoundsFromSheet", () => {
+  it("returns inclusive start and exclusive end for the sheet month", () => {
+    expect(monthBoundsFromSheet("JUILLET 2026")).toEqual({
+      start: "2026-07-01",
+      endExclusive: "2026-08-01",
+    });
+    expect(monthBoundsFromSheet("DÉCEMBRE 2026")).toEqual({
+      start: "2026-12-01",
+      endExclusive: "2027-01-01",
+    });
+    expect(monthBoundsFromSheet("FÉVRIER 2026")).toEqual({
+      start: "2026-02-01",
+      endExclusive: "2026-03-01",
+    });
   });
 });

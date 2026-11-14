@@ -9,6 +9,7 @@ import {
   computeSoldesBundle,
   isCaissePrincipaleName,
   OPENING_BALANCE_DATE,
+  monthBoundsFromSheet,
   monthSortKey,
   formatBonLabel,
   sheetNameFromIso,
@@ -278,31 +279,39 @@ export async function getCaisseDashboard(filter?: {
   const month = !filter?.month || filter.month === "CURRENT" ? sheetNameFromIso(today) : filter.month;
   const buyer = filter?.buyer || "TOUS";
   const type = filter?.type || "TOUS";
+  const monthBounds = month !== "TOUS" ? monthBoundsFromSheet(month) : null;
 
   const opsSelectWithMatch =
     "id, op_number, kind, op_date, affectation, matricule, buyer_name, bon_label, has_photo, bon_match_status, method, reference, lines:caisse_lines(line_no, designation, item_val, unit, qty, unit_price)";
   const opsSelectLegacy =
     "id, op_number, kind, op_date, affectation, matricule, buyer_name, bon_label, has_photo, method, reference, lines:caisse_lines(line_no, designation, item_val, unit, qty, unit_price)";
-  let opsRes: { data: unknown; error: { message: string } | null } = await supabase
-    .from("caisse_operations")
-    .select(opsSelectWithMatch)
-    .order("op_date", { ascending: false })
-    .limit(3000);
-  if (opsRes.error && /bon_match_status/i.test(opsRes.error.message)) {
-    opsRes = await supabase
-      .from("caisse_operations")
-      .select(opsSelectLegacy)
-      .order("op_date", { ascending: false })
-      .limit(3000);
-  }
-  const [openRes, listRes, buyerRes, closeRes] = await Promise.all([
+
+  // Nested lines only for the visible month (or a capped TOUS) — avoids 8s statement_timeout
+  // after archive imports. Soldes use caisse_journal_money() across all months.
+  const buildMonthOpsQuery = (select: string) => {
+    let query = supabase.from("caisse_operations").select(select).order("op_date", { ascending: false }).limit(3000);
+    if (monthBounds) {
+      query = query.gte("op_date", monthBounds.start).lt("op_date", monthBounds.endExclusive);
+    }
+    return query;
+  };
+
+  const [opsResRaw, moneyRes, openRes, listRes, buyerRes, closeRes, monthsRes] = await Promise.all([
+    buildMonthOpsQuery(opsSelectWithMatch),
+    supabase.rpc("caisse_journal_money"),
     supabase.from("caisse_journal_openings").select("buyer_name, amount"),
     supabase.from("caisse_lists").select("list_key, label, sort_order").order("sort_order"),
     supabase.from("caisse_journal_buyers").select("name").eq("active", true),
     flags.canSeeCaisse || flags.isAdmin
       ? supabase.from("caisse_journal_closures").select("*").eq("op_date", today).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
+    supabase.from("caisse_operations").select("op_date").order("op_date", { ascending: false }).limit(3000),
   ]);
+
+  let opsRes: { data: unknown; error: { message: string } | null } = opsResRaw;
+  if (opsRes.error && /bon_match_status/i.test(opsRes.error.message)) {
+    opsRes = await buildMonthOpsQuery(opsSelectLegacy);
+  }
   if (opsRes.error) return fail(opsRes.error.message);
   if (openRes.error) return fail(openRes.error.message);
   if (listRes.error) return fail(listRes.error.message);
@@ -315,7 +324,37 @@ export async function getCaisseDashboard(filter?: {
     if (a.op !== b.op) return b.op - a.op;
     return a.lineNo - b.lineNo;
   });
-  const money = built.map((entry) => entry.money);
+
+  type MoneyRpcRow = {
+    id: string;
+    op_number: number;
+    kind: MoneyRow["type"];
+    op_date: string;
+    buyer_name: string;
+    total: number;
+  };
+  let money: MoneyRow[];
+  if (!moneyRes.error && Array.isArray(moneyRes.data)) {
+    money = (moneyRes.data as MoneyRpcRow[]).map((row) => {
+      const total = Number(row.total) || 0;
+      const sheet = sheetNameFromIso(String(row.op_date).slice(0, 10));
+      return {
+        sheetName: sheet,
+        type: row.kind,
+        isFirst: true,
+        op: row.op_number,
+        date: String(row.op_date).slice(0, 10),
+        buyer: row.buyer_name,
+        depenses: row.kind === "ACHAT" ? total : null,
+        recettes: row.kind !== "ACHAT" ? total : null,
+        total,
+      };
+    });
+  } else {
+    // Fallback if RPC not deployed yet: soldes from the month payload only.
+    money = built.map((entry) => entry.money);
+  }
+
   const openings: Record<string, number> = {};
   for (const row of openRes.data ?? []) openings[row.buyer_name] = Number(row.amount) || 0;
   const settings = await supabase.from("caisse_settings").select("opening_date").eq("id", 1).maybeSingle();
@@ -341,9 +380,17 @@ export async function getCaisseDashboard(filter?: {
   for (const row of buyerRes.data ?? []) if (row.name) names.add(row.name);
   // Inactive buyers stay out of selection lists (even if present on archived operations).
   const userList = [...names].filter((name) => !isCaissePrincipaleName(name)).sort((a, b) => a.localeCompare(b, "fr"));
-  const months = [...new Set(allLines.map((line) => line.sheetName).filter((name) => name && name !== "—"))];
-  if (!months.includes(sheetNameFromIso(today))) months.push(sheetNameFromIso(today));
-  months.sort((a, b) => monthSortKey(b) - monthSortKey(a));
+  const months = new Set<string>();
+  if (!monthsRes.error) {
+    for (const row of monthsRes.data ?? []) {
+      const sheet = sheetNameFromIso(String(row.op_date).slice(0, 10));
+      if (sheet && sheet !== "—") months.add(sheet);
+    }
+  }
+  for (const row of money) if (row.sheetName && row.sheetName !== "—") months.add(row.sheetName);
+  for (const line of allLines) if (line.sheetName && line.sheetName !== "—") months.add(line.sheetName);
+  months.add(sheetNameFromIso(today));
+  const monthsList = [...months].sort((a, b) => monthSortKey(b) - monthSortKey(a));
   const table = allLines.filter((line) => {
     if (month !== "TOUS" && line.sheetName !== month) return false;
     if (buyer !== "TOUS" && line.buyer !== buyer) return false;
@@ -380,7 +427,7 @@ export async function getCaisseDashboard(filter?: {
       totalDepenses: bundle.periodSummary.achats,
       totalAvances: bundle.periodSummary.avances,
       totalAlim: bundle.periodSummary.alim,
-      months,
+      months: monthsList,
       buyers: userList,
       userList,
       affectations: lists.filter((row) => row.list_key === "AFFECTATION").map((row) => row.label),
