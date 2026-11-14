@@ -117,6 +117,19 @@ export function monthSortKey(name: string): number {
   return year * 12 + index;
 }
 
+/** Inclusive start / exclusive end ISO dates for a sheet name like "JUILLET 2026". */
+export function monthBoundsFromSheet(sheet: string): { start: string; endExclusive: string } | null {
+  const key = monthSortKey(sheet);
+  const year = Math.floor(key / 12);
+  const monthIndex = key % 12;
+  if (!year || year < 2000) return null;
+  const start = `${year}-${String(monthIndex + 1).padStart(2, "0")}-01`;
+  const endYear = monthIndex === 11 ? year + 1 : year;
+  const endMonth = monthIndex === 11 ? 1 : monthIndex + 2;
+  const endExclusive = `${endYear}-${String(endMonth).padStart(2, "0")}-01`;
+  return { start, endExclusive };
+}
+
 export function isCaissePrincipaleName(name: string): boolean {
   const value = String(name || "")
     .trim()
