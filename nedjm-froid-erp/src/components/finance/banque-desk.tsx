@@ -25,15 +25,7 @@ import {
   parseDocField,
 } from "@/lib/banque/ledger";
 import type { BanqueDashboard, BanqueLine } from "@/lib/banque/types";
-import { Button } from "@/components/ui/button";
-
-const inputClass =
-  "h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/15";
-
-type Props = {
-  initialData: BanqueDashboard;
-  loadError?: string;
-};
+import "./banque.css";
 
 type OpForm = {
   id?: string;
@@ -93,7 +85,13 @@ async function readFileAsDataUrl(file: File | null): Promise<string | null> {
   });
 }
 
-export function BanqueDesk({ initialData, loadError }: Props) {
+export function BanqueDesk({
+  initialData,
+  loadError,
+}: {
+  initialData: BanqueDashboard;
+  loadError?: string;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [data, setData] = useState(initialData);
@@ -113,7 +111,9 @@ export function BanqueDesk({ initialData, loadError }: Props) {
   });
   const [adminLabel, setAdminLabel] = useState("");
   const [adminKey, setAdminKey] = useState<"AFFECTATION" | "FOURNISSEUR" | "MODE">("AFFECTATION");
-  const [newBankName, setNewBankName] = useState("");
+  const [modeFile, setModeFile] = useState<File | null>(null);
+  const [bcFile, setBcFile] = useState<File | null>(null);
+  const [facFile, setFacFile] = useState<File | null>(null);
 
   const account = data.accounts.find((a) => a.id === accountId) ?? null;
   const alerts = useMemo(
@@ -172,11 +172,6 @@ export function BanqueDesk({ initialData, loadError }: Props) {
     });
   }
 
-  async function switchAccount(id: string) {
-    setAccountId(id);
-    reload(id);
-  }
-
   function openOp(isCaution: boolean) {
     const form = emptyOp(data.today);
     form.isCaution = isCaution;
@@ -186,6 +181,9 @@ export function BanqueDesk({ initialData, loadError }: Props) {
       : data.lists.affectations[0] || "";
     form.fournisseur = data.lists.fournisseurs[0] || "";
     form.mode = data.lists.modes[0] || "";
+    setModeFile(null);
+    setBcFile(null);
+    setFacFile(null);
     setOpForm(form);
     setModal("op");
   }
@@ -196,6 +194,9 @@ export function BanqueDesk({ initialData, loadError }: Props) {
     const fac = parseDocField(line.fac_label, "FAC");
     const mode = parseDocField(line.mode_label, "MODE");
     const exp = line.libelle.match(/\[EXP:\s*(\d{2}\/\d{2}\/\d{4})\]/);
+    setModeFile(null);
+    setBcFile(null);
+    setFacFile(null);
     setOpForm({
       id: line.id,
       op_date: line.op_date,
@@ -221,16 +222,20 @@ export function BanqueDesk({ initialData, loadError }: Props) {
     setModal("op");
   }
 
-  async function submitOp(modeFile: File | null, bcFile: File | null, facFile: File | null) {
+  async function submitOp() {
     try {
-      const modeUrl = (await readFileAsDataUrl(modeFile)) || opForm.mode_url || null;
-      const bcUrl = (await readFileAsDataUrl(bcFile)) || opForm.bc_url || null;
-      const facUrl = (await readFileAsDataUrl(facFile)) || opForm.fac_url || null;
+      const nextModeUrl = (await readFileAsDataUrl(modeFile)) || opForm.mode_url || null;
+      const nextBcUrl = (await readFileAsDataUrl(bcFile)) || opForm.bc_url || null;
+      const nextFacUrl = (await readFileAsDataUrl(facFile)) || opForm.fac_url || null;
       const libelle = opForm.isCaution
         ? buildCautionLibelle(opForm.caution_type, opForm.caution_expiry || null)
         : opForm.fournisseur.trim();
       if (!accountId) {
         setError("Sélectionnez une banque.");
+        return;
+      }
+      if (!opForm.op_date) {
+        setError("Date obligatoire.");
         return;
       }
       run(
@@ -245,11 +250,11 @@ export function BanqueDesk({ initialData, loadError }: Props) {
             credit: opForm.credit,
             frais: opForm.frais,
             bc_label: buildBcLabel(opForm.bc_num, opForm.bc_date || null),
-            bc_url: bcUrl,
+            bc_url: nextBcUrl,
             mode_label: buildModeLabel(opForm.mode, opForm.mode_num),
-            mode_url: modeUrl,
+            mode_url: nextModeUrl,
             fac_label: buildFacLabel(opForm.fac_num, opForm.fac_date || null),
-            fac_url: facUrl,
+            fac_url: nextFacUrl,
             line_kind: opForm.isCaution ? "CAUTION" : opForm.line_kind,
           }),
         opForm.id ? "Opération mise à jour." : "Opération enregistrée.",
@@ -264,19 +269,8 @@ export function BanqueDesk({ initialData, loadError }: Props) {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(account.name.slice(0, 31) || "Banque");
     ws.addRow([
-      "N°",
-      "DATE OP",
-      "DATE VAL",
-      "AFFECTATION",
-      "BC",
-      "MODE",
-      "FAC.",
-      "LIBELLÉ",
-      "DÉBIT",
-      "CRÉDIT",
-      "FRAIS",
-      "SOLDE",
-      "RAPP",
+      "N°", "DATE OP", "DATE VAL", "AFFECTATION", "BC", "MODE", "FAC.", "LIBELLÉ",
+      "DÉBIT", "CRÉDIT", "FRAIS", "SOLDE", "RAPP",
     ]);
     for (const line of visibleLines) {
       ws.addRow([
@@ -353,10 +347,7 @@ export function BanqueDesk({ initialData, loadError }: Props) {
         async () => {
           const result = await importBanqueReleve({ account_id: accountId, rows });
           if (!result.ok) return result;
-          return {
-            ok: true as const,
-            error: undefined,
-          };
+          return { ok: true as const, error: undefined };
         },
         "Relevé importé.",
       );
@@ -366,32 +357,26 @@ export function BanqueDesk({ initialData, loadError }: Props) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="overflow-hidden rounded-xl border border-border bg-gradient-to-r from-[#1a472a] via-[#2d6a4f] to-[#3a87ad] p-5 text-white shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-100">Gestion banques</p>
-            <h1 className="mt-1 text-2xl font-bold">Banque</h1>
-            <p className="mt-1 max-w-2xl text-sm text-emerald-50">
-              Journal par compte, cautions, virements, rapprochement et import de relevé — même logique que le cahier historique.
-            </p>
-          </div>
-          <Button asChild variant="ghost" className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white">
-            <a href="/parametres/finance">Paramètres comptes</a>
-          </Button>
+    <div className="banque-app">
+      <div className="top-navbar">
+        <div className="brand">🏦 GESTION BANQUES 2026</div>
+        <div className="user-info">
+          <span>Journal bancaire ERP</span>
+          {(data.canUpdate || data.canCreate) && (
+            <span className="role-badge">{data.canDelete ? "ADMIN" : "USER"}</span>
+          )}
+          <a className="btn-light" href="/parametres/finance" style={{ padding: "4px 10px", fontSize: 12 }}>
+            Paramètres
+          </a>
         </div>
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
-      )}
-      {message && (
-        <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">{message}</div>
-      )}
+      {error && <div className="alert alert-error">{error}</div>}
+      {message && <div className="alert alert-ok">{message}</div>}
       {alerts.length > 0 && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          <p className="font-semibold">Radar cautions</p>
-          <ul className="mt-1 list-disc pl-5">
+        <div className="alert alert-warn">
+          <strong>Radar cautions</strong>
+          <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
             {alerts.map((a) => (
               <li key={`${a.libelle}-${a.expiry}`}>
                 {a.libelle}: {a.expired ? `expirée le ${a.expiry}` : `expire dans ${a.days} jour(s) (${a.expiry})`}
@@ -401,46 +386,58 @@ export function BanqueDesk({ initialData, loadError }: Props) {
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <Kpi label="Solde général" value={`${formatDa(data.totalSolde)} DA`} tone="green" />
-        <Kpi label="Caution soumission" value={`${formatDa(data.totalSoum)} DA`} note="Total S-CAUTION" tone="amber" />
-        <Kpi label="Caution bonne fin" value={`${formatDa(data.totalFin)} DA`} note="Total B-CAUTION" tone="red" />
+      <div className="kpi-grid">
+        <div className="kpi-card kpi-solde">
+          <div className="kpi-label">Solde Général</div>
+          <div className="kpi-value">{formatDa(data.totalSolde)}</div>
+          <small>Dinars Algériens (DA)</small>
+        </div>
+        <div className="kpi-card kpi-soum">
+          <div className="kpi-label">Caution Soumission</div>
+          <div className="kpi-value">{formatDa(data.totalSoum)}</div>
+          <small>Total S-CAUTION</small>
+        </div>
+        <div className="kpi-card kpi-fin">
+          <div className="kpi-label">Caution Bonne Fin</div>
+          <div className="kpi-value">{formatDa(data.totalFin)}</div>
+          <small>Total B-CAUTION</small>
+        </div>
       </div>
 
-      <section className="rounded-xl border border-border bg-surface p-3 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold uppercase tracking-wide text-foreground/50">Banques</span>
+      <div className="panel">
+        <div className="bank-tabs">
+          <span className="bank-tabs-label">Banques :</span>
           {data.accounts.filter((a) => a.active).map((a) => (
             <button
               key={a.id}
               type="button"
-              onClick={() => switchAccount(a.id)}
-              className={`rounded-lg border px-3 py-2 text-left text-sm font-semibold transition ${
-                a.id === accountId
-                  ? "border-transparent bg-[#3a87ad] text-white shadow"
-                  : "border-border bg-surface-muted text-foreground hover:border-[#3a87ad]"
-              }`}
+              className={`btn-bank${a.id === accountId ? " active" : ""}`}
+              onClick={() => {
+                setAccountId(a.id);
+                reload(a.id);
+              }}
             >
-              <span className="block">{a.name}</span>
-              <span className="block text-[11px] opacity-80">{formatDa(a.balance)} DA</span>
+              <span>{a.name}</span>
+              <span className="bank-bal">{formatDa(a.balance)} DA</span>
             </button>
           ))}
           {data.accounts.filter((a) => a.active).length === 0 && (
-            <p className="text-sm text-foreground/55">Créez un compte Banque dans Paramètres.</p>
+            <span style={{ color: "#888", fontSize: 13 }}>Créez une banque depuis Paramètres.</span>
           )}
         </div>
-      </section>
+      </div>
 
-      <section className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface p-3 shadow-sm">
-        <Button disabled={pending || !accountId || !data.canCreate} onClick={() => openOp(false)}>
-          Opération
-        </Button>
-        <Button disabled={pending || !accountId || !data.canCreate} variant="secondary" onClick={() => openOp(true)}>
-          Caution
-        </Button>
-        <Button
+      <div className="panel action-bar">
+        <button type="button" className="btn-action btn-op" disabled={pending || !accountId || !data.canCreate} onClick={() => openOp(false)}>
+          + OPÉRATION
+        </button>
+        <button type="button" className="btn-action btn-caution" disabled={pending || !accountId || !data.canCreate} onClick={() => openOp(true)}>
+          CAUTION
+        </button>
+        <button
+          type="button"
+          className="btn-action btn-virement"
           disabled={pending || !data.canCreate}
-          variant="secondary"
           onClick={() => {
             setVirement({
               from_account_id: accountId ?? "",
@@ -451,124 +448,127 @@ export function BanqueDesk({ initialData, loadError }: Props) {
             setModal("virement");
           }}
         >
-          Virement
-        </Button>
-        <Button disabled={pending || !accountId || !data.canUpdate} variant="secondary" onClick={() => setModal("import")}>
-          Relevé
-        </Button>
+          VIREMENT
+        </button>
+        <button type="button" className="btn-action btn-releve" disabled={pending || !accountId || !data.canUpdate} onClick={() => setModal("import")}>
+          RELEVÉ
+        </button>
         {data.canUpdate && (
-          <Button disabled={pending} variant="secondary" onClick={() => setModal("admin")}>
-            Admin
-          </Button>
+          <button type="button" className="btn-action btn-admin" disabled={pending} onClick={() => setModal("admin")}>
+            ADMIN
+          </button>
         )}
-        <div className="ms-auto flex flex-wrap items-center gap-2">
-          <input type="date" className={`${inputClass} w-auto`} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          <input type="date" className={`${inputClass} w-auto`} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-          <input
-            className={`${inputClass} w-48`}
-            placeholder="Rechercher…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <Button variant="secondary" onClick={exportExcel} disabled={!account}>
-            Export
-          </Button>
-          <Button variant="secondary" onClick={printReport} disabled={!account}>
+        <div className="filters">
+          <span style={{ fontSize: 11, fontWeight: 700 }}>Du</span>
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          <span style={{ fontSize: 11, fontWeight: 700 }}>Au</span>
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <button
+            type="button"
+            className="btn-filter"
+            onClick={() => {
+              /* dates already bound */
+            }}
+          >
+            Filtrer
+          </button>
+          <button
+            type="button"
+            className="btn-light"
+            onClick={() => {
+              setDateFrom("");
+              setDateTo("");
+              setSearch("");
+            }}
+          >
+            ✕
+          </button>
+          <input type="text" placeholder="Rechercher..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          <button type="button" className="btn-action btn-export" onClick={exportExcel} disabled={!account}>
+            EXPORT
+          </button>
+          <button type="button" className="btn-action btn-pdf" onClick={printReport} disabled={!account}>
             PDF
-          </Button>
+          </button>
         </div>
-      </section>
-
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-sm text-foreground/65">
-        <span>
-          Banque active : <strong className="text-foreground">{account?.name ?? "—"}</strong>
-        </span>
-        <span>
-          Solde : <strong className="text-emerald-700">{formatDa(account?.balance ?? 0)}</strong> DA
-        </span>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
-        <div className="max-h-[58vh] overflow-auto">
-          <table className="min-w-[1400px] w-full border-collapse text-center text-[11.5px]">
+      <div className="account-meta">
+        <div>
+          Banque active : <strong>{account?.name ?? "—"}</strong>
+        </div>
+        <div>
+          Solde : <strong className="solde">{formatDa(account?.balance ?? 0)}</strong> <span>DA</span>
+        </div>
+      </div>
+
+      <div className="table-card">
+        <div className="table-scroll">
+          <table className="main-table">
             <thead>
-              <tr className="sticky top-0 z-[1] bg-[#2d5a27] text-white">
-                {[
-                  "N°",
-                  "Date op",
-                  "Date val",
-                  "Affectation",
-                  "BC",
-                  "Mode",
-                  "Fac.",
-                  "Libellé",
-                  "Débit",
-                  "Crédit",
-                  "Frais",
-                  "Solde",
-                  "Rapp",
-                  "Actions",
-                ].map((h) => (
-                  <th key={h} className="whitespace-nowrap px-2 py-2 font-bold uppercase tracking-wide">
-                    {h}
-                  </th>
+              <tr>
+                {["N°", "DATE OP", "DATE VAL", "AFFECTATION", "BC", "MODE", "FAC.", "LIBELLÉ", "DÉBIT", "CRÉDIT", "FRAIS", "SOLDE", "RAPP", "ACTIONS"].map((h) => (
+                  <th key={h}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {visibleLines.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-4 py-10 text-foreground/45">
+                  <td colSpan={14} style={{ padding: 40, color: "#94a3b8" }}>
                     {account ? "Aucune transaction" : "Sélectionnez une banque"}
                   </td>
                 </tr>
               ) : (
                 visibleLines.map((line) => {
-                  const tone =
-                    line.debit > 0 ? "bg-emerald-50" : line.credit > 0 ? "bg-red-50" : "";
                   const alert = alerts.find((a) => line.libelle.includes(a.libelle));
+                  const rowClass = [
+                    line.debit > 0 ? "row-in" : line.credit > 0 ? "row-out" : "",
+                    alert?.expired ? "row-alert-exp" : alert ? "row-alert-soon" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
                   return (
-                    <tr
-                      key={line.id}
-                      className={`${tone} border-b border-border/60 hover:bg-sky-50 ${
-                        alert?.expired ? "bg-red-100/70" : alert ? "bg-orange-100/70" : ""
-                      }`}
-                    >
-                      <td className="px-2 py-1.5">{line.display_no}</td>
-                      <td className="px-2 py-1.5">{formatDateFr(line.op_date)}</td>
-                      <td className="px-2 py-1.5">{formatDateFr(line.value_date)}</td>
-                      <td className="px-2 py-1.5">{line.affectation || "—"}</td>
-                      <td className="px-2 py-1.5">{docCell(line.bc_label, line.bc_url)}</td>
-                      <td className="px-2 py-1.5">{docCell(line.mode_label, line.mode_url)}</td>
-                      <td className="px-2 py-1.5">{docCell(line.fac_label, line.fac_url)}</td>
-                      <td className="max-w-[240px] truncate px-2 py-1.5 text-left">{line.libelle}</td>
-                      <td className="px-2 py-1.5 font-bold text-emerald-700">{line.debit ? formatDa(line.debit) : ""}</td>
-                      <td className="px-2 py-1.5 font-bold text-red-600">{line.credit ? formatDa(line.credit) : ""}</td>
-                      <td className="px-2 py-1.5">{line.frais ? formatDa(line.frais) : ""}</td>
-                      <td className="px-2 py-1.5 font-bold text-[#1a472a]">{formatDa(line.solde)}</td>
-                      <td className="px-2 py-1.5">{line.reconciled ? "✅" : ""}</td>
-                      <td className="whitespace-nowrap px-2 py-1.5">
+                    <tr key={line.id} className={rowClass}>
+                      <td>{line.display_no}</td>
+                      <td>{formatDateFr(line.op_date)}</td>
+                      <td>{formatDateFr(line.value_date)}</td>
+                      <td>{line.affectation || "—"}</td>
+                      <td>{docCell(line.bc_label, line.bc_url)}</td>
+                      <td>{docCell(line.mode_label, line.mode_url)}</td>
+                      <td>{docCell(line.fac_label, line.fac_url)}</td>
+                      <td className="libelle-cell">{line.libelle}</td>
+                      <td className="debit-cell">{line.debit ? formatDa(line.debit) : ""}</td>
+                      <td className="credit-cell">{line.credit ? formatDa(line.credit) : ""}</td>
+                      <td>{line.frais ? formatDa(line.frais) : ""}</td>
+                      <td className="solde-cell">{formatDa(line.solde)}</td>
+                      <td>{line.reconciled ? "✅" : ""}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>
                         {data.canUpdate && (
                           line.reconciled ? (
-                            <button
-                              type="button"
-                              className="text-amber-600"
-                              title="Annuler le rapprochement"
-                              onClick={() =>
-                                run(
-                                  () => setBanqueRapprochement({ line_id: line.id, reconciled: false }),
-                                  "Rapprochement annulé.",
-                                  false,
-                                )
-                              }
-                            >
-                              Déverrouiller
-                            </button>
-                          ) : (
-                            <span className="inline-flex gap-2">
+                            <>
                               <button
                                 type="button"
-                                className="text-emerald-700"
+                                className="icon-btn unlock"
+                                title="Annuler le rapprochement"
+                                onClick={() =>
+                                  run(
+                                    () => setBanqueRapprochement({ line_id: line.id, reconciled: false }),
+                                    "Rapprochement annulé.",
+                                    false,
+                                  )
+                                }
+                              >
+                                🔓
+                              </button>
+                              <span className="locked-badge">Verrouillé</span>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className="icon-btn rapp"
+                                title="Rapprochement"
                                 onClick={() => {
                                   const value = window.prompt("Date de valeur (AAAA-MM-JJ)", line.value_date);
                                   if (!value) return;
@@ -584,24 +584,25 @@ export function BanqueDesk({ initialData, loadError }: Props) {
                                   );
                                 }}
                               >
-                                Rapp
+                                ✓
                               </button>
-                              <button type="button" className="text-sky-700" onClick={() => openEdit(line)}>
-                                Modifier
+                              <button type="button" className="icon-btn edit" title="Modifier" onClick={() => openEdit(line)}>
+                                ✎
                               </button>
                               {data.canDelete && (
                                 <button
                                   type="button"
-                                  className="text-red-600"
+                                  className="icon-btn del"
+                                  title="Supprimer"
                                   onClick={() => {
                                     if (!window.confirm(`Supprimer l'opération N° ${line.display_no} ?`)) return;
                                     run(() => deleteBanqueLine(line.id), "Opération supprimée.", false);
                                   }}
                                 >
-                                  Supprimer
+                                  🗑
                                 </button>
                               )}
-                            </span>
+                            </>
                           )
                         )}
                       </td>
@@ -615,299 +616,279 @@ export function BanqueDesk({ initialData, loadError }: Props) {
       </div>
 
       {modal === "op" && (
-        <Modal
-          title={opForm.isCaution ? "Cautionnement" : opForm.id ? "Modifier l'opération" : "Nouvelle opération"}
-          onClose={() => setModal(null)}
-        >
-          <OpModalBody
-            form={opForm}
-            setForm={setOpForm}
-            lists={data.lists}
-            pending={pending}
-            onSubmit={submitOp}
-          />
-        </Modal>
+        <div className="overlay">
+          <div className="modal">
+            <div className={`modal-head ${opForm.isCaution ? "warning" : "green"}`}>
+              <span>
+                {opForm.isCaution
+                  ? opForm.id
+                    ? `Modifier Caution N° ${opForm.id.slice(0, 8)}`
+                    : "Nouveau Cautionnement"
+                  : opForm.id
+                    ? `Modifier Opération`
+                    : "Nouvelle Opération"}
+              </span>
+              <button type="button" className="modal-close" onClick={() => setModal(null)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="grid-3">
+                <div>
+                  <label className="form-label">Date *</label>
+                  <input type="date" value={opForm.op_date} onChange={(e) => setOpForm((f) => ({ ...f, op_date: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="form-label">Affectation</label>
+                  <select value={opForm.affectation} onChange={(e) => setOpForm((f) => ({ ...f, affectation: e.target.value }))}>
+                    <option value="">—</option>
+                    {data.lists.affectations.map((a) => <option key={a} value={a}>{a}</option>)}
+                  </select>
+                </div>
+                {opForm.isCaution ? (
+                  <>
+                    <div>
+                      <label className="form-label">Type de Caution</label>
+                      <select value={opForm.caution_type} onChange={(e) => setOpForm((f) => ({ ...f, caution_type: e.target.value as OpForm["caution_type"] }))}>
+                        <option value="S-CAUTION">Soumission</option>
+                        <option value="B-CAUTION">Bonne Fin</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="form-label">Date d&apos;échéance</label>
+                      <input type="date" value={opForm.caution_expiry} onChange={(e) => setOpForm((f) => ({ ...f, caution_expiry: e.target.value }))} />
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <label className="form-label">Fournisseur / Libellé</label>
+                    <input
+                      list="banque-fourn"
+                      value={opForm.fournisseur}
+                      onChange={(e) => setOpForm((f) => ({ ...f, fournisseur: e.target.value }))}
+                    />
+                    <datalist id="banque-fourn">
+                      {data.lists.fournisseurs.map((f) => <option key={f} value={f} />)}
+                    </datalist>
+                  </div>
+                )}
+              </div>
+
+              <div className="block-box" style={{ marginTop: 14 }}>
+                <label className="form-label" style={{ color: "#15803d" }}>Mode de Paiement</label>
+                <div className="grid-3">
+                  <select value={opForm.mode} onChange={(e) => setOpForm((f) => ({ ...f, mode: e.target.value }))}>
+                    <option value="">—</option>
+                    {data.lists.modes.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <input placeholder="N° Numero" value={opForm.mode_num} onChange={(e) => setOpForm((f) => ({ ...f, mode_num: e.target.value }))} />
+                  <input type="file" accept="image/*,application/pdf" onChange={(e) => setModeFile(e.target.files?.[0] ?? null)} />
+                </div>
+              </div>
+
+              <div className="grid-2" style={{ marginTop: 12 }}>
+                <div className="block-box">
+                  <label className="form-label" style={{ color: "#1d4ed8" }}>Bon de Commande</label>
+                  <div className="grid-2">
+                    <input placeholder="N° Numero" value={opForm.bc_num} onChange={(e) => setOpForm((f) => ({ ...f, bc_num: e.target.value }))} />
+                    <input type="date" value={opForm.bc_date} onChange={(e) => setOpForm((f) => ({ ...f, bc_date: e.target.value }))} />
+                  </div>
+                  <input type="file" accept="image/*,application/pdf" style={{ marginTop: 8, width: "100%" }} onChange={(e) => setBcFile(e.target.files?.[0] ?? null)} />
+                </div>
+                <div className="block-box">
+                  <label className="form-label" style={{ color: "#dc2626" }}>Facture</label>
+                  <div className="grid-2">
+                    <input placeholder="N° Numero" value={opForm.fac_num} onChange={(e) => setOpForm((f) => ({ ...f, fac_num: e.target.value }))} />
+                    <input type="date" value={opForm.fac_date} onChange={(e) => setOpForm((f) => ({ ...f, fac_date: e.target.value }))} />
+                  </div>
+                  <input type="file" accept="image/*,application/pdf" style={{ marginTop: 8, width: "100%" }} onChange={(e) => setFacFile(e.target.files?.[0] ?? null)} />
+                </div>
+              </div>
+
+              <div className="grid-3" style={{ marginTop: 12 }}>
+                <div>
+                  <label className="form-label" style={{ color: "#16a34a" }}>Débit (+) Entrée</label>
+                  <input type="number" min="0" step="0.01" value={opForm.debit} onChange={(e) => setOpForm((f) => ({ ...f, debit: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="form-label" style={{ color: "#dc2626" }}>Crédit (-) Sortie</label>
+                  <input type="number" min="0" step="0.01" value={opForm.credit} onChange={(e) => setOpForm((f) => ({ ...f, credit: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="form-label">Frais Bancaires</label>
+                  <input type="number" min="0" step="0.01" value={opForm.frais} onChange={(e) => setOpForm((f) => ({ ...f, frais: e.target.value }))} />
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn-light" onClick={() => setModal(null)}>Annuler</button>
+              <button type="button" className={`btn-action ${opForm.isCaution ? "btn-caution" : "btn-op"}`} disabled={pending} onClick={submitOp}>
+                {pending ? "…" : "ENREGISTRER"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {modal === "virement" && (
-        <Modal title="Nouveau virement" onClose={() => setModal(null)}>
-          <div className="grid gap-3">
-            <Field label="Date">
-              <input type="date" className={inputClass} value={virement.op_date} onChange={(e) => setVirement((v) => ({ ...v, op_date: e.target.value }))} />
-            </Field>
-            <Field label="Banque source">
-              <select className={inputClass} value={virement.from_account_id} onChange={(e) => setVirement((v) => ({ ...v, from_account_id: e.target.value }))}>
-                <option value="">Sélectionner…</option>
-                {data.accounts.filter((a) => a.active).map((a) => (
-                  <option key={a.id} value={a.id}>{a.name} — {formatDa(a.balance)} DA</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Banque destination">
-              <select className={inputClass} value={virement.to_account_id} onChange={(e) => setVirement((v) => ({ ...v, to_account_id: e.target.value }))}>
-                <option value="">Sélectionner…</option>
-                {data.accounts.filter((a) => a.active && a.id !== virement.from_account_id).map((a) => (
-                  <option key={a.id} value={a.id}>{a.name} — {formatDa(a.balance)} DA</option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Montant (DA)">
-              <input type="number" min="0" step="0.01" className={inputClass} value={virement.amount} onChange={(e) => setVirement((v) => ({ ...v, amount: e.target.value }))} />
-            </Field>
-            <Button
-              disabled={pending}
-              onClick={() =>
-                run(
-                  () => executeBanqueVirement(virement),
-                  "Virement exécuté.",
-                )
-              }
-            >
-              Exécuter
-            </Button>
+        <div className="overlay">
+          <div className="modal narrow">
+            <div className="modal-head navy">
+              <span>NOUVEAU VIREMENT</span>
+              <button type="button" className="modal-close" onClick={() => setModal(null)}>×</button>
+            </div>
+            <div className="modal-body" style={{ display: "grid", gap: 12 }}>
+              <div>
+                <label className="form-label">Date *</label>
+                <input type="date" value={virement.op_date} onChange={(e) => setVirement((v) => ({ ...v, op_date: e.target.value }))} />
+              </div>
+              <div>
+                <label className="form-label" style={{ color: "#dc2626" }}>Banque Source (Débit)</label>
+                <select value={virement.from_account_id} onChange={(e) => setVirement((v) => ({ ...v, from_account_id: e.target.value }))}>
+                  <option value="">Sélectionner…</option>
+                  {data.accounts.filter((a) => a.active).map((a) => (
+                    <option key={a.id} value={a.id}>{a.name} — {formatDa(a.balance)} DA</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="form-label" style={{ color: "#16a34a" }}>Banque Destination (Crédit)</label>
+                <select value={virement.to_account_id} onChange={(e) => setVirement((v) => ({ ...v, to_account_id: e.target.value }))}>
+                  <option value="">Sélectionner…</option>
+                  {data.accounts.filter((a) => a.active && a.id !== virement.from_account_id).map((a) => (
+                    <option key={a.id} value={a.id}>{a.name} — {formatDa(a.balance)} DA</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="form-label">Montant (DA) *</label>
+                <input type="number" min="1" step="0.01" value={virement.amount} onChange={(e) => setVirement((v) => ({ ...v, amount: e.target.value }))} />
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn-light" onClick={() => setModal(null)}>Annuler</button>
+              <button type="button" className="btn-action btn-virement" disabled={pending} onClick={() => run(() => executeBanqueVirement(virement), "Virement exécuté.")}>
+                EXÉCUTER
+              </button>
+            </div>
           </div>
-        </Modal>
+        </div>
       )}
 
       {modal === "import" && (
-        <Modal title="Importer relevé bancaire" onClose={() => setModal(null)}>
-          <p className="mb-3 text-sm text-foreground/65">
-            Colonnes Excel : A = Date, B = Libellé, C = Débit (entrée), D = Crédit (sortie) — même convention que le cahier.
-          </p>
-          <input
-            type="file"
-            accept=".xlsx,.xls"
-            className={inputClass}
-            onChange={(e) => handleImport(e.target.files?.[0] ?? null)}
-          />
-        </Modal>
+        <div className="overlay">
+          <div className="modal narrow">
+            <div className="modal-head teal">
+              <span>Importer Relevé Bancaire</span>
+              <button type="button" className="modal-close" onClick={() => setModal(null)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="alert alert-warn" style={{ marginBottom: 12 }}>
+                Format Excel : A = Date, B = Libellé, C = Débit (entrée), D = Crédit (sortie)
+              </div>
+              <label className="form-label">Fichier Excel</label>
+              <input type="file" accept=".xlsx,.xls" onChange={(e) => handleImport(e.target.files?.[0] ?? null)} />
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn-light" onClick={() => setModal(null)}>Annuler</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {modal === "admin" && (
-        <Modal title="Administration banque" onClose={() => setModal(null)}>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 rounded-lg border border-border p-3">
-              <h3 className="font-bold">Listes</h3>
-              <select className={inputClass} value={adminKey} onChange={(e) => setAdminKey(e.target.value as typeof adminKey)}>
-                <option value="AFFECTATION">Affectation</option>
-                <option value="FOURNISSEUR">Fournisseur</option>
-                <option value="MODE">Mode de paiement</option>
-              </select>
-              <input className={inputClass} value={adminLabel} onChange={(e) => setAdminLabel(e.target.value)} placeholder="Nouvelle valeur" />
-              <Button
-                disabled={pending || !adminLabel.trim()}
-                onClick={() =>
-                  run(
-                    () => addBanqueListItem({ list_key: adminKey, label: adminLabel.trim() }),
-                    "Paramètre ajouté.",
-                    false,
-                  )
-                }
-              >
-                Ajouter
-              </Button>
+        <div className="overlay">
+          <div className="modal wide">
+            <div className="modal-head slate">
+              <span>GESTION SYSTÈME — ADMIN</span>
+              <button type="button" className="modal-close" onClick={() => setModal(null)}>×</button>
             </div>
-            <div className="space-y-2 rounded-lg border border-border p-3">
-              <h3 className="font-bold">Banques</h3>
-              <ul className="space-y-2 text-sm">
-                {data.accounts.map((a) => (
-                  <li key={a.id} className="flex items-center justify-between gap-2">
-                    <span>{a.name} · {a.active ? "Active" : "Désactivée"}</span>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={pending}
-                      onClick={() =>
-                        run(
-                          () => toggleBanqueAccountActive(a.id, !a.active),
-                          a.active ? "Banque désactivée." : "Banque activée.",
-                          false,
-                        )
-                      }
-                    >
-                      {a.active ? "Désactiver" : "Activer"}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-xs text-foreground/55">
-                Pour créer une banque, utilisez{" "}
-                <a className="underline" href="/parametres/finance">Paramètres comptes</a>
-                {newBankName ? ` (${newBankName})` : ""}.
-              </p>
-              <input
-                className={inputClass}
-                value={newBankName}
-                onChange={(e) => setNewBankName(e.target.value)}
-                placeholder="Rappel nom banque…"
-              />
+            <div className="modal-body">
+              <div className="grid-2">
+                <div className="panel" style={{ margin: 0 }}>
+                  <h3 style={{ marginTop: 0 }}>Paramètres</h3>
+                  <label className="form-label">Liste</label>
+                  <select value={adminKey} onChange={(e) => setAdminKey(e.target.value as typeof adminKey)}>
+                    <option value="AFFECTATION">Affectation</option>
+                    <option value="FOURNISSEUR">Fournisseur</option>
+                    <option value="MODE">Mode de Paiement</option>
+                  </select>
+                  <label className="form-label" style={{ marginTop: 8 }}>Nouvelle valeur</label>
+                  <input value={adminLabel} onChange={(e) => setAdminLabel(e.target.value)} />
+                  <button
+                    type="button"
+                    className="btn-action btn-op"
+                    style={{ marginTop: 10 }}
+                    disabled={pending || !adminLabel.trim()}
+                    onClick={() =>
+                      run(
+                        () => addBanqueListItem({ list_key: adminKey, label: adminLabel.trim() }),
+                        "Paramètre ajouté.",
+                        false,
+                      )
+                    }
+                  >
+                    Ajouter
+                  </button>
+                </div>
+                <div className="panel" style={{ margin: 0 }}>
+                  <h3 style={{ marginTop: 0 }}>Banques</h3>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: "#111827", color: "#fff" }}>
+                        <th style={{ padding: 8 }}>Banque</th>
+                        <th style={{ padding: 8 }}>Statut</th>
+                        <th style={{ padding: 8 }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.accounts.map((a) => (
+                        <tr key={a.id} style={{ borderBottom: "1px solid #eee" }}>
+                          <td style={{ padding: 8, fontWeight: 700 }}>{a.name}</td>
+                          <td style={{ padding: 8 }}>{a.active ? "Active" : "Désactivée"}</td>
+                          <td style={{ padding: 8 }}>
+                            <button
+                              type="button"
+                              className="btn-light"
+                              disabled={pending}
+                              onClick={() =>
+                                run(
+                                  () => toggleBanqueAccountActive(a.id, !a.active),
+                                  a.active ? "Banque désactivée." : "Banque activée.",
+                                  false,
+                                )
+                              }
+                            >
+                              {a.active ? "Désactiver" : "Activer"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p style={{ fontSize: 12, color: "#64748b" }}>
+                    Créer une banque : <a href="/parametres/finance">Paramètres comptes</a>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn-light" onClick={() => setModal(null)}>Fermer</button>
             </div>
           </div>
-        </Modal>
+        </div>
       )}
     </div>
   );
 }
 
-function Kpi({
-  label,
-  value,
-  note,
-  tone,
-}: {
-  label: string;
-  value: string;
-  note?: string;
-  tone: "green" | "amber" | "red";
-}) {
-  const colors = {
-    green: "from-[#1a472a] to-[#2d6a4f]",
-    amber: "from-[#b45309] to-[#d97706]",
-    red: "from-[#991b1b] to-[#dc2626]",
-  };
-  return (
-    <div className={`rounded-xl bg-gradient-to-br ${colors[tone]} p-4 text-white shadow`}>
-      <p className="text-[11px] uppercase tracking-wide opacity-90">{label}</p>
-      <p className="mt-1 text-2xl font-extrabold">{value}</p>
-      {note && <p className="text-xs opacity-80">{note}</p>}
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block space-y-1">
-      <span className="text-[11px] font-bold uppercase tracking-wide text-foreground/55">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-surface shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h2 className="text-lg font-bold">{title}</h2>
-          <button type="button" onClick={onClose} className="text-foreground/50 hover:text-foreground">
-            Fermer
-          </button>
-        </div>
-        <div className="p-5">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function OpModalBody({
-  form,
-  setForm,
-  lists,
-  pending,
-  onSubmit,
-}: {
-  form: OpForm;
-  setForm: React.Dispatch<React.SetStateAction<OpForm>>;
-  lists: BanqueDashboard["lists"];
-  pending: boolean;
-  onSubmit: (modeFile: File | null, bcFile: File | null, facFile: File | null) => void;
-}) {
-  const [modeFile, setModeFile] = useState<File | null>(null);
-  const [bcFile, setBcFile] = useState<File | null>(null);
-  const [facFile, setFacFile] = useState<File | null>(null);
-
-  return (
-    <div className="space-y-3">
-      <div className="grid gap-3 md:grid-cols-3">
-        <Field label="Date *">
-          <input type="date" className={inputClass} value={form.op_date} onChange={(e) => setForm((f) => ({ ...f, op_date: e.target.value }))} />
-        </Field>
-        <Field label="Affectation">
-          <select className={inputClass} value={form.affectation} onChange={(e) => setForm((f) => ({ ...f, affectation: e.target.value }))}>
-            <option value="">—</option>
-            {lists.affectations.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
-        </Field>
-        {form.isCaution ? (
-          <>
-            <Field label="Type de caution">
-              <select className={inputClass} value={form.caution_type} onChange={(e) => setForm((f) => ({ ...f, caution_type: e.target.value as OpForm["caution_type"] }))}>
-                <option value="S-CAUTION">Soumission</option>
-                <option value="B-CAUTION">Bonne fin</option>
-              </select>
-            </Field>
-            <Field label="Date d'échéance">
-              <input type="date" className={inputClass} value={form.caution_expiry} onChange={(e) => setForm((f) => ({ ...f, caution_expiry: e.target.value }))} />
-            </Field>
-          </>
-        ) : (
-          <Field label="Fournisseur / libellé">
-            <input
-              className={inputClass}
-              list="banque-fournisseurs"
-              value={form.fournisseur}
-              onChange={(e) => setForm((f) => ({ ...f, fournisseur: e.target.value }))}
-            />
-            <datalist id="banque-fournisseurs">
-              {lists.fournisseurs.map((f) => (
-                <option key={f} value={f} />
-              ))}
-            </datalist>
-          </Field>
-        )}
-      </div>
-
-      <div className="grid gap-3 rounded-lg border border-border p-3 md:grid-cols-3">
-        <Field label="Mode">
-          <select className={inputClass} value={form.mode} onChange={(e) => setForm((f) => ({ ...f, mode: e.target.value }))}>
-            <option value="">—</option>
-            {lists.modes.map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
-        </Field>
-        <Field label="N° mode"><input className={inputClass} value={form.mode_num} onChange={(e) => setForm((f) => ({ ...f, mode_num: e.target.value }))} /></Field>
-        <Field label="Pièce mode"><input type="file" accept="image/*,application/pdf" className={inputClass} onChange={(e) => setModeFile(e.target.files?.[0] ?? null)} /></Field>
-      </div>
-
-      <div className="grid gap-3 rounded-lg border border-border p-3 md:grid-cols-3">
-        <Field label="N° BC"><input className={inputClass} value={form.bc_num} onChange={(e) => setForm((f) => ({ ...f, bc_num: e.target.value }))} /></Field>
-        <Field label="Date BC"><input type="date" className={inputClass} value={form.bc_date} onChange={(e) => setForm((f) => ({ ...f, bc_date: e.target.value }))} /></Field>
-        <Field label="Pièce BC"><input type="file" accept="image/*,application/pdf" className={inputClass} onChange={(e) => setBcFile(e.target.files?.[0] ?? null)} /></Field>
-      </div>
-
-      <div className="grid gap-3 rounded-lg border border-border p-3 md:grid-cols-3">
-        <Field label="N° facture"><input className={inputClass} value={form.fac_num} onChange={(e) => setForm((f) => ({ ...f, fac_num: e.target.value }))} /></Field>
-        <Field label="Date facture"><input type="date" className={inputClass} value={form.fac_date} onChange={(e) => setForm((f) => ({ ...f, fac_date: e.target.value }))} /></Field>
-        <Field label="Pièce facture"><input type="file" accept="image/*,application/pdf" className={inputClass} onChange={(e) => setFacFile(e.target.files?.[0] ?? null)} /></Field>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-3">
-        <Field label="Débit (+) entrée">
-          <input type="number" min="0" step="0.01" className={inputClass} value={form.debit} onChange={(e) => setForm((f) => ({ ...f, debit: e.target.value }))} />
-        </Field>
-        <Field label="Crédit (-) sortie">
-          <input type="number" min="0" step="0.01" className={inputClass} value={form.credit} onChange={(e) => setForm((f) => ({ ...f, credit: e.target.value }))} />
-        </Field>
-        <Field label="Frais bancaires">
-          <input type="number" min="0" step="0.01" className={inputClass} value={form.frais} onChange={(e) => setForm((f) => ({ ...f, frais: e.target.value }))} />
-        </Field>
-      </div>
-
-      <div className="flex justify-end gap-2 pt-2">
-        <Button disabled={pending} onClick={() => onSubmit(modeFile, bcFile, facFile)}>
-          {pending ? "Enregistrement…" : "Enregistrer"}
-        </Button>
-      </div>
-    </div>
-  );
-}
+export const BanqueJournal = BanqueDesk;
 
 function docCell(label: string, url: string | null) {
   const text = label.replace(/🔗/g, "").trim();
   if (!text) return "—";
   if (url && (url.startsWith("http") || url.startsWith("data:"))) {
     return (
-      <a href={url} target="_blank" rel="noreferrer" className="font-semibold text-sky-700 underline">
-        {text}
+      <a href={url} target="_blank" rel="noreferrer" className="doc-link" title="Ouvrir le document">
+        📎 {text}
       </a>
     );
   }
