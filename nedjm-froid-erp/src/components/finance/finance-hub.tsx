@@ -9,8 +9,6 @@ import {
   cancelCashAdvance,
   deleteCashAdvanceExpense,
   issueCashAdvance,
-  postFinanceMovement,
-  postFinanceTransfer,
   reconcileFinanceMovement,
   reverseFinanceMovement,
   reverseFinanceTransfer,
@@ -19,6 +17,8 @@ import {
   type FinanceHubData,
   type FinanceTransaction,
 } from "@/lib/actions/finance";
+import type { BanqueDashboard } from "@/lib/banque/types";
+import { BanqueJournal } from "@/components/finance/banque-desk";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 
@@ -48,9 +48,13 @@ function money(value: number, currency = "DZD") {
 
 export function FinanceHub({
   initialData,
+  banqueData,
+  banqueError,
   loadError,
 }: {
   initialData: FinanceHubData;
+  banqueData: BanqueDashboard;
+  banqueError?: string;
   loadError?: string;
 }) {
   const router = useRouter();
@@ -92,7 +96,7 @@ export function FinanceHub({
             </p>
             <h1 className="mt-1 text-2xl font-bold">Banque</h1>
             <p className="mt-1 max-w-2xl text-sm text-blue-100">
-              Soldes des comptes, journal des opérations et rapprochement.
+              Soldes des comptes, journal banque, avances et rapprochement.
             </p>
           </div>
           <Button asChild variant="ghost" className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white">
@@ -129,17 +133,14 @@ export function FinanceHub({
       {tab === "dashboard" && (
         <Dashboard
           data={initialData}
+          banque={banqueData}
           totalBank={totalBank}
           totalCash={totalCash}
           openAdvances={openAdvances}
         />
       )}
       {tab === "operations" && (
-        <Operations
-          data={initialData}
-          pending={pending}
-          run={run}
-        />
+        <BanqueJournal initialData={banqueData} loadError={banqueError} />
       )}
       {tab === "advances" && (
         <Advances data={initialData} pending={pending} run={run} />
@@ -153,11 +154,13 @@ export function FinanceHub({
 
 function Dashboard({
   data,
+  banque,
   totalBank,
   totalCash,
   openAdvances,
 }: {
   data: FinanceHubData;
+  banque: BanqueDashboard;
   totalBank: number;
   totalCash: number;
   openAdvances: CashAdvance[];
@@ -165,10 +168,11 @@ function Dashboard({
   const unreconciled = data.transactions.filter(
     (t) => !t.reconciled_at && !t.reversal_of && !t.is_reversed,
   ).length;
+  const journalBank = banque.totalSolde || totalBank;
   return (
     <div className="space-y-5">
       <div className="grid gap-4 md:grid-cols-4">
-        <Kpi label="Solde banques" value={money(totalBank)} tone="blue" />
+        <Kpi label="Solde banques" value={money(journalBank)} tone="blue" />
         <Kpi label="Solde caisses" value={money(totalCash)} tone="green" />
         <Kpi
           label="Avances ouvertes"
@@ -177,6 +181,10 @@ function Dashboard({
           tone="amber"
         />
         <Kpi label="À rapprocher" value={String(unreconciled)} note="mouvements" tone="slate" />
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Kpi label="Caution soumission" value={money(banque.totalSoum)} note="S-CAUTION" tone="amber" />
+        <Kpi label="Caution bonne fin" value={money(banque.totalFin)} note="B-CAUTION" tone="slate" />
       </div>
       <section>
         <h2 className="mb-3 text-base font-bold">Comptes actifs</h2>
@@ -243,152 +251,6 @@ type Runner = (
   action: () => Promise<{ ok: boolean; error?: string }>,
   success: string,
 ) => void;
-
-function Operations({
-  data,
-  pending,
-  run,
-}: {
-  data: FinanceHubData;
-  pending: boolean;
-  run: Runner;
-}) {
-  const [mode, setMode] = useState<"movement" | "transfer">("movement");
-  const [form, setForm] = useState({
-    account_id: data.accounts.find((a) => a.active)?.id ?? "",
-    direction: "IN" as "IN" | "OUT",
-    amount: "",
-    movement_date: today(),
-    description: "",
-    category_id: "",
-    payment_method_id: "",
-    reference: "",
-    counterparty: "",
-    to_account_id: "",
-  });
-  const account = data.accounts.find((a) => a.id === form.account_id);
-  const categories = data.categories.filter(
-    (c) =>
-      c.active &&
-      (c.direction === "BOTH" || c.direction === form.direction) &&
-      (!account || c.account_scope === "BOTH" || c.account_scope === account.account_type),
-  );
-  const methods = data.methods.filter(
-    (m) =>
-      m.active &&
-      (!account || m.account_scope === "BOTH" || m.account_scope === account.account_type),
-  );
-
-  return (
-    <div className="space-y-5">
-      <section className="rounded-xl border border-border bg-surface p-4 shadow-sm">
-        <div className="mb-4 flex gap-2">
-          <Button variant={mode === "movement" ? "primary" : "secondary"} onClick={() => setMode("movement")}>
-            Entrée / sortie
-          </Button>
-          <Button variant={mode === "transfer" ? "primary" : "secondary"} onClick={() => setMode("transfer")}>
-            Transfert interne
-          </Button>
-        </div>
-        <div className="grid gap-3 md:grid-cols-4">
-          <Field label={mode === "transfer" ? "Compte source" : "Compte"}>
-            <select className={inputClass} value={form.account_id} onChange={(e) => setForm((f) => ({ ...f, account_id: e.target.value }))}>
-              <option value="">Sélectionner…</option>
-              {data.accounts.filter((a) => a.active).map((a) => (
-                <option key={a.id} value={a.id}>{a.code} — {a.name} ({money(a.balance)})</option>
-              ))}
-            </select>
-          </Field>
-          {mode === "transfer" ? (
-            <Field label="Compte destination">
-              <select className={inputClass} value={form.to_account_id} onChange={(e) => setForm((f) => ({ ...f, to_account_id: e.target.value }))}>
-                <option value="">Sélectionner…</option>
-                {data.accounts.filter((a) => a.active && a.id !== form.account_id).map((a) => (
-                  <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
-                ))}
-              </select>
-            </Field>
-          ) : (
-            <Field label="Sens">
-              <select className={inputClass} value={form.direction} onChange={(e) => setForm((f) => ({ ...f, direction: e.target.value as "IN" | "OUT", category_id: "", payment_method_id: "" }))}>
-                <option value="IN">Entrée</option>
-                <option value="OUT">Sortie</option>
-              </select>
-            </Field>
-          )}
-          <Field label="Montant">
-            <input type="number" min="0" step="0.01" className={inputClass} value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} />
-          </Field>
-          <Field label="Date">
-            <input type="date" className={inputClass} value={form.movement_date} onChange={(e) => setForm((f) => ({ ...f, movement_date: e.target.value }))} />
-          </Field>
-          {mode === "movement" && (
-            <>
-              <Field label="Catégorie">
-                <select className={inputClass} value={form.category_id} onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}>
-                  <option value="">Sans catégorie</option>
-                  {categories.map((c) => <option key={c.id} value={c.id}>{c.label_fr}</option>)}
-                </select>
-              </Field>
-              <Field label="Mode">
-                <select className={inputClass} value={form.payment_method_id} onChange={(e) => setForm((f) => ({ ...f, payment_method_id: e.target.value }))}>
-                  <option value="">Non précisé</option>
-                  {methods.map((m) => <option key={m.id} value={m.id}>{m.label_fr}</option>)}
-                </select>
-              </Field>
-              <Field label="Tiers">
-                <input className={inputClass} value={form.counterparty} onChange={(e) => setForm((f) => ({ ...f, counterparty: e.target.value }))} />
-              </Field>
-            </>
-          )}
-          <Field label="Référence">
-            <input className={inputClass} value={form.reference} onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))} />
-          </Field>
-          <div className="md:col-span-3">
-            <Field label="Libellé">
-              <input className={inputClass} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
-            </Field>
-          </div>
-        </div>
-        <Button
-          className="mt-4"
-          disabled={pending}
-          onClick={() =>
-            mode === "transfer"
-              ? run(
-                  () => postFinanceTransfer({
-                    from_account_id: form.account_id,
-                    to_account_id: form.to_account_id,
-                    amount: form.amount,
-                    movement_date: form.movement_date,
-                    description: form.description,
-                    reference: form.reference,
-                  }),
-                  "Transfert enregistré.",
-                )
-              : run(
-                  () => postFinanceMovement({
-                    account_id: form.account_id,
-                    direction: form.direction,
-                    amount: form.amount,
-                    movement_date: form.movement_date,
-                    description: form.description,
-                    category_id: form.category_id || null,
-                    payment_method_id: form.payment_method_id || null,
-                    reference: form.reference,
-                    counterparty: form.counterparty,
-                  }),
-                  "Mouvement enregistré.",
-                )
-          }
-        >
-          {pending ? "Enregistrement…" : "Valider l'opération"}
-        </Button>
-      </section>
-      <Ledger transactions={data.transactions} />
-    </div>
-  );
-}
 
 function Ledger({
   transactions,

@@ -302,7 +302,10 @@ export const UI_TABSETS: UiTabsetDef[] = [
     titleAr: "البنك",
     whereFr: "Banque",
     items: [
-      { id: "journal", labelFr: "Journal banque" },
+      { id: "dashboard", labelFr: "Vue d'ensemble" },
+      { id: "operations", labelFr: "Opérations" },
+      { id: "advances", labelFr: "Avances caisse" },
+      { id: "reconciliation", labelFr: "Rapprochement" },
     ],
   },
   {

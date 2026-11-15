@@ -1,11 +1,24 @@
 import { AppShell } from "@/components/layout/app-shell";
-import { BanqueDesk } from "@/components/finance/banque-desk";
-import { getBanqueDashboard, type ActionResult } from "@/lib/actions/banque";
+import { FinanceHub } from "@/components/finance/finance-hub";
+import { getBanqueDashboard } from "@/lib/actions/banque";
+import { getFinanceHubData, type FinanceHubData } from "@/lib/actions/finance";
 import type { BanqueDashboard } from "@/lib/banque/types";
 
 export const dynamic = "force-dynamic";
 
-const emptyData: BanqueDashboard = {
+const emptyFinance: FinanceHubData = {
+  accounts: [],
+  taxRates: [],
+  methods: [],
+  categories: [],
+  transactions: [],
+  advances: [],
+  periodLocks: [],
+  sites: [],
+  employees: [],
+};
+
+const emptyBanque: BanqueDashboard = {
   accounts: [],
   lines: [],
   lists: { affectations: [], fournisseurs: [], modes: [] },
@@ -20,12 +33,14 @@ const emptyData: BanqueDashboard = {
 };
 
 export default async function FinancePage() {
-  const result: ActionResult<BanqueDashboard> = await getBanqueDashboard();
+  const [finance, banque] = await Promise.all([getFinanceHubData(), getBanqueDashboard()]);
   return (
     <AppShell title="Banque">
-      <BanqueDesk
-        initialData={result.ok ? result.data : emptyData}
-        loadError={result.ok ? undefined : result.error}
+      <FinanceHub
+        initialData={finance.ok ? finance.data : emptyFinance}
+        loadError={finance.ok ? undefined : finance.error}
+        banqueData={banque.ok ? banque.data : emptyBanque}
+        banqueError={banque.ok ? undefined : banque.error}
       />
     </AppShell>
   );
