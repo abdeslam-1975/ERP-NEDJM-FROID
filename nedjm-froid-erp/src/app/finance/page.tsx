@@ -22,7 +22,7 @@ const emptyData: BanqueDashboard = {
 export default async function FinancePage() {
   const result: ActionResult<BanqueDashboard> = await getBanqueDashboard();
   return (
-    <AppShell title="Banque">
+    <AppShell title="GESTION BANQUES 2026">
       <BanqueDesk
         initialData={result.ok ? result.data : emptyData}
         loadError={result.ok ? undefined : result.error}

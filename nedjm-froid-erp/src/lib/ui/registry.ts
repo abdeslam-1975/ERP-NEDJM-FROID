@@ -300,7 +300,7 @@ export const UI_TABSETS: UiTabsetDef[] = [
     level: "C",
     titleFr: "Banque",
     titleAr: "البنك",
-    whereFr: "Banque",
+    whereFr: "Banque · GESTION BANQUES 2026",
     items: [
       { id: "journal", labelFr: "Journal banque" },
     ],

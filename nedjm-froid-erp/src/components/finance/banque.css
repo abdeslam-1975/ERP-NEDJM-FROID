@@ -1,0 +1,390 @@
+/* GESTION BANQUES 2026 — style aligné sur l'app Google Workspace / Apps Script. */
+.banque-app {
+  color: #1f2937;
+  font-family: "Segoe UI", sans-serif;
+  background: #f0f2f5;
+  margin: -0.25rem -0.25rem 0;
+  padding: 0 0 1rem;
+  border-radius: 12px;
+}
+.banque-app * { box-sizing: border-box; }
+
+.banque-app .top-navbar {
+  background: linear-gradient(135deg, #1a472a, #2d6a4f);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  margin-bottom: 14px;
+}
+.banque-app .brand {
+  color: white;
+  font-weight: 800;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.banque-app .user-info {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.84rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.banque-app .role-badge {
+  background: #fbbf24;
+  color: #111;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-weight: 800;
+  font-size: 10px;
+}
+
+.banque-app .kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.banque-app .kpi-card {
+  border-radius: 15px;
+  padding: 18px 20px;
+  color: white;
+  font-weight: 700;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  position: relative;
+  overflow: hidden;
+  min-height: 110px;
+}
+.banque-app .kpi-card::after {
+  content: "";
+  position: absolute;
+  top: -20px;
+  right: -20px;
+  width: 100px;
+  height: 100px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 50%;
+}
+.banque-app .kpi-solde { background: linear-gradient(135deg, #1a472a, #2d6a4f); }
+.banque-app .kpi-soum { background: linear-gradient(135deg, #b45309, #d97706); }
+.banque-app .kpi-fin { background: linear-gradient(135deg, #991b1b, #dc2626); }
+.banque-app .kpi-label {
+  font-size: 0.74rem;
+  opacity: 0.9;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.banque-app .kpi-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin-top: 5px;
+}
+.banque-app .kpi-card small {
+  opacity: 0.8;
+  font-size: 11px;
+}
+
+.banque-app .panel {
+  background: white;
+  border-radius: 12px;
+  padding: 10px 15px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
+  margin-bottom: 14px;
+}
+
+.banque-app .bank-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.banque-app .bank-tabs-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-right: 4px;
+}
+.banque-app .btn-bank {
+  background: #f8f9fa;
+  border: 2px solid #e9ecef;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 120px;
+  text-align: center;
+  color: #495057;
+}
+.banque-app .btn-bank:hover {
+  border-color: #3a87ad;
+  color: #3a87ad;
+  background: #f0f7ff;
+}
+.banque-app .btn-bank.active {
+  background: linear-gradient(135deg, #3a87ad, #2d6a8f);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(58, 135, 173, 0.35);
+}
+.banque-app .bank-bal {
+  font-size: 10px;
+  opacity: 0.8;
+  display: block;
+  margin-top: 2px;
+}
+
+.banque-app .action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.banque-app .btn-action {
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.banque-app .btn-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.banque-app .btn-op { background: #16a34a; }
+.banque-app .btn-caution { background: #d97706; }
+.banque-app .btn-virement { background: #5e4a8a; }
+.banque-app .btn-releve { background: #0f766e; }
+.banque-app .btn-admin { background: #1e3a5f; }
+.banque-app .btn-export { background: #16a34a; }
+.banque-app .btn-pdf {
+  background: #fff;
+  color: #1d4ed8;
+  border: 1px solid #93c5fd;
+}
+.banque-app .btn-light {
+  background: #fff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.banque-app .filters {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.banque-app .filters input,
+.banque-app .filters select,
+.banque-app .modal input,
+.banque-app .modal select,
+.banque-app .modal textarea {
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+  background: #fff;
+  color: #111;
+  font-size: 13px;
+}
+.banque-app .filters input[type="date"] { max-width: 145px; }
+.banque-app .filters input[type="text"] { max-width: 200px; }
+.banque-app .btn-filter {
+  background: #111827;
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.banque-app .account-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 8px;
+  font-size: 13px;
+  color: #555;
+}
+.banque-app .account-meta strong.solde { color: #15803d; }
+
+.banque-app .table-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
+  overflow: hidden;
+}
+.banque-app .table-scroll {
+  max-height: 58vh;
+  overflow: auto;
+}
+.banque-app .main-table {
+  min-width: 1500px;
+  margin: 0;
+  border-collapse: collapse;
+  width: 100%;
+}
+.banque-app .main-table thead th {
+  background: #2d5a27 !important;
+  color: white !important;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  padding: 10px 6px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border: none !important;
+  white-space: nowrap;
+}
+.banque-app .main-table tbody td {
+  font-size: 11.5px;
+  text-align: center;
+  vertical-align: middle;
+  padding: 7px 6px;
+  border-bottom: 1px solid #f5f5f5;
+  border-right: 1px solid #f5f5f5;
+}
+.banque-app .row-in td { background-color: #f0fdf4 !important; }
+.banque-app .row-out td { background-color: #fff5f5 !important; }
+.banque-app .main-table tbody tr:hover td { background-color: #eff6ff !important; }
+.banque-app .solde-cell { font-weight: 700; color: #1a472a; }
+.banque-app .debit-cell { color: #16a34a; font-weight: 700; }
+.banque-app .credit-cell { color: #dc2626; font-weight: 700; }
+.banque-app .libelle-cell { text-align: left !important; padding-left: 10px !important; }
+.banque-app .row-alert-exp td { background-color: rgba(220, 53, 69, 0.2) !important; }
+.banque-app .row-alert-soon td { background-color: rgba(255, 165, 0, 0.2) !important; }
+
+.banque-app .alert {
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.banque-app .alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+.banque-app .alert-ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+.banque-app .alert-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+
+.banque-app .overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow: auto;
+}
+.banque-app .modal {
+  background: #fff;
+  border-radius: 16px;
+  width: min(900px, 100%);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+.banque-app .modal.narrow { width: min(480px, 100%); }
+.banque-app .modal.wide { width: min(1100px, 100%); }
+.banque-app .modal-head {
+  padding: 16px 20px;
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 800;
+}
+.banque-app .modal-head.green { background: #16a34a; }
+.banque-app .modal-head.warning { background: #f59e0b; color: #111; }
+.banque-app .modal-head.navy { background: linear-gradient(135deg, #1e3a5f, #3a87ad); }
+.banque-app .modal-head.teal { background: linear-gradient(135deg, #0f766e, #115e59); }
+.banque-app .modal-head.slate { background: linear-gradient(135deg, #1e293b, #334155); }
+.banque-app .modal-close {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 22px;
+  cursor: pointer;
+  line-height: 1;
+}
+.banque-app .modal-body { padding: 20px; }
+.banque-app .modal-foot {
+  border: none;
+  padding: 12px 20px 16px;
+  background: #f8f9fa;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.banque-app .form-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  display: block;
+}
+.banque-app .grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.banque-app .grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.banque-app .span-3 { grid-column: 1 / -1; }
+.banque-app .block-box {
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+}
+.banque-app .icon-btn {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 14px;
+}
+.banque-app .icon-btn.rapp { color: #64748b; }
+.banque-app .icon-btn.edit { color: #2563eb; }
+.banque-app .icon-btn.del { color: #dc2626; }
+.banque-app .icon-btn.unlock { color: #d97706; }
+.banque-app .locked-badge {
+  font-size: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 2px 6px;
+  color: #6b7280;
+  background: #f9fafb;
+}
+.banque-app a.doc-link {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+@media (max-width: 900px) {
+  .banque-app .kpi-grid { grid-template-columns: 1fr; }
+  .banque-app .grid-3, .banque-app .grid-2 { grid-template-columns: 1fr; }
+  .banque-app .filters { margin-left: 0; width: 100%; }
+}
