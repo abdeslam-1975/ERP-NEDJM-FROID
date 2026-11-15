@@ -30,11 +30,6 @@ import { Button } from "@/components/ui/button";
 const inputClass =
   "h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/15";
 
-type Props = {
-  initialData: BanqueDashboard;
-  loadError?: string;
-};
-
 type OpForm = {
   id?: string;
   op_date: string;
@@ -93,7 +88,14 @@ async function readFileAsDataUrl(file: File | null): Promise<string | null> {
   });
 }
 
-export function BanqueDesk({ initialData, loadError }: Props) {
+/** Journal banque — même logique métier, style FinanceHub. */
+export function BanqueJournal({
+  initialData,
+  loadError,
+}: {
+  initialData: BanqueDashboard;
+  loadError?: string;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [data, setData] = useState(initialData);
@@ -113,7 +115,6 @@ export function BanqueDesk({ initialData, loadError }: Props) {
   });
   const [adminLabel, setAdminLabel] = useState("");
   const [adminKey, setAdminKey] = useState<"AFFECTATION" | "FOURNISSEUR" | "MODE">("AFFECTATION");
-  const [newBankName, setNewBankName] = useState("");
 
   const account = data.accounts.find((a) => a.id === accountId) ?? null;
   const alerts = useMemo(
@@ -170,11 +171,6 @@ export function BanqueDesk({ initialData, loadError }: Props) {
       if (closeModal) setModal(null);
       reload(accountId);
     });
-  }
-
-  async function switchAccount(id: string) {
-    setAccountId(id);
-    reload(id);
   }
 
   function openOp(isCaution: boolean) {
@@ -264,19 +260,8 @@ export function BanqueDesk({ initialData, loadError }: Props) {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet(account.name.slice(0, 31) || "Banque");
     ws.addRow([
-      "N°",
-      "DATE OP",
-      "DATE VAL",
-      "AFFECTATION",
-      "BC",
-      "MODE",
-      "FAC.",
-      "LIBELLÉ",
-      "DÉBIT",
-      "CRÉDIT",
-      "FRAIS",
-      "SOLDE",
-      "RAPP",
+      "N°", "DATE OP", "DATE VAL", "AFFECTATION", "BC", "MODE", "FAC.", "LIBELLÉ",
+      "DÉBIT", "CRÉDIT", "FRAIS", "SOLDE", "RAPP",
     ]);
     for (const line of visibleLines) {
       ws.addRow([
@@ -292,7 +277,7 @@ export function BanqueDesk({ initialData, loadError }: Props) {
         line.credit || "",
         line.frais || "",
         line.solde,
-        line.reconciled ? "✅" : "",
+        line.reconciled ? "Rapproché" : "",
       ]);
     }
     const buffer = await wb.xlsx.writeBuffer();
@@ -353,10 +338,7 @@ export function BanqueDesk({ initialData, loadError }: Props) {
         async () => {
           const result = await importBanqueReleve({ account_id: accountId, rows });
           if (!result.ok) return result;
-          return {
-            ok: true as const,
-            error: undefined,
-          };
+          return { ok: true as const, error: undefined };
         },
         "Relevé importé.",
       );
@@ -366,31 +348,20 @@ export function BanqueDesk({ initialData, loadError }: Props) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="overflow-hidden rounded-xl border border-border bg-gradient-to-r from-[#1a472a] via-[#2d6a4f] to-[#3a87ad] p-5 text-white shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-100">Gestion banques</p>
-            <h1 className="mt-1 text-2xl font-bold">Banque</h1>
-            <p className="mt-1 max-w-2xl text-sm text-emerald-50">
-              Journal par compte, cautions, virements, rapprochement et import de relevé — même logique que le cahier historique.
-            </p>
-          </div>
-          <Button asChild variant="ghost" className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white">
-            <a href="/parametres/finance">Paramètres comptes</a>
-          </Button>
-        </div>
-      </div>
-
+    <div className="space-y-5">
       {error && (
-        <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+        <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+          {error}
+        </div>
       )}
       {message && (
-        <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800">{message}</div>
+        <div className="rounded-lg border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-900 dark:bg-green-950/30 dark:text-green-200">
+          {message}
+        </div>
       )}
       {alerts.length > 0 && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          <p className="font-semibold">Radar cautions</p>
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+          <p className="font-semibold">Cautions à surveiller</p>
           <ul className="mt-1 list-disc pl-5">
             {alerts.map((a) => (
               <li key={`${a.libelle}-${a.expiry}`}>
@@ -401,159 +372,155 @@ export function BanqueDesk({ initialData, loadError }: Props) {
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <Kpi label="Solde général" value={`${formatDa(data.totalSolde)} DA`} tone="green" />
+      <div className="grid gap-4 md:grid-cols-3">
+        <Kpi label="Solde banques (journal)" value={`${formatDa(data.totalSolde)} DA`} tone="blue" />
         <Kpi label="Caution soumission" value={`${formatDa(data.totalSoum)} DA`} note="Total S-CAUTION" tone="amber" />
-        <Kpi label="Caution bonne fin" value={`${formatDa(data.totalFin)} DA`} note="Total B-CAUTION" tone="red" />
+        <Kpi label="Caution bonne fin" value={`${formatDa(data.totalFin)} DA`} note="Total B-CAUTION" tone="slate" />
       </div>
 
-      <section className="rounded-xl border border-border bg-surface p-3 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-bold uppercase tracking-wide text-foreground/50">Banques</span>
+      <section className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+        <h2 className="mb-3 text-base font-bold">Compte banque</h2>
+        <div className="flex flex-wrap gap-2">
           {data.accounts.filter((a) => a.active).map((a) => (
             <button
               key={a.id}
               type="button"
-              onClick={() => switchAccount(a.id)}
+              onClick={() => {
+                setAccountId(a.id);
+                reload(a.id);
+              }}
               className={`rounded-lg border px-3 py-2 text-left text-sm font-semibold transition ${
                 a.id === accountId
-                  ? "border-transparent bg-[#3a87ad] text-white shadow"
-                  : "border-border bg-surface-muted text-foreground hover:border-[#3a87ad]"
+                  ? "border-brand bg-brand text-white"
+                  : "border-border bg-surface-muted text-foreground hover:bg-surface"
               }`}
             >
               <span className="block">{a.name}</span>
-              <span className="block text-[11px] opacity-80">{formatDa(a.balance)} DA</span>
+              <span className={`block text-[11px] ${a.id === accountId ? "text-white/80" : "text-foreground/55"}`}>
+                {formatDa(a.balance)} DA
+              </span>
             </button>
           ))}
           {data.accounts.filter((a) => a.active).length === 0 && (
-            <p className="text-sm text-foreground/55">Créez un compte Banque dans Paramètres.</p>
+            <p className="text-sm text-foreground/55">Créez un compte Banque depuis Paramètres.</p>
           )}
         </div>
       </section>
 
-      <section className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface p-3 shadow-sm">
-        <Button disabled={pending || !accountId || !data.canCreate} onClick={() => openOp(false)}>
-          Opération
-        </Button>
-        <Button disabled={pending || !accountId || !data.canCreate} variant="secondary" onClick={() => openOp(true)}>
-          Caution
-        </Button>
-        <Button
-          disabled={pending || !data.canCreate}
-          variant="secondary"
-          onClick={() => {
-            setVirement({
-              from_account_id: accountId ?? "",
-              to_account_id: "",
-              amount: "",
-              op_date: data.today,
-            });
-            setModal("virement");
-          }}
-        >
-          Virement
-        </Button>
-        <Button disabled={pending || !accountId || !data.canUpdate} variant="secondary" onClick={() => setModal("import")}>
-          Relevé
-        </Button>
-        {data.canUpdate && (
-          <Button disabled={pending} variant="secondary" onClick={() => setModal("admin")}>
-            Admin
+      <section className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Button disabled={pending || !accountId || !data.canCreate} onClick={() => openOp(false)}>
+            Opération
           </Button>
-        )}
-        <div className="ms-auto flex flex-wrap items-center gap-2">
-          <input type="date" className={`${inputClass} w-auto`} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          <input type="date" className={`${inputClass} w-auto`} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-          <input
-            className={`${inputClass} w-48`}
-            placeholder="Rechercher…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <Button variant="secondary" onClick={exportExcel} disabled={!account}>
-            Export
+          <Button disabled={pending || !accountId || !data.canCreate} variant="secondary" onClick={() => openOp(true)}>
+            Caution
           </Button>
-          <Button variant="secondary" onClick={printReport} disabled={!account}>
-            PDF
+          <Button
+            disabled={pending || !data.canCreate}
+            variant="secondary"
+            onClick={() => {
+              setVirement({
+                from_account_id: accountId ?? "",
+                to_account_id: "",
+                amount: "",
+                op_date: data.today,
+              });
+              setModal("virement");
+            }}
+          >
+            Virement
           </Button>
+          <Button disabled={pending || !accountId || !data.canUpdate} variant="secondary" onClick={() => setModal("import")}>
+            Relevé
+          </Button>
+          {data.canUpdate && (
+            <Button disabled={pending} variant="secondary" onClick={() => setModal("admin")}>
+              Listes
+            </Button>
+          )}
+        </div>
+        <div className="grid gap-3 md:grid-cols-4">
+          <Field label="Du">
+            <input type="date" className={inputClass} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          </Field>
+          <Field label="Au">
+            <input type="date" className={inputClass} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          </Field>
+          <Field label="Recherche">
+            <input className={inputClass} placeholder="Libellé, BC, mode…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </Field>
+          <div className="flex items-end gap-2">
+            <Button variant="secondary" onClick={exportExcel} disabled={!account}>Export</Button>
+            <Button variant="secondary" onClick={printReport} disabled={!account}>PDF</Button>
+          </div>
         </div>
       </section>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-sm text-foreground/65">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-foreground/65">
         <span>
           Banque active : <strong className="text-foreground">{account?.name ?? "—"}</strong>
         </span>
         <span>
-          Solde : <strong className="text-emerald-700">{formatDa(account?.balance ?? 0)}</strong> DA
+          Solde : <strong className="text-foreground">{formatDa(account?.balance ?? 0)} DA</strong>
         </span>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
+      <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
         <div className="max-h-[58vh] overflow-auto">
-          <table className="min-w-[1400px] w-full border-collapse text-center text-[11.5px]">
+          <table className="min-w-[1200px] w-full border-collapse text-sm">
             <thead>
-              <tr className="sticky top-0 z-[1] bg-[#2d5a27] text-white">
-                {[
-                  "N°",
-                  "Date op",
-                  "Date val",
-                  "Affectation",
-                  "BC",
-                  "Mode",
-                  "Fac.",
-                  "Libellé",
-                  "Débit",
-                  "Crédit",
-                  "Frais",
-                  "Solde",
-                  "Rapp",
-                  "Actions",
-                ].map((h) => (
-                  <th key={h} className="whitespace-nowrap px-2 py-2 font-bold uppercase tracking-wide">
-                    {h}
-                  </th>
+              <tr className="sticky top-0 z-[1] border-b border-border bg-surface-muted text-left text-xs font-semibold uppercase tracking-wide text-foreground/65">
+                {["N°", "Date op", "Date val", "Affectation", "BC", "Mode", "Fac.", "Libellé", "Débit", "Crédit", "Frais", "Solde", "État", "Actions"].map((h) => (
+                  <th key={h} className="whitespace-nowrap px-3 py-3">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {visibleLines.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="px-4 py-10 text-foreground/45">
-                    {account ? "Aucune transaction" : "Sélectionnez une banque"}
+                  <td colSpan={14} className="px-4 py-10 text-center text-sm text-foreground/50">
+                    {account ? "Aucune transaction." : "Sélectionnez une banque."}
                   </td>
                 </tr>
               ) : (
                 visibleLines.map((line) => {
-                  const tone =
-                    line.debit > 0 ? "bg-emerald-50" : line.credit > 0 ? "bg-red-50" : "";
                   const alert = alerts.find((a) => line.libelle.includes(a.libelle));
                   return (
                     <tr
                       key={line.id}
-                      className={`${tone} border-b border-border/60 hover:bg-sky-50 ${
-                        alert?.expired ? "bg-red-100/70" : alert ? "bg-orange-100/70" : ""
+                      className={`border-b border-border/70 hover:bg-surface-muted/60 ${
+                        alert?.expired ? "bg-red-50/80 dark:bg-red-950/20" : alert ? "bg-amber-50/80 dark:bg-amber-950/20" : ""
                       }`}
                     >
-                      <td className="px-2 py-1.5">{line.display_no}</td>
-                      <td className="px-2 py-1.5">{formatDateFr(line.op_date)}</td>
-                      <td className="px-2 py-1.5">{formatDateFr(line.value_date)}</td>
-                      <td className="px-2 py-1.5">{line.affectation || "—"}</td>
-                      <td className="px-2 py-1.5">{docCell(line.bc_label, line.bc_url)}</td>
-                      <td className="px-2 py-1.5">{docCell(line.mode_label, line.mode_url)}</td>
-                      <td className="px-2 py-1.5">{docCell(line.fac_label, line.fac_url)}</td>
-                      <td className="max-w-[240px] truncate px-2 py-1.5 text-left">{line.libelle}</td>
-                      <td className="px-2 py-1.5 font-bold text-emerald-700">{line.debit ? formatDa(line.debit) : ""}</td>
-                      <td className="px-2 py-1.5 font-bold text-red-600">{line.credit ? formatDa(line.credit) : ""}</td>
-                      <td className="px-2 py-1.5">{line.frais ? formatDa(line.frais) : ""}</td>
-                      <td className="px-2 py-1.5 font-bold text-[#1a472a]">{formatDa(line.solde)}</td>
-                      <td className="px-2 py-1.5">{line.reconciled ? "✅" : ""}</td>
-                      <td className="whitespace-nowrap px-2 py-1.5">
+                      <td className="px-3 py-2 tabular-nums">{line.display_no}</td>
+                      <td className="px-3 py-2">{formatDateFr(line.op_date)}</td>
+                      <td className="px-3 py-2">{formatDateFr(line.value_date)}</td>
+                      <td className="px-3 py-2">{line.affectation || "—"}</td>
+                      <td className="px-3 py-2">{docCell(line.bc_label, line.bc_url)}</td>
+                      <td className="px-3 py-2">{docCell(line.mode_label, line.mode_url)}</td>
+                      <td className="px-3 py-2">{docCell(line.fac_label, line.fac_url)}</td>
+                      <td className="max-w-[240px] truncate px-3 py-2 font-medium">{line.libelle}</td>
+                      <td className="px-3 py-2 text-right font-semibold tabular-nums text-green-700">
+                        {line.debit ? formatDa(line.debit) : ""}
+                      </td>
+                      <td className="px-3 py-2 text-right font-semibold tabular-nums text-red-700">
+                        {line.credit ? formatDa(line.credit) : ""}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {line.frais ? formatDa(line.frais) : ""}
+                      </td>
+                      <td className="px-3 py-2 text-right font-bold tabular-nums">{formatDa(line.solde)}</td>
+                      <td className="px-3 py-2">
+                        <Badge tone={line.reconciled ? "green" : "amber"}>
+                          {line.reconciled ? "Rapproché" : "Ouvert"}
+                        </Badge>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
                         {data.canUpdate && (
                           line.reconciled ? (
-                            <button
-                              type="button"
-                              className="text-amber-600"
-                              title="Annuler le rapprochement"
+                            <Button
+                              size="sm"
+                              variant="ghost"
                               onClick={() =>
                                 run(
                                   () => setBanqueRapprochement({ line_id: line.id, reconciled: false }),
@@ -563,12 +530,12 @@ export function BanqueDesk({ initialData, loadError }: Props) {
                               }
                             >
                               Déverrouiller
-                            </button>
+                            </Button>
                           ) : (
-                            <span className="inline-flex gap-2">
-                              <button
-                                type="button"
-                                className="text-emerald-700"
+                            <span className="inline-flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
                                 onClick={() => {
                                   const value = window.prompt("Date de valeur (AAAA-MM-JJ)", line.value_date);
                                   if (!value) return;
@@ -585,21 +552,22 @@ export function BanqueDesk({ initialData, loadError }: Props) {
                                 }}
                               >
                                 Rapp
-                              </button>
-                              <button type="button" className="text-sky-700" onClick={() => openEdit(line)}>
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => openEdit(line)}>
                                 Modifier
-                              </button>
+                              </Button>
                               {data.canDelete && (
-                                <button
-                                  type="button"
-                                  className="text-red-600"
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-alert-critical"
                                   onClick={() => {
                                     if (!window.confirm(`Supprimer l'opération N° ${line.display_no} ?`)) return;
                                     run(() => deleteBanqueLine(line.id), "Opération supprimée.", false);
                                   }}
                                 >
                                   Supprimer
-                                </button>
+                                </Button>
                               )}
                             </span>
                           )
@@ -612,20 +580,11 @@ export function BanqueDesk({ initialData, loadError }: Props) {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
       {modal === "op" && (
-        <Modal
-          title={opForm.isCaution ? "Cautionnement" : opForm.id ? "Modifier l'opération" : "Nouvelle opération"}
-          onClose={() => setModal(null)}
-        >
-          <OpModalBody
-            form={opForm}
-            setForm={setOpForm}
-            lists={data.lists}
-            pending={pending}
-            onSubmit={submitOp}
-          />
+        <Modal title={opForm.isCaution ? "Cautionnement" : opForm.id ? "Modifier l'opération" : "Nouvelle opération"} onClose={() => setModal(null)}>
+          <OpModalBody form={opForm} setForm={setOpForm} lists={data.lists} pending={pending} onSubmit={submitOp} />
         </Modal>
       )}
 
@@ -654,15 +613,7 @@ export function BanqueDesk({ initialData, loadError }: Props) {
             <Field label="Montant (DA)">
               <input type="number" min="0" step="0.01" className={inputClass} value={virement.amount} onChange={(e) => setVirement((v) => ({ ...v, amount: e.target.value }))} />
             </Field>
-            <Button
-              disabled={pending}
-              onClick={() =>
-                run(
-                  () => executeBanqueVirement(virement),
-                  "Virement exécuté.",
-                )
-              }
-            >
+            <Button disabled={pending} onClick={() => run(() => executeBanqueVirement(virement), "Virement exécuté.")}>
               Exécuter
             </Button>
           </div>
@@ -672,22 +623,17 @@ export function BanqueDesk({ initialData, loadError }: Props) {
       {modal === "import" && (
         <Modal title="Importer relevé bancaire" onClose={() => setModal(null)}>
           <p className="mb-3 text-sm text-foreground/65">
-            Colonnes Excel : A = Date, B = Libellé, C = Débit (entrée), D = Crédit (sortie) — même convention que le cahier.
+            Colonnes Excel : A = Date, B = Libellé, C = Débit (entrée), D = Crédit (sortie).
           </p>
-          <input
-            type="file"
-            accept=".xlsx,.xls"
-            className={inputClass}
-            onChange={(e) => handleImport(e.target.files?.[0] ?? null)}
-          />
+          <input type="file" accept=".xlsx,.xls" className={inputClass} onChange={(e) => handleImport(e.target.files?.[0] ?? null)} />
         </Modal>
       )}
 
       {modal === "admin" && (
-        <Modal title="Administration banque" onClose={() => setModal(null)}>
+        <Modal title="Listes du journal" onClose={() => setModal(null)}>
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 rounded-lg border border-border p-3">
-              <h3 className="font-bold">Listes</h3>
+            <div className="space-y-2 rounded-xl border border-border p-4">
+              <h3 className="font-bold">Ajouter une valeur</h3>
               <select className={inputClass} value={adminKey} onChange={(e) => setAdminKey(e.target.value as typeof adminKey)}>
                 <option value="AFFECTATION">Affectation</option>
                 <option value="FOURNISSEUR">Fournisseur</option>
@@ -707,8 +653,8 @@ export function BanqueDesk({ initialData, loadError }: Props) {
                 Ajouter
               </Button>
             </div>
-            <div className="space-y-2 rounded-lg border border-border p-3">
-              <h3 className="font-bold">Banques</h3>
+            <div className="space-y-2 rounded-xl border border-border p-4">
+              <h3 className="font-bold">Statut des banques</h3>
               <ul className="space-y-2 text-sm">
                 {data.accounts.map((a) => (
                   <li key={a.id} className="flex items-center justify-between gap-2">
@@ -731,16 +677,9 @@ export function BanqueDesk({ initialData, loadError }: Props) {
                 ))}
               </ul>
               <p className="text-xs text-foreground/55">
-                Pour créer une banque, utilisez{" "}
-                <a className="underline" href="/parametres/finance">Paramètres comptes</a>
-                {newBankName ? ` (${newBankName})` : ""}.
+                Création d&apos;un compte :{" "}
+                <a className="underline" href="/parametres/finance">Paramètres</a>
               </p>
-              <input
-                className={inputClass}
-                value={newBankName}
-                onChange={(e) => setNewBankName(e.target.value)}
-                placeholder="Rappel nom banque…"
-              />
             </div>
           </div>
         </Modal>
@@ -748,6 +687,9 @@ export function BanqueDesk({ initialData, loadError }: Props) {
     </div>
   );
 }
+
+/** @deprecated alias kept for older imports */
+export const BanqueDesk = BanqueJournal;
 
 function Kpi({
   label,
@@ -758,38 +700,46 @@ function Kpi({
   label: string;
   value: string;
   note?: string;
-  tone: "green" | "amber" | "red";
+  tone: "blue" | "amber" | "slate";
 }) {
   const colors = {
-    green: "from-[#1a472a] to-[#2d6a4f]",
-    amber: "from-[#b45309] to-[#d97706]",
-    red: "from-[#991b1b] to-[#dc2626]",
+    blue: "border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/20",
+    amber: "border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/20",
+    slate: "border-border bg-surface",
   };
   return (
-    <div className={`rounded-xl bg-gradient-to-br ${colors[tone]} p-4 text-white shadow`}>
-      <p className="text-[11px] uppercase tracking-wide opacity-90">{label}</p>
-      <p className="mt-1 text-2xl font-extrabold">{value}</p>
-      {note && <p className="text-xs opacity-80">{note}</p>}
+    <div className={`rounded-xl border p-4 ${colors[tone]}`}>
+      <p className="text-xs font-semibold uppercase tracking-wide text-foreground/55">{label}</p>
+      <p className="mt-2 text-xl font-bold">{value}</p>
+      {note && <p className="mt-1 text-xs text-foreground/50">{note}</p>}
     </div>
   );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block space-y-1">
-      <span className="text-[11px] font-bold uppercase tracking-wide text-foreground/55">{label}</span>
+    <label className="block">
+      <span className="mb-1 block text-xs font-semibold text-foreground/65">{label}</span>
       {children}
     </label>
   );
 }
 
+function Badge({ tone, children }: { tone: "green" | "amber"; children: React.ReactNode }) {
+  const colors = {
+    green: "bg-green-100 text-green-800 dark:bg-green-950/40 dark:text-green-300",
+    amber: "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
+  };
+  return <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold ${colors[tone]}`}>{children}</span>;
+}
+
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-surface shadow-2xl">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-border bg-surface shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 className="text-lg font-bold">{title}</h2>
-          <button type="button" onClick={onClose} className="text-foreground/50 hover:text-foreground">
+          <button type="button" onClick={onClose} className="text-sm font-semibold text-foreground/50 hover:text-foreground">
             Fermer
           </button>
         </div>
@@ -849,15 +799,13 @@ function OpModalBody({
               onChange={(e) => setForm((f) => ({ ...f, fournisseur: e.target.value }))}
             />
             <datalist id="banque-fournisseurs">
-              {lists.fournisseurs.map((f) => (
-                <option key={f} value={f} />
-              ))}
+              {lists.fournisseurs.map((f) => <option key={f} value={f} />)}
             </datalist>
           </Field>
         )}
       </div>
 
-      <div className="grid gap-3 rounded-lg border border-border p-3 md:grid-cols-3">
+      <div className="grid gap-3 rounded-xl border border-border p-3 md:grid-cols-3">
         <Field label="Mode">
           <select className={inputClass} value={form.mode} onChange={(e) => setForm((f) => ({ ...f, mode: e.target.value }))}>
             <option value="">—</option>
@@ -868,13 +816,13 @@ function OpModalBody({
         <Field label="Pièce mode"><input type="file" accept="image/*,application/pdf" className={inputClass} onChange={(e) => setModeFile(e.target.files?.[0] ?? null)} /></Field>
       </div>
 
-      <div className="grid gap-3 rounded-lg border border-border p-3 md:grid-cols-3">
+      <div className="grid gap-3 rounded-xl border border-border p-3 md:grid-cols-3">
         <Field label="N° BC"><input className={inputClass} value={form.bc_num} onChange={(e) => setForm((f) => ({ ...f, bc_num: e.target.value }))} /></Field>
         <Field label="Date BC"><input type="date" className={inputClass} value={form.bc_date} onChange={(e) => setForm((f) => ({ ...f, bc_date: e.target.value }))} /></Field>
         <Field label="Pièce BC"><input type="file" accept="image/*,application/pdf" className={inputClass} onChange={(e) => setBcFile(e.target.files?.[0] ?? null)} /></Field>
       </div>
 
-      <div className="grid gap-3 rounded-lg border border-border p-3 md:grid-cols-3">
+      <div className="grid gap-3 rounded-xl border border-border p-3 md:grid-cols-3">
         <Field label="N° facture"><input className={inputClass} value={form.fac_num} onChange={(e) => setForm((f) => ({ ...f, fac_num: e.target.value }))} /></Field>
         <Field label="Date facture"><input type="date" className={inputClass} value={form.fac_date} onChange={(e) => setForm((f) => ({ ...f, fac_date: e.target.value }))} /></Field>
         <Field label="Pièce facture"><input type="file" accept="image/*,application/pdf" className={inputClass} onChange={(e) => setFacFile(e.target.files?.[0] ?? null)} /></Field>
@@ -892,7 +840,7 @@ function OpModalBody({
         </Field>
       </div>
 
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="flex justify-end pt-2">
         <Button disabled={pending} onClick={() => onSubmit(modeFile, bcFile, facFile)}>
           {pending ? "Enregistrement…" : "Enregistrer"}
         </Button>
@@ -906,7 +854,7 @@ function docCell(label: string, url: string | null) {
   if (!text) return "—";
   if (url && (url.startsWith("http") || url.startsWith("data:"))) {
     return (
-      <a href={url} target="_blank" rel="noreferrer" className="font-semibold text-sky-700 underline">
+      <a href={url} target="_blank" rel="noreferrer" className="font-semibold text-brand underline">
         {text}
       </a>
     );
