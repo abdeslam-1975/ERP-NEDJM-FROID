@@ -322,6 +322,123 @@ export async function toggleBanqueAccountActive(
   return { ok: true, data: undefined };
 }
 
+/** Create a bank account by display name (Apps Script addNewBank). */
+export async function createBanqueAccount(nameInput: string): Promise<ActionResult<{ id: string }>> {
+  const name = nameInput.trim();
+  if (!name || name.length > 160) return fail("Nom de banque invalide.");
+  if (!(await can("update"))) return fail("Accès refusé par les droits financiers (RBAC).");
+
+  const supabase = await createClient();
+  const existing = await supabase
+    .from("fin_accounts")
+    .select("id")
+    .eq("account_type", "BANK")
+    .eq("name", name)
+    .maybeSingle();
+  if (existing.data) return fail("Cette banque existe déjà !");
+
+  const baseCode = name
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 28);
+  const code = `B-${baseCode || "BANQUE"}`.slice(0, 40);
+
+  const { data, error } = await supabase
+    .from("fin_accounts")
+    .insert({
+      code,
+      name,
+      account_type: "BANK",
+      currency_code: "DZD",
+      bank_name: name,
+      opening_balance: 0,
+      opening_date: "2025-12-31",
+      allow_negative: false,
+      active: true,
+      notes: "Créée depuis ADMIN · GESTION BANQUES",
+    })
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    if (error.code === "23505") {
+      const retryCode = `${code}-${Date.now().toString(36).slice(-4)}`.slice(0, 40);
+      const second = await supabase
+        .from("fin_accounts")
+        .insert({
+          code: retryCode,
+          name,
+          account_type: "BANK",
+          currency_code: "DZD",
+          bank_name: name,
+          opening_balance: 0,
+          opening_date: "2025-12-31",
+          allow_negative: false,
+          active: true,
+          notes: "Créée depuis ADMIN · GESTION BANQUES",
+        })
+        .select("id")
+        .maybeSingle();
+      if (second.error) return fail(second.error);
+      if (!second.data) return fail("Création refusée.");
+      refresh();
+      return { ok: true, data: { id: second.data.id } };
+    }
+    return fail(error);
+  }
+  if (!data) return fail("Création refusée.");
+  refresh();
+  return { ok: true, data: { id: data.id } };
+}
+
+export type BanqueAdminUser = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  status: string;
+};
+
+/** Users with finance rights — visual equivalent of Apps Script Users sheet. */
+export async function listBanqueAdminUsers(): Promise<ActionResult<BanqueAdminUser[]>> {
+  if (!(await can("update"))) return fail("Accès refusé par les droits financiers (RBAC).");
+  const supabase = await createClient();
+  const [usersRes, linksRes] = await Promise.all([
+    supabase.from("sys_users").select("id, email, full_name, status").eq("status", "ACTIVE").order("full_name"),
+    supabase.from("sys_user_site_roles").select("user_id, role:sys_roles ( code )"),
+  ]);
+  if (usersRes.error) return fail(usersRes.error);
+  if (linksRes.error) return fail(linksRes.error);
+
+  const one = <T,>(v: T | T[] | null | undefined) => (Array.isArray(v) ? v[0] : v) ?? null;
+  const rolesByUser = new Map<string, Set<string>>();
+  for (const link of linksRes.data ?? []) {
+    const code = one(link.role as { code: string } | { code: string }[] | null)?.code;
+    if (!code) continue;
+    const set = rolesByUser.get(link.user_id) ?? new Set<string>();
+    set.add(code);
+    rolesByUser.set(link.user_id, set);
+  }
+
+  const rows: BanqueAdminUser[] = [];
+  for (const u of usersRes.data ?? []) {
+    const codes = rolesByUser.get(u.id) ?? new Set();
+    const finance = [...codes].filter((c) =>
+      ["SUPER_ADMIN", "ADMIN_FINANCE", "GERANT"].includes(c),
+    );
+    if (finance.length === 0) continue;
+    rows.push({
+      id: u.id,
+      email: String(u.email ?? ""),
+      name: String(u.full_name ?? ""),
+      role:
+        finance.includes("SUPER_ADMIN") || finance.includes("ADMIN_FINANCE") ? "admin" : "user",
+      status: String(u.status ?? "ACTIVE"),
+    });
+  }
+  return { ok: true, data: rows };
+}
+
 /** Helper for UI edit forms: normalize FR date cells to ISO. */
 export async function normalizeBanqueDate(value: string): Promise<string> {
   return formatDateIso(value);

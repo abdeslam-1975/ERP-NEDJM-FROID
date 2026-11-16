@@ -1,16 +1,19 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import ExcelJS from "exceljs";
 import {
   addBanqueListItem,
+  createBanqueAccount,
   deleteBanqueLine,
   executeBanqueVirement,
   importBanqueReleve,
+  listBanqueAdminUsers,
   saveBanqueLine,
   setBanqueRapprochement,
   toggleBanqueAccountActive,
+  type BanqueAdminUser,
 } from "@/lib/actions/banque";
 import {
   buildBcLabel,
@@ -109,8 +112,13 @@ export function BanqueDesk({
     amount: "",
     op_date: initialData.today,
   });
-  const [adminLabel, setAdminLabel] = useState("");
-  const [adminKey, setAdminKey] = useState<"AFFECTATION" | "FOURNISSEUR" | "MODE">("AFFECTATION");
+  const [adminTab, setAdminTab] = useState<"parametres" | "banques" | "utilisateurs">("parametres");
+  const [adminAff, setAdminAff] = useState("");
+  const [adminFourn, setAdminFourn] = useState("");
+  const [adminMode, setAdminMode] = useState("");
+  const [adminBankName, setAdminBankName] = useState("");
+  const [adminUsers, setAdminUsers] = useState<BanqueAdminUser[]>([]);
+  const [adminUsersLoading, setAdminUsersLoading] = useState(false);
   const [modeFile, setModeFile] = useState<File | null>(null);
   const [bcFile, setBcFile] = useState<File | null>(null);
   const [facFile, setFacFile] = useState<File | null>(null);
@@ -120,6 +128,51 @@ export function BanqueDesk({
     () => cautionAlertsFromLibelles(data.lines, data.today),
     [data.lines, data.today],
   );
+
+  useEffect(() => {
+    if (modal !== "admin" || adminTab !== "utilisateurs") return;
+    let cancelled = false;
+    setAdminUsersLoading(true);
+    void listBanqueAdminUsers().then((res) => {
+      if (cancelled) return;
+      setAdminUsersLoading(false);
+      if (!res.ok) {
+        setError(res.error);
+        setAdminUsers([]);
+        return;
+      }
+      setAdminUsers(res.data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [modal, adminTab]);
+
+  function openAdmin() {
+    setAdminTab("parametres");
+    setAdminAff("");
+    setAdminFourn("");
+    setAdminMode("");
+    setAdminBankName("");
+    setModal("admin");
+  }
+
+  function addListItem(list_key: "AFFECTATION" | "FOURNISSEUR" | "MODE", label: string, clear: () => void) {
+    const value = label.trim();
+    if (!value) return;
+    setError(null);
+    setMessage(null);
+    startTransition(async () => {
+      const result = await addBanqueListItem({ list_key, label: value });
+      if (!result.ok) {
+        setError(result.error ?? "Opération refusée.");
+        return;
+      }
+      setMessage("Paramètre ajouté.");
+      clear();
+      reload(accountId);
+    });
+  }
 
   const visibleLines = useMemo(() => {
     return data.lines.filter((line) => {
@@ -454,7 +507,7 @@ export function BanqueDesk({
           RELEVÉ
         </button>
         {data.canUpdate && (
-          <button type="button" className="btn-action btn-admin" disabled={pending} onClick={() => setModal("admin")}>
+          <button type="button" className="btn-action btn-admin" disabled={pending} onClick={openAdmin}>
             ADMIN
           </button>
         )}
@@ -796,79 +849,269 @@ export function BanqueDesk({
 
       {modal === "admin" && (
         <div className="overlay">
-          <div className="modal wide">
+          <div className="modal admin-modal">
             <div className="modal-head slate">
-              <span>GESTION SYSTÈME — ADMIN</span>
+              <span>🛡 GESTION SYSTÈME — ADMIN</span>
               <button type="button" className="modal-close" onClick={() => setModal(null)}>×</button>
             </div>
             <div className="modal-body">
-              <div className="grid-2">
-                <div className="panel" style={{ margin: 0 }}>
-                  <h3 style={{ marginTop: 0 }}>Paramètres</h3>
-                  <label className="form-label">Liste</label>
-                  <select value={adminKey} onChange={(e) => setAdminKey(e.target.value as typeof adminKey)}>
-                    <option value="AFFECTATION">Affectation</option>
-                    <option value="FOURNISSEUR">Fournisseur</option>
-                    <option value="MODE">Mode de Paiement</option>
-                  </select>
-                  <label className="form-label" style={{ marginTop: 8 }}>Nouvelle valeur</label>
-                  <input value={adminLabel} onChange={(e) => setAdminLabel(e.target.value)} />
-                  <button
-                    type="button"
-                    className="btn-action btn-op"
-                    style={{ marginTop: 10 }}
-                    disabled={pending || !adminLabel.trim()}
-                    onClick={() =>
-                      run(
-                        () => addBanqueListItem({ list_key: adminKey, label: adminLabel.trim() }),
-                        "Paramètre ajouté.",
-                        false,
-                      )
-                    }
-                  >
-                    Ajouter
-                  </button>
-                </div>
-                <div className="panel" style={{ margin: 0 }}>
-                  <h3 style={{ marginTop: 0 }}>Banques</h3>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ background: "#111827", color: "#fff" }}>
-                        <th style={{ padding: 8 }}>Banque</th>
-                        <th style={{ padding: 8 }}>Statut</th>
-                        <th style={{ padding: 8 }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.accounts.map((a) => (
-                        <tr key={a.id} style={{ borderBottom: "1px solid #eee" }}>
-                          <td style={{ padding: 8, fontWeight: 700 }}>{a.name}</td>
-                          <td style={{ padding: 8 }}>{a.active ? "Active" : "Désactivée"}</td>
-                          <td style={{ padding: 8 }}>
-                            <button
-                              type="button"
-                              className="btn-light"
-                              disabled={pending}
-                              onClick={() =>
-                                run(
-                                  () => toggleBanqueAccountActive(a.id, !a.active),
-                                  a.active ? "Banque désactivée." : "Banque activée.",
-                                  false,
-                                )
-                              }
-                            >
-                              {a.active ? "Désactiver" : "Activer"}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <p style={{ fontSize: 12, color: "#64748b" }}>
-                    Créer une banque : <a href="/parametres/finance">Paramètres comptes</a>
-                  </p>
-                </div>
+              <div className="admin-tabs">
+                <button
+                  type="button"
+                  className={`admin-tab${adminTab === "parametres" ? " active" : ""}`}
+                  onClick={() => setAdminTab("parametres")}
+                >
+                  ⚙ Paramètres
+                </button>
+                <button
+                  type="button"
+                  className={`admin-tab${adminTab === "banques" ? " active" : ""}`}
+                  onClick={() => setAdminTab("banques")}
+                >
+                  🏛 Banques
+                </button>
+                <button
+                  type="button"
+                  className={`admin-tab${adminTab === "utilisateurs" ? " active" : ""}`}
+                  onClick={() => setAdminTab("utilisateurs")}
+                >
+                  👥 Utilisateurs
+                </button>
               </div>
+
+              {adminTab === "parametres" && (
+                <div className="admin-pane">
+                  <div className="admin-param-grid">
+                    <div className="admin-card">
+                      <div className="admin-ico" style={{ color: "#2563eb" }}>🏷</div>
+                      <h6>Nouvelle Affectation</h6>
+                      <input
+                        value={adminAff}
+                        onChange={(e) => setAdminAff(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") addListItem("AFFECTATION", adminAff, () => setAdminAff(""));
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="btn-add-aff"
+                        disabled={pending || !adminAff.trim()}
+                        onClick={() => addListItem("AFFECTATION", adminAff, () => setAdminAff(""))}
+                      >
+                        + Ajouter
+                      </button>
+                    </div>
+                    <div className="admin-card">
+                      <div className="admin-ico" style={{ color: "#d97706" }}>🚚</div>
+                      <h6>Nouveau Fournisseur</h6>
+                      <input
+                        value={adminFourn}
+                        onChange={(e) => setAdminFourn(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") addListItem("FOURNISSEUR", adminFourn, () => setAdminFourn(""));
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="btn-add-fourn"
+                        disabled={pending || !adminFourn.trim()}
+                        onClick={() => addListItem("FOURNISSEUR", adminFourn, () => setAdminFourn(""))}
+                      >
+                        + Ajouter
+                      </button>
+                    </div>
+                    <div className="admin-card">
+                      <div className="admin-ico" style={{ color: "#16a34a" }}>💳</div>
+                      <h6>Mode de Paiement</h6>
+                      <input
+                        value={adminMode}
+                        onChange={(e) => setAdminMode(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") addListItem("MODE", adminMode, () => setAdminMode(""));
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="btn-add-mode"
+                        disabled={pending || !adminMode.trim()}
+                        onClick={() => addListItem("MODE", adminMode, () => setAdminMode(""))}
+                      >
+                        + Ajouter
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {adminTab === "banques" && (
+                <div className="admin-pane">
+                  <div className="admin-bank-layout">
+                    <div className="admin-card" style={{ textAlign: "left" }}>
+                      <h6 style={{ textAlign: "left" }}>＋ Créer Banque</h6>
+                      <input
+                        value={adminBankName}
+                        onChange={(e) => setAdminBankName(e.target.value)}
+                        placeholder="Nom de la banque"
+                      />
+                      <button
+                        type="button"
+                        className="btn-add-mode"
+                        disabled={pending || !adminBankName.trim()}
+                        onClick={() => {
+                          const name = adminBankName.trim();
+                          if (!name) return;
+                          run(
+                            () => createBanqueAccount(name),
+                            "Banque créée.",
+                            false,
+                          );
+                          setAdminBankName("");
+                        }}
+                      >
+                        CRÉER
+                      </button>
+                    </div>
+                    <div className="admin-card" style={{ padding: 0, overflow: "hidden" }}>
+                      <table className="admin-table">
+                        <thead>
+                          <tr>
+                            <th>Banque</th>
+                            <th>Statut</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.accounts.length === 0 ? (
+                            <tr>
+                              <td colSpan={3} style={{ textAlign: "center", color: "#94a3b8", padding: 16 }}>
+                                Aucune banque
+                              </td>
+                            </tr>
+                          ) : (
+                            data.accounts.map((a) => (
+                              <tr key={a.id}>
+                                <td style={{ fontWeight: 700 }}>🏛 {a.name}</td>
+                                <td>
+                                  <span className={a.active ? "badge-active" : "badge-off"}>
+                                    {a.active ? "Active" : "Désactivée"}
+                                  </span>
+                                </td>
+                                <td style={{ whiteSpace: "nowrap" }}>
+                                  <button
+                                    type="button"
+                                    className="btn-light"
+                                    style={{ marginRight: 6 }}
+                                    disabled={pending || !a.active}
+                                    title="Désactiver"
+                                    onClick={() =>
+                                      run(
+                                        () => toggleBanqueAccountActive(a.id, false),
+                                        "Banque désactivée.",
+                                        false,
+                                      )
+                                    }
+                                  >
+                                    ⌀
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn-light"
+                                    disabled={pending || a.active}
+                                    title="Activer"
+                                    onClick={() =>
+                                      run(
+                                        () => toggleBanqueAccountActive(a.id, true),
+                                        "Banque activée.",
+                                        false,
+                                      )
+                                    }
+                                  >
+                                    ✓
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {adminTab === "utilisateurs" && (
+                <div className="admin-pane">
+                  <div className="admin-bank-layout">
+                    <div className="admin-card" style={{ textAlign: "left" }}>
+                      <h6 style={{ textAlign: "left" }}>＋ Nouvel Utilisateur</h6>
+                      <p style={{ fontSize: 12, color: "#64748b", marginTop: 0 }}>
+                        La création / suppression des comptes ERP se fait dans{" "}
+                        <a href="/parametres/utilisateurs">Paramètres → Utilisateurs</a>
+                        {" "}(auth + rôles). Ici : consultation des accès finance (équivalent feuille Users).
+                      </p>
+                      <input disabled placeholder="Email" />
+                      <input disabled type="password" placeholder="Mot de passe" />
+                      <input disabled placeholder="Nom Complet" />
+                      <select disabled defaultValue="user" style={{ width: "100%", marginBottom: 10 }}>
+                        <option value="user">Utilisateur Simple</option>
+                        <option value="admin">Administrateur</option>
+                      </select>
+                      <button type="button" className="btn-add-aff" disabled>
+                        ENREGISTRER
+                      </button>
+                    </div>
+                    <div className="admin-card" style={{ padding: 0, overflow: "hidden" }}>
+                      <table className="admin-table" style={{ textAlign: "center" }}>
+                        <thead>
+                          <tr>
+                            <th>Nom</th>
+                            <th>Email</th>
+                            <th>Rôle</th>
+                            <th style={{ width: 70 }}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {adminUsersLoading ? (
+                            <tr>
+                              <td colSpan={4} style={{ color: "#94a3b8", padding: 16 }}>
+                                Chargement...
+                              </td>
+                            </tr>
+                          ) : adminUsers.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} style={{ color: "#94a3b8", padding: 16 }}>
+                                Aucun utilisateur
+                              </td>
+                            </tr>
+                          ) : (
+                            adminUsers.map((u) => (
+                              <tr key={u.id}>
+                                <td style={{ fontWeight: 700 }}>{u.name || "—"}</td>
+                                <td style={{ color: "#64748b", fontSize: 12 }}>{u.email}</td>
+                                <td>
+                                  <span className={u.role === "admin" ? "badge-admin" : "badge-user"}>
+                                    {u.role}
+                                  </span>
+                                </td>
+                                <td>
+                                  <a
+                                    className="btn-light"
+                                    href="/parametres/utilisateurs"
+                                    title="Gérer dans Paramètres"
+                                    style={{ display: "inline-block", textDecoration: "none" }}
+                                  >
+                                    🗑
+                                  </a>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="modal-foot">
               <button type="button" className="btn-light" onClick={() => setModal(null)}>Fermer</button>
