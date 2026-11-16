@@ -681,7 +681,40 @@ export function BanqueDesk({
                       <td className="credit-cell">{moneyDa(line.credit)}</td>
                       <td className="frais-cell">{moneyDa(line.frais, true)}</td>
                       <td className="solde-cell">{moneyDa(line.solde, true)}</td>
-                      <td>{line.reconciled ? "✅" : ""}</td>
+                      <td className="rapp-cell">
+                        {line.reconciled ? (
+                          <span className="rapp-done" title="Rapproché">
+                            ✅
+                          </span>
+                        ) : data.canUpdate ? (
+                          <button
+                            type="button"
+                            className="act-btn act-rapp"
+                            title="Rapprochement"
+                            onClick={() => {
+                              const value = window.prompt(
+                                "Date de valeur (AAAA-MM-JJ)",
+                                line.value_date,
+                              );
+                              if (!value) return;
+                              run(
+                                () =>
+                                  setBanqueRapprochement({
+                                    line_id: line.id,
+                                    reconciled: true,
+                                    value_date: value,
+                                  }),
+                                "Rapprochement enregistré.",
+                                false,
+                              );
+                            }}
+                          >
+                            <span className="act-ico" aria-hidden>
+                              ✓
+                            </span>
+                          </button>
+                        ) : null}
+                      </td>
                       <td className="actions-cell">
                         {data.canUpdate ? (
                           line.reconciled ? (
@@ -692,13 +725,19 @@ export function BanqueDesk({
                                 title="Annuler le rapprochement"
                                 onClick={() =>
                                   run(
-                                    () => setBanqueRapprochement({ line_id: line.id, reconciled: false }),
+                                    () =>
+                                      setBanqueRapprochement({
+                                        line_id: line.id,
+                                        reconciled: false,
+                                      }),
                                     "Rapprochement annulé.",
                                     false,
                                   )
                                 }
                               >
-                                🔓
+                                <span className="act-ico" aria-hidden>
+                                  🔓
+                                </span>
                               </button>
                               <span className="locked-badge">Verrouillé</span>
                             </>
@@ -706,35 +745,13 @@ export function BanqueDesk({
                             <>
                               <button
                                 type="button"
-                                className="act-btn act-rapp"
-                                title="Rapprochement"
-                                onClick={() => {
-                                  const value = window.prompt(
-                                    "Date de valeur (AAAA-MM-JJ)",
-                                    line.value_date,
-                                  );
-                                  if (!value) return;
-                                  run(
-                                    () =>
-                                      setBanqueRapprochement({
-                                        line_id: line.id,
-                                        reconciled: true,
-                                        value_date: value,
-                                      }),
-                                    "Rapprochement enregistré.",
-                                    false,
-                                  );
-                                }}
-                              >
-                                ✓
-                              </button>
-                              <button
-                                type="button"
                                 className="act-btn act-edit"
                                 title="Modifier"
                                 onClick={() => openEdit(line)}
                               >
-                                ✎
+                                <span className="act-ico" aria-hidden>
+                                  ✎
+                                </span>
                               </button>
                               {data.canDelete && (
                                 <button
@@ -742,13 +759,23 @@ export function BanqueDesk({
                                   className="act-btn act-del"
                                   title="Supprimer"
                                   onClick={() => {
-                                    if (!window.confirm(`Supprimer l'opération N° ${line.display_no} ?`)) {
+                                    if (
+                                      !window.confirm(
+                                        `Supprimer l'opération N° ${line.display_no} ?`,
+                                      )
+                                    ) {
                                       return;
                                     }
-                                    run(() => deleteBanqueLine(line.id), "Opération supprimée.", false);
+                                    run(
+                                      () => deleteBanqueLine(line.id),
+                                      "Opération supprimée.",
+                                      false,
+                                    );
                                   }}
                                 >
-                                  🗑
+                                  <span className="act-ico" aria-hidden>
+                                    🗑
+                                  </span>
                                 </button>
                               )}
                             </>
