@@ -383,8 +383,170 @@
   text-decoration: none;
 }
 
+/* ADMIN modal — Google Workspace parity */
+.banque-app .modal.admin-modal {
+  width: min(1100px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+.banque-app .admin-modal .modal-body {
+  padding: 0;
+  overflow: auto;
+}
+.banque-app .admin-tabs {
+  display: flex;
+  gap: 0;
+  padding: 12px 16px 0;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fff;
+}
+.banque-app .admin-tab {
+  border: 0;
+  background: transparent;
+  padding: 10px 16px;
+  font-weight: 700;
+  font-size: 14px;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+}
+.banque-app .admin-tab.active {
+  color: #0f172a;
+  border-bottom-color: #2563eb;
+  background: #fff;
+}
+.banque-app .admin-pane { padding: 16px; }
+.banque-app .admin-param-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.banque-app .admin-card {
+  border: 0;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
+  background: #fff;
+  padding: 18px 16px;
+  text-align: center;
+}
+.banque-app .admin-card .admin-ico {
+  font-size: 1.8rem;
+  margin-bottom: 8px;
+  line-height: 1;
+}
+.banque-app .admin-card h6 {
+  margin: 0 0 12px;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #111827;
+}
+.banque-app .admin-card input {
+  width: 100%;
+  margin-bottom: 10px;
+}
+.banque-app .btn-add-aff {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 800;
+  cursor: pointer;
+  background: #2563eb;
+  color: #fff;
+}
+.banque-app .btn-add-fourn {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 800;
+  cursor: pointer;
+  background: #f59e0b;
+  color: #111;
+}
+.banque-app .btn-add-mode {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 800;
+  cursor: pointer;
+  background: #16a34a;
+  color: #fff;
+}
+.banque-app .admin-card button:disabled { opacity: 0.55; cursor: not-allowed; }
+.banque-app .admin-list-chip {
+  display: inline-block;
+  margin: 2px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  font-size: 11px;
+  color: #334155;
+}
+.banque-app .admin-bank-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr;
+  gap: 14px;
+}
+.banque-app .admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.banque-app .admin-table th {
+  background: #111827;
+  color: #fff;
+  padding: 8px;
+  text-align: left;
+}
+.banque-app .admin-table td {
+  padding: 8px;
+  border-bottom: 1px solid #eee;
+}
+.banque-app .badge-active {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #16a34a;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+.banque-app .badge-off {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #64748b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+.banque-app .badge-admin {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+.banque-app .badge-user {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #64748b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 @media (max-width: 900px) {
   .banque-app .kpi-grid { grid-template-columns: 1fr; }
   .banque-app .grid-3, .banque-app .grid-2 { grid-template-columns: 1fr; }
   .banque-app .filters { margin-left: 0; width: 100%; }
+  .banque-app .admin-param-grid,
+  .banque-app .admin-bank-layout { grid-template-columns: 1fr; }
 }
