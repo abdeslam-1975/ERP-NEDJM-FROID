@@ -6,6 +6,8 @@ import ExcelJS from "exceljs";
 import {
   addBanqueListItem,
   createBanqueAccount,
+  createBanqueAdminUser,
+  deleteBanqueAdminUser,
   deleteBanqueLine,
   executeBanqueVirement,
   importBanqueReleve,
@@ -119,6 +121,13 @@ export function BanqueDesk({
   const [adminBankName, setAdminBankName] = useState("");
   const [adminUsers, setAdminUsers] = useState<BanqueAdminUser[]>([]);
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
+  const [adminUsersTick, setAdminUsersTick] = useState(0);
+  const [adminUserForm, setAdminUserForm] = useState({
+    email: "",
+    password: "",
+    name: "",
+    role: "user" as "admin" | "user",
+  });
   const [modeFile, setModeFile] = useState<File | null>(null);
   const [bcFile, setBcFile] = useState<File | null>(null);
   const [facFile, setFacFile] = useState<File | null>(null);
@@ -146,7 +155,7 @@ export function BanqueDesk({
     return () => {
       cancelled = true;
     };
-  }, [modal, adminTab]);
+  }, [modal, adminTab, adminUsersTick]);
 
   function openAdmin() {
     setAdminTab("parametres");
@@ -154,7 +163,52 @@ export function BanqueDesk({
     setAdminFourn("");
     setAdminMode("");
     setAdminBankName("");
+    setAdminUserForm({ email: "", password: "", name: "", role: "user" });
     setModal("admin");
+  }
+
+  function refreshAdminUsers() {
+    setAdminUsersTick((n) => n + 1);
+  }
+
+  function saveAdminUser() {
+    const { email, password, name, role } = adminUserForm;
+    if (!email.trim() || !password || !name.trim()) {
+      setError("Email, mot de passe et nom sont requis.");
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    startTransition(async () => {
+      const result = await createBanqueAdminUser({
+        email: email.trim(),
+        password,
+        name: name.trim(),
+        role,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setMessage("Utilisateur enregistré.");
+      setAdminUserForm({ email: "", password: "", name: "", role: "user" });
+      refreshAdminUsers();
+    });
+  }
+
+  function removeAdminUser(user: BanqueAdminUser) {
+    if (!window.confirm(`Supprimer: ${user.email}?`)) return;
+    setError(null);
+    setMessage(null);
+    startTransition(async () => {
+      const result = await deleteBanqueAdminUser(user.id);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setMessage("Utilisateur supprimé.");
+      refreshAdminUsers();
+    });
   }
 
   function addListItem(list_key: "AFFECTATION" | "FOURNISSEUR" | "MODE", label: string, clear: () => void) {
@@ -1044,19 +1098,52 @@ export function BanqueDesk({
                   <div className="admin-bank-layout">
                     <div className="admin-card" style={{ textAlign: "left" }}>
                       <h6 style={{ textAlign: "left" }}>＋ Nouvel Utilisateur</h6>
-                      <p style={{ fontSize: 12, color: "#64748b", marginTop: 0 }}>
-                        La création / suppression des comptes ERP se fait dans{" "}
-                        <a href="/parametres/utilisateurs">Paramètres → Utilisateurs</a>
-                        {" "}(auth + rôles). Ici : consultation des accès finance (équivalent feuille Users).
-                      </p>
-                      <input disabled placeholder="Email" />
-                      <input disabled type="password" placeholder="Mot de passe" />
-                      <input disabled placeholder="Nom Complet" />
-                      <select disabled defaultValue="user" style={{ width: "100%", marginBottom: 10 }}>
+                      <input
+                        type="email"
+                        placeholder="Email"
+                        value={adminUserForm.email}
+                        onChange={(e) => setAdminUserForm((f) => ({ ...f, email: e.target.value }))}
+                        disabled={pending}
+                      />
+                      <input
+                        type="password"
+                        placeholder="Mot de passe"
+                        value={adminUserForm.password}
+                        onChange={(e) => setAdminUserForm((f) => ({ ...f, password: e.target.value }))}
+                        disabled={pending}
+                        autoComplete="new-password"
+                      />
+                      <input
+                        placeholder="Nom Complet"
+                        value={adminUserForm.name}
+                        onChange={(e) => setAdminUserForm((f) => ({ ...f, name: e.target.value }))}
+                        disabled={pending}
+                      />
+                      <select
+                        value={adminUserForm.role}
+                        onChange={(e) =>
+                          setAdminUserForm((f) => ({
+                            ...f,
+                            role: e.target.value === "admin" ? "admin" : "user",
+                          }))
+                        }
+                        disabled={pending}
+                        style={{ width: "100%", marginBottom: 10 }}
+                      >
                         <option value="user">Utilisateur Simple</option>
                         <option value="admin">Administrateur</option>
                       </select>
-                      <button type="button" className="btn-add-aff" disabled>
+                      <button
+                        type="button"
+                        className="btn-add-aff"
+                        disabled={
+                          pending ||
+                          !adminUserForm.email.trim() ||
+                          !adminUserForm.password ||
+                          !adminUserForm.name.trim()
+                        }
+                        onClick={saveAdminUser}
+                      >
                         ENREGISTRER
                       </button>
                     </div>
@@ -1094,14 +1181,15 @@ export function BanqueDesk({
                                   </span>
                                 </td>
                                 <td>
-                                  <a
+                                  <button
+                                    type="button"
                                     className="btn-light"
-                                    href="/parametres/utilisateurs"
-                                    title="Gérer dans Paramètres"
-                                    style={{ display: "inline-block", textDecoration: "none" }}
+                                    title="Supprimer"
+                                    disabled={pending}
+                                    onClick={() => removeAdminUser(u)}
                                   >
                                     🗑
-                                  </a>
+                                  </button>
                                 </td>
                               </tr>
                             ))
