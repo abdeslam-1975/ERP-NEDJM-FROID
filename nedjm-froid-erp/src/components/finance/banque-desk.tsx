@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import ExcelJS from "exceljs";
+import { logoutAction } from "@/lib/actions/auth";
 import {
   addBanqueListItem,
   createBanqueAccount,
@@ -597,15 +598,24 @@ export function BanqueDesk({
           <button type="button" className="btn-action btn-pdf" onClick={printReport} disabled={!account}>
             PDF
           </button>
+          <form action={logoutAction} style={{ display: "inline" }}>
+            <button type="submit" className="btn-quitter">
+              ⏻ QUITTER
+            </button>
+          </form>
         </div>
       </div>
 
       <div className="account-meta">
         <div>
+          <span className="meta-bank-ico" aria-hidden>
+            🏛
+          </span>{" "}
           Banque active : <strong>{account?.name ?? "—"}</strong>
         </div>
         <div>
-          Solde : <strong className="solde">{formatDa(account?.balance ?? 0)}</strong> <span>DA</span>
+          Solde : <strong className="solde">{formatDa(account?.balance ?? 0)}</strong>{" "}
+          <span className="meta-da">DA</span>
         </div>
       </div>
 
@@ -614,15 +624,37 @@ export function BanqueDesk({
           <table className="main-table">
             <thead>
               <tr>
-                {["N°", "DATE OP", "DATE VAL", "AFFECTATION", "BC", "MODE", "FAC.", "LIBELLÉ", "DÉBIT", "CRÉDIT", "FRAIS", "SOLDE", "RAPP", "ACTIONS"].map((h) => (
-                  <th key={h}>{h}</th>
+                {(
+                  [
+                    ["N°", 40],
+                    ["DATE OP", 90],
+                    ["DATE VAL", 90],
+                    ["AFFECTATION", 130],
+                    ["BC", 85],
+                    ["MODE", 85],
+                    ["FAC.", 75],
+                    ["LIBELLÉ", 220],
+                    ["DÉBIT", 110],
+                    ["CRÉDIT", 110],
+                    ["FRAIS", 85],
+                    ["SOLDE", 120],
+                    ["RAPP", 55],
+                    ["ACTIONS", 100],
+                  ] as const
+                ).map(([h, w]) => (
+                  <th key={h} style={{ width: w }}>
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {visibleLines.length === 0 ? (
                 <tr>
-                  <td colSpan={14} style={{ padding: 40, color: "#94a3b8" }}>
+                  <td colSpan={14} className="empty-rows">
+                    <span className="empty-ico" aria-hidden>
+                      {account ? "📥" : "🏛"}
+                    </span>
                     {account ? "Aucune transaction" : "Sélectionnez une banque"}
                   </td>
                 </tr>
@@ -645,28 +677,67 @@ export function BanqueDesk({
                       <td>{docCell(line.mode_label, line.mode_url)}</td>
                       <td>{docCell(line.fac_label, line.fac_url)}</td>
                       <td className="libelle-cell">{line.libelle}</td>
-                      <td className="debit-cell">{line.debit ? formatDa(line.debit) : ""}</td>
-                      <td className="credit-cell">{line.credit ? formatDa(line.credit) : ""}</td>
-                      <td>{line.frais ? formatDa(line.frais) : ""}</td>
-                      <td className="solde-cell">{formatDa(line.solde)}</td>
-                      <td>{line.reconciled ? "✅" : ""}</td>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        {data.canUpdate && (
+                      <td className="debit-cell">{moneyDa(line.debit)}</td>
+                      <td className="credit-cell">{moneyDa(line.credit)}</td>
+                      <td className="frais-cell">{moneyDa(line.frais, true)}</td>
+                      <td className="solde-cell">{moneyDa(line.solde, true)}</td>
+                      <td className="rapp-cell">
+                        {line.reconciled ? (
+                          <span className="rapp-done" title="Rapproché">
+                            ✅
+                          </span>
+                        ) : data.canUpdate ? (
+                          <button
+                            type="button"
+                            className="act-btn act-rapp"
+                            title="Rapprochement"
+                            onClick={() => {
+                              const value = window.prompt(
+                                "Date de valeur (AAAA-MM-JJ)",
+                                line.value_date,
+                              );
+                              if (!value) return;
+                              run(
+                                () =>
+                                  setBanqueRapprochement({
+                                    line_id: line.id,
+                                    reconciled: true,
+                                    value_date: value,
+                                  }),
+                                "Rapprochement enregistré.",
+                                false,
+                              );
+                            }}
+                          >
+                            <span className="act-ico" aria-hidden>
+                              ✓
+                            </span>
+                          </button>
+                        ) : null}
+                      </td>
+                      <td className="actions-cell">
+                        {data.canUpdate ? (
                           line.reconciled ? (
                             <>
                               <button
                                 type="button"
-                                className="icon-btn unlock"
+                                className="act-btn act-unlock"
                                 title="Annuler le rapprochement"
                                 onClick={() =>
                                   run(
-                                    () => setBanqueRapprochement({ line_id: line.id, reconciled: false }),
+                                    () =>
+                                      setBanqueRapprochement({
+                                        line_id: line.id,
+                                        reconciled: false,
+                                      }),
                                     "Rapprochement annulé.",
                                     false,
                                   )
                                 }
                               >
-                                🔓
+                                <span className="act-ico" aria-hidden>
+                                  🔓
+                                </span>
                               </button>
                               <span className="locked-badge">Verrouillé</span>
                             </>
@@ -674,43 +745,43 @@ export function BanqueDesk({
                             <>
                               <button
                                 type="button"
-                                className="icon-btn rapp"
-                                title="Rapprochement"
-                                onClick={() => {
-                                  const value = window.prompt("Date de valeur (AAAA-MM-JJ)", line.value_date);
-                                  if (!value) return;
-                                  run(
-                                    () =>
-                                      setBanqueRapprochement({
-                                        line_id: line.id,
-                                        reconciled: true,
-                                        value_date: value,
-                                      }),
-                                    "Rapprochement enregistré.",
-                                    false,
-                                  );
-                                }}
+                                className="act-btn act-edit"
+                                title="Modifier"
+                                onClick={() => openEdit(line)}
                               >
-                                ✓
-                              </button>
-                              <button type="button" className="icon-btn edit" title="Modifier" onClick={() => openEdit(line)}>
-                                ✎
+                                <span className="act-ico" aria-hidden>
+                                  ✎
+                                </span>
                               </button>
                               {data.canDelete && (
                                 <button
                                   type="button"
-                                  className="icon-btn del"
+                                  className="act-btn act-del"
                                   title="Supprimer"
                                   onClick={() => {
-                                    if (!window.confirm(`Supprimer l'opération N° ${line.display_no} ?`)) return;
-                                    run(() => deleteBanqueLine(line.id), "Opération supprimée.", false);
+                                    if (
+                                      !window.confirm(
+                                        `Supprimer l'opération N° ${line.display_no} ?`,
+                                      )
+                                    ) {
+                                      return;
+                                    }
+                                    run(
+                                      () => deleteBanqueLine(line.id),
+                                      "Opération supprimée.",
+                                      false,
+                                    );
                                   }}
                                 >
-                                  🗑
+                                  <span className="act-ico" aria-hidden>
+                                    🗑
+                                  </span>
                                 </button>
                               )}
                             </>
                           )
+                        ) : (
+                          <span className="actions-none">—</span>
                         )}
                       </td>
                     </tr>
@@ -1212,6 +1283,12 @@ export function BanqueDesk({
 }
 
 export const BanqueJournal = BanqueDesk;
+
+/** Same display as Apps Script sheet cells: `12 518 413,00 DA`. */
+function moneyDa(value: number, always = false): string {
+  if (!always && !(Number(value) > 0)) return "";
+  return `${formatDa(value)} DA`;
+}
 
 function docCell(label: string, url: string | null) {
   const text = label.replace(/🔗/g, "").trim();

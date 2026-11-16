@@ -214,6 +214,20 @@
   font-weight: 700;
 }
 
+.banque-app .btn-quitter {
+  background: #fff;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+}
+.banque-app .btn-quitter:hover {
+  background: #fef2f2;
+}
+
 .banque-app .account-meta {
   display: flex;
   align-items: center;
@@ -222,7 +236,10 @@
   font-size: 13px;
   color: #555;
 }
+.banque-app .account-meta .meta-bank-ico { color: #16a34a; }
+.banque-app .account-meta strong { color: #111; }
 .banque-app .account-meta strong.solde { color: #15803d; }
+.banque-app .account-meta .meta-da { color: #94a3b8; }
 
 .banque-app .table-card {
   background: white;
@@ -233,6 +250,12 @@
 .banque-app .table-scroll {
   max-height: 58vh;
   overflow: auto;
+}
+.banque-app .table-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.banque-app .table-scroll::-webkit-scrollbar-track { background: #f1f1f1; }
+.banque-app .table-scroll::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
 }
 .banque-app .main-table {
   min-width: 1500px;
@@ -262,16 +285,102 @@
   padding: 7px 6px;
   border-bottom: 1px solid #f5f5f5;
   border-right: 1px solid #f5f5f5;
+  white-space: nowrap;
 }
 .banque-app .row-in td { background-color: #f0fdf4 !important; }
 .banque-app .row-out td { background-color: #fff5f5 !important; }
-.banque-app .main-table tbody tr:hover td { background-color: #eff6ff !important; }
+.banque-app .main-table tbody tr:hover td {
+  background-color: #eff6ff !important;
+  transition: background-color 0.15s;
+}
 .banque-app .solde-cell { font-weight: 700; color: #1a472a; }
 .banque-app .debit-cell { color: #16a34a; font-weight: 700; }
 .banque-app .credit-cell { color: #dc2626; font-weight: 700; }
-.banque-app .libelle-cell { text-align: left !important; padding-left: 10px !important; }
+.banque-app .frais-cell { color: #64748b; }
+.banque-app .libelle-cell {
+  text-align: left !important;
+  padding-left: 10px !important;
+  white-space: normal !important;
+  min-width: 160px;
+}
 .banque-app .row-alert-exp td { background-color: rgba(220, 53, 69, 0.2) !important; }
 .banque-app .row-alert-soon td { background-color: rgba(255, 165, 0, 0.2) !important; }
+.banque-app .empty-rows {
+  padding: 40px 16px !important;
+  color: #94a3b8;
+  text-align: center;
+}
+.banque-app .empty-ico {
+  display: block;
+  font-size: 1.8rem;
+  opacity: 0.35;
+  margin-bottom: 8px;
+}
+.banque-app .rapp-cell,
+.banque-app .actions-cell {
+  white-space: nowrap !important;
+}
+.banque-app .actions-none { color: #94a3b8; font-size: 10px; }
+.banque-app .rapp-done {
+  font-size: 14px;
+  line-height: 1;
+}
+.banque-app .act-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 0;
+  cursor: pointer;
+  margin: 0 2px;
+  padding: 0;
+  line-height: 1;
+  vertical-align: middle;
+}
+.banque-app .act-btn .act-ico {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+}
+/* RAPP: cercle gris foncé + ✓ blanc (comme Workspace) */
+.banque-app .act-rapp {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #4b5563;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+.banque-app .act-rapp:hover { background: #374151; }
+/* ACTIONS: carré bleu édition */
+.banque-app .act-edit {
+  border-radius: 5px;
+  background: #2563eb;
+}
+.banque-app .act-edit:hover { background: #1d4ed8; }
+/* ACTIONS: carré rouge suppression */
+.banque-app .act-del {
+  border-radius: 5px;
+  background: #dc2626;
+}
+.banque-app .act-del:hover { background: #b91c1c; }
+.banque-app .act-unlock {
+  border-radius: 5px;
+  background: #d97706;
+}
+.banque-app .act-unlock:hover { background: #b45309; }
+.banque-app .locked-badge {
+  font-size: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 2px 6px;
+  color: #6b7280;
+  background: #f9fafb;
+  margin-left: 4px;
+  vertical-align: middle;
+}
 
 .banque-app .alert {
   border-radius: 10px;
@@ -357,25 +466,6 @@
   border-bottom: 1px solid #e5e7eb;
   padding-bottom: 10px;
   margin-bottom: 4px;
-}
-.banque-app .icon-btn {
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  padding: 0 4px;
-  font-size: 14px;
-}
-.banque-app .icon-btn.rapp { color: #64748b; }
-.banque-app .icon-btn.edit { color: #2563eb; }
-.banque-app .icon-btn.del { color: #dc2626; }
-.banque-app .icon-btn.unlock { color: #d97706; }
-.banque-app .locked-badge {
-  font-size: 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  padding: 2px 6px;
-  color: #6b7280;
-  background: #f9fafb;
 }
 .banque-app a.doc-link {
   color: #2563eb;
