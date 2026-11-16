@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
+import { workspaceHasRole } from "@/lib/auth/require-roles";
 import {
   formatDateIso,
   sumCautionCredits,
@@ -14,6 +15,7 @@ import type {
   BanqueLists,
 } from "@/lib/banque/types";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import {
   banqueImportSchema,
   banqueLineSchema,
@@ -437,6 +439,168 @@ export async function listBanqueAdminUsers(): Promise<ActionResult<BanqueAdminUs
     });
   }
   return { ok: true, data: rows };
+}
+
+async function requireBanqueUserAdmin(): Promise<
+  ActionResult<{ workspace: NonNullable<Awaited<ReturnType<typeof getWorkspaceProfile>>> }>
+> {
+  const workspace = await getWorkspaceProfile();
+  if (!workspace) return fail("Session requise.");
+  if (!(await can("update"))) return fail("Accès refusé par les droits financiers (RBAC).");
+  if (
+    !workspace.isSuperAdmin &&
+    !workspaceHasRole(workspace, ["ADMIN_FINANCE", "GERANT"])
+  ) {
+    return fail("Réservé à l'administrateur Banque (admin).");
+  }
+  return { ok: true, data: { workspace } };
+}
+
+/**
+ * Apps Script addNewUser — crée un compte ERP + rôle finance.
+ * role "admin" → ADMIN_FINANCE ; "user" → GERANT.
+ */
+export async function createBanqueAdminUser(input: {
+  email: string;
+  password: string;
+  name: string;
+  role: "admin" | "user";
+}): Promise<ActionResult<{ id: string }>> {
+  const gate = await requireBanqueUserAdmin();
+  if (!gate.ok) return gate;
+  const { workspace } = gate.data;
+
+  const email = input.email.trim().toLowerCase();
+  const name = input.name.trim();
+  const password = input.password;
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("Email invalide.");
+  if (!name || name.length < 2) return fail("Nom complet requis.");
+  if (!password || password.length < 8) return fail("Mot de passe: 8 caractères minimum.");
+  if (input.role !== "admin" && input.role !== "user") return fail("Rôle invalide.");
+
+  const roleCode = input.role === "admin" ? "ADMIN_FINANCE" : "GERANT";
+  if (roleCode === "ADMIN_FINANCE" && !workspace.isSuperAdmin) {
+    return fail("Seul un SUPER_ADMIN peut créer un Administrateur finance.");
+  }
+
+  const supabase = await createClient();
+  const { data: role, error: roleErr } = await supabase
+    .from("sys_roles")
+    .select("id, code, hierarchy_level, site_scoped_allowed, sites_only, is_active")
+    .eq("code", roleCode)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (roleErr || !role) return fail(`Rôle ${roleCode} introuvable.`);
+
+  let siteId: string | null = null;
+  if (role.sites_only) {
+    siteId =
+      workspace.activeSite?.id ??
+      workspace.roles.find((r) => r.siteId)?.siteId ??
+      workspace.accessibleSites[0]?.id ??
+      null;
+    if (!siteId) return fail("Aucun chantier actif pour rattacher l'utilisateur.");
+  } else if (!role.site_scoped_allowed) {
+    siteId = null;
+  }
+
+  let service;
+  try {
+    service = createServiceClient();
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Service role indisponible.");
+  }
+
+  const { data: created, error: createErr } = await service.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name: name },
+  });
+  if (createErr || !created.user) {
+    return fail(createErr?.message ?? "Échec création du compte.");
+  }
+  const userId = created.user.id;
+
+  const { error: profileErr } = await service.from("sys_users").upsert(
+    {
+      id: userId,
+      email,
+      full_name: name,
+      status: "ACTIVE",
+      locale: "fr",
+      must_reset_password: true,
+    },
+    { onConflict: "id" },
+  );
+  if (profileErr) {
+    await service.auth.admin.deleteUser(userId);
+    return fail(profileErr.message);
+  }
+
+  const { error: assignErr } = await supabase.from("sys_user_site_roles").insert({
+    user_id: userId,
+    role_id: role.id,
+    site_id: siteId,
+    created_by: workspace.id,
+  });
+  if (assignErr) {
+    await service.from("sys_users").delete().eq("id", userId);
+    await service.auth.admin.deleteUser(userId);
+    return fail(assignErr.message);
+  }
+
+  refresh();
+  revalidatePath("/parametres/utilisateurs");
+  return { ok: true, data: { id: userId } };
+}
+
+/** Apps Script deleteUser — suppression ERP (auth + profil). */
+export async function deleteBanqueAdminUser(userId: string): Promise<ActionResult<{ id: string }>> {
+  const gate = await requireBanqueUserAdmin();
+  if (!gate.ok) return gate;
+  const { workspace } = gate.data;
+  if (!/^[0-9a-f-]{36}$/i.test(userId)) return fail("Utilisateur invalide.");
+  if (userId === workspace.id) return fail("Vous ne pouvez pas supprimer votre propre compte.");
+
+  let service;
+  try {
+    service = createServiceClient();
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Service role indisponible.");
+  }
+
+  const { data: links } = await service
+    .from("sys_user_site_roles")
+    .select("role:sys_roles ( code, hierarchy_level )")
+    .eq("user_id", userId);
+  const one = <T,>(v: T | T[] | null | undefined) => (Array.isArray(v) ? v[0] : v) ?? null;
+  for (const link of links ?? []) {
+    const role = one(
+      link.role as { code: string; hierarchy_level: number } | { code: string; hierarchy_level: number }[] | null,
+    );
+    if (role?.code === "SUPER_ADMIN" || (role?.hierarchy_level ?? 0) >= 90) {
+      return fail("Impossible de supprimer un SUPER_ADMIN depuis Banque.");
+    }
+    if ((role?.hierarchy_level ?? 0) >= 80 && !workspace.isSuperAdmin) {
+      return fail("Seul un SUPER_ADMIN peut supprimer ce compte.");
+    }
+  }
+
+  const { data: target, error: loadErr } = await service
+    .from("sys_users")
+    .select("id, email, full_name")
+    .eq("id", userId)
+    .maybeSingle();
+  if (loadErr) return fail(loadErr);
+  if (!target) return fail("Utilisateur introuvable.");
+
+  const { error } = await service.rpc("erp_delete_user", { p_user_id: userId });
+  if (error) return fail(error.message);
+
+  refresh();
+  revalidatePath("/parametres/utilisateurs");
+  return { ok: true, data: { id: userId } };
 }
 
 /** Helper for UI edit forms: normalize FR date cells to ISO. */
