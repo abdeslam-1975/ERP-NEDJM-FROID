@@ -487,22 +487,27 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
   try {
     if (input.operationId) {
       if (!flags.canManage) return fail("❌ Accès réservé : droit Modifier/Supprimer requis.");
+      const existing = await supabase
+        .from("caisse_operations")
+        .select("op_number, op_date, photo_data, bon_label, bon_match_status")
+        .eq("id", input.operationId)
+        .maybeSingle();
+      if (existing.error) return fail(existing.error.message);
+      if (!existing.data) return fail("❌ Opération introuvable.");
+
       let photoData = photo.data;
       if (!photoData && input.items.some((item) => item.keepPhoto)) {
-        const existing = await supabase
-          .from("caisse_operations")
-          .select("photo_data, bon_label, bon_match_status")
-          .eq("id", input.operationId)
-          .maybeSingle();
-        if (existing.error) return fail(existing.error.message);
-        photoData = existing.data?.photo_data ?? null;
+        photoData = existing.data.photo_data ?? null;
         if (!photoData) return fail("❌ Photo du bon obligatoire (au moins une par opération)");
         if (matchStatus == null) {
           matchStatus = normalizeBonMatchStatus(
-            existing.data?.bon_match_status as PurchaseInput["bonMatchStatus"],
+            existing.data.bon_match_status as PurchaseInput["bonMatchStatus"],
           );
         }
       }
+      const previousDate = String(existing.data.op_date).slice(0, 10);
+      const dateChanged = previousDate !== input.date;
+
       const updated = await supabase
         .from("caisse_operations")
         .update({ ...header, photo_data: photoData })
@@ -514,7 +519,10 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
       const removed = await supabase.from("caisse_lines").delete().eq("operation_id", input.operationId);
       if (removed.error) return fail(removed.error.message);
       await writeLines(supabase, input.operationId, "ACHAT", input.items);
-      const numbered = await refreshOperationNumber(supabase, input.operationId, updated.data.op_number);
+      // Full renumber (~900 rows) can exceed the 8s role timeout; only needed when the date moves.
+      const numbered = dateChanged
+        ? await refreshOperationNumber(supabase, input.operationId, updated.data.op_number)
+        : { op: Number(updated.data.op_number) || Number(existing.data.op_number), renumbered: false };
       const archiveName = await applyBonDisplayAndMatch(
         supabase,
         input.operationId,

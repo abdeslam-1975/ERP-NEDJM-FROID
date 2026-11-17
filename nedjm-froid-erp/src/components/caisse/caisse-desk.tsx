@@ -319,8 +319,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       bonChecks.find((check) => check.status === "bad" || check.status === "warn" || check.status === "ok" || check.status === "unknown")
         ?.status ?? null;
     setBusy(true);
+    let timeoutId = 0;
     try {
-      const result = await saveCaissePurchase({
+      const savePromise = saveCaissePurchase({
         operationId: editId || undefined,
         date: opDate,
         affectation,
@@ -329,6 +330,15 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         items: pending,
         bonMatchStatus: bonMatchStatus === "checking" || bonMatchStatus === "idle" ? null : bonMatchStatus,
       });
+      const result = await Promise.race([
+        savePromise,
+        new Promise<never>((_, reject) => {
+          timeoutId = window.setTimeout(
+            () => reject(new Error("Enregistrement trop long (délai dépassé). Réessayez avec une image plus légère.")),
+            55_000,
+          );
+        }),
+      ]);
       if (!result.ok) return notify("Résultat", result.error);
       if (bonWarn?.message) {
         notify("Enregistré avec avertissement", `${result.data.message}\n${bonWarn.message}`);
@@ -340,6 +350,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     } catch (error) {
       notify("Résultat", error instanceof Error ? error.message : "Enregistrement interrompu. Vérifiez le journal puis réessayez.");
     } finally {
+      if (timeoutId) window.clearTimeout(timeoutId);
       setBusy(false);
     }
   }
@@ -1641,7 +1652,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         </div>
       ) : null}
       {toast ? <div className="toast"><strong>{toast.title}</strong><div>{toast.text}</div></div> : null}
-      {busy ? <div className="overlay"><div className="panel">Chargement...</div></div> : null}
+      {busy ? <div className="overlay"><div className="panel">Enregistrement en cours…</div></div> : null}
     </div>
   );
 
