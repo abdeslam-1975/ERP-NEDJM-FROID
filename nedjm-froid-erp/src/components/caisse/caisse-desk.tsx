@@ -26,7 +26,7 @@ import {
 } from "@/lib/actions/caisse";
 import { CaisseBulkBonsPanel } from "@/components/caisse/caisse-bulk-bons";
 import { bonExtractNeedsAi, evaluateBonMatch, type BonCheckStatus } from "@/lib/caisse/bon-check";
-import { prepareAndReadBon } from "@/lib/caisse/bon-ocr";
+import { prepareAndReadBon, prepareBonDataUrl } from "@/lib/caisse/bon-ocr";
 import { readCaisseBonWithAi } from "@/lib/actions/caisse";
 import { formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
 import type { CaisseAdminUser, CaisseAuditRow, CaisseDashboard, CloseStatus, JournalLine, PurchaseItemInput } from "@/lib/caisse/types";
@@ -254,26 +254,31 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     setAffectation(line.affectation);
     setMatricule(line.matricule);
     setBuyer(line.buyer);
+    const opHasPhoto = lines.some((row) => row.hasPhoto);
+    const opMatch = lines.find((row) => row.bonMatchStatus)?.bonMatchStatus ?? null;
     setItems(
-      lines.map((row) => ({
-        ...emptyItem(row.unit || data.units[0] || "U"),
-        desc: row.desc,
-        itemVal: row.itemVal,
-        unit: row.unit || data.units[0] || "U",
-        qte: String(row.qty ?? ""),
-        price: row.price == null ? "" : String(row.price),
-        photoName: row.hasPhoto ? "Bon actuel" : "",
-        photoDataUrl: "",
-        keepPhoto: row.hasPhoto,
-        bonStatus: row.hasPhoto ? (row.bonMatchStatus || "unknown") : "idle",
-        bonMessage: row.hasPhoto
-          ? row.bonMatchStatus === "ok"
-            ? "Bon existant conforme."
-            : row.bonMatchStatus === "bad" || row.bonMatchStatus === "warn"
-              ? "Bon existant avec écart — rechargez pour recontrôler."
-              : "Bon existant — rechargez le fichier pour contrôler date/montant."
-          : "",
-      })),
+      lines.map((row, index) => {
+        const keep = index === 0 && opHasPhoto;
+        return {
+          ...emptyItem(row.unit || data.units[0] || "U"),
+          desc: row.desc,
+          itemVal: row.itemVal,
+          unit: row.unit || data.units[0] || "U",
+          qte: String(row.qty ?? ""),
+          price: row.price == null ? "" : String(row.price),
+          photoName: keep ? "Bon actuel" : "",
+          photoDataUrl: "",
+          keepPhoto: keep,
+          bonStatus: keep ? (opMatch || "unknown") : "idle",
+          bonMessage: keep
+            ? opMatch === "ok"
+              ? "Bon existant conforme."
+              : opMatch === "bad" || opMatch === "warn"
+                ? "Bon existant avec écart — rechargez pour recontrôler."
+                : "Bon existant — rechargez le fichier pour contrôler date/montant."
+            : "",
+        };
+      }),
     );
     setOpOpen(true);
   }
@@ -303,6 +308,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     if (affectation === "PARC ROULANT" && !matricule) return notify("Attention", "Sélectionnez le matricule");
     if (!pending.length) return notify("Attention", "Ajoutez au moins un article");
     if (!pending.some((item) => item.photoDataUrl || item.keepPhoto)) {
+      if (items.some((item) => item.bonStatus === "checking" && item.photoName)) {
+        return notify("Attention", "Lecture du bon en cours — patientez une seconde puis réessayez.");
+      }
       return notify("Attention", "Ajoutez au moins un bon (PDF ou image) pour cette opération (un seul suffit)");
     }
     const bonChecks = items.map((item) => resolveBonCheck(item));
@@ -311,8 +319,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       bonChecks.find((check) => check.status === "bad" || check.status === "warn" || check.status === "ok" || check.status === "unknown")
         ?.status ?? null;
     setBusy(true);
+    let timeoutId = 0;
     try {
-      const result = await saveCaissePurchase({
+      const savePromise = saveCaissePurchase({
         operationId: editId || undefined,
         date: opDate,
         affectation,
@@ -321,6 +330,15 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         items: pending,
         bonMatchStatus: bonMatchStatus === "checking" || bonMatchStatus === "idle" ? null : bonMatchStatus,
       });
+      const result = await Promise.race([
+        savePromise,
+        new Promise<never>((_, reject) => {
+          timeoutId = window.setTimeout(
+            () => reject(new Error("Enregistrement trop long (délai dépassé). Réessayez avec une image plus légère.")),
+            55_000,
+          );
+        }),
+      ]);
       if (!result.ok) return notify("Résultat", result.error);
       if (bonWarn?.message) {
         notify("Enregistré avec avertissement", `${result.data.message}\n${bonWarn.message}`);
@@ -332,6 +350,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     } catch (error) {
       notify("Résultat", error instanceof Error ? error.message : "Enregistrement interrompu. Vérifiez le journal puis réessayez.");
     } finally {
+      if (timeoutId) window.clearTimeout(timeoutId);
       setBusy(false);
     }
   }
@@ -765,11 +784,12 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
 
   async function attachBon(index: number, file: File | undefined) {
     if (!file) return;
+    let attachedDataUrl = "";
     updateItem(index, {
       photoName: file.name,
       keepPhoto: false,
       bonStatus: "checking",
-      bonMessage: "Lecture du bon (date + montant)…",
+      bonMessage: "Préparation du bon…",
       bonDetectedDate: null,
       bonDetectedAmount: null,
       bonCandidateDates: [],
@@ -777,7 +797,18 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       bonRawText: "",
     });
     try {
+      // Attach storage payload first so "Mettre à jour" works even while OCR is still running.
+      attachedDataUrl = await prepareBonDataUrl(file);
+      updateItem(index, {
+        photoDataUrl: attachedDataUrl,
+        photoName: file.name,
+        keepPhoto: false,
+        bonStatus: "checking",
+        bonMessage: "Lecture du bon (date + montant)…",
+      });
+
       const prepared = await prepareAndReadBon(file);
+      attachedDataUrl = prepared.dataUrl || attachedDataUrl;
       let extract = prepared.extract;
       if (bonExtractNeedsAi(extract)) {
         const ai = await readCaisseBonWithAi({ photoDataUrl: prepared.dataUrl });
@@ -807,7 +838,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         rawText: prepared.rawText || extract.rawText,
       });
       updateItem(index, {
-        photoDataUrl: prepared.dataUrl,
+        photoDataUrl: attachedDataUrl,
         photoName: file.name,
         keepPhoto: false,
         bonStatus: checked.status,
@@ -822,19 +853,37 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         notify("Contrôle bon", checked.message);
       }
     } catch (error) {
-      updateItem(index, {
-        photoDataUrl: "",
-        photoName: "",
-        keepPhoto: false,
-        bonStatus: "warn",
-        bonMessage: error instanceof Error ? error.message : "Lecture du bon impossible",
-        bonDetectedDate: null,
-        bonDetectedAmount: null,
-        bonCandidateDates: [],
-        bonCandidateAmounts: [],
-        bonRawText: "",
-      });
-      notify("Bon", error instanceof Error ? error.message : "Lecture du bon impossible");
+      const message = error instanceof Error ? error.message : "Lecture du bon impossible";
+      if (attachedDataUrl) {
+        // Keep the uploaded bon; OCR failure must not block save.
+        updateItem(index, {
+          photoDataUrl: attachedDataUrl,
+          photoName: file.name,
+          keepPhoto: false,
+          bonStatus: "unknown",
+          bonMessage: `${message} — bon conservé, vous pouvez enregistrer.`,
+          bonDetectedDate: null,
+          bonDetectedAmount: null,
+          bonCandidateDates: [],
+          bonCandidateAmounts: [],
+          bonRawText: "",
+        });
+        notify("Bon", "Bon joint. Contrôle date/montant indisponible — vous pouvez enregistrer.");
+      } else {
+        updateItem(index, {
+          photoDataUrl: "",
+          photoName: "",
+          keepPhoto: false,
+          bonStatus: "warn",
+          bonMessage: message,
+          bonDetectedDate: null,
+          bonDetectedAmount: null,
+          bonCandidateDates: [],
+          bonCandidateAmounts: [],
+          bonRawText: "",
+        });
+        notify("Bon", message);
+      }
     }
   }
 
@@ -1603,7 +1652,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         </div>
       ) : null}
       {toast ? <div className="toast"><strong>{toast.title}</strong><div>{toast.text}</div></div> : null}
-      {busy ? <div className="overlay"><div className="panel">Chargement...</div></div> : null}
+      {busy ? <div className="overlay"><div className="panel">Enregistrement en cours…</div></div> : null}
     </div>
   );
 

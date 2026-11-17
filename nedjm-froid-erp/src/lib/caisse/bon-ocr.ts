@@ -5,17 +5,19 @@ import { extractBonFields, type BonExtract } from "@/lib/caisse/bon-check";
 
 /** Aligné sur la contrainte DB (~4 Mo) et bodySizeLimit server actions. */
 export const MAX_BON_DATA_URL_CHARS = 3_800_000;
+/** Target softer than the hard max so save/update stays under Vercel/PostgREST timeouts. */
+export const TARGET_BON_DATA_URL_CHARS = 1_200_000;
 
-async function canvasToJpegDataUrl(canvas: HTMLCanvasElement, quality = 0.72): Promise<string> {
+async function canvasToJpegDataUrl(canvas: HTMLCanvasElement, quality = 0.68): Promise<string> {
   let working = canvas;
   let q = quality;
   let url = working.toDataURL("image/jpeg", q);
-  while (url.length > MAX_BON_DATA_URL_CHARS && q > 0.32) {
-    q -= 0.08;
+  while (url.length > TARGET_BON_DATA_URL_CHARS && q > 0.28) {
+    q -= 0.07;
     url = working.toDataURL("image/jpeg", q);
   }
   let side = Math.max(working.width, working.height);
-  while (url.length > MAX_BON_DATA_URL_CHARS && side > 700) {
+  while (url.length > TARGET_BON_DATA_URL_CHARS && side > 640) {
     side = Math.round(side * 0.75);
     const scale = side / Math.max(canvas.width, canvas.height);
     const smaller = document.createElement("canvas");
@@ -27,10 +29,10 @@ async function canvasToJpegDataUrl(canvas: HTMLCanvasElement, quality = 0.72): P
     ctx.fillRect(0, 0, smaller.width, smaller.height);
     ctx.drawImage(canvas, 0, 0, smaller.width, smaller.height);
     working = smaller;
-    q = 0.65;
+    q = 0.6;
     url = working.toDataURL("image/jpeg", q);
-    while (url.length > MAX_BON_DATA_URL_CHARS && q > 0.28) {
-      q -= 0.07;
+    while (url.length > TARGET_BON_DATA_URL_CHARS && q > 0.26) {
+      q -= 0.06;
       url = working.toDataURL("image/jpeg", q);
     }
   }
@@ -146,8 +148,8 @@ async function rasterizeToCanvas(file: File, maxSide: number): Promise<HTMLCanva
 
 /** Convert image or PDF bon into a compressed JPEG data URL for storage. */
 export async function prepareBonDataUrl(file: File): Promise<string> {
-  const canvas = await rasterizeToCanvas(file, 1400);
-  return canvasToJpegDataUrl(canvas, 0.7);
+  const canvas = await rasterizeToCanvas(file, 1200);
+  return canvasToJpegDataUrl(canvas, 0.62);
 }
 
 async function ocrDataUrl(
@@ -224,7 +226,7 @@ export async function prepareAndReadBon(
   }
 
   onProgress?.(98);
-  const dataUrl = await canvasToJpegDataUrl(canvas, 0.7);
+  const dataUrl = await canvasToJpegDataUrl(canvas, 0.62);
   return {
     dataUrl,
     extract,
