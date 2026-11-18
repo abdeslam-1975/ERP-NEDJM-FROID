@@ -445,8 +445,12 @@ export function AttendanceManager({
   function paintRange(employeeId: string, startDay: number, endDay: number, code: string) {
     const from = Math.min(startDay, endDay);
     const to = Math.max(startDay, endDay);
+    const openFrom = allPeople.find((person) => person.id === employeeId)?.start_date.slice(0, 10) ?? "";
     const normalized = code.trim().toUpperCase();
-    const dates = Array.from({ length: to - from + 1 }, (_, i) => iso(from + i));
+    const dates = Array.from({ length: to - from + 1 }, (_, i) => iso(from + i)).filter(
+      (date) => !openFrom || date >= openFrom,
+    );
+    if (dates.length === 0) return;
     setCells((prev) =>
       paintAttendanceCells(prev, { employeeId, siteId, dates, code: normalized }),
     );
@@ -454,6 +458,7 @@ export function AttendanceManager({
     setDrafts((prev) => {
       const copy = { ...prev };
       for (let d = from; d <= to; d += 1) {
+        if (openFrom && iso(d) < openFrom) continue;
         const key = cellKey(employeeId, d);
         if (!normalized) delete copy[key];
         else copy[key] = normalized;
@@ -826,8 +831,11 @@ export function AttendanceManager({
   }
 
   function renderDayCells(p: Person): ReactNode {
+    const openFrom = p.start_date.slice(0, 10);
     return Array.from({ length: days }, (_, i) => {
       const day = i + 1;
+      const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const lockedDay = openFrom.length === 10 && iso < openFrom;
       const key = cellKey(p.id, day);
       const cell = grid.get(key);
       const stored = cell?.legend_code ?? "";
@@ -841,10 +849,10 @@ export function AttendanceManager({
       return (
         <td key={i} className={`${TD} border-r border-r-border/30 p-px`}>
           <input
-            readOnly={!canEditDays}
+            readOnly={!canEditDays || lockedDay}
             className={`h-6 w-full min-w-[26px] rounded border-0 px-0 text-center text-[10px] font-semibold uppercase outline-none transition focus:ring-2 focus:ring-brand ${
               proposed ? PROPOSED_CLS : tone ? "" : fallback
-            } ${canEditDays ? "cursor-pointer hover:ring-1 hover:ring-brand/40" : "cursor-default"}`}
+            } ${canEditDays && !lockedDay ? "cursor-pointer hover:ring-1 hover:ring-brand/40" : "cursor-default"}`}
             style={
               omMark
                 ? { ...tone, boxShadow: "inset 0 -2px 0 rgba(15, 23, 42, 0.4)" }
@@ -857,7 +865,7 @@ export function AttendanceManager({
                 : `${day} ${MONTHS[month - 1]}`
             }
             onClick={() => {
-              if (!canEditDays) return;
+              if (!canEditDays || lockedDay) return;
               const snapshot = {
                 employeeId: p.id,
                 start: day,
@@ -869,7 +877,7 @@ export function AttendanceManager({
               cardTimer = window.setTimeout(() => setMonthCard(snapshot), 280);
             }}
             onChange={(e) => {
-              if (!canEditDays) return;
+              if (!canEditDays || lockedDay) return;
               if (cardTimer) {
                 window.clearTimeout(cardTimer);
                 cardTimer = null;
@@ -881,7 +889,7 @@ export function AttendanceManager({
               }));
             }}
             onBlur={(e) => {
-              if (canEditDays) applyCellCode(p.id, day, e.target.value);
+              if (canEditDays && !lockedDay) applyCellCode(p.id, day, e.target.value);
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {

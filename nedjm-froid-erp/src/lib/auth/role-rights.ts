@@ -78,6 +78,7 @@ const NODE_SCREENS: Record<string, string[]> = {
   "nav.decisions": ["decisions"],
   "nav.rh": ["hr_hub"],
   "rh.employes": ["employees"],
+  "rh.candidats": ["hr_candidates"],
   "rh.postes": ["hr_postes"],
   "rh.presence": ["hr_attendance"],
   "rh.presence_imports": ["hr_attendance_import"],

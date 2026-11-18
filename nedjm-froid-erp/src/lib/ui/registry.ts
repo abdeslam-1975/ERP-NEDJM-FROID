@@ -168,6 +168,7 @@ export const UI_TABSETS: UiTabsetDef[] = [
     items: [
       { id: "dashboard", labelFr: "Tableau de bord", href: "/rh", exact: true, section: "overview" },
       { id: "employes", labelFr: "Employés", href: "/rh/employes", section: "people" },
+      { id: "candidats", labelFr: "Candidats", labelAr: "المترشحون", href: "/rh/candidats", section: "people" },
       { id: "postes", labelFr: "Postes & grille", href: "/rh/postes", section: "people" },
       { id: "presence", labelFr: "Présence", href: "/rh/presence", exact: true, section: "time" },
       { id: "presence_imports", labelFr: "Imports de présences", href: "/rh/presence/imports", section: "time" },

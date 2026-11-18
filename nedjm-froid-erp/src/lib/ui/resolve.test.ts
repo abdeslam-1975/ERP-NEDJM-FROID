@@ -236,7 +236,7 @@ describe("resolveNav", () => {
   it("sends the RH entry to the first visible RH page when the dashboard is hidden", () => {
     const nav = resolveNav(layout({ hidden: ["rh.dashboard", "rh.employes"] }));
     const rh = nav.flatMap((g) => g.items).find((i) => i.key === "nav.rh");
-    expect(rh).toMatchObject({ href: "/rh/postes", activeHref: "/rh" });
+    expect(rh).toMatchObject({ href: "/rh/candidats", activeHref: "/rh" });
   });
 });
 

@@ -7,6 +7,7 @@ export const APP_PAGES: AppPage[] = [
   { href: "/", fr: "Tableau de bord", ar: "لوحة القيادة" },
   { href: "/rh", fr: "Ressources humaines", ar: "الموارد البشرية" },
   { href: "/rh/employes", fr: "Employés", ar: "العمال", keywords: "fiche salarie personnel" },
+  { href: "/rh/candidats", fr: "Candidats", ar: "المترشحون", keywords: "embauche fiche contrat cnas" },
   { href: "/rh/postes", fr: "Postes & grille", ar: "المناصب" },
   { href: "/rh/presence", fr: "Présence / pointage", ar: "الحضور" },
   { href: "/rh/presence/imports", fr: "Imports de présences", ar: "استيراد الحضور", keywords: "pointeuse badge" },

@@ -7,6 +7,7 @@ import {
   type HrFileRow,
 } from "@/lib/actions/hr-documents";
 import { Button } from "@/components/ui/button";
+import { EmployeeAffiliationPanel } from "@/components/rh/employee-affiliation-panel";
 import { RhAlert, RhModal } from "@/components/rh/rh-ui";
 import {
   isDocumentRequiredForSave,
@@ -96,6 +97,8 @@ export function EmployeeAdminDossierDialog({
         </>
       }
     >
+      <EmployeeAffiliationPanel employeeId={employeeId} />
+
       <div className="mb-3 flex flex-wrap gap-2 text-xs">
         <span className="rounded-lg bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800">
           {present} / {slots.length} documents
