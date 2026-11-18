@@ -6,21 +6,19 @@ import {
   Activity,
   Banknote,
   BellRing,
+  ArrowRight,
   CalendarClock,
   CalendarPlus,
   ChartPie,
   ChevronRight,
   CircleCheck,
   Clock,
-  Plane,
   FileClock,
   FilePenLine,
   HandCoins,
   FolderOpen,
   TrendingDown,
   TrendingUp,
-  TreePalm,
-  UserCheck,
   UserPlus,
   UserRoundPlus,
   UserX,
@@ -113,15 +111,11 @@ export function IconTile({ icon: Icon, className, style }: { icon: LucideIcon; c
   );
 }
 
-export function CardTitle({ icon, title, right, color }: { icon: LucideIcon; title: string; right?: ReactNode; color?: string }) {
+export function CardTitle({ icon, title, right }: { icon: LucideIcon; title: string; right?: ReactNode }) {
   return (
     <div className="mb-5 flex items-center justify-between gap-3">
       <div className="flex items-center gap-3">
-        <IconTile
-          icon={icon}
-          className="h-9 w-9 rounded-xl [&_svg]:h-[17px] [&_svg]:w-[17px]"
-          style={color ? { background: `${color}22`, color } : undefined}
-        />
+        <IconTile icon={icon} className="h-9 w-9 rounded-xl [&_svg]:h-[17px] [&_svg]:w-[17px]" />
         <h3 className="font-semibold text-foreground">{title}</h3>
       </div>
       {right}
@@ -151,7 +145,7 @@ function DeltaChip({ change }: { change: number }) {
   );
 }
 
-function Sparkline({ values, color = "var(--color-brand)" }: { values: number[]; color?: string }) {
+function Sparkline({ values }: { values: number[] }) {
   const gradientId = useId();
   if (values.length < 2) return null;
   const w = 200;
@@ -167,40 +161,28 @@ function Sparkline({ values, color = "var(--color-brand)" }: { values: number[];
     <svg viewBox={`0 0 ${w} ${h}`} className="h-[70px] w-[180px] shrink-0 sm:w-[200px]" aria-hidden>
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.28" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
+          <stop offset="0%" stopColor="var(--color-brand)" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="var(--color-brand)" stopOpacity="0" />
         </linearGradient>
       </defs>
       <path d={`${line} L${w},${h} L0,${h} Z`} fill={`url(#${gradientId})`} className="ui-fade" />
-      <path d={line} pathLength={1} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" className="ui-draw" />
+      <path d={line} pathLength={1} fill="none" stroke="var(--color-brand)" strokeWidth="2.5" strokeLinecap="round" className="ui-draw" />
     </svg>
   );
 }
 
-export function Ring({
-  pct,
-  size = 92,
-  stroke = 9,
-  color = "var(--color-brand)",
-  track = "currentColor",
-}: {
-  pct: number;
-  size?: number;
-  stroke?: number;
-  color?: string;
-  track?: string;
-}) {
+export function Ring({ pct, size = 92, stroke = 9 }: { pct: number; size?: number; stroke?: number }) {
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} className={track === "currentColor" ? "text-foreground/10" : undefined} strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" className="text-foreground/10" strokeWidth={stroke} />
       <circle
         cx={size / 2}
         cy={size / 2}
         r={r}
         fill="none"
-        stroke={color}
+        stroke="var(--color-brand)"
         strokeWidth={stroke}
         strokeLinecap="round"
         strokeDasharray={c}
@@ -270,13 +252,8 @@ function HeadcountChart({ points }: { points: { key: string; label: string; coun
         <svg viewBox={`0 0 ${w} ${h}`} className="block h-auto w-full" role="img" aria-label="Évolution des effectifs">
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#7c3aed" stopOpacity="0.32" />
-              <stop offset="100%" stopColor="#7c3aed" stopOpacity="0" />
-            </linearGradient>
-            <linearGradient id={`${gradientId}-line`} x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#7c3aed" />
-              <stop offset="55%" stopColor="#0284c7" />
-              <stop offset="100%" stopColor="#059669" />
+              <stop offset="0%" stopColor="var(--color-brand)" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="var(--color-brand)" stopOpacity="0" />
             </linearGradient>
           </defs>
           {[...new Set(ticks)].map((t) => (
@@ -298,7 +275,7 @@ function HeadcountChart({ points }: { points: { key: string; label: string; coun
             d={line}
             pathLength={1}
             fill="none"
-            stroke={`url(#${gradientId}-line)`}
+            stroke="var(--color-brand)"
             strokeWidth="3"
             strokeLinecap="round"
             className="ui-draw"
@@ -414,71 +391,13 @@ const ALERT_META: Record<ContractAlert["key"], { icon: LucideIcon; color: string
   uncovered: { icon: UserX, color: "#ef4444", title: "Employés sans contrat", href: "/rh/documents?onglet=contrats" },
 };
 
-const QUICK_ACTIONS: { icon: LucideIcon; label: string; href: string; color: string }[] = [
-  { icon: CalendarClock, label: "Pointage", href: "/rh/presence", color: "#0284c7" },
-  { icon: UserPlus, label: "Nouvel employé", href: "/rh/employes?nouveau=1", color: "#7c3aed" },
-  { icon: CalendarPlus, label: "Congé", href: "/rh/conges", color: "#d97706" },
-  { icon: HandCoins, label: "Avance", href: "/rh/paie/avances", color: "#059669" },
-  { icon: FolderOpen, label: "Documents", href: "/rh/documents", color: "#e11d48" },
+const QUICK_ACTIONS: { icon: LucideIcon; label: string; href: string }[] = [
+  { icon: CalendarClock, label: "Pointage", href: "/rh/presence" },
+  { icon: UserPlus, label: "Nouvel employé", href: "/rh/employes?nouveau=1" },
+  { icon: CalendarPlus, label: "Congé", href: "/rh/conges" },
+  { icon: HandCoins, label: "Avance", href: "/rh/paie/avances" },
+  { icon: FolderOpen, label: "Documents", href: "/rh/documents" },
 ];
-
-const SUMMARY_TONES = {
-  violet: "linear-gradient(145deg,#4338ca 0%,#7c3aed 58%,#a78bfa 140%)",
-  emerald: "linear-gradient(145deg,#047857 0%,#059669 52%,#34d399 140%)",
-  sky: "linear-gradient(145deg,#0369a1 0%,#0284c7 52%,#38bdf8 140%)",
-  rose: "linear-gradient(145deg,#be123c 0%,#e11d48 55%,#fb7185 140%)",
-} as const;
-
-function SummaryCard({
-  href,
-  icon: Icon,
-  label,
-  value,
-  hint,
-  wash,
-  aside,
-  children,
-}: {
-  href?: string;
-  icon: LucideIcon;
-  label: string;
-  value: ReactNode;
-  hint: string;
-  wash: string;
-  aside?: ReactNode;
-  children?: ReactNode;
-}) {
-  const body = (
-    <>
-      <span className="pointer-events-none absolute -top-10 -right-8 h-32 w-32 rounded-full bg-white/15 blur-2xl" aria-hidden />
-      <span className="pointer-events-none absolute -bottom-12 -left-6 h-28 w-28 rounded-full bg-black/10 blur-2xl" aria-hidden />
-      <div className="relative flex items-start justify-between gap-3">
-        <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/18 ring-1 ring-white/30">
-          <Icon className="h-5 w-5" strokeWidth={1.8} aria-hidden />
-        </span>
-        {aside}
-      </div>
-      <p className="relative mt-5 text-sm font-medium text-white/80">{label}</p>
-      <p className="relative mt-1 text-[2.35rem] leading-none font-semibold tracking-tight tabular-nums">{value}</p>
-      <p className="relative mt-2 text-xs leading-snug text-white/75">{hint}</p>
-      {children ? <div className="relative mt-auto">{children}</div> : null}
-    </>
-  );
-  const className =
-    "ui-lift relative flex h-full min-h-[11.5rem] flex-col overflow-hidden rounded-[1.5rem] p-5 text-white shadow-[0_18px_36px_-22px_rgba(15,23,42,0.7)]";
-  if (!href) {
-    return (
-      <section className={className} style={{ background: wash }}>
-        {body}
-      </section>
-    );
-  }
-  return (
-    <Link href={href} className={cn(className, "transition hover:-translate-y-0.5")} style={{ background: wash }}>
-      {body}
-    </Link>
-  );
-}
 
 export function initialsOf(name: string) {
   return (
@@ -526,7 +445,6 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
   const headcount = useMemo(() => stats.headcount.slice(-range), [stats.headcount, range]);
   const quickActions = useMemo(() => QUICK_ACTIONS.filter((a) => !isPathBlocked(layout, a.href.split("?")[0])), [layout]);
   const attendanceOpen = !isPathBlocked(layout, "/rh/presence");
-  const alertCount = stats.alerts.reduce((s, a) => s + a.count, 0);
   const today = new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   const month = new Date().toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
   const attDay = att.date
@@ -539,23 +457,22 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
 
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="mb-2 inline-flex items-center gap-2 text-sm font-medium text-foreground/55 first-letter:uppercase" suppressHydrationWarning>
-            <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.18)]" aria-hidden />
+          <p className="mb-1 text-sm text-foreground/50 first-letter:uppercase" suppressHydrationWarning>
             {today}
           </p>
-          <h2 className="text-[1.9rem] leading-tight font-semibold tracking-tight text-foreground">Résumé du personnel</h2>
+          <h2 className="text-[1.9rem] leading-tight font-semibold tracking-tight text-foreground">Ressources humaines</h2>
         </div>
         <div className="flex items-center gap-2">
           <Link
             href="/rh/presence"
-            className="inline-flex h-10 items-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-medium text-white shadow-[0_10px_22px_-12px_#0284c7] transition hover:-translate-y-px hover:bg-sky-500"
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-border/80 bg-surface px-4 text-sm font-medium text-foreground/75 transition hover:border-brand/35 hover:text-brand"
           >
             <CalendarClock className="h-4 w-4" aria-hidden />
             Pointage
           </Link>
           <Link
             href="/rh/employes?nouveau=1"
-            className="inline-flex h-10 items-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-medium text-white shadow-[0_10px_22px_-12px_#7c3aed] transition hover:-translate-y-px hover:bg-violet-500"
+            className="ui-btn ui-btn-primary inline-flex h-10 items-center gap-2 px-4 text-sm font-medium transition hover:-translate-y-px"
           >
             <UserPlus className="h-4 w-4" aria-hidden />
             Nouvel employé
@@ -563,103 +480,102 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
         </div>
       </div>
 
-      <div className="ui-stagger grid grid-cols-12 gap-4">
-        <div className="col-span-12 sm:col-span-6 xl:col-span-3">
-          <SummaryCard
-            href="/rh/employes"
-            icon={Users}
-            label="Effectif actif"
-            value={activeCount}
-            hint={`${stats.employeesTotal} inscrits · ${stats.contractsOpen} contrat${stats.contractsOpen > 1 ? "s" : ""} ouvert${stats.contractsOpen > 1 ? "s" : ""}`}
-            wash={SUMMARY_TONES.violet}
-            aside={<DeltaChip change={empChange} />}
-          >
-            <div className="relative -mb-1 flex justify-end pt-3 [&_svg]:h-12 [&_svg]:w-36">
-              <Sparkline values={stats.headcount.map((m) => m.count)} color="#ffffff" />
+      <div className="ui-stagger grid grid-cols-12 gap-5">
+        <section className={cn(RH_CARD, "ui-lift col-span-12 p-6 xl:col-span-5")}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <IconTile icon={Users} />
+              <span className="font-medium text-foreground">Effectif actif</span>
             </div>
-          </SummaryCard>
-        </div>
-
-        <div className="col-span-12 sm:col-span-6 xl:col-span-3">
-          <SummaryCard
-            href="/rh/paie"
-            icon={Banknote}
-            label="Masse salariale"
-            value={<span className="text-[1.65rem] leading-none">{formatDa(payroll)}</span>}
-            hint={`Moyenne ${formatDa(stats.averageBase)} · salaires de base`}
-            wash={SUMMARY_TONES.emerald}
-          >
-            <div className="relative mt-4">
-              <div className="mb-1.5 flex justify-between text-[11px] text-white/75">
-                <span>Couverture</span>
-                <span className="font-semibold text-white">{stats.coverage} %</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/25">
-                <div className="ui-grow-x h-full rounded-full bg-white" style={{ width: `${stats.coverage}%` }} />
-              </div>
+            <DeltaChip change={empChange} />
+          </div>
+          <div className="mt-6 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-[4rem] leading-none font-semibold tracking-tighter tabular-nums text-foreground">{activeCount}</p>
+              <p className="mt-3 text-sm text-foreground/50">
+                {stats.employeesTotal} inscrits · {stats.contractsOpen} contrat{stats.contractsOpen > 1 ? "s" : ""} ouvert
+                {stats.contractsOpen > 1 ? "s" : ""}
+              </p>
             </div>
-          </SummaryCard>
-        </div>
+            <Sparkline values={stats.headcount.map((m) => m.count)} />
+          </div>
+        </section>
 
-        <div className="col-span-12 sm:col-span-6 xl:col-span-3">
-          <SummaryCard
-            href="/rh/presence"
-            icon={Clock}
-            label="Présence"
-            value={marked ? `${presence}%` : "—"}
-            hint={attDay ? `${att.present + att.mission} présents · ${attDay}` : "Aucun pointage ce mois-ci"}
-            wash={SUMMARY_TONES.sky}
-            aside={<Ring pct={presenceRate} size={52} stroke={6} color="#ffffff" track="rgba(255,255,255,0.28)" />}
-          />
-        </div>
-
-        <div className="col-span-12 sm:col-span-6 xl:col-span-3">
-          <SummaryCard
-            href="/rh/documents?onglet=contrats"
-            icon={alertCount ? BellRing : CircleCheck}
-            label={alertCount ? "Points d'attention" : "Situation"}
-            value={alertCount || "OK"}
-            hint={alertCount ? `${stats.alerts.length} sujet${stats.alerts.length > 1 ? "s" : ""} à traiter` : "Contrats et effectifs à jour"}
-            wash={alertCount ? SUMMARY_TONES.rose : SUMMARY_TONES.emerald}
-          />
-        </div>
-
-        {attendanceOpen ? (
-          <div className="col-span-12 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {(
-              [
-                { icon: UserCheck, label: "Présents", value: att.present, wash: "linear-gradient(145deg,#0f766e,#2dd4bf)" },
-                { icon: UserX, label: "Absents", value: att.absent, wash: "linear-gradient(145deg,#9d174d,#db2777)" },
-                { icon: TreePalm, label: "En congé", value: att.leave, wash: "linear-gradient(145deg,#c2410c,#fb923c)" },
-                { icon: Plane, label: "En mission", value: att.mission, wash: "linear-gradient(145deg,#a16207,#facc15)" },
-              ] as const
-            ).map((s) => (
-              <Link
-                key={s.label}
-                href="/rh/presence"
-                className="ui-lift flex items-center gap-3 overflow-hidden rounded-2xl px-4 py-3 text-white shadow-[0_14px_28px_-18px_rgba(15,23,42,0.65)] transition hover:-translate-y-0.5"
-                style={{ background: s.wash }}
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/18 ring-1 ring-white/25">
-                  <s.icon className="h-5 w-5" strokeWidth={1.8} aria-hidden />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-2xl leading-none font-semibold tabular-nums">{s.value}</span>
-                  <span className="mt-1 block text-xs text-white/80">{s.label}</span>
-                </span>
-              </Link>
-            ))}
-            <p className="col-span-2 -mt-1 text-xs text-foreground/50 first-letter:uppercase lg:col-span-4" suppressHydrationWarning>
-              {month}
-              {attDay ? ` · dernier jour pointé : ${attDay}` : " · aucun pointage ce mois-ci"}
+        <section className={cn(RH_CARD, "ui-lift col-span-12 flex flex-col p-6 sm:col-span-6 xl:col-span-4")}>
+          <div className="flex items-center gap-3">
+            <IconTile icon={Banknote} />
+            <span className="font-medium text-foreground">Masse salariale</span>
+          </div>
+          <p className="mt-6 text-[2.5rem] leading-none font-semibold tracking-tight tabular-nums text-foreground">{formatDa(payroll)}</p>
+          <div className="mt-auto pt-6">
+            <div className="mb-2 flex justify-between text-xs text-foreground/50">
+              <span>Couverture contractuelle</span>
+              <span className="font-medium text-foreground">{stats.coverage} %</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
+              <div className="ui-grow-x h-full rounded-full bg-brand" style={{ width: `${stats.coverage}%` }} />
+            </div>
+            <p className="mt-2 text-xs text-foreground/45">
+              Salaires de base mensuels · moyenne {formatDa(stats.averageBase)}
             </p>
           </div>
+        </section>
+
+        <Link href="/rh/presence" className={cn(RH_CARD, "ui-lift group col-span-12 flex flex-col p-6 sm:col-span-6 xl:col-span-3")}>
+          <div className="flex items-center gap-3">
+            <IconTile icon={Clock} />
+            <span className="font-medium text-foreground">Présence</span>
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-2">
+            <p className="text-[2.5rem] leading-none font-semibold tracking-tight tabular-nums text-foreground">
+              {marked ? `${presence}%` : "—"}
+            </p>
+            <Ring pct={presenceRate} />
+          </div>
+          <p className="mt-auto pt-2 text-sm text-foreground/50">
+            {attDay ? `${att.present + att.mission} présents · ${attDay}` : "Aucun pointage ce mois-ci"}
+          </p>
+        </Link>
+
+        {attendanceOpen ? (
+          <Link
+            href="/rh/presence"
+            className="group relative col-span-12 flex flex-wrap items-center gap-x-6 gap-y-4 overflow-hidden rounded-[1.5rem] bg-[linear-gradient(120deg,var(--color-brand)_0%,color-mix(in_oklab,var(--color-brand)_70%,#7c3aed)_100%)] p-6 text-white shadow-[0_18px_40px_-18px_var(--color-brand)] transition hover:-translate-y-0.5"
+          >
+            <span className="pointer-events-none absolute -top-16 -right-10 h-48 w-48 rounded-full bg-white/10 blur-2xl" aria-hidden />
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/25">
+              <CalendarClock className="h-7 w-7" strokeWidth={1.8} aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-lg font-semibold">Tableau de présence</span>
+              <span className="block text-sm text-white/75 first-letter:uppercase" suppressHydrationWarning>
+                {month}
+                {attDay ? ` · dernier jour pointé : ${attDay}` : " · aucun pointage ce mois-ci"}
+              </span>
+            </span>
+            <span className="flex flex-wrap gap-2">
+              {[
+                { label: "Présents", value: att.present },
+                { label: "Absents", value: att.absent },
+                { label: "En congé", value: att.leave },
+                { label: "En mission", value: att.mission },
+              ].map((s) => (
+                <span key={s.label} className="rounded-xl bg-white/12 px-3 py-1.5 text-center ring-1 ring-white/15">
+                  <span className="block text-base leading-tight font-semibold tabular-nums">{s.value}</span>
+                  <span className="block text-[11px] text-white/70">{s.label}</span>
+                </span>
+              ))}
+            </span>
+            <span className="inline-flex h-11 items-center gap-2 rounded-xl bg-white px-5 text-sm font-semibold text-brand shadow-sm transition group-hover:gap-3">
+              Ouvrir le tableau
+              <ArrowRight className="h-4 w-4" aria-hidden />
+            </span>
+          </Link>
         ) : null}
 
         <section className={cn(RH_CARD, "col-span-12 p-6 xl:col-span-8")}>
           <CardTitle
             icon={Activity}
-            color="#7c3aed"
             title="Évolution des effectifs"
             right={
               <Segmented
@@ -676,14 +592,13 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
         </section>
 
         <section className={cn(RH_CARD, "col-span-12 p-6 xl:col-span-4")}>
-          <CardTitle icon={ChartPie} color="#0284c7" title="Répartition des contrats" />
+          <CardTitle icon={ChartPie} title="Répartition des contrats" />
           <ContractDonut parts={stats.contractMix} />
         </section>
 
         <section className={cn(RH_CARD, "col-span-12 p-6 lg:col-span-4")}>
           <CardTitle
             icon={BellRing}
-            color="#e11d48"
             title="Alertes"
             right={
               stats.alerts.length ? (
@@ -725,7 +640,6 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
         <section className={cn(RH_CARD, "col-span-12 p-6 lg:col-span-4")}>
           <CardTitle
             icon={UserRoundPlus}
-            color="#059669"
             title="Derniers recrutements"
             right={
               <Link href="/rh/employes" className="text-sm font-medium text-brand hover:underline">
@@ -761,16 +675,15 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
         </section>
 
         <section className={cn(RH_CARD, "col-span-12 p-6 lg:col-span-4")}>
-          <CardTitle icon={Zap} color="#d97706" title="Actions rapides" />
+          <CardTitle icon={Zap} title="Actions rapides" />
           <div className="grid grid-cols-3 gap-2.5">
-            {quickActions.map(({ icon: Icon, label, href, color }) => (
+            {quickActions.map(({ icon: Icon, label, href }) => (
               <Link
                 key={href}
                 href={href}
-                className="group flex flex-col items-center justify-center gap-2 rounded-2xl py-4 transition duration-300 hover:-translate-y-0.5 hover:brightness-110"
-                style={{ background: `${color}18`, color }}
+                className="group flex flex-col items-center justify-center gap-2 rounded-2xl bg-surface-muted py-4 text-foreground/75 transition-all duration-300 hover:bg-brand hover:text-white"
               >
-                <Icon className="h-5 w-5 transition-transform duration-300 group-hover:scale-110" aria-hidden />
+                <Icon className="h-5 w-5 text-brand transition-transform duration-300 group-hover:scale-110 group-hover:text-white" aria-hidden />
                 <span className="text-center text-xs leading-tight font-medium">{label}</span>
               </Link>
             ))}
