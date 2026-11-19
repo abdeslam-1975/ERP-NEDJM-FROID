@@ -9,7 +9,6 @@ import {
   filterCountLabel,
   resolveFilter,
   suggestFilters,
-  suggestionsAreAmbiguous,
   type FilterChip,
   type FilterRow,
   type FilterSnapshot,
@@ -48,9 +47,12 @@ export function useScreenFilter<T>({
   const listId = useId();
   const described = rows.map((row) => describe(row));
   const view = snapshot ? resolveFilter(snapshot) : { source: "normal" as const, chips: [] as FilterChip[] };
-  const filtered = snapshot ? applyFilter(rows, described, view.chips) : rows;
+  const typed = draft.trim();
+  const chips = typed
+    ? [...view.chips, { id: "saisie", kind: "text" as const, label: typed, value: typed }]
+    : view.chips;
+  const filtered = applyFilter(rows, described, chips);
   const suggestions = open ? suggestFilters(draft, described) : [];
-  const ambiguous = suggestionsAreAmbiguous(draft, suggestions);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,7 +138,12 @@ export function useScreenFilter<T>({
     }
     if (event.key === "Enter") {
       event.preventDefault();
-      if (highlight >= 0 && suggestions[highlight]) addChip(suggestions[highlight].chip);
+      if (highlight >= 0 && suggestions[highlight]) {
+        addChip(suggestions[highlight].chip);
+        return;
+      }
+      const written = draft.trim();
+      if (written) addChip({ kind: "text", label: written, value: written });
       return;
     }
     if (event.key === "Backspace" && draft === "" && view.chips.length) {
@@ -159,8 +166,8 @@ export function useScreenFilter<T>({
     void commit(audience === "all" ? "publish" : "personal", view.chips);
   }
 
-  const active = view.chips.length > 0;
-  const hint = active ? emptyFilterHint(described, view.chips) : null;
+  const active = chips.length > 0;
+  const hint = active ? emptyFilterHint(described, chips) : null;
 
   const bar = (
     <div className="space-y-2">
@@ -178,7 +185,7 @@ export function useScreenFilter<T>({
               onChange={(event) => {
                 setDraft(event.target.value);
                 setOpen(true);
-                setHighlight(suggestionsAreAmbiguous(event.target.value, suggestFilters(event.target.value, described)) ? -1 : 0);
+                setHighlight(-1);
               }}
               onFocus={() => setOpen(true)}
               onKeyDown={onKeyDown}
@@ -260,9 +267,6 @@ export function useScreenFilter<T>({
             Pour tout le monde
           </Button>
         </div>
-      ) : null}
-      {ambiguous && open ? (
-        <p className="text-xs text-foreground/55">Choisissez le sens de {draft.trim()}.</p>
       ) : null}
       {error ? <p className="text-xs font-medium text-alert-critical">{error}</p> : null}
       {hint ? <p className="text-sm text-foreground/60">{hint}</p> : null}

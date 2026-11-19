@@ -49,6 +49,13 @@ describe("screen filter", () => {
     expect(rowMatches(rows[0], [{ ...chip, value: "1/21", label: "1/21" }])).toBe(false);
   });
 
+  it("finds a row from any written word, including a facet that is not in the main text", () => {
+    const chip = { id: "1", kind: "text" as const, label: "actif oran", value: "actif oran" };
+    expect(rowMatches(rows[0], [chip])).toBe(true);
+    expect(rowMatches(rows[1], [chip])).toBe(false);
+    expect(rowMatches(rows[1], [{ ...chip, value: "2021", label: "2021" }])).toBe(true);
+  });
+
   it("keeps only rows that match every chip", () => {
     const chips = [
       { id: "a", kind: "value" as const, field: "statut", label: "Statut : Actif", value: "ACTIVE" },
@@ -60,9 +67,9 @@ describe("screen filter", () => {
   it("offers several meanings for a year and a free-text search", () => {
     const suggestions = suggestFilters("2021", rows);
     expect(suggestions.map((item) => item.label)).toEqual([
+      "Rechercher « 2021 »",
       "Année d'embauche : 2021",
       "Année du document : 2021",
-      "Rechercher « 2021 »",
     ]);
     expect(suggestionsAreAmbiguous("2021", suggestions)).toBe(true);
     expect(suggestionsAreAmbiguous("Actif", suggestFilters("Actif", rows))).toBe(false);

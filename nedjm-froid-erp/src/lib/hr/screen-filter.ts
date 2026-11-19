@@ -82,16 +82,31 @@ function matriculeQuery(value: string): string | null {
   return matriculeKey(compact);
 }
 
+function searchBag(row: FilterRow): string {
+  return fold(
+    [row.text, row.matricule ?? "", ...row.facets.flatMap((facet) => [facet.label, facet.value])].join(" "),
+  );
+}
+
+function textMatches(row: FilterRow, value: string): boolean {
+  const needle = fold(value);
+  if (!needle) return true;
+  const wholeMatricule = matriculeQuery(value);
+  if (wholeMatricule && matriculeKey(row.matricule) === wholeMatricule) return true;
+  const bag = searchBag(row);
+  return needle.split(/\s+/).every((word) => {
+    const matricule = matriculeQuery(word);
+    if (matricule && matriculeKey(row.matricule) === matricule) return true;
+    return bag.includes(word);
+  });
+}
+
 export function rowMatches(row: FilterRow, chips: FilterChip[]): boolean {
   return chips.every((chip) => {
     if (chip.kind === "value") {
       return row.facets.some((facet) => facet.field === chip.field && facet.value === chip.value);
     }
-    const needle = fold(chip.value);
-    if (!needle) return true;
-    const matricule = matriculeQuery(chip.value);
-    if (matricule && matriculeKey(row.matricule) === matricule) return true;
-    return fold(row.text).includes(needle);
+    return textMatches(row, chip.value);
   });
 }
 
@@ -139,7 +154,7 @@ export function suggestFilters(query: string, rows: FilterRow[]): FilterSuggesti
     chip: { kind: "value", field: facet.field, label: facet.label, value: facet.value },
   }));
   if (typed) {
-    suggestions.push({
+    suggestions.unshift({
       id: "text",
       label: `Rechercher « ${typed} »`,
       chip: { kind: "text", label: typed, value: typed },
