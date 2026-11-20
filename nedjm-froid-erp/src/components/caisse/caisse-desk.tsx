@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { logoutAction } from "@/lib/actions/auth";
 import {
   addCaisseBuyer,
@@ -26,7 +26,7 @@ import {
 } from "@/lib/actions/caisse";
 import { CaisseBulkBonsPanel } from "@/components/caisse/caisse-bulk-bons";
 import { bonExtractNeedsAi, evaluateBonMatch, type BonCheckStatus } from "@/lib/caisse/bon-check";
-import { prepareAndReadBon, prepareBonDataUrl } from "@/lib/caisse/bon-ocr";
+import { prepareBonDataUrl, readBonFromDataUrl } from "@/lib/caisse/bon-ocr";
 import { readCaisseBonWithAi } from "@/lib/actions/caisse";
 import { formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
 import type { CaisseAdminUser, CaisseAuditRow, CaisseDashboard, CloseStatus, JournalLine, PurchaseItemInput } from "@/lib/caisse/types";
@@ -85,6 +85,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   const [data, setData] = useState<CaisseDashboard | null>(initial);
   const [error, setError] = useState(loadError || "");
   const [busy, setBusy] = useState(false);
+  const bonAttachGen = useRef<Record<number, number>>({});
   const [toast, setToast] = useState<Toast | null>(null);
   const [ask, setAsk] = useState<Ask | null>(null);
   const [reason, setReason] = useState("");
@@ -782,9 +783,28 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     return { status: item.bonStatus, message: item.bonMessage };
   }
 
+  function raceTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error(label)), ms);
+      promise.then(
+        (value) => {
+          window.clearTimeout(timer);
+          resolve(value);
+        },
+        (error) => {
+          window.clearTimeout(timer);
+          reject(error);
+        },
+      );
+    });
+  }
+
   async function attachBon(index: number, file: File | undefined) {
     if (!file) return;
-    let attachedDataUrl = "";
+    const gen = (bonAttachGen.current[index] || 0) + 1;
+    bonAttachGen.current[index] = gen;
+    const isCurrent = () => bonAttachGen.current[index] === gen;
+
     updateItem(index, {
       photoName: file.name,
       keepPhoto: false,
@@ -795,95 +815,123 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       bonCandidateDates: [],
       bonCandidateAmounts: [],
       bonRawText: "",
+      photoDataUrl: "",
     });
     try {
-      // Attach storage payload first so "Mettre à jour" works even while OCR is still running.
-      attachedDataUrl = await prepareBonDataUrl(file);
+      // 1) Attach quickly — save must work immediately, without waiting for OCR/IA.
+      const dataUrl = await prepareBonDataUrl(file);
+      if (!isCurrent()) return;
       updateItem(index, {
-        photoDataUrl: attachedDataUrl,
+        photoDataUrl: dataUrl,
         photoName: file.name,
         keepPhoto: false,
-        bonStatus: "checking",
-        bonMessage: "Lecture du bon (date + montant)…",
+        bonStatus: "unknown",
+        bonMessage: "Bon joint — vous pouvez enregistrer. Contrôle date/montant en arrière-plan…",
       });
+      notify("Bon", "Bon joint. Vous pouvez enregistrer pendant le contrôle.");
 
-      const prepared = await prepareAndReadBon(file);
-      attachedDataUrl = prepared.dataUrl || attachedDataUrl;
-      let extract = prepared.extract;
-      if (bonExtractNeedsAi(extract)) {
-        const ai = await readCaisseBonWithAi({ photoDataUrl: prepared.dataUrl });
-        if (ai.ok) {
-          extract = {
-            dates: [...new Set([...(ai.data.date ? [ai.data.date] : []), ...extract.dates])],
-            amounts: [
-              ...new Set([
-                ...(ai.data.amounts || []),
-                ...extract.amounts,
-                ...(ai.data.amount != null ? [ai.data.amount] : []),
-              ]),
-            ],
-            preferredDate: ai.data.date || extract.preferredDate,
-            preferredAmount: ai.data.amount ?? extract.preferredAmount,
-            rawText: extract.rawText,
+      // 2) Background check (OCR then optional IA) with hard timeouts — never blocks the UI.
+      const fileName = file.name;
+      void (async () => {
+        try {
+          let extract = {
+            dates: [] as string[],
+            amounts: [] as number[],
+            preferredDate: null as string | null,
+            preferredAmount: null as number | null,
+            rawText: "",
           };
+          let rawText = "";
+          try {
+            const ocr = await raceTimeout(readBonFromDataUrl(dataUrl), 14_000, "Lecture OCR trop longue");
+            if (!isCurrent()) return;
+            extract = ocr.extract;
+            rawText = ocr.rawText;
+          } catch {
+            // OCR slow/failed — try IA briefly if admin, else keep unknown.
+          }
+
+          if (bonExtractNeedsAi(extract)) {
+            try {
+              const ai = await raceTimeout(
+                readCaisseBonWithAi({ photoDataUrl: dataUrl }),
+                12_000,
+                "Lecture IA trop longue",
+              );
+              if (!isCurrent()) return;
+              if (ai.ok) {
+                extract = {
+                  dates: [...new Set([...(ai.data.date ? [ai.data.date] : []), ...extract.dates])],
+                  amounts: [
+                    ...new Set([
+                      ...(ai.data.amounts || []),
+                      ...extract.amounts,
+                      ...(ai.data.amount != null ? [ai.data.amount] : []),
+                    ]),
+                  ],
+                  preferredDate: ai.data.date || extract.preferredDate,
+                  preferredAmount: ai.data.amount ?? extract.preferredAmount,
+                  rawText: extract.rawText || rawText,
+                };
+                rawText = extract.rawText || rawText;
+              }
+            } catch {
+              // IA optional — bon already attached.
+            }
+          }
+
+          if (!isCurrent()) return;
+          const checked = evaluateBonMatch({
+            opDate,
+            opAmount: items.reduce((sum, item) => sum + (Number(item.qte) || 0) * (Number(item.price) || 0), 0),
+            detectedDate: extract.preferredDate,
+            detectedAmount: extract.preferredAmount,
+            candidateDates: extract.dates,
+            candidateAmounts: extract.amounts,
+            rawText,
+          });
+          updateItem(index, {
+            photoDataUrl: dataUrl,
+            photoName: fileName,
+            keepPhoto: false,
+            bonStatus: checked.status,
+            bonMessage: checked.message,
+            bonDetectedDate: checked.detectedDate,
+            bonDetectedAmount: checked.detectedAmount,
+            bonCandidateDates: extract.dates,
+            bonCandidateAmounts: extract.amounts,
+            bonRawText: rawText || "",
+          });
+          if (checked.status === "bad" || checked.status === "warn" || checked.status === "ok" || checked.status === "unknown") {
+            notify("Contrôle bon", checked.message);
+          }
+        } catch {
+          if (!isCurrent()) return;
+          updateItem(index, {
+            photoDataUrl: dataUrl,
+            photoName: fileName,
+            keepPhoto: false,
+            bonStatus: "unknown",
+            bonMessage: "Contrôle indisponible — bon conservé, vous pouvez enregistrer.",
+          });
         }
-      }
-      const checked = evaluateBonMatch({
-        opDate,
-        opAmount: items.reduce((sum, item) => sum + (Number(item.qte) || 0) * (Number(item.price) || 0), 0),
-        detectedDate: extract.preferredDate,
-        detectedAmount: extract.preferredAmount,
-        candidateDates: extract.dates,
-        candidateAmounts: extract.amounts,
-        rawText: prepared.rawText || extract.rawText,
-      });
-      updateItem(index, {
-        photoDataUrl: attachedDataUrl,
-        photoName: file.name,
-        keepPhoto: false,
-        bonStatus: checked.status,
-        bonMessage: checked.message,
-        bonDetectedDate: checked.detectedDate,
-        bonDetectedAmount: checked.detectedAmount,
-        bonCandidateDates: extract.dates,
-        bonCandidateAmounts: extract.amounts,
-        bonRawText: prepared.rawText || extract.rawText || "",
-      });
-      if (checked.status === "bad" || checked.status === "warn" || checked.status === "unknown" || checked.status === "ok") {
-        notify("Contrôle bon", checked.message);
-      }
+      })();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Lecture du bon impossible";
-      if (attachedDataUrl) {
-        // Keep the uploaded bon; OCR failure must not block save.
-        updateItem(index, {
-          photoDataUrl: attachedDataUrl,
-          photoName: file.name,
-          keepPhoto: false,
-          bonStatus: "unknown",
-          bonMessage: `${message} — bon conservé, vous pouvez enregistrer.`,
-          bonDetectedDate: null,
-          bonDetectedAmount: null,
-          bonCandidateDates: [],
-          bonCandidateAmounts: [],
-          bonRawText: "",
-        });
-        notify("Bon", "Bon joint. Contrôle date/montant indisponible — vous pouvez enregistrer.");
-      } else {
-        updateItem(index, {
-          photoDataUrl: "",
-          photoName: "",
-          keepPhoto: false,
-          bonStatus: "warn",
-          bonMessage: message,
-          bonDetectedDate: null,
-          bonDetectedAmount: null,
-          bonCandidateDates: [],
-          bonCandidateAmounts: [],
-          bonRawText: "",
-        });
-        notify("Bon", message);
-      }
+      if (!isCurrent()) return;
+      const message = error instanceof Error ? error.message : "Préparation du bon impossible";
+      updateItem(index, {
+        photoDataUrl: "",
+        photoName: "",
+        keepPhoto: false,
+        bonStatus: "warn",
+        bonMessage: message,
+        bonDetectedDate: null,
+        bonDetectedAmount: null,
+        bonCandidateDates: [],
+        bonCandidateAmounts: [],
+        bonRawText: "",
+      });
+      notify("Bon", message);
     }
   }
 
