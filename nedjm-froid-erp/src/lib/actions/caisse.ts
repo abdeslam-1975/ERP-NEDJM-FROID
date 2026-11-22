@@ -1149,7 +1149,6 @@ export async function getCaisseAdmin(): Promise<
   if (buyersRes.error) return fail(buyersRes.error.message);
   if (openingsRes.error) return fail(openingsRes.error.message);
   if (listsRes.error) return fail(listsRes.error.message);
-  const linked = new Set((buyersRes.data ?? []).map((row) => row.user_id).filter(Boolean));
   const rightsByUser = new Map(
     (rightsRes.error ? [] : (rightsRes.data ?? [])).map((row) => [
       row.user_id,
@@ -1176,7 +1175,7 @@ export async function getCaisseAdmin(): Promise<
     active?: boolean;
   }[]).map((user) => ({
     userId: user.userId,
-    buyerId: null,
+    buyerId: null as string | null,
     name: user.name,
     email: user.email || "",
     isAdmin: !!user.isAdmin,
@@ -1189,8 +1188,31 @@ export async function getCaisseAdmin(): Promise<
     manageOpenings: rightsByUser.get(user.userId)?.manageOpenings ?? false,
     manageLists: rightsByUser.get(user.userId)?.manageLists ?? false,
   }));
+  const usersById = new Map(users.filter((row) => row.userId).map((row) => [row.userId as string, row]));
+  const usersByEmail = new Map(
+    users
+      .filter((row) => row.userId && row.email.trim())
+      .map((row) => [row.email.trim().toLowerCase(), row]),
+  );
   for (const buyer of buyersRes.data ?? []) {
-    if (buyer.user_id && linked.has(buyer.user_id)) continue;
+    const email = String(buyer.email || "").trim().toLowerCase();
+    const linkedUser =
+      (buyer.user_id ? usersById.get(buyer.user_id) : undefined) ||
+      (email ? usersByEmail.get(email) : undefined);
+    if (linkedUser) {
+      linkedUser.buyerId = buyer.id;
+      if (email && !linkedUser.email.trim()) linkedUser.email = String(buyer.email || "");
+      const hasRightsRow = rightsByUser.has(linkedUser.userId as string);
+      if (!hasRightsRow && !linkedUser.isAdmin) {
+        linkedUser.datesLibres = !!buyer.dates_libres;
+        linkedUser.buyForOthers = !!buyer.buy_for_others;
+        linkedUser.seeAll = !!buyer.see_all;
+        linkedUser.caisseOps = !!buyer.caisse_ops;
+        linkedUser.canEdit = !!buyer.can_edit;
+        linkedUser.active = buyer.active !== false;
+      }
+      continue;
+    }
     users.push({
       userId: null,
       buyerId: buyer.id,
@@ -1282,30 +1304,52 @@ export async function saveCaisseRights(rows: CaisseAdminUser[]): Promise<ActionR
   for (const row of rows) {
     if (row.isAdmin) continue;
     names.push(row.name);
-    if (row.userId) {
+    const flagsRow = {
+      dates_libres: !!row.datesLibres,
+      buy_for_others: !!row.buyForOthers,
+      see_all: !!row.seeAll,
+      caisse_ops: !!row.caisseOps,
+      can_edit: !!row.canEdit,
+      active: row.active !== false,
+    };
+    let userId = row.userId || null;
+    if (!userId && row.email?.trim()) {
+      const existingUser = await supabase.rpc("caisse_user_id_by_email", {
+        p_email: row.email.trim().toLowerCase(),
+      });
+      if (existingUser.error) return fail(existingUser.error.message);
+      if (existingUser.data) userId = String(existingUser.data);
+    }
+    if (userId) {
       const saved = await supabase.from("caisse_rights").upsert({
-        user_id: row.userId,
-        dates_libres: !!row.datesLibres,
-        buy_for_others: !!row.buyForOthers,
-        see_all: !!row.seeAll,
-        caisse_ops: !!row.caisseOps,
-        can_edit: !!row.canEdit,
+        user_id: userId,
+        dates_libres: flagsRow.dates_libres,
+        buy_for_others: flagsRow.buy_for_others,
+        see_all: flagsRow.see_all,
+        caisse_ops: flagsRow.caisse_ops,
+        can_edit: flagsRow.can_edit,
         manage_openings: !!row.manageOpenings,
         manage_lists: !!row.manageLists,
-        caisse_active: row.active !== false,
+        caisse_active: flagsRow.active,
       });
       if (saved.error) return fail(saved.error.message);
+      if (row.buyerId) {
+        const linked = await supabase
+          .from("caisse_journal_buyers")
+          .update({
+            user_id: userId,
+            email: row.email || null,
+            ...flagsRow,
+          })
+          .eq("id", row.buyerId);
+        if (linked.error) return fail(linked.error.message);
+      }
     } else if (row.buyerId) {
       const saved = await supabase
         .from("caisse_journal_buyers")
         .update({
           email: row.email || null,
-          dates_libres: !!row.datesLibres,
-          buy_for_others: !!row.buyForOthers,
-          see_all: !!row.seeAll,
-          caisse_ops: !!row.caisseOps,
-          can_edit: !!row.canEdit,
-          active: row.active !== false,
+          ...flagsRow,
         })
         .eq("id", row.buyerId);
       if (saved.error) return fail(saved.error.message);

@@ -108,7 +108,23 @@
 }
 .caisse-app .admin-email:disabled { background: #f3f4f6; color: #6b7280; }
 .caisse-app .admin-check { text-align: center; }
-.caisse-app .admin-check input { width: 16px; height: 16px; accent-color: #2563eb; cursor: pointer; }
+.caisse-app .admin-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: #2563eb;
+  cursor: pointer;
+  appearance: auto;
+  opacity: 1;
+  filter: none;
+  color-scheme: light;
+}
+.caisse-app .admin-check input:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+  accent-color: #111827;
+  outline: 1.5px solid #111827;
+  outline-offset: 1px;
+}
 .caisse-app .admin-badge {
   display: inline-block; background: #fde68a; color: #92400e; border: 1px solid #f59e0b;
   border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 700;
