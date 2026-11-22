@@ -16,6 +16,7 @@ import {
   getCaisseOpeningForm,
   getCaissePhoto,
   removeCaisseListItem,
+  renameCaisseListItem,
   saveCaisseFinance,
   saveCaisseOpenings,
   saveCaissePurchase,
@@ -148,9 +149,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     window.setTimeout(() => setToast(null), 2800);
   }
 
-  function confirmBox(title: string, text: string, confirm: string, withReason = false) {
+  function confirmBox(title: string, text: string, confirm: string, withReason = false, initialReason = "") {
     return new Promise<string | null>((resolve) => {
-      setReason("");
+      setReason(initialReason);
       setAsk({ title, text, confirm, reason: withReason, resolve });
     });
   }
@@ -521,6 +522,33 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     else if (flags?.isAdmin) await openAdmin();
   }
 
+  async function renameListValue(listKey: "AFFECTATION" | "UNIT" | "MATRICULE", label: string) {
+    if (listKey === "AFFECTATION" && label.toUpperCase() === "PARC ROULANT") {
+      notify("Listes", "PARC ROULANT est une affectation système et ne peut pas être renommée");
+      return;
+    }
+    const title =
+      listKey === "AFFECTATION" ? "Modifier l’affectation" : listKey === "MATRICULE" ? "Modifier le matricule" : "Modifier l’unité";
+    const next = await confirmBox(
+      title,
+      `Corrigez le libellé « ${label} ». Les opérations déjà saisies seront mises à jour.`,
+      "Enregistrer",
+      true,
+      label,
+    );
+    if (next === null) return;
+    const result = await renameCaisseListItem(listKey, label, next);
+    notify("Listes", result.ok ? result.data.message : result.error);
+    if (!result.ok) return;
+    const updated = result.data.label;
+    if (affectation === label) setAffectation(updated);
+    if (matricule === label) setMatricule(updated);
+    setItems((current) => current.map((item) => (item.unit === label ? { ...item, unit: updated } : item)));
+    await reload();
+    if (listsOnly) await openLists();
+    else if (flags?.isAdmin) await openAdmin();
+  }
+
   async function pickOrAddList(
     listKey: "AFFECTATION" | "UNIT" | "MATRICULE",
     value: string,
@@ -584,7 +612,6 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   }
 
   async function editBuyer(user: CaisseAdminUser) {
-    setReason(user.name);
     const nextName = await confirmBox(
       user.isAdmin ? "Modifier le nom admin" : "Modifier l’acheteur",
       `Nom actuel : ${user.name}\nEmail : ${user.email || "—"}\n\nSaisissez le nouveau nom (exact, tel qu’il doit apparaître dans le journal / listes acheteurs).${
@@ -592,16 +619,17 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       }`,
       "Enregistrer",
       true,
+      user.name,
     );
     if (nextName === null) return;
     const name = nextName.trim();
     if (!name) return notify("Attention", "Nom obligatoire");
-    setReason(user.email || "");
     const nextEmail = await confirmBox(
       "Modifier l’email",
       `Laissez vide pour conserver « ${user.email || "—"} ».`,
       "Continuer",
       true,
+      user.email || "",
     );
     if (nextEmail === null) return;
     const result = await updateCaisseBuyerProfile({
@@ -1604,7 +1632,10 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                           visible.map((item) => (
                             <li key={item}>
                               <span>{item}</span>
-                              <button type="button" className="btn-light" onClick={() => void removeListValue(block.key, item)}>Retirer</button>
+                              <div className="list-editor-row-actions">
+                                <button type="button" className="btn-light" onClick={() => void renameListValue(block.key, item)}>Modifier</button>
+                                <button type="button" className="btn-light" onClick={() => void removeListValue(block.key, item)}>Retirer</button>
+                              </div>
                             </li>
                           ))
                         )}

@@ -1644,6 +1644,34 @@ export async function removeCaisseListItem(
   return { ok: true, data: { message: `✅ « ${value} » retiré de la liste` } };
 }
 
+export async function renameCaisseListItem(
+  listKey: CaisseListKey,
+  oldLabel: string,
+  newLabel: string,
+): Promise<ActionResult<{ message: string; label: string }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.canManageLists) return fail("Réservé à l’administrateur caisse ou à la personne déléguée (Listes)");
+  if (!LIST_KEYS.includes(listKey)) return fail("Liste inconnue");
+  const from = normalizeListLabel(oldLabel);
+  const to = normalizeListLabel(newLabel);
+  if (!from || !to || to.length > 120) return fail("Libellé invalide (1 à 120 caractères)");
+  if (from === to) return { ok: true, data: { message: "Aucun changement", label: to } };
+  if (listKey === "AFFECTATION" && from.toUpperCase() === "PARC ROULANT") {
+    return fail("PARC ROULANT est une affectation système et ne peut pas être renommée");
+  }
+  const renamed = await supabase.rpc("caisse_rename_list_item", {
+    p_list_key: listKey,
+    p_old: from,
+    p_new: to,
+  });
+  if (renamed.error) return fail(renamed.error.message);
+  await logAction(supabase, "LIST_EDIT", listKey, "", "Listes", `Rename ${listKey}: ${from} → ${to}`, null);
+  refresh();
+  return { ok: true, data: { message: `✅ « ${from} » → « ${to} »`, label: to } };
+}
+
 export async function getCaisseAudit(): Promise<ActionResult<CaisseAuditRow[]>> {
   const gate = await clientOrError();
   if ("ok" in gate) return gate;

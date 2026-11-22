@@ -332,6 +332,17 @@
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   background: #fff; border: 1px solid #eef2f7; border-radius: 6px; padding: 6px 10px; font-size: 13px;
 }
+.caisse-app .list-editor-items li > span {
+  min-width: 0;
+  flex: 1;
+  word-break: break-word;
+}
+.caisse-app .list-editor-row-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .caisse-app .list-editor-items li.list-editor-empty {
   justify-content: center; color: #6b7280; border-style: dashed;
 }
