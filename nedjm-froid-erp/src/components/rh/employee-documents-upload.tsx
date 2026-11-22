@@ -190,6 +190,7 @@ export function EmployeeDocumentsUpload({
       try {
         const result = await runDocumentOcr(file, selectedCode, setProgress);
         setSuggestions(result.suggestions);
+        if (result.notice) setError(result.notice);
         const sel: Record<string, boolean> = {};
         const ed: Record<string, string> = {};
         for (const s of result.suggestions) {

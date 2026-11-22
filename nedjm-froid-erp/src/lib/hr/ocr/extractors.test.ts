@@ -91,4 +91,78 @@ describe("extractFieldsFromOcrText — BIRTH / SS", () => {
     expect(map.birth_date).toBe("1982-05-14");
     expect(map.birth_act_no).toBe("12345");
   });
+
+  it("déclaration d'affiliation : employeur NEDJM FROID puis l'assuré seulement", () => {
+    const text = `
+      Déclaration et demande d'affiliation d'un assuré social
+      RENSEIGNEMENTS CONCERNANT L'EMPLOYEUR OU L'ORGANISME ASSIMILE
+      Numéro de l'employeur : 30562357 53
+      Nom/Prénom ou Raison sociale
+      EURL NEDJEM FROID ENT MONTAGE SYSTEME FROID
+      CITE SI EL HAOUES 1850 LOGTS HASSI MESSAOUD
+      RENSEIGNEMENTS CONCERNANT L'ASSURE SOCIAL
+      Numéro d'immatriculation : 9143790022 40
+      Nom : CHINE
+      اللقب شين
+      Prénom : ABOUBAKR
+      الاسم أبوبكر
+      Date de naissance : 28 DÉCEMBRE 1991
+      Numéro d'acte de naissance : 04379
+      Sexe : Masculin
+      Situation familiale : Marié(e)
+      Groupe sanguin : A+
+      Prénom du père : AISSA
+      Nom de la mère : SIOUAL
+      Prénom de la mère : FATIHA
+      Nationalité : ALGERIE
+      Commune de naissance : TAHER
+      Numéro d'identification national : 109910652043790001
+      RENSEIGNEMENTS CONCERNANT L'AFFILIATION
+      Date de recrutement : 13 DÉCEMBRE 2024
+      Date de déclaration : 16 DÉCEMBRE 2024
+      Poste occupé : INGENIEUR EN FROID ET CLIMATISATION
+      RENSEIGNEMENTS CONCERNANT LE(S) CONJOINT(S) AYANTS DROIT
+      Nom : TOUIL
+      Prénom : CHAIM
+    `;
+    const r = extractFieldsFromOcrText("SS_REGISTRATION", text);
+    const map = Object.fromEntries(r.suggestions.map((s) => [s.code, s.value]));
+    expect(r.notice).toBeUndefined();
+    expect(map.nss).toBe("914379002240");
+    expect(map.last_name).toBe("CHINE");
+    expect(map.last_name_ar).toBe("شين");
+    expect(map.first_name).toBe("ABOUBAKR");
+    expect(map.first_name_ar).toBe("أبوبكر");
+    expect(map.birth_date).toBe("1991-12-28");
+    expect(map.commune_birth).toBe("TAHER");
+    expect(map.birth_act_no).toBe("04379");
+    expect(map.sex_code).toBe("M");
+    expect(map.marital_code).toBe("M");
+    expect(map.blood_code).toBe("A+");
+    expect(map.nin).toBe("109910652043790001");
+    expect(map.father_name).toBe("AISSA");
+    expect(map.mother_name).toBe("SIOUAL FATIHA");
+    expect(map.nationality).toBe("ALGERIE");
+    expect(map.hired_at).toBe("2024-12-13");
+    expect(map.declaration_date).toBe("2024-12-16");
+    expect(map.poste).toBe("INGENIEUR EN FROID ET CLIMATISATION");
+    expect(map.last_name).not.toBe("TOUIL");
+    expect(map.address_fr).toBeUndefined();
+  });
+
+  it("déclaration d'affiliation : refuse l'extraction si l'employeur n'est pas NEDJM FROID", () => {
+    const text = `
+      Déclaration et demande d'affiliation d'un assuré social
+      RENSEIGNEMENTS CONCERNANT L'EMPLOYEUR
+      Nom/Prénom ou Raison sociale
+      AUTRE SOCIETE SARL
+      RENSEIGNEMENTS CONCERNANT L'ASSURE SOCIAL
+      Numéro d'immatriculation : 9143790022 40
+      Nom : CHINE
+      Prénom : ABOUBAKR
+    `;
+    const r = extractFieldsFromOcrText("SS_REGISTRATION", text);
+    expect(r.suggestions).toEqual([]);
+    expect(r.notice).toMatch(/NEDJM FROID/);
+  });
 });

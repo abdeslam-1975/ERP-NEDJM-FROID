@@ -1,3 +1,4 @@
+import { extractCnasAffiliation } from "@/lib/hr/ocr/cnas-affiliation";
 import type { OcrDocProfile, OcrExtractResult, OcrFieldSuggestion } from "@/lib/hr/ocr/types";
 import {
   digitMaxLength,
@@ -562,6 +563,17 @@ export function extractFieldsFromOcrText(
   rawText: string,
 ): OcrExtractResult {
   const text = rawText.replace(/\u200f|\u200e/g, " ").replace(/[ \t]+/g, " ");
+  if (profile === "SS_REGISTRATION") {
+    const affiliation = extractCnasAffiliation(text);
+    if (affiliation.matched) {
+      return {
+        profile,
+        rawText: text,
+        suggestions: affiliation.suggestions,
+        notice: affiliation.notice,
+      };
+    }
+  }
   let suggestions: OcrFieldSuggestion[] = [];
   if (profile === "CNI") suggestions = extractCni(text);
   else if (profile === "BIRTH") suggestions = extractBirth(text);

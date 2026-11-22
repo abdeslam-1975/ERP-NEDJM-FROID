@@ -14,6 +14,8 @@ export type OcrExtractResult = {
   profile: OcrDocProfile;
   rawText: string;
   suggestions: OcrFieldSuggestion[];
+  /** Présent quand la déclaration est reconnue mais refusée (employeur). */
+  notice?: string;
 };
 
 export function isOcrDocProfile(code: string): code is OcrDocProfile {
