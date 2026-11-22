@@ -185,7 +185,7 @@ export type PreparedBon = {
 
 /**
  * 1) Texte natif PDF si disponible
- * 2) sinon OCR haute résolution + contraste
+ * 2) sinon une seule passe OCR (résolution modérée) — pas de 2e passe sparse (trop lente)
  * 3) compression séparée pour le stockage
  */
 export async function prepareAndReadBon(
@@ -205,22 +205,16 @@ export async function prepareAndReadBon(
   let extract = rawText ? extractBonFields(rawText) : extractBonFields("");
   const hasUsefulExtract = Boolean(extract.preferredAmount || extract.amounts.length || extract.dates.length);
 
-  const canvas = await rasterizeToCanvas(file, hasUsefulExtract ? 1400 : 2000);
+  // Cap OCR resolution: 2000px + dual Tesseract passes was freezing phones/low CPUs.
+  const canvas = await rasterizeToCanvas(file, hasUsefulExtract ? 1100 : 1400);
   onProgress?.(8);
 
   if (!hasUsefulExtract) {
     const ocrCanvas = await contrastCanvas(canvas);
-    const ocrUrl = ocrCanvas.toDataURL("image/jpeg", 0.92);
+    const ocrUrl = ocrCanvas.toDataURL("image/jpeg", 0.85);
     onProgress?.(12);
-    rawText = await ocrDataUrl(ocrUrl, (pct) => onProgress?.(Math.max(12, Math.round(pct * 0.7))), "auto");
+    rawText = await ocrDataUrl(ocrUrl, (pct) => onProgress?.(Math.max(12, Math.round(pct * 0.85))), "auto");
     extract = extractBonFields(rawText);
-    if (!extract.preferredAmount && !extract.amounts.length) {
-      const sparse = await ocrDataUrl(ocrUrl, (pct) => onProgress?.(70 + Math.round(pct * 0.25)), "sparse");
-      if (sparse.trim()) {
-        rawText = `${rawText}\n${sparse}`.trim();
-        extract = extractBonFields(rawText);
-      }
-    }
   } else {
     onProgress?.(90);
   }
@@ -232,4 +226,34 @@ export async function prepareAndReadBon(
     extract,
     rawText,
   };
+}
+
+/** OCR-only on an already prepared data URL (no second full rasterize for storage). */
+export async function readBonFromDataUrl(
+  dataUrl: string,
+  onProgress?: (pct: number) => void,
+): Promise<{ extract: BonExtract; rawText: string }> {
+  onProgress?.(5);
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error("Image bon illisible"));
+    el.src = dataUrl;
+  });
+  const maxSide = 1200;
+  const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+  canvas.height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas indisponible");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const ocrCanvas = await contrastCanvas(canvas);
+  const ocrUrl = ocrCanvas.toDataURL("image/jpeg", 0.85);
+  onProgress?.(15);
+  const rawText = await ocrDataUrl(ocrUrl, (pct) => onProgress?.(Math.max(15, Math.round(pct * 0.85))), "auto");
+  onProgress?.(100);
+  return { extract: extractBonFields(rawText), rawText };
 }
