@@ -142,4 +142,8 @@ export type FinanceInput = {
   method?: string;
   ref?: string;
   beneficiary?: string;
+  /** Justificatif (image/PDF) — archivé sous Bon_N{op}_… comme les achats */
+  photoDataUrl?: string | null;
+  keepPhoto?: boolean;
+  bonMatchStatus?: "ok" | "warn" | "bad" | "unknown" | null;
 };
