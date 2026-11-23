@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   isDocumentRequiredForSave,
   missingRequiredDocuments,
+  orderEmployeeUploadDocuments,
 } from "@/lib/hr/required-documents";
 import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 
 function doc(
   code: string,
   extra: Record<string, unknown>,
+  sort_order = 10,
 ): CatalogItem {
   return {
     id: code,
@@ -18,7 +20,7 @@ function doc(
     extra,
     color_bg: null,
     color_fg: null,
-    sort_order: 10,
+    sort_order,
     is_active: true,
   };
 }
@@ -39,5 +41,15 @@ describe("required documents", () => {
     ];
     const missing = missingRequiredDocuments(catalogs, ["CNI"]);
     expect(missing.map((d) => d.code)).toEqual(["BIRTH"]);
+  });
+
+  it("met les documents obligatoires en tête", () => {
+    const ordered = orderEmployeeUploadDocuments([
+      doc("PHOTO", { upload_slot: true }, 1),
+      doc("BIRTH", { upload_slot: true, required_for_save: true }, 3),
+      doc("PERMIS", { upload_slot: true }, 2),
+      doc("CNI", { upload_slot: true, required_for_save: true }, 2),
+    ]);
+    expect(ordered.map((d) => d.code)).toEqual(["CNI", "BIRTH", "PHOTO", "PERMIS"]);
   });
 });

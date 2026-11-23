@@ -315,24 +315,59 @@ export async function uploadHrEmployeeDocument(
   const safeType = docType.replace(/[^a-zA-Z0-9_-]/g, "");
   const path = `${safeId}/${safeType}-${crypto.randomUUID()}.${ext}`;
   const supabase = await createClient();
+  const { data: existing, error: existErr } = await supabase
+    .from("hr_employee_files")
+    .select("id, storage_path")
+    .eq("employee_id", employeeId)
+    .eq("doc_type_code", docType)
+    .maybeSingle();
+  if (existErr) return { ok: false, error: existErr.message };
   const { error: upErr } = await supabase.storage.from(HR_DOCS_BUCKET).upload(path, file, {
     contentType: file.type,
     upsert: false,
   });
   if (upErr) return { ok: false, error: upErr.message };
   const saved = await upsertHrFile({
+    id: existing?.id,
     employee_id: employeeId,
     doc_type_code: docType,
     file_url: hrFileHref(path),
     file_name: file.name || `${safeType}.${ext}`,
     storage_path: path,
   });
-  if (!saved.ok) return saved;
+  if (!saved.ok) {
+    await supabase.storage.from(HR_DOCS_BUCKET).remove([path]);
+    return saved;
+  }
+  if (existing?.storage_path && existing.storage_path !== path) {
+    await supabase.storage.from(HR_DOCS_BUCKET).remove([existing.storage_path]);
+  }
   const files = await listHrFilesForEmployee(employeeId);
   if (!files.ok) return { ok: false, error: files.error };
   const row = files.data.find((f) => f.id === saved.data.id);
   if (!row) return { ok: false, error: "Fichier enregistré mais illisible." };
   return { ok: true, data: row };
+}
+
+/** Removes an archived employee file so another one can be imported. */
+export async function deleteHrEmployeeDocument(fileId: string): Promise<ActionResult<{ id: string }>> {
+  const id = fileId.trim();
+  if (!id) return { ok: false, error: "Document introuvable." };
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("hr_employee_files")
+    .select("id, storage_path")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: "Document introuvable." };
+  if (data.storage_path) {
+    await supabase.storage.from(HR_DOCS_BUCKET).remove([data.storage_path]);
+  }
+  const { error: delErr } = await supabase.from("hr_employee_files").delete().eq("id", id);
+  if (delErr) return { ok: false, error: delErr.message };
+  revalidate();
+  return { ok: true, data: { id } };
 }
 
 export async function archiveEmployeeFicheRenseignements(

@@ -12,6 +12,15 @@ export function isDocumentRequiredForSave(item: CatalogItem): boolean {
   return item.extra?.required_for_save === true;
 }
 
+/** Required slots first, then the others, each group keeping its catalogue order. */
+export function orderEmployeeUploadDocuments(items: CatalogItem[]): CatalogItem[] {
+  return items.slice().sort((a, b) => {
+    const required = Number(isDocumentRequiredForSave(b)) - Number(isDocumentRequiredForSave(a));
+    if (required !== 0) return required;
+    return a.sort_order - b.sort_order;
+  });
+}
+
 export function listRequiredDocumentTypes(catalogs: CatalogItem[]): CatalogItem[] {
   return catalogs
     .filter(

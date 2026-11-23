@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import {
+  deleteHrEmployeeDocument,
   listHrFilesForEmployee,
   uploadHrEmployeeDocument,
   type HrFileRow,
@@ -16,10 +17,10 @@ import {
   type OcrFieldSuggestion,
 } from "@/lib/hr/ocr/types";
 import { sanitizeOcrSuggestion } from "@/lib/hr/ocr/extractors";
-import { confirmAnotherCopy } from "@/lib/hr/document-notice";
 import {
   isDocumentRequiredForSave,
   isEmployeeUploadDocument,
+  orderEmployeeUploadDocuments,
 } from "@/lib/hr/required-documents";
 
 function isOcrEnabled(item: CatalogItem): boolean {
@@ -30,6 +31,7 @@ function isOcrEnabled(item: CatalogItem): boolean {
 }
 
 type DoneDoc = {
+  id?: string;
   code: string;
   label: string;
   file_url?: string | null;
@@ -50,6 +52,7 @@ export function EmployeeDocumentsUpload({
   /** Suivi local immédiat (même avant reload serveur). */
   const [doneDocs, setDoneDocs] = useState<DoneDoc[]>([]);
   const [selectedCode, setSelectedCode] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [suggestions, setSuggestions] = useState<OcrFieldSuggestion[]>([]);
@@ -62,12 +65,11 @@ export function EmployeeDocumentsUpload({
 
   const slots = useMemo(
     () =>
-      catalogs
-        .filter(
+      orderEmployeeUploadDocuments(
+        catalogs.filter(
           (c) => c.kind === "document_type" && c.is_active && isEmployeeUploadDocument(c),
-        )
-        .slice()
-        .sort((a, b) => a.sort_order - b.sort_order),
+        ),
+      ),
     [catalogs],
   );
 
@@ -77,6 +79,7 @@ export function EmployeeDocumentsUpload({
     for (const f of ordered) {
       const slot = slots.find((s) => s.code === f.doc_type_code);
       map.set(f.doc_type_code, {
+        id: f.id,
         code: f.doc_type_code,
         label: slot?.label_fr ?? f.doc_type_code,
         file_url: f.file_url,
@@ -89,6 +92,7 @@ export function EmployeeDocumentsUpload({
         const cur = map.get(d.code)!;
         map.set(d.code, {
           ...cur,
+          id: cur.id || d.id,
           file_url: cur.file_url || d.file_url,
           file_name: cur.file_name || d.file_name,
         });
@@ -110,6 +114,28 @@ export function EmployeeDocumentsUpload({
       return [...rest, doc];
     });
     setSelectedCode("");
+    setMenuOpen(false);
+  }
+
+  async function removeDocument(doc: DoneDoc) {
+    if (!window.confirm(`Retirer « ${doc.label} » ? Vous pourrez importer un autre fichier.`)) return;
+    setError(null);
+    if (!doc.id) {
+      setDoneDocs((prev) => prev.filter((item) => item.code !== doc.code));
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await deleteHrEmployeeDocument(doc.id);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setFiles((prev) => prev.filter((file) => file.id !== doc.id));
+      setDoneDocs((prev) => prev.filter((item) => item.code !== doc.code));
+    } finally {
+      setBusy(false);
+    }
   }
 
   function syncFromServer(rows: HrFileRow[]) {
@@ -155,11 +181,7 @@ export function EmployeeDocumentsUpload({
     const label = slots.find((slot) => slot.code === docType)?.label_fr || docType;
     if (
       previous.length &&
-      !confirmAnotherCopy(
-        label,
-        label,
-        previous.map((item) => item.issued_on || (item.created_at ? item.created_at.slice(0, 10) : "sans date")),
-      )
+      !window.confirm(`${label} est déjà archivé. Remplacer le fichier ? L'ancien sera supprimé.`)
     ) {
       return "cancel";
     }
@@ -222,6 +244,7 @@ export function EmployeeDocumentsUpload({
       const row = await uploadFile(selectedCode, file);
       if (!row || row === "cancel") return;
       markDone({
+        id: row.id,
         code: row.doc_type_code,
         label,
         file_url: row.file_url,
@@ -256,6 +279,7 @@ export function EmployeeDocumentsUpload({
         }
         if (row) {
           markDone({
+            id: row.id,
             code: row.doc_type_code,
             label,
             file_url: row.file_url,
@@ -277,24 +301,64 @@ export function EmployeeDocumentsUpload({
       <div className="flex flex-wrap items-end gap-2">
         <label className="min-w-[14rem] flex-1 text-[11px] font-semibold text-foreground/70">
           Type de document
-          <select
-            className={`${rhInput} mt-0.5 h-9 py-1 text-sm`}
-            value={selectedCode}
-            disabled={busy || pending || !!ocrProfile}
-            onChange={(e) => {
-              setSelectedCode(e.target.value);
-              setError(null);
-            }}
-          >
-            <option value="">— Choisir un document —</option>
-            {slots.map((slot) => (
-              <option key={slot.id} value={slot.code}>
-                {slot.label_fr}
-                {doneByCode.has(slot.code) ? " — déjà archivé" : ""}
-                {isDocumentRequiredForSave(slot) ? " *" : ""}
-              </option>
-            ))}
-          </select>
+          <div className="mt-0.5">
+            <button
+              type="button"
+              className={`${rhInput} flex h-9 w-full items-center justify-between px-2 text-left text-sm font-normal ${
+                selectedSlot && doneByCode.has(selectedSlot.code) ? "bg-emerald-100 font-semibold text-emerald-950" : ""
+              }`}
+              disabled={busy || pending || !!ocrProfile}
+              aria-expanded={menuOpen}
+              aria-haspopup="listbox"
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              <span className="truncate">
+                {selectedSlot
+                  ? `${selectedSlot.label_fr}${doneByCode.has(selectedSlot.code) ? " — déjà archivé" : ""}${isDocumentRequiredForSave(selectedSlot) ? " *" : ""}`
+                  : "— Choisir un document —"}
+              </span>
+              <span aria-hidden className="text-foreground/40">▾</span>
+            </button>
+            {menuOpen ? (
+              <ul
+                role="listbox"
+                aria-label="Type de document"
+                className="mt-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-surface py-1 shadow-lg"
+              >
+                {slots.map((slot) => {
+                  const done = doneByCode.has(slot.code);
+                  const required = isDocumentRequiredForSave(slot);
+                  return (
+                    <li key={slot.id}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={slot.code === selectedCode}
+                        className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm ${
+                          done
+                            ? "bg-emerald-100 font-semibold text-emerald-950"
+                            : slot.code === selectedCode
+                              ? "bg-foreground/10"
+                              : "hover:bg-foreground/5"
+                        }`}
+                        onClick={() => {
+                          setSelectedCode(slot.code);
+                          setError(null);
+                          setMenuOpen(false);
+                        }}
+                      >
+                        <span className="truncate">
+                          {slot.label_fr}
+                          {required ? " *" : ""}
+                        </span>
+                        {done ? <span className="shrink-0 text-[11px]">déjà archivé</span> : null}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </div>
         </label>
         <input
           ref={fileRef}
@@ -324,6 +388,20 @@ export function EmployeeDocumentsUpload({
               : "…"
             : "Importer"}
         </Button>
+        {selectedSlot && doneByCode.has(selectedSlot.code) ? (
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-9 px-3 text-xs text-alert-critical"
+            disabled={busy || pending || !!ocrProfile}
+            onClick={() => {
+              const doc = doneByCode.get(selectedSlot.code);
+              if (doc) void removeDocument(doc);
+            }}
+          >
+            Retirer
+          </Button>
+        ) : null}
       </div>
 
       {/* Liste des documents traités — sous la liste déroulante, avec ✓ */}
@@ -359,6 +437,14 @@ export function EmployeeDocumentsUpload({
                   Voir
                 </a>
               ) : null}
+              <button
+                type="button"
+                className="font-medium text-alert-critical underline disabled:opacity-50"
+                disabled={busy || pending}
+                onClick={() => void removeDocument(doc)}
+              >
+                Retirer
+              </button>
             </li>
           ))}
         </ul>
