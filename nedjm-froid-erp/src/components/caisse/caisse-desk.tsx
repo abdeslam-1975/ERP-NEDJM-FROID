@@ -1391,7 +1391,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
 
       {financeOpen ? (
         <div className="overlay">
-          <div className="modal narrow">
+          <div className="modal">
             <div className="modal-head navy">
               <strong>{financeEdit ? "Modifier caisse" : "Gestion caisse"}</strong>
               <button type="button" className="close-x" onClick={() => setFinanceOpen(false)}>×</button>
@@ -1423,41 +1423,50 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                   </select>
                 </div>
               )}
-              <div className="field">
-                <label>Justificatif / bon (image ou PDF)</label>
-                <div className={`bon-cell${finPhotoName ? " unknown" : ""}`}>
-                  <input
-                    type="file"
-                    accept="image/*,application/pdf,.pdf"
-                    disabled={busy}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      event.target.value = "";
-                      void attachFinanceBon(file);
-                    }}
-                  />
-                  <small>
-                    {finPhotoName
-                      ? finPhotoName
-                      : finKeepPhoto
-                        ? "Justificatif existant conservé — choisissez un fichier pour remplacer"
-                        : "Optionnel — archivé sous Bon_N{n°}_… comme les achats"}
-                  </small>
-                  {finPhotoName || finKeepPhoto ? (
-                    <button
-                      type="button"
-                      className="btn-light"
-                      style={{ marginTop: 6 }}
+              <div className="field finance-bon-field">
+                <label>Photo / PDF du bon</label>
+                <p className="hint" style={{ margin: 0 }}>
+                  Même principe que les achats : après enregistrement, la pièce apparaît dans la colonne BON
+                  (bouton Voir) et se télécharge sous <strong>Bon_N…_MOIS_ANNÉE</strong> avec le N° de l’opération.
+                </p>
+                <div className={`finance-bon-box${finPhotoName || finKeepPhoto ? " has-file" : ""}`}>
+                  <label className={`btn-action btn-navy finance-bon-pick${busy ? " disabled" : ""}`}>
+                    {finPhotoName || finKeepPhoto ? "Remplacer la photo…" : "Choisir une photo / PDF…"}
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf,.pdf"
                       disabled={busy}
-                      onClick={() => {
-                        setFinPhotoName("");
-                        setFinPhotoDataUrl("");
-                        setFinKeepPhoto(false);
+                      hidden
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = "";
+                        void attachFinanceBon(file);
                       }}
-                    >
-                      Retirer
-                    </button>
-                  ) : null}
+                    />
+                  </label>
+                  <div className="finance-bon-meta">
+                    {finPhotoName ? (
+                      <span className="finance-bon-name">{finPhotoName}</span>
+                    ) : finKeepPhoto ? (
+                      <span className="finance-bon-name">Photo déjà enregistrée (conservée)</span>
+                    ) : (
+                      <span className="hint">Aucune photo — cliquez pour ajouter le justificatif</span>
+                    )}
+                    {finPhotoName || finKeepPhoto ? (
+                      <button
+                        type="button"
+                        className="btn-light"
+                        disabled={busy}
+                        onClick={() => {
+                          setFinPhotoName("");
+                          setFinPhotoDataUrl("");
+                          setFinKeepPhoto(false);
+                        }}
+                      >
+                        Retirer
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </div>
