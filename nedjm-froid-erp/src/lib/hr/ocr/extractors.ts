@@ -550,10 +550,16 @@ function extractSs(text: string): OcrFieldSuggestion[] {
   if (address) {
     const cleaned = address.replace(/\s{2,}/g, " ").trim().slice(0, 160);
     if (cleaned) {
-      if (hasArabic(cleaned)) push(out, "address_ar", "Adresse AR", cleaned, "low");
-      else push(out, "address_fr", "Adresse FR", cleaned.toLocaleUpperCase("fr-DZ"), "low");
+      if (!hasArabic(cleaned)) push(out, "address_fr", "Adresse FR", cleaned.toLocaleUpperCase("fr-DZ"), "low");
     }
   }
+
+  const since = dateAfterLabel(text, ["Depuis le", "Depuis le :"]);
+  if (since) push(out, "hired_at", "Date de recrutement", since, "medium");
+
+  const rip =
+    text.match(/RIP\s*\/?\s*RIB\s*:?\s*([\d\s]{16,32})/i)?.[1]?.replace(/\D/g, "").slice(0, 20) ?? "";
+  if (rip.length === 20) push(out, "account_no", "RIP / RIB", rip, "high");
 
   return out;
 }

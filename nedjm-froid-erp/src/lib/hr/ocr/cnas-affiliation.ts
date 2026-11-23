@@ -4,9 +4,11 @@ import type { OcrFieldSuggestion } from "@/lib/hr/ocr/types";
  * Déclaration CNAS « demande d'affiliation d'un assuré social ».
  * L'assuré n'est lu qu'après contrôle du champ employeur (NEDJM FROID).
  * Champs retenus, dans l'ordre de la déclaration :
- * NSS, nom FR, nom AR, prénom FR, prénom AR, naissance, commune,
+ * NSS, nom FR, nom AR, prénom FR, prénom AR, naissance, commune de naissance,
  * n° acte, sexe, situation familiale, groupe sanguin, NIN,
- * père, mère (nom + prénom), nationalité, recrutement, déclaration, poste.
+ * père (latin + arabe), mère (nom + prénom, latin + arabe), nationalité,
+ * adresse, RIP, recrutement, déclaration, poste.
+ * Les enfants, le conjoint et le pays de naissance ne sont pas repris.
  */
 const EMPLOYER_NOTICE =
   "Le champ employeur ne contient pas NEDJM FROID. Aucune donnée de l'assuré n'est extraite. · حقل صاحب العمل لا يحتوي اسم المؤسسة، لم يُستخرج شيء.";
@@ -26,7 +28,20 @@ const FR_MONTHS: Record<string, string> = {
   decembre: "12",
 };
 
-const AR_LABELS = new Set(["اللقب", "الاسم", "الإسم", "اسم", "لقب"]);
+const AR_LABELS = new Set([
+  "اللقب",
+  "الاسم",
+  "الإسم",
+  "اسم",
+  "إسم",
+  "لقب",
+  "الأب",
+  "الاب",
+  "الأم",
+  "الام",
+  "العنوان",
+  "الكامل",
+]);
 
 export type CnasAffiliationExtract = {
   matched: boolean;
@@ -80,6 +95,22 @@ function fieldLine(section: string, label: RegExp): string | null {
   const latin = line.split(/[\u0600-\u06FF]/)[0] ?? line;
   const cleaned = latin.replace(/^[\s:.\-–—|/]+/, "").replace(/\s{2,}/g, " ").trim();
   return cleaned || null;
+}
+
+function arabicOnLine(section: string, label: RegExp): string | null {
+  const m = label.exec(section);
+  if (!m || m.index == null) return null;
+  const line = section.slice(m.index).split(/\n/)[0] ?? "";
+  const words = (line.match(/[\u0600-\u06FF]+/g) ?? []).filter((word) => !AR_LABELS.has(word));
+  const cleaned = words.join(" ").trim();
+  return cleaned || null;
+}
+
+function withArabic(latin: string | null, arabic: string | null): string | null {
+  const fr = String(latin ?? "").trim();
+  const ar = String(arabic ?? "").trim();
+  if (fr && ar) return `${fr} ${ar}`;
+  return fr || ar || null;
 }
 
 function arabicBeside(section: string, label: string): string | null {
@@ -154,6 +185,57 @@ function bloodCode(section: string): string | null {
   return m ? `${m[1]}${m[2]}` : null;
 }
 
+function addressLine(line: string): { fr: string; ar: string } {
+  const frTokens: string[] = [];
+  const arTokens: string[] = [];
+  let side: "fr" | "ar" | null = null;
+  for (const token of line.split(/\s+/).filter(Boolean)) {
+    if (AR_LABELS.has(token)) continue;
+    if (/[\u0600-\u06FF]/.test(token)) {
+      arTokens.push(token);
+      side = "ar";
+    } else if (/[A-Za-zÀ-ÿ]/.test(token)) {
+      frTokens.push(token);
+      side = "fr";
+    } else if (side === "ar") arTokens.push(token);
+    else frTokens.push(token);
+  }
+  return { fr: frTokens.join(" "), ar: arTokens.join(" ") };
+}
+
+function addressBlock(section: string): { fr: string; ar: string } {
+  const m = /(?:Adresse(?:\s+compl[èe]te)?|العنوان(?:\s+الكامل)?)/i.exec(section);
+  if (!m || m.index == null) return { fr: "", ar: "" };
+  const rest = section.slice(m.index + m[0].length);
+  const stop =
+    /(?:\n|^)\s*(?:Commune|Wilaya|Code postal|T[ée]l|Date de recrutement|Date de d[ée]claration|Poste occup|RENSEIGNEMENTS|D[ÉE]CLARATION|AYANTS?)\b/i.exec(
+      rest,
+    );
+  const raw = (stop && stop.index != null ? rest.slice(0, stop.index) : rest.slice(0, 400)).replace(
+    /^[\s:.\-–—|/]+/,
+    "",
+  );
+  const frLines: string[] = [];
+  const arLines: string[] = [];
+  for (const line of raw.split(/\n/)) {
+    const part = addressLine(line);
+    if (part.fr) frLines.push(part.fr);
+    if (part.ar) arLines.push(part.ar);
+  }
+  return {
+    fr: frLines.join(" "),
+    ar: arLines.join(" "),
+  };
+}
+
+function phoneNumber(section: string): string | null {
+  const m = section.match(/(?:T[ée]l(?:[ée]phone)?|الهاتف)\s*:?\s*([0-9+\s]{8,20})/i);
+  if (!m?.[1]) return null;
+  const digits = fixDigits(m[1]).replace(/\D/g, "");
+  if (digits.length < 9) return null;
+  return digits.slice(0, 10);
+}
+
 export function extractCnasAffiliation(text: string): CnasAffiliationExtract {
   if (!isAffiliationForm(text)) return { matched: false, suggestions: [] };
 
@@ -216,16 +298,41 @@ export function extractCnasAffiliation(text: string): CnasAffiliationExtract {
   );
   push(out, "nin", "NIN", nin);
 
-  const father = fieldLine(assure, /Pr[ée]nom\s+du\s+p[èe]re\s*:/i);
+  const father = withArabic(
+    fieldLine(assure, /Pr[ée]nom\s+du\s+p[èe]re\s*:/i),
+    arabicOnLine(assure, /Pr[ée]nom\s+du\s+p[èe]re\s*:/i),
+  );
   if (father) push(out, "father_name", "Père", father.toLocaleUpperCase("fr-DZ"));
 
   const motherLast = fieldLine(assure, /Nom\s+de\s+la\s+m[èe]re\s*:/i);
   const motherFirst = fieldLine(assure, /Pr[ée]nom\s+de\s+la\s+m[èe]re\s*:/i);
-  const mother = [motherLast, motherFirst].filter(Boolean).join(" ");
+  const motherAr = [
+    arabicOnLine(assure, /Nom\s+de\s+la\s+m[èe]re\s*:/i),
+    arabicOnLine(assure, /Pr[ée]nom\s+de\s+la\s+m[èe]re\s*:/i),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const mother = withArabic([motherLast, motherFirst].filter(Boolean).join(" "), motherAr);
   if (mother) push(out, "mother_name", "Mère", mother.toLocaleUpperCase("fr-DZ"));
 
   const nationality = fieldLine(assure, /Nationalit[ée]\s*:/i);
   if (nationality) push(out, "nationality", "Nationalité", nationality.toLocaleUpperCase("fr-DZ"));
+
+  const rip = digitsAfter(assure, /RIP\s*\/?\s*RIB\s*:?\s*([\d\s]{16,32})/i, 20);
+  push(out, "account_no", "RIP / RIB", rip);
+
+  const address = addressBlock(assure);
+  if (address.fr) push(out, "address_fr", "Adresse FR", address.fr.toLocaleUpperCase("fr-DZ"));
+
+  const residence = fieldLine(assure, /(?:^|\n)\s*Commune\s*:/i);
+  if (residence) push(out, "commune", "Commune", residence.toLocaleUpperCase("fr-DZ"));
+  const wilaya = fieldLine(assure, /(?:^|\n)\s*Wilaya\s*:/i);
+  if (wilaya) push(out, "wilaya_code", "Wilaya", wilaya.toLocaleUpperCase("fr-DZ"));
+  const postal = assure.match(/Code postal\s*:?\s*(\d{4,6})/i)?.[1] ?? null;
+  push(out, "postal_code", "Code postal", postal);
+
+  const phone = phoneNumber(assure);
+  push(out, "phone", "Téléphone", phone);
 
   push(out, "hired_at", "Date de recrutement", dateAfter(affiliation, /Date de recrutement\s*:/i));
   push(
