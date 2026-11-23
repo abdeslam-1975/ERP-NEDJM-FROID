@@ -624,19 +624,28 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
   const kind = input.type === "IN" ? "ALIMENTATION" : "AVANCE";
   const beneficiary = input.type === "IN" ? "Caisse Principale" : input.beneficiary?.trim() || "";
   if (input.type === "OUT" && !beneficiary) return fail("❌ Choisissez un bénéficiaire");
-  const header = {
+
+  const photoRaw = input.photoDataUrl?.trim() || "";
+  if (photoRaw) {
+    if (!photoRaw.startsWith("data:image/") && !photoRaw.startsWith("data:application/pdf")) {
+      return fail("❌ Le justificatif doit être une image ou un PDF.");
+    }
+    if (photoRaw.length > 3_800_000) return fail("❌ Justificatif trop lourd (limite ~3,5 Mo).");
+  }
+  let matchStatus = normalizeBonMatchStatus(input.bonMatchStatus);
+
+  const headerBase = {
     kind,
     op_date: input.date,
     affectation: kind === "ALIMENTATION" ? "CAISSE CENTRALE" : "AVANCE CAISSE",
     matricule: "",
     buyer_name: beneficiary,
     bon_label: "",
-    photo_data: null,
     method: input.type === "IN" ? input.method || "Espèces" : "Espèces",
     reference: input.type === "IN" ? input.ref || "" : "-",
   };
   const line = {
-    desc: kind === "ALIMENTATION" ? `Alimentation (${header.method || ""}) ${header.reference || ""}`.trim() : `RECEPTION (${beneficiary})`,
+    desc: kind === "ALIMENTATION" ? `Alimentation (${headerBase.method || ""}) ${headerBase.reference || ""}`.trim() : `RECEPTION (${beneficiary})`,
     itemVal: "",
     unit: "U",
     qte: 1,
@@ -645,15 +654,55 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
   try {
     if (input.operationId) {
       if (!flags.canManage) return fail("❌ Accès réservé : droit Modifier/Supprimer requis.");
-      const updated = await supabase.from("caisse_operations").update(header).eq("id", input.operationId).select("id, op_number").maybeSingle();
+      const existing = await supabase
+        .from("caisse_operations")
+        .select("op_number, photo_data, bon_match_status")
+        .eq("id", input.operationId)
+        .maybeSingle();
+      if (existing.error) return fail(existing.error.message);
+      if (!existing.data) return fail("❌ Opération introuvable.");
+
+      let photoData: string | null = photoRaw || null;
+      if (!photoData && input.keepPhoto) {
+        photoData = existing.data.photo_data ?? null;
+        if (matchStatus == null) {
+          matchStatus = normalizeBonMatchStatus(
+            existing.data.bon_match_status as FinanceInput["bonMatchStatus"],
+          );
+        }
+      }
+      if (photoData && matchStatus == null) matchStatus = "unknown";
+
+      const updated = await supabase
+        .from("caisse_operations")
+        .update({ ...headerBase, photo_data: photoData })
+        .eq("id", input.operationId)
+        .select("id, op_number")
+        .maybeSingle();
       if (updated.error) return fail(`❌ ${updated.error.message}`);
       if (!updated.data) return fail("❌ Opération introuvable.");
       const removed = await supabase.from("caisse_lines").delete().eq("operation_id", input.operationId);
       if (removed.error) return fail(removed.error.message);
       await writeLines(supabase, input.operationId, kind, [line]);
-      const previousOp = Number(updated.data.op_number) || 0;
+      const previousOp = Number(updated.data.op_number) || Number(existing.data.op_number) || 0;
       const numbered = await refreshOperationNumber(supabase, input.operationId, previousOp);
-      await logAction(supabase, "UPDATE", kind, numbered.op, sheetNameFromIso(input.date), `Modification caisse | ${beneficiary}`, amount);
+      const archiveName = await applyBonDisplayAndMatch(
+        supabase,
+        input.operationId,
+        numbered.op,
+        input.date,
+        !!photoData,
+        matchStatus,
+      );
+      await logAction(
+        supabase,
+        "UPDATE",
+        kind,
+        numbered.op,
+        sheetNameFromIso(input.date),
+        `Modification caisse | ${beneficiary}${archiveName ? ` | archive ${archiveName}` : ""}`,
+        amount,
+      );
       refresh();
       return {
         ok: true,
@@ -662,12 +711,26 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
         },
       };
     }
-    const inserted = await supabase.from("caisse_operations").insert({ ...header, created_by: userId }).select("id, op_number").maybeSingle();
+
+    if (photoRaw && matchStatus == null) matchStatus = "unknown";
+    const inserted = await supabase
+      .from("caisse_operations")
+      .insert({ ...headerBase, photo_data: photoRaw || null, created_by: userId })
+      .select("id, op_number")
+      .maybeSingle();
     if (inserted.error) return fail(`❌ ${inserted.error.message}`);
     if (!inserted.data) return fail("❌ Enregistrement refusé.");
     await writeLines(supabase, inserted.data.id, kind, [line]);
     const provisionalOp = Number(inserted.data.op_number) || 0;
     const numbered = await refreshOperationNumber(supabase, inserted.data.id, provisionalOp);
+    const archiveName = await applyBonDisplayAndMatch(
+      supabase,
+      inserted.data.id,
+      numbered.op,
+      input.date,
+      !!photoRaw,
+      matchStatus,
+    );
     const { data: solde } = await supabase.rpc("caisse_system_solde");
     await logAction(
       supabase,
@@ -675,7 +738,7 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
       kind,
       numbered.op,
       "Caisse_Centrale",
-      kind === "ALIMENTATION" ? "Alimentation Caisse" : `Transfert vers: ${beneficiary}`,
+      `${kind === "ALIMENTATION" ? "Alimentation Caisse" : `Transfert vers: ${beneficiary}`}${archiveName ? ` | archive ${archiveName}` : ""}`,
       amount,
     );
     refresh();

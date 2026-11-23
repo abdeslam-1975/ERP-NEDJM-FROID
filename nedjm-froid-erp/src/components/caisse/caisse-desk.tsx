@@ -110,6 +110,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   const [finMethod, setFinMethod] = useState("Espèces");
   const [finRef, setFinRef] = useState("");
   const [finBuyer, setFinBuyer] = useState("");
+  const [finPhotoName, setFinPhotoName] = useState("");
+  const [finPhotoDataUrl, setFinPhotoDataUrl] = useState("");
+  const [finKeepPhoto, setFinKeepPhoto] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeState, setCloseState] = useState<CloseStatus | null>(null);
   const [physical, setPhysical] = useState("");
@@ -247,6 +250,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       setFinBuyer(line.buyer);
       setFinMethod("Espèces");
       setFinRef("");
+      setFinPhotoName(line.hasPhoto ? "Justificatif existant" : "");
+      setFinPhotoDataUrl("");
+      setFinKeepPhoto(!!line.hasPhoto);
       setFinanceOpen(true);
       return;
     }
@@ -372,7 +378,27 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     setFinMethod("Espèces");
     setFinRef("");
     setFinBuyer(data.userList[0] || "");
+    setFinPhotoName("");
+    setFinPhotoDataUrl("");
+    setFinKeepPhoto(false);
     setFinanceOpen(true);
+  }
+
+  async function attachFinanceBon(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const dataUrl = await prepareBonDataUrl(file);
+      setFinPhotoDataUrl(dataUrl);
+      setFinPhotoName(file.name);
+      setFinKeepPhoto(false);
+    } catch (error) {
+      notify("Justificatif", error instanceof Error ? error.message : "Lecture du fichier impossible");
+      setFinPhotoDataUrl("");
+      setFinPhotoName("");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveFinance() {
@@ -389,6 +415,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         method: finMethod,
         ref: finRef,
         beneficiary: finBuyer,
+        photoDataUrl: finPhotoDataUrl || null,
+        keepPhoto: finKeepPhoto,
+        bonMatchStatus: finPhotoDataUrl || finKeepPhoto ? "unknown" : null,
       });
       if (!result.ok) return notify("Résultat", result.error);
       notify("Résultat", result.data.message);
@@ -1394,6 +1423,43 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                   </select>
                 </div>
               )}
+              <div className="field">
+                <label>Justificatif / bon (image ou PDF)</label>
+                <div className={`bon-cell${finPhotoName ? " unknown" : ""}`}>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf,.pdf"
+                    disabled={busy}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = "";
+                      void attachFinanceBon(file);
+                    }}
+                  />
+                  <small>
+                    {finPhotoName
+                      ? finPhotoName
+                      : finKeepPhoto
+                        ? "Justificatif existant conservé — choisissez un fichier pour remplacer"
+                        : "Optionnel — archivé sous Bon_N{n°}_… comme les achats"}
+                  </small>
+                  {finPhotoName || finKeepPhoto ? (
+                    <button
+                      type="button"
+                      className="btn-light"
+                      style={{ marginTop: 6 }}
+                      disabled={busy}
+                      onClick={() => {
+                        setFinPhotoName("");
+                        setFinPhotoDataUrl("");
+                        setFinKeepPhoto(false);
+                      }}
+                    >
+                      Retirer
+                    </button>
+                  ) : null}
+                </div>
+              </div>
             </div>
             <div className="modal-foot">
               <button type="button" className="btn-light" onClick={() => setFinanceOpen(false)}>Annuler</button>
