@@ -76,6 +76,15 @@
 .caisse-app .error-border { border-color: #dc2626 !important; background: #fff6f6 !important; }
 .caisse-app .toast { position: fixed; right: 16px; bottom: 16px; z-index: 60; background: #fff; border-radius: 12px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.18); max-width: 360px; }
 .caisse-app .icon-btn { border: 0; background: transparent; cursor: pointer; font-size: 14px; }
+.caisse-app .ops-actions { min-width: 168px; white-space: nowrap; }
+.caisse-app .ops-action-btns { display: inline-flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
+.caisse-app .ops-edit-btn,
+.caisse-app .ops-del-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+.caisse-app .ops-del-btn { color: #b91c1c; border-color: #fca5a5; }
 .caisse-app .close-x { border: 0; background: transparent; color: #fff; font-size: 20px; cursor: pointer; }
 .caisse-app .hint { color: #64748b; font-size: 12px; }
 .caisse-app .selected { background: #ecfdf5; }

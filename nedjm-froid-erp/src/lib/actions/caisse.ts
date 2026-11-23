@@ -105,16 +105,24 @@ function asNumber(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
+function normalizeOpLines(raw: OperationRow["lines"]): OperationRow["lines"] {
+  if (Array.isArray(raw)) return [...raw];
+  if (raw && typeof raw === "object") return Object.values(raw) as OperationRow["lines"];
+  return [];
+}
+
 function toJournal(op: OperationRow): { lines: JournalLine[]; money: MoneyRow } {
-  const lines = [...(op.lines || [])].sort((a, b) => a.line_no - b.line_no);
+  const lines = normalizeOpLines(op.lines).sort((a, b) => Number(a.line_no) - Number(b.line_no));
   const grand = lines.reduce((sum, line) => sum + Number(line.qty) * Number(line.unit_price), 0);
   const sheetName = sheetNameFromIso(op.op_date);
+  const hasPhoto = !!op.has_photo;
+  const matchStatus = (op.bon_match_status as JournalLine["bonMatchStatus"]) ?? null;
   const journal = lines.map((line, index) => {
     const isFirst = index === 0;
     const lineTotal = Number(line.qty) * Number(line.unit_price);
     return {
       operationId: op.id,
-      lineNo: line.line_no,
+      lineNo: Number(line.line_no) || index + 1,
       sheetName,
       type: op.kind,
       isFirst,
@@ -132,11 +140,11 @@ function toJournal(op: OperationRow): { lines: JournalLine[]; money: MoneyRow } 
       depenses: isFirst && op.kind === "ACHAT" ? grand : null,
       recettes: isFirst && op.kind !== "ACHAT" ? grand : null,
       buyer: op.buyer_name,
-      bon: op.bon_label || "",
-      hasPhoto: isFirst && !!op.has_photo,
-      bonMatchStatus: isFirst
-        ? ((op.bon_match_status as JournalLine["bonMatchStatus"]) ?? null)
-        : null,
+      // Libellé « Voir Bon » uniquement sur la 1ʳᵉ ligne — les suivantes restaient
+      // du texte non cliquable et masquaient l’absence du bouton Modifier.
+      bon: isFirst && hasPhoto ? "Voir Bon" : isFirst ? op.bon_label || "" : "",
+      hasPhoto: isFirst && hasPhoto,
+      bonMatchStatus: isFirst ? matchStatus : null,
     };
   });
   const first = journal[0];
@@ -154,6 +162,38 @@ function toJournal(op: OperationRow): { lines: JournalLine[]; money: MoneyRow } 
       total: first?.prixBon ?? null,
     },
   };
+}
+
+/** Si un filtre masque la 1ʳᵉ ligne, rattache photo / totaux / isFirst à la tête restante. */
+function ensureOperationHeads(lines: JournalLine[]): JournalLine[] {
+  const byOp = new Map<string, JournalLine[]>();
+  for (const line of lines) {
+    const group = byOp.get(line.operationId);
+    if (group) group.push(line);
+    else byOp.set(line.operationId, [line]);
+  }
+  const repaired: JournalLine[] = [];
+  for (const group of byOp.values()) {
+    group.sort((a, b) => a.lineNo - b.lineNo || a.desc.localeCompare(b.desc, "fr"));
+    const grand = group.reduce((sum, line) => sum + (Number(line.lineTotal) || 0), 0);
+    const photoLine = group.find((line) => line.hasPhoto);
+    const matchStatus = group.find((line) => line.bonMatchStatus)?.bonMatchStatus ?? null;
+    const bonLabel = photoLine?.bon || group.find((line) => line.bon)?.bon || "";
+    group.forEach((line, index) => {
+      const isFirst = index === 0;
+      repaired.push({
+        ...line,
+        isFirst,
+        prixBon: isFirst ? grand : null,
+        depenses: isFirst && line.type === "ACHAT" ? grand : null,
+        recettes: isFirst && line.type !== "ACHAT" ? grand : null,
+        hasPhoto: isFirst && !!photoLine,
+        bonMatchStatus: isFirst ? matchStatus : null,
+        bon: isFirst ? (photoLine ? "Voir Bon" : bonLabel) : "",
+      });
+    });
+  }
+  return repaired;
 }
 
 async function logAction(
@@ -343,7 +383,23 @@ export async function getCaisseDashboard(filter?: {
 
   const operations = (opsRes.data ?? []) as OperationRow[];
   const built = operations.map(toJournal);
-  const allLines = built.flatMap((entry) => entry.lines);
+  const allLines = ensureOperationHeads(built.flatMap((entry) => entry.lines));
+  const photoByOp = new Map<
+    string,
+    { hasPhoto: boolean; bonMatchStatus: JournalLine["bonMatchStatus"]; bon: string }
+  >();
+  for (const line of allLines) {
+    if (!line.hasPhoto && !line.bon && !line.bonMatchStatus) continue;
+    const cur = photoByOp.get(line.operationId) || {
+      hasPhoto: false,
+      bonMatchStatus: null as JournalLine["bonMatchStatus"],
+      bon: "",
+    };
+    if (line.hasPhoto) cur.hasPhoto = true;
+    if (line.bonMatchStatus) cur.bonMatchStatus = line.bonMatchStatus;
+    if (line.bon) cur.bon = line.bon;
+    photoByOp.set(line.operationId, cur);
+  }
   allLines.sort((a, b) => {
     if (a.date !== b.date) return a.date < b.date ? 1 : -1;
     if (a.op !== b.op) return b.op - a.op;
@@ -416,11 +472,23 @@ export async function getCaisseDashboard(filter?: {
   for (const line of allLines) if (line.sheetName && line.sheetName !== "—") months.add(line.sheetName);
   months.add(sheetNameFromIso(today));
   const monthsList = [...months].sort((a, b) => monthSortKey(b) - monthSortKey(a));
-  const table = allLines.filter((line) => {
-    if (month !== "TOUS" && line.sheetName !== month) return false;
-    if (buyer !== "TOUS" && line.buyer !== buyer) return false;
-    if (type !== "TOUS" && line.type !== type) return false;
-    return true;
+  const table = ensureOperationHeads(
+    allLines.filter((line) => {
+      if (month !== "TOUS" && line.sheetName !== month) return false;
+      if (buyer !== "TOUS" && line.buyer !== buyer) return false;
+      if (type !== "TOUS" && line.type !== type) return false;
+      return true;
+    }),
+  ).map((line) => {
+    if (!line.isFirst) return line;
+    const meta = photoByOp.get(line.operationId);
+    if (!meta) return line;
+    return {
+      ...line,
+      hasPhoto: meta.hasPhoto,
+      bonMatchStatus: meta.bonMatchStatus,
+      bon: meta.hasPhoto ? "Voir Bon" : meta.bon || "",
+    };
   });
   const lists = listRes.data ?? [];
   const close = closeRes.data;
