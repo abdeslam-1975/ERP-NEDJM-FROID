@@ -11,6 +11,7 @@ import {
   Tajawal,
 } from "next/font/google";
 import { ThemeProvider } from "@/components/layout/theme-provider";
+import { InstantNavigation } from "@/components/layout/instant-navigation";
 import "./globals.css";
 
 const geist = Geist({
@@ -71,7 +72,10 @@ export default function RootLayout({
   return (
     <html lang="fr" suppressHydrationWarning className={`${fontVariables} h-full`}>
       <body className="min-h-full antialiased">
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <InstantNavigation />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

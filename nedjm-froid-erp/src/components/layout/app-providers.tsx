@@ -1,9 +1,8 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
-import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
-import { MotionConfig, motion } from "motion/react";
+import { MotionConfig } from "motion/react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { DisplayMode } from "@/lib/ui/design";
@@ -62,14 +61,7 @@ export function AppProviders({
   );
 }
 
-/* Opacity only: a transform here would become the containing block of every fixed overlay of the page. */
+/* The shell stays put. Content appears as soon as it arrives, with no extra fade. */
 export function PageTransition({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  const animations = useContext(AnimationsContext);
-  if (!animations) return <>{children}</>;
-  return (
-    <motion.div className="h-full min-h-0" key={pathname} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.22, ease: "easeOut" }}>
-      {children}
-    </motion.div>
-  );
+  return <div className="h-full min-h-0">{children}</div>;
 }

@@ -90,6 +90,7 @@ export function RhSectionTabs() {
             <li key={section.key}>
               <Link
                 href={first.href ?? "/rh"}
+                prefetch
                 title={section.titleAr}
                 aria-current={active ? "page" : undefined}
                 className={cn(
@@ -142,6 +143,7 @@ export function RhSubTabs() {
           <li key={item.key}>
             <Link
               href={item.href ?? "/rh"}
+              prefetch
               aria-current={active ? "page" : undefined}
               className={cn(
                 "relative inline-flex h-10 items-center gap-1 px-3 text-[13px] whitespace-nowrap transition-colors outline-none focus-visible:text-brand",

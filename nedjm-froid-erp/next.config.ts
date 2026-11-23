@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: "4mb",
     },
+    // A module the user already opened, or pointed at, stays ready so the next click does not wait.
+    staleTimes: {
+      dynamic: 60,
+      static: 180,
+    },
   },
   outputFileTracingIncludes: {
     "/rh/**": ["./node_modules/@sparticuz/chromium/bin/**/*"],
