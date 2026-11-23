@@ -9,6 +9,7 @@ import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import { Button } from "@/components/ui/button";
 import {
   CatalogSelect,
+  catalogOptions,
   RhAlert,
   RhChip,
   RhModal,
@@ -496,6 +497,27 @@ function FieldControl({
           </option>
         ))}
       </select>
+    );
+  }
+  if (field.code === "poste") {
+    const suggestions = catalogOptions(catalogs, field.catalog_kind || "job_title");
+    const known = suggestions.find((item) => item.code === value);
+    const shown = known ? known.label_fr || known.label_ar || value : value;
+    return (
+      <>
+        <input
+          className={ficheInput}
+          list="fiche-poste-suggestions"
+          value={shown}
+          placeholder="Écrire ou choisir"
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <datalist id="fiche-poste-suggestions">
+          {suggestions.map((item) => (
+            <option key={item.code} value={item.label_fr || item.label_ar || item.code} />
+          ))}
+        </datalist>
+      </>
     );
   }
   if (field.value_type === "catalog" && field.catalog_kind) {
