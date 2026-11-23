@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchBonToOperations, type BonAttachTarget } from "@/lib/caisse/bon-bulk-match";
+import { matchBonByOpNumber, matchBonToOperations, type BonAttachTarget } from "@/lib/caisse/bon-bulk-match";
 
 function target(partial: Partial<BonAttachTarget> & Pick<BonAttachTarget, "operationId" | "op" | "date" | "amount">): BonAttachTarget {
   return {
@@ -70,5 +70,18 @@ describe("matchBonToOperations", () => {
 
   it("returns unreadable when nothing usable is detected", () => {
     expect(matchBonToOperations(rows, null, null).status).toBe("unreadable");
+  });
+
+  it("matches uniquely by operation number from filename", () => {
+    const result = matchBonByOpNumber(rows, 20);
+    expect(result.status).toBe("unique");
+    expect(result.matches[0]?.op).toBe(20);
+    expect(result.strategy).toBe("op-number");
+  });
+
+  it("returns already when op-number target already has a photo", () => {
+    const result = matchBonByOpNumber(rows, 21);
+    expect(result.status).toBe("already");
+    expect(result.strategy).toBe("op-number");
   });
 });

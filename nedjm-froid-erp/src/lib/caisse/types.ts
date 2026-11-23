@@ -2,6 +2,8 @@ import type { BuyerBalance, CaisseKind, MoneyRow, MonthlySolde, PeriodSummary } 
 
 export type CaisseFlags = {
   isAdmin: boolean;
+  /** Rôle GERANT (ex. S.TOUZARI) — validation des bons avec les admins. */
+  isGerant: boolean;
   isMaster: boolean;
   isUnlimited: boolean;
   canSeeAllJournal: boolean;
@@ -11,6 +13,8 @@ export type CaisseFlags = {
   canManageOpenings: boolean;
   /** Caisse admin, or a user with delegated « Listes » (affectation / matricule / unité). */
   canManageLists: boolean;
+  /** Admin finance / super-admin, ou gérant — bouton Conforme sur les bons. */
+  canValidateBons: boolean;
   userName: string;
 };
 

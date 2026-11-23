@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   evaluateBonMatch,
   extractBonFields,
+  extractOpNumberFromFileName,
   textMentionsAmount,
 } from "@/lib/caisse/bon-check";
 
@@ -155,5 +156,23 @@ describe("evaluateBonMatch", () => {
       detectedAmount: null,
     });
     expect(result.status).toBe("unknown");
+  });
+});
+
+describe("extractOpNumberFromFileName", () => {
+  it("reads Bon_N102 archive names", () => {
+    expect(extractOpNumberFromFileName("Bon_N102_JANVIER_2026.pdf")).toBe(102);
+    expect(extractOpNumberFromFileName("bon-n5-fevrier.pdf")).toBe(5);
+  });
+
+  it("reads N° / N102 / pure digits", () => {
+    expect(extractOpNumberFromFileName("N102.pdf")).toBe(102);
+    expect(extractOpNumberFromFileName("N° 14.jpg")).toBe(14);
+    expect(extractOpNumberFromFileName("28.pdf")).toBe(28);
+  });
+
+  it("returns null when no op number", () => {
+    expect(extractOpNumberFromFileName("facture-janvier.pdf")).toBeNull();
+    expect(extractOpNumberFromFileName("")).toBeNull();
   });
 });

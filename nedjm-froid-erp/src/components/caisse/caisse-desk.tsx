@@ -718,10 +718,10 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   }
 
   async function confirmBonMatch(operationId: string) {
-    if (!flags?.isAdmin) return notify("Accès", "Réservé à l’administrateur");
+    if (!flags?.canValidateBons) return notify("Accès", "Réservé à l’administrateur ou au gérant");
     const answer = await confirmBox(
       "Valider le bon",
-      "Confirmer que date et montant du bon correspondent à l’opération ? L’alerte couleur (rouge/orange) disparaîtra.",
+      "Confirmer que date et montant du bon correspondent à l’opération ? Validation admin / gérant — l’alerte couleur disparaîtra.",
       "Conforme",
     );
     if (!answer) return;
@@ -781,7 +781,17 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   }
 
   const totalBon = items.reduce((sum, item) => sum + (Number(item.qte) || 0) * (Number(item.price) || 0), 0);
-  const roleLabel = !flags ? "" : flags.isAdmin ? "ADMIN" : flags.canSeeAllJournal ? "JOURNAL" : flags.isMaster ? "MASTER" : "USER";
+  const roleLabel = !flags
+    ? ""
+    : flags.isAdmin
+      ? "ADMIN"
+      : flags.isGerant
+        ? "GÉRANT"
+        : flags.canSeeAllJournal
+          ? "JOURNAL"
+          : flags.isMaster
+            ? "MASTER"
+            : "USER";
   const openingTotal = openings.reduce((sum, row) => sum + (Number(row.amount) > 0 ? Number(row.amount) : 0), 0);
   const ecart = closeState ? (physical === "" || Number.isNaN(Number(physical)) ? 0 : Number(physical) - closeState.systemSolde) : 0;
   const dateLocked = !!flags && !flags.isAdmin && !flags.isUnlimited && !editId;
@@ -1199,11 +1209,11 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                         >
                           Voir
                         </button>
-                        {flags?.isAdmin && row.isFirst && row.bonMatchStatus && row.bonMatchStatus !== "ok" ? (
+                        {flags?.canValidateBons && row.isFirst && row.bonMatchStatus && row.bonMatchStatus !== "ok" ? (
                           <button
                             type="button"
                             className="btn-light bon-confirm-btn"
-                            title="Valider manuellement le bon (admin)"
+                            title="Valider manuellement le bon (admin / gérant)"
                             onClick={() => void confirmBonMatch(row.operationId)}
                           >
                             Conforme
