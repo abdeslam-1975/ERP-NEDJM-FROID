@@ -176,23 +176,46 @@ async function logAction(
 }
 
 /**
- * After insert/update, N° may change once operations are ordered by op_date.
- * Falls back to fallbackOp if renumber fails so a successful write is never reported as lost.
+ * After insert/update/delete, N° are reordered by op_date (forgotten/late ops included).
+ * Bon archive names Bon_N… are derived from the new N° at download — photos stay on the same row.
  */
 async function refreshOperationNumber(
   supabase: ServerClient,
   operationId: string,
   fallbackOp: number,
 ): Promise<{ op: number; renumbered: boolean; warning?: string }> {
-  const renumbered = await supabase.rpc("caisse_renumber_active_operations");
-  if (renumbered.error) {
-    return { op: fallbackOp, renumbered: false, warning: renumbered.error.message };
+  let lastError = "";
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const renumbered = await supabase.rpc("caisse_renumber_active_operations");
+    if (renumbered.error) {
+      lastError = renumbered.error.message;
+      continue;
+    }
+    const row = await supabase.from("caisse_operations").select("op_number").eq("id", operationId).maybeSingle();
+    if (row.error || row.data?.op_number == null) {
+      lastError = row.error?.message || "N° final introuvable";
+      continue;
+    }
+    return { op: Number(row.data.op_number), renumbered: true };
   }
-  const row = await supabase.from("caisse_operations").select("op_number").eq("id", operationId).maybeSingle();
-  if (row.error || row.data?.op_number == null) {
-    return { op: fallbackOp, renumbered: false, warning: row.error?.message || "N° final introuvable" };
+  return {
+    op: fallbackOp,
+    renumbered: false,
+    warning: lastError || "Renumérotation chronologique indisponible",
+  };
+}
+
+function renumberNote(numbered: { op: number; renumbered: boolean; warning?: string }, previousOp?: number): string {
+  if (numbered.renumbered) {
+    if (previousOp != null && previousOp !== numbered.op) {
+      return ` N° réordonnés par date (N° ${previousOp} → ${numbered.op}). Les bons suivent le nouveau N°.`;
+    }
+    return " N° réordonnés par date (opérations + bons).";
   }
-  return { op: Number(row.data.op_number), renumbered: true };
+  if (numbered.warning) {
+    return ` ⚠️ Renumérotation non appliquée: ${numbered.warning}`;
+  }
+  return "";
 }
 
 function photoFromItems(items: PurchaseInput["items"]): { data: string | null; label: string; error: string | null } {
@@ -507,8 +530,7 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
           );
         }
       }
-      const previousDate = String(existing.data.op_date).slice(0, 10);
-      const dateChanged = previousDate !== input.date;
+      const previousOp = Number(existing.data.op_number) || 0;
 
       const updated = await supabase
         .from("caisse_operations")
@@ -521,10 +543,12 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
       const removed = await supabase.from("caisse_lines").delete().eq("operation_id", input.operationId);
       if (removed.error) return fail(removed.error.message);
       await writeLines(supabase, input.operationId, "ACHAT", input.items);
-      // Full renumber (~900 rows) can exceed the 8s role timeout; only needed when the date moves.
-      const numbered = dateChanged
-        ? await refreshOperationNumber(supabase, input.operationId, updated.data.op_number)
-        : { op: Number(updated.data.op_number) || Number(existing.data.op_number), renumbered: false };
+      // Always renumber: a forgotten/late date must reshuffle N° (and thus Bon_N… archives).
+      const numbered = await refreshOperationNumber(
+        supabase,
+        input.operationId,
+        Number(updated.data.op_number) || previousOp,
+      );
       const archiveName = await applyBonDisplayAndMatch(
         supabase,
         input.operationId,
@@ -543,7 +567,12 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
         grand,
       );
       refresh();
-      return { ok: true, data: { message: `✅ Opération N° ${numbered.op} mise à jour.` } };
+      return {
+        ok: true,
+        data: {
+          message: `✅ Opération N° ${numbered.op} mise à jour.${renumberNote(numbered, previousOp)}`,
+        },
+      };
     }
     const inserted = await supabase
       .from("caisse_operations")
@@ -553,7 +582,8 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
     if (inserted.error) return fail(`❌ ${inserted.error.message}`);
     if (!inserted.data) return fail("❌ Enregistrement refusé.");
     await writeLines(supabase, inserted.data.id, "ACHAT", input.items);
-    const numbered = await refreshOperationNumber(supabase, inserted.data.id, inserted.data.op_number);
+    const provisionalOp = Number(inserted.data.op_number) || 0;
+    const numbered = await refreshOperationNumber(supabase, inserted.data.id, provisionalOp);
     const archiveName = await applyBonDisplayAndMatch(
       supabase,
       inserted.data.id,
@@ -575,7 +605,7 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
     return {
       ok: true,
       data: {
-        message: `✅ Opération effectuée avec succès (N° ${numbered.op} → ${sheetNameFromIso(input.date)})`,
+        message: `✅ Opération effectuée avec succès (N° ${numbered.op} → ${sheetNameFromIso(input.date)}).${renumberNote(numbered, provisionalOp)}`,
       },
     };
   } catch (error) {
@@ -621,16 +651,23 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
       const removed = await supabase.from("caisse_lines").delete().eq("operation_id", input.operationId);
       if (removed.error) return fail(removed.error.message);
       await writeLines(supabase, input.operationId, kind, [line]);
-      const numbered = await refreshOperationNumber(supabase, input.operationId, updated.data.op_number);
+      const previousOp = Number(updated.data.op_number) || 0;
+      const numbered = await refreshOperationNumber(supabase, input.operationId, previousOp);
       await logAction(supabase, "UPDATE", kind, numbered.op, sheetNameFromIso(input.date), `Modification caisse | ${beneficiary}`, amount);
       refresh();
-      return { ok: true, data: { message: `✅ Mouvement de caisse N° ${numbered.op} mis à jour.` } };
+      return {
+        ok: true,
+        data: {
+          message: `✅ Mouvement de caisse N° ${numbered.op} mis à jour.${renumberNote(numbered, previousOp)}`,
+        },
+      };
     }
     const inserted = await supabase.from("caisse_operations").insert({ ...header, created_by: userId }).select("id, op_number").maybeSingle();
     if (inserted.error) return fail(`❌ ${inserted.error.message}`);
     if (!inserted.data) return fail("❌ Enregistrement refusé.");
     await writeLines(supabase, inserted.data.id, kind, [line]);
-    const numbered = await refreshOperationNumber(supabase, inserted.data.id, inserted.data.op_number);
+    const provisionalOp = Number(inserted.data.op_number) || 0;
+    const numbered = await refreshOperationNumber(supabase, inserted.data.id, provisionalOp);
     const { data: solde } = await supabase.rpc("caisse_system_solde");
     await logAction(
       supabase,
@@ -643,10 +680,11 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
     );
     refresh();
     const balance = Number(solde) || 0;
+    const note = renumberNote(numbered, provisionalOp);
     const message =
       kind === "ALIMENTATION"
-        ? `✅ Alimentation enregistrée (n° ${numbered.op}) — Solde: ${balance.toFixed(2)} DA`
-        : `✅ Transfert vers ${beneficiary} (n° ${numbered.op})\n(✅ Tiré vers: ${sheetNameFromIso(input.date)})`;
+        ? `✅ Alimentation enregistrée (n° ${numbered.op}) — Solde: ${balance.toFixed(2)} DA.${note}`
+        : `✅ Transfert vers ${beneficiary} (n° ${numbered.op})\n(✅ Tiré vers: ${sheetNameFromIso(input.date)}).${note}`;
     return { ok: true, data: { message } };
   } catch (error) {
     return fail(error instanceof Error ? `❌ ${error.message}` : "❌ Erreur");
