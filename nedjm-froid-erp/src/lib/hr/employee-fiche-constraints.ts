@@ -57,6 +57,23 @@ export function tomorrowIsoDate(now = new Date()): string {
   return todayIsoDate(d);
 }
 
+/**
+ * Jour, mois et année réellement saisis.
+ * Une année < 1000 (0003 pendant la frappe) n'est pas une date terminée :
+ * le champ date complète l'année par des zéros avant les chiffres suivants.
+ */
+export function finishedCalendarDate(raw: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(raw ?? "").trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < 1000 || month < 1 || month > 12 || day < 1) return null;
+  const probe = new Date(year, month - 1, day);
+  if (probe.getFullYear() !== year || probe.getMonth() !== month - 1 || probe.getDate() !== day) return null;
+  return `${match[1]}-${match[2]}-${match[3]}`;
+}
+
 export function isLatinUppercaseField(code: string): boolean {
   if (!code || code.endsWith("_ar")) return false;
   if (code.endsWith("_code")) return false;
@@ -99,9 +116,10 @@ export function sanitizeFicheInput(code: string, raw: string): string {
 
   if (EXPIRY_DATE_CODES.has(code)) {
     if (!v) return "";
-    // passé ou aujourd'hui → refus
-    if (v <= todayIsoDate()) return "";
-    return v;
+    const finished = finishedCalendarDate(v);
+    if (!finished) return v;
+    if (finished <= todayIsoDate()) return "";
+    return finished;
   }
 
   if (isLatinUppercaseField(code)) {
@@ -186,11 +204,12 @@ export function validateFicheConstraints(
   for (const code of EXPIRY_DATE_CODES) {
     if (empty(values[code])) continue;
     const v = String(values[code]).trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) {
-      issues.push({ code, message: "Date d'expiration : date invalide." });
+    const finished = finishedCalendarDate(v);
+    if (!finished) {
+      issues.push({ code, message: "Date d'expiration : indiquez le jour, le mois et l'année." });
       continue;
     }
-    if (v <= today) {
+    if (finished <= today) {
       issues.push({
         code,
         message:

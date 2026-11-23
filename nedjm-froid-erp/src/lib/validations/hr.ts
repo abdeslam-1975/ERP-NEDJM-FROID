@@ -2,6 +2,7 @@ import { z } from "zod";
 import { SALARY_CATEGORIES } from "@/lib/hr/payroll-calc";
 import {
   digitsOnly,
+  finishedCalendarDate,
   todayIsoDate,
   FICHE_ACCOUNT_PREFIX,
 } from "@/lib/hr/employee-fiche-constraints";
@@ -218,22 +219,26 @@ export const hrEmployeeFullSchema = z.object({
     const raw = attrs[key];
     if (raw == null || String(raw).trim() === "") continue;
     const v = String(raw).trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    const finished = key === "id_expires_on" ? finishedCalendarDate(v) : /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+    if (!finished) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `${label} : date invalide.`,
+        message:
+          key === "id_expires_on"
+            ? `${label} : indiquez le jour, le mois et l'année.`
+            : `${label} : date invalide.`,
         path: ["attrs", key],
       });
       continue;
     }
-    if (key === "id_issued_on" && v > todayIsoDate()) {
+    if (key === "id_issued_on" && finished > todayIsoDate()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: `${label} : une date future n'est pas autorisée.`,
         path: ["attrs", key],
       });
     }
-    if (key === "id_expires_on" && v <= todayIsoDate()) {
+    if (key === "id_expires_on" && finished <= todayIsoDate()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: `${label} : la date doit être postérieure à aujourd'hui (aujourd'hui et le passé sont refusés).`,

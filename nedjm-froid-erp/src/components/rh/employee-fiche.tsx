@@ -25,12 +25,12 @@ import {
 } from "@/lib/hr/employee-field-utils";
 import {
   digitMaxLength,
+  finishedCalendarDate,
   isExpiryDateField,
   isIssueDateField,
   isLatinUppercaseField,
   sanitizeFicheInput,
   todayIsoDate,
-  tomorrowIsoDate,
 } from "@/lib/hr/employee-fiche-constraints";
 import { sanitizeOcrSuggestion } from "@/lib/hr/ocr/extractors";
 
@@ -128,7 +128,7 @@ export function EmployeeFicheDialog({
     const nextValue = sanitizeFicheInput(code, value);
     if (isIssueDateField(code) && value && !nextValue) {
       setFieldHint("Date de délivrance : une date future n'est pas autorisée.");
-    } else if (isExpiryDateField(code) && value && !nextValue) {
+    } else if (isExpiryDateField(code) && finishedCalendarDate(value) && !nextValue) {
       setFieldHint(
         "Date d'expiration : aujourd'hui et les dates passées sont refusées. Choisissez une date future.",
       );
@@ -511,14 +511,12 @@ function FieldControl({
   }
   if (field.value_type === "date") {
     const max = isIssueDateField(field.code) ? todayIsoDate() : undefined;
-    const min = isExpiryDateField(field.code) ? tomorrowIsoDate() : undefined;
     return (
       <input
         type="date"
         className={ficheInput}
         value={value}
         max={max}
-        min={min}
         onChange={(e) => onChange(e.target.value)}
       />
     );

@@ -37,6 +37,12 @@ describe("sanitizeFicheInput", () => {
     expect(sanitizeFicheInput("id_expires_on", todayIsoDate())).toBe("");
     expect(sanitizeFicheInput("id_expires_on", tomorrowIsoDate())).toBe(tomorrowIsoDate());
   });
+
+  it("expiration : attend le jour, le mois et une année terminée", () => {
+    expect(sanitizeFicheInput("id_expires_on", "0003-07-04")).toBe("0003-07-04");
+    expect(sanitizeFicheInput("id_expires_on", "0202-06-15")).toBe("0202-06-15");
+    expect(sanitizeFicheInput("id_expires_on", "2026-06")).toBe("2026-06");
+  });
 });
 
 describe("validateFicheConstraints", () => {
@@ -70,6 +76,13 @@ describe("validateFicheConstraints", () => {
     });
     expect(issues.some((i) => i.code === "id_issued_on")).toBe(true);
     expect(issues.some((i) => i.code === "id_expires_on")).toBe(true);
+  });
+
+  it("expiration incomplète : jour, mois et année requis", () => {
+    const issues = validateFicheConstraints({ id_expires_on: "0003-07-04" });
+    expect(issues).toEqual([
+      { code: "id_expires_on", message: "Date d'expiration : indiquez le jour, le mois et l'année." },
+    ]);
   });
 
   it("laisse vide = ok", () => {
