@@ -1,0 +1,803 @@
+/* GESTION VENTES — Desk style aligné Banque/Caisse (UI mock, pas de backend). */
+.ventes-app {
+  color: #1f2937;
+  font-family: "Segoe UI", sans-serif;
+  background: #f0f2f5;
+  margin: -0.25rem -0.25rem 0;
+  padding: 0 0 1rem;
+  border-radius: 12px;
+}
+.ventes-app * { box-sizing: border-box; }
+
+.ventes-app .top-navbar {
+  background: linear-gradient(135deg, #1a472a, #2d6a4f);
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  border-radius: 12px;
+  margin-bottom: 14px;
+}
+.ventes-app .brand {
+  color: white;
+  font-weight: 800;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ventes-app .user-info {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.84rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ventes-app .role-badge {
+  background: #fbbf24;
+  color: #111;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-weight: 800;
+  font-size: 10px;
+}
+
+.ventes-app .kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.ventes-app .kpi-card {
+  border-radius: 15px;
+  padding: 18px 20px;
+  color: white;
+  font-weight: 700;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  position: relative;
+  overflow: hidden;
+  min-height: 110px;
+}
+.ventes-app .kpi-card::after {
+  content: "";
+  position: absolute;
+  top: -20px;
+  right: -20px;
+  width: 100px;
+  height: 100px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 50%;
+}
+.ventes-app .kpi-solde { background: linear-gradient(135deg, #1a472a, #2d6a4f); }
+.ventes-app .kpi-soum { background: linear-gradient(135deg, #b45309, #d97706); }
+.ventes-app .kpi-fin { background: linear-gradient(135deg, #991b1b, #dc2626); }
+.ventes-app .kpi-label {
+  font-size: 0.74rem;
+  opacity: 0.9;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.ventes-app .kpi-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin-top: 5px;
+}
+.ventes-app .kpi-card small {
+  opacity: 0.8;
+  font-size: 11px;
+}
+
+.ventes-app .panel {
+  background: white;
+  border-radius: 12px;
+  padding: 10px 15px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
+  margin-bottom: 14px;
+}
+
+.ventes-app .bank-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.ventes-app .bank-tabs-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-right: 4px;
+}
+.ventes-app .btn-bank {
+  background: #f8f9fa;
+  border: 2px solid #e9ecef;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 120px;
+  text-align: center;
+  color: #495057;
+}
+.ventes-app .btn-bank:hover {
+  border-color: #3a87ad;
+  color: #3a87ad;
+  background: #f0f7ff;
+}
+.ventes-app .btn-bank.active {
+  background: linear-gradient(135deg, #3a87ad, #2d6a8f);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(58, 135, 173, 0.35);
+}
+.ventes-app .bank-bal {
+  font-size: 10px;
+  opacity: 0.8;
+  display: block;
+  margin-top: 2px;
+}
+
+.ventes-app .action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.ventes-app .btn-action {
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ventes-app .btn-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.ventes-app .btn-op { background: #16a34a; }
+.ventes-app .btn-caution { background: #d97706; }
+.ventes-app .btn-virement { background: #5e4a8a; }
+.ventes-app .btn-releve { background: #0f766e; }
+.ventes-app .btn-admin { background: #1e3a5f; }
+.ventes-app .btn-export { background: #16a34a; }
+.ventes-app .btn-pdf {
+  background: #fff;
+  color: #1d4ed8;
+  border: 1px solid #93c5fd;
+}
+.ventes-app .btn-light {
+  background: #fff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ventes-app .filters {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.ventes-app .filters input,
+.ventes-app .filters select,
+.ventes-app .modal input,
+.ventes-app .modal select,
+.ventes-app .modal textarea {
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+  background: #fff;
+  color: #111;
+  font-size: 13px;
+}
+.ventes-app .filters input[type="date"] { max-width: 145px; }
+.ventes-app .filters input[type="text"] { max-width: 200px; }
+.ventes-app .btn-filter {
+  background: #111827;
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.ventes-app .btn-quitter {
+  background: #fff;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ventes-app .btn-quitter:hover {
+  background: #fef2f2;
+}
+
+.ventes-app .account-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 8px;
+  font-size: 13px;
+  color: #555;
+}
+.ventes-app .account-meta .meta-bank-ico { color: #16a34a; }
+.ventes-app .account-meta strong { color: #111; }
+.ventes-app .account-meta strong.solde { color: #15803d; }
+.ventes-app .account-meta .meta-da { color: #94a3b8; }
+
+.ventes-app .table-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
+  overflow: hidden;
+}
+.ventes-app .table-scroll {
+  max-height: 58vh;
+  overflow: auto;
+}
+.ventes-app .table-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.ventes-app .table-scroll::-webkit-scrollbar-track { background: #f1f1f1; }
+.ventes-app .table-scroll::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+.ventes-app .main-table {
+  min-width: 1500px;
+  margin: 0;
+  border-collapse: collapse;
+  width: 100%;
+}
+.ventes-app .main-table thead th {
+  background: #2d5a27 !important;
+  color: white !important;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  padding: 10px 6px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border: none !important;
+  white-space: nowrap;
+}
+.ventes-app .main-table tbody td {
+  font-size: 11.5px;
+  text-align: center;
+  vertical-align: middle;
+  padding: 7px 6px;
+  border-bottom: 1px solid #f5f5f5;
+  border-right: 1px solid #f5f5f5;
+  white-space: nowrap;
+}
+.ventes-app .row-in td { background-color: #f0fdf4 !important; }
+.ventes-app .row-out td { background-color: #fff5f5 !important; }
+.ventes-app .main-table tbody tr:hover td {
+  background-color: #eff6ff !important;
+  transition: background-color 0.15s;
+}
+.ventes-app .solde-cell { font-weight: 700; color: #1a472a; }
+.ventes-app .debit-cell { color: #16a34a; font-weight: 700; }
+.ventes-app .credit-cell { color: #dc2626; font-weight: 700; }
+.ventes-app .frais-cell { color: #64748b; }
+.ventes-app .libelle-cell {
+  text-align: left !important;
+  padding-left: 10px !important;
+  white-space: normal !important;
+  min-width: 160px;
+}
+.ventes-app .row-alert-exp td { background-color: rgba(220, 53, 69, 0.2) !important; }
+.ventes-app .row-alert-soon td { background-color: rgba(255, 165, 0, 0.2) !important; }
+.ventes-app .empty-rows {
+  padding: 40px 16px !important;
+  color: #94a3b8;
+  text-align: center;
+}
+.ventes-app .empty-ico {
+  display: block;
+  font-size: 1.8rem;
+  opacity: 0.35;
+  margin-bottom: 8px;
+}
+.ventes-app .rapp-cell,
+.ventes-app .actions-cell {
+  white-space: nowrap !important;
+}
+.ventes-app .actions-none { color: #94a3b8; font-size: 10px; }
+.ventes-app .rapp-done {
+  font-size: 14px;
+  line-height: 1;
+}
+.ventes-app .act-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 0;
+  cursor: pointer;
+  margin: 0 2px;
+  padding: 0;
+  line-height: 1;
+  vertical-align: middle;
+}
+.ventes-app .act-btn .act-ico {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+}
+/* RAPP: cercle gris foncé + ✓ blanc (comme Workspace) */
+.ventes-app .act-rapp {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #4b5563;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+.ventes-app .act-rapp:hover { background: #374151; }
+/* ACTIONS: carré bleu édition */
+.ventes-app .act-edit {
+  border-radius: 5px;
+  background: #2563eb;
+}
+.ventes-app .act-edit:hover { background: #1d4ed8; }
+/* ACTIONS: carré rouge suppression */
+.ventes-app .act-del {
+  border-radius: 5px;
+  background: #dc2626;
+}
+.ventes-app .act-del:hover { background: #b91c1c; }
+.ventes-app .act-unlock {
+  border-radius: 5px;
+  background: #d97706;
+}
+.ventes-app .act-unlock:hover { background: #b45309; }
+.ventes-app .locked-badge {
+  font-size: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 2px 6px;
+  color: #6b7280;
+  background: #f9fafb;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.ventes-app .alert {
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.ventes-app .alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+.ventes-app .alert-ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+.ventes-app .alert-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+
+.ventes-app .overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow: auto;
+}
+.ventes-app .modal {
+  background: #fff;
+  border-radius: 16px;
+  width: min(900px, 100%);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+.ventes-app .modal.narrow { width: min(480px, 100%); }
+.ventes-app .modal.wide { width: min(1100px, 100%); }
+.ventes-app .modal-head {
+  padding: 16px 20px;
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 800;
+}
+.ventes-app .modal-head.green { background: #16a34a; }
+.ventes-app .modal-head.warning { background: #f59e0b; color: #111; }
+.ventes-app .modal-head.navy { background: linear-gradient(135deg, #1e3a5f, #3a87ad); }
+.ventes-app .modal-head.teal { background: linear-gradient(135deg, #0f766e, #115e59); }
+.ventes-app .modal-head.slate { background: linear-gradient(135deg, #1e293b, #334155); }
+.ventes-app .modal-close {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 22px;
+  cursor: pointer;
+  line-height: 1;
+}
+.ventes-app .modal-body { padding: 20px; }
+.ventes-app .modal-foot {
+  border: none;
+  padding: 12px 20px 16px;
+  background: #f8f9fa;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.ventes-app .form-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  display: block;
+}
+.ventes-app .grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.ventes-app .grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.ventes-app .span-3 { grid-column: 1 / -1; }
+.ventes-app .block-box {
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 10px;
+  margin-bottom: 4px;
+}
+.ventes-app a.doc-link {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* ADMIN modal — Google Workspace parity */
+.ventes-app .modal.admin-modal {
+  width: min(1100px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+.ventes-app .admin-modal .modal-body {
+  padding: 0;
+  overflow: auto;
+}
+.ventes-app .admin-tabs {
+  display: flex;
+  gap: 0;
+  padding: 12px 16px 0;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fff;
+}
+.ventes-app .admin-tab {
+  border: 0;
+  background: transparent;
+  padding: 10px 16px;
+  font-weight: 700;
+  font-size: 14px;
+  color: #64748b;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+}
+.ventes-app .admin-tab.active {
+  color: #0f172a;
+  border-bottom-color: #2563eb;
+  background: #fff;
+}
+.ventes-app .admin-pane { padding: 16px; }
+.ventes-app .admin-param-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.ventes-app .admin-card {
+  border: 0;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.07);
+  background: #fff;
+  padding: 18px 16px;
+  text-align: center;
+}
+.ventes-app .admin-card .admin-ico {
+  font-size: 1.8rem;
+  margin-bottom: 8px;
+  line-height: 1;
+}
+.ventes-app .admin-card h6 {
+  margin: 0 0 12px;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #111827;
+}
+.ventes-app .admin-card input {
+  width: 100%;
+  margin-bottom: 10px;
+}
+.ventes-app .btn-add-aff {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 800;
+  cursor: pointer;
+  background: #2563eb;
+  color: #fff;
+}
+.ventes-app .btn-add-fourn {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 800;
+  cursor: pointer;
+  background: #f59e0b;
+  color: #111;
+}
+.ventes-app .btn-add-mode {
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 800;
+  cursor: pointer;
+  background: #16a34a;
+  color: #fff;
+}
+.ventes-app .admin-card button:disabled { opacity: 0.55; cursor: not-allowed; }
+.ventes-app .admin-list-chip {
+  display: inline-block;
+  margin: 2px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  font-size: 11px;
+  color: #334155;
+}
+.ventes-app .admin-bank-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr;
+  gap: 14px;
+}
+.ventes-app .admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ventes-app .admin-table th {
+  background: #111827;
+  color: #fff;
+  padding: 8px;
+  text-align: left;
+}
+.ventes-app .admin-table td {
+  padding: 8px;
+  border-bottom: 1px solid #eee;
+}
+.ventes-app .badge-active {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #16a34a;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+.ventes-app .badge-off {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #64748b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+.ventes-app .badge-admin {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+.ventes-app .badge-user {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #64748b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .ventes-app .kpi-grid { grid-template-columns: 1fr; }
+  .ventes-app .grid-3, .ventes-app .grid-2 { grid-template-columns: 1fr; }
+  .ventes-app .filters { margin-left: 0; width: 100%; }
+  .ventes-app .admin-param-grid,
+  .ventes-app .admin-bank-layout { grid-template-columns: 1fr; }
+}
+
+/* Ventes-specific */
+.ventes-app .kpi-grid-5 {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.ventes-app .kpi-ht { background: linear-gradient(135deg, #1a472a, #2d6a4f); }
+.ventes-app .kpi-tva { background: linear-gradient(135deg, #3a87ad, #2d6a8f); }
+.ventes-app .kpi-rg { background: linear-gradient(135deg, #b45309, #d97706); }
+.ventes-app .kpi-net { background: linear-gradient(135deg, #5e4a8a, #7c3aed); }
+.ventes-app .kpi-due { background: linear-gradient(135deg, #991b1b, #dc2626); }
+
+.ventes-app .btn-facture { background: #16a34a; }
+.ventes-app .btn-encaisser { background: #3a87ad; }
+.ventes-app .btn-import { background: #0f766e; }
+.ventes-app .btn-types { background: #5e4a8a; }
+
+.ventes-app .kind-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ventes-app .btn-kind {
+  background: #f8f9fa;
+  border: 2px solid #e9ecef;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #495057;
+  min-width: 72px;
+  text-align: center;
+}
+.ventes-app .btn-kind:hover { border-color: #3a87ad; color: #3a87ad; background: #f0f7ff; }
+.ventes-app .btn-kind.active {
+  background: linear-gradient(135deg, #3a87ad, #2d6a8f);
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(58, 135, 173, 0.35);
+}
+.ventes-app .kind-count {
+  display: block;
+  font-size: 10px;
+  opacity: 0.85;
+  margin-top: 2px;
+  font-weight: 600;
+}
+
+.ventes-app .badge-pay {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+.ventes-app .badge-pay.paye { background: #dcfce7; color: #166534; }
+.ventes-app .badge-pay.partiel { background: #fef3c7; color: #92400e; }
+.ventes-app .badge-pay.impaye { background: #fee2e2; color: #991b1b; }
+
+.ventes-app .badge-kind {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  background: #e2e8f0;
+  color: #0f172a;
+}
+.ventes-app .badge-kind.P { background: #dcfce7; color: #166534; }
+.ventes-app .badge-kind.F { background: #dbeafe; color: #1e40af; }
+.ventes-app .badge-kind.FP { background: #ede9fe; color: #5b21b6; }
+.ventes-app .badge-kind.RG { background: #ffedd5; color: #9a3412; }
+.ventes-app .badge-kind.SIT { background: #f1f5f9; color: #334155; }
+
+.ventes-app .row-paye td { background-color: #f0fdf4 !important; }
+.ventes-app .row-partiel td { background-color: #fffbeb !important; }
+.ventes-app .row-impaye td { background-color: #fff5f5 !important; }
+
+.ventes-app .lines-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 8px;
+}
+.ventes-app .lines-table th {
+  background: #1a472a;
+  color: #fff;
+  padding: 6px;
+  text-align: center;
+  font-size: 10px;
+}
+.ventes-app .lines-table td {
+  padding: 4px;
+  border-bottom: 1px solid #eee;
+  vertical-align: middle;
+}
+.ventes-app .lines-table input {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 5px 6px;
+  font: inherit;
+  font-size: 12px;
+}
+.ventes-app .totals-box {
+  margin-top: 12px;
+  background: #f8fafc;
+  border-radius: 10px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  font-size: 13px;
+}
+.ventes-app .totals-box .tot-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ventes-app .totals-box .tot-row.strong {
+  font-weight: 800;
+  color: #1a472a;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 6px;
+  grid-column: 1 / -1;
+}
+.ventes-app .ui-mock-banner {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a8a;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.ventes-app .client-cell {
+  text-align: left !important;
+  padding-left: 10px !important;
+  white-space: normal !important;
+  min-width: 140px;
+}
+.ventes-app .modal.invoice-modal { width: min(1100px, 100%); max-height: 92vh; display: flex; flex-direction: column; }
+.ventes-app .modal.invoice-modal .modal-body { overflow: auto; }
+.ventes-app .modal select,
+.ventes-app .modal input,
+.ventes-app .modal textarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.ventes-app .num-input {
+  text-align: right;
+}
+
+@media (max-width: 1100px) {
+  .ventes-app .kpi-grid-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .ventes-app .kpi-grid-5 { grid-template-columns: 1fr; }
+}

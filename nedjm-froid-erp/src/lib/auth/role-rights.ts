@@ -107,6 +107,7 @@ const NODE_SCREENS: Record<string, string[]> = {
   "nav.contrats": ["ref_contracts", "client_contracts"],
   "nav.finance": ["finance"],
   "nav.caisse": ["caisse"],
+  "nav.ventes": ["ventes"],
   "nav.achats": ["purchases"],
   "nav.utilisateurs": ["param_users", "users"],
   "nav.roles": ["roles"],
@@ -126,6 +127,7 @@ const SCREEN_MODULE: Record<string, string> = {
   com: "nav.contrats",
   finance: "nav.finance",
   caisse: "nav.caisse",
+  ventes: "nav.ventes",
   achats: "nav.achats",
   admin: "nav.parametres",
 };
@@ -142,6 +144,7 @@ const SENSITIVE: Record<string, string> = {
   "btn_rh_payroll_run.close": "Fige définitivement le mois",
   "nav.finance": "Comptes bancaires",
   "nav.caisse": "Journal de caisse",
+  "nav.ventes": "Journal des ventes et encaissements",
   "nav.utilisateurs": "Création et suppression de comptes",
   "nav.roles": "Rôles de tous les comptes",
   "settings.permissions": "Droits de tous les rôles",
