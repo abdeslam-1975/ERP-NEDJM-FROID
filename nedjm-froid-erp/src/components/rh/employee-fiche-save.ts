@@ -85,6 +85,7 @@ export async function saveEmployeeFiche(
   normalized: Record<string, string>,
   activeFields: HrEmployeeField[],
   ficheCatalogs: CatalogItem[],
+  onStored?: () => void,
 ): Promise<FicheSaveResult> {
   let previous: Record<string, string> | null = null;
   let ficheDates: string[] = [];
@@ -115,6 +116,7 @@ export async function saveEmployeeFiche(
   }
   const result = await upsertHrEmployee(employeePayloadFromValues(normalized, activeFields));
   if (!result.ok) return { ok: false, error: result.error };
+  onStored?.();
   const fiche = await getHrEmployeeFiche(result.data.id);
   const saved = fiche.ok ? fiche.data : null;
   if (!printedFicheChanged(previous, normalized, activeFields)) {

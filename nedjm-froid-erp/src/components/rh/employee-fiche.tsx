@@ -73,6 +73,9 @@ export function EmployeeFicheDialog({
   fiche,
   pending,
   formError,
+  saveNotice,
+  saved = false,
+  onEdit,
   onClose,
   onSubmit,
   onNew,
@@ -86,6 +89,11 @@ export function EmployeeFicheDialog({
   fiche: HrFicheSettings;
   pending: boolean;
   formError: string | null;
+  /** Shown beside the save button: saving, then saved. */
+  saveNotice?: string | null;
+  /** True once the employee row is stored, even if the PDF archive is still running. */
+  saved?: boolean;
+  onEdit?: () => void;
   onClose: () => void;
   onSubmit: () => void;
   onNew: () => void;
@@ -116,6 +124,7 @@ export function EmployeeFicheDialog({
   const status = values.status || "ACTIVE";
 
   function set(code: string, value: string) {
+    onEdit?.();
     const nextValue = sanitizeFicheInput(code, value);
     if (isIssueDateField(code) && value && !nextValue) {
       setFieldHint("Date de délivrance : une date future n'est pas autorisée.");
@@ -203,9 +212,23 @@ export function EmployeeFicheDialog({
       }
       footer={
         <>
-          <Button variant="ghost" className="mr-auto hidden sm:inline-flex" onClick={onClose}>
+          <Button variant="ghost" className="hidden sm:inline-flex" onClick={onClose}>
             Fermer
           </Button>
+          {saveNotice ? (
+            <span
+              className={`mr-auto rounded-lg px-3 py-1.5 text-sm font-semibold ${
+                saved
+                  ? "bg-emerald-50 text-emerald-800"
+                  : "bg-amber-50 text-amber-900"
+              }`}
+              role="status"
+            >
+              {saveNotice}
+            </span>
+          ) : (
+            <span className="mr-auto" />
+          )}
           <Button variant="secondary" className="gap-2" onClick={printFiche}>
             <IconPrint />
             Imprimer
@@ -216,7 +239,7 @@ export function EmployeeFicheDialog({
           </Button>
           <Button className="min-w-[8.5rem] gap-2" disabled={pending} onClick={onSubmit}>
             <IconSave />
-            {pending ? "Enregistrement…" : "Enregistrer"}
+            {pending ? (saved ? "تم الحفظ" : "جاري الحفظ…") : "Enregistrer"}
           </Button>
         </>
       }

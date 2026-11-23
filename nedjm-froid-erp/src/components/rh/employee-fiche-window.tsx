@@ -58,6 +58,10 @@ export function EmployeeFicheWindow({
   const [values, setValues] = useState(initialValues);
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const [busy, setBusy] = useState(false);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const savingRef = useRef(false);
   const autoMatricule = useRef(initialValues.matricule || "");
   const known = useMemo(
     () =>
@@ -95,6 +99,8 @@ export function EmployeeFicheWindow({
 
   function open(employeeId: string | null) {
     setFormError(null);
+    setSaveNotice(null);
+    setSaved(false);
     if (!employeeId) {
       autoMatricule.current = "";
       setValues(emptyFicheValues(activeFields));
@@ -113,6 +119,7 @@ export function EmployeeFicheWindow({
   }
 
   function submit() {
+    if (savingRef.current) return;
     setFormError(null);
     const manual = Boolean(values.matricule && values.matricule !== autoMatricule.current);
     const decision = confirmFicheIdentity(values, known, manual);
@@ -133,14 +140,30 @@ export function EmployeeFicheWindow({
       setFormError("Ce matricule est déjà utilisé.");
       return;
     }
+    savingRef.current = true;
+    setBusy(true);
+    setSaved(false);
+    setSaveNotice("جاري الحفظ…");
     start(async () => {
-      const result = await saveEmployeeFiche(normalized, activeFields, catalogs);
-      if (!result.ok) {
-        setFormError(result.error);
-        return;
+      try {
+        const result = await saveEmployeeFiche(normalized, activeFields, catalogs, () => {
+          setSaved(true);
+          setSaveNotice("تم الحفظ");
+        });
+        if (!result.ok) {
+          setFormError(result.error);
+          setSaveNotice(null);
+          setSaved(false);
+          return;
+        }
+        setSaved(true);
+        setSaveNotice("تم الحفظ");
+        if (result.fiche) setValues(valuesFromFiche(result.fiche, fields));
+        onSaved?.(result.fiche, result.info);
+      } finally {
+        savingRef.current = false;
+        setBusy(false);
       }
-      if (result.fiche) setValues(valuesFromFiche(result.fiche, fields));
-      onSaved?.(result.fiche, result.info);
     });
   }
 
@@ -151,8 +174,15 @@ export function EmployeeFicheWindow({
       fields={fields}
       catalogs={catalogs}
       fiche={fiche}
-      pending={pending}
+      pending={busy || pending}
       formError={formError}
+      saveNotice={saveNotice}
+      saved={saved}
+      onEdit={() => {
+        if (savingRef.current) return;
+        setSaveNotice(null);
+        setSaved(false);
+      }}
       onClose={onClose}
       onSubmit={submit}
       onNew={() => open(null)}

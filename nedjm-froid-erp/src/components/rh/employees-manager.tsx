@@ -123,6 +123,10 @@ export function EmployeesManager({
   const autoMatricule = useRef("");
   const [formError, setFormError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const savingRef = useRef(false);
   const [pending, startTransition] = useTransition();
   const [newCol, setNewCol] = useState({
     label_ar: "",
@@ -255,11 +259,15 @@ export function EmployeesManager({
     autoMatricule.current = "";
     setValues(emptyValues(activeFields));
     setFormError(null);
+    setSaveNotice(null);
+    setSaved(false);
     setOpen(true);
   }
 
   function openEdit(row: HrEmployeeFiche) {
     setFormError(null);
+    setSaveNotice(null);
+    setSaved(false);
     setOpen(true);
     startTransition(async () => {
       const result = await getHrEmployeeFiche(row.id);
@@ -272,6 +280,7 @@ export function EmployeesManager({
   }
 
   function submit() {
+    if (savingRef.current) return;
     setFormError(null);
     setInfo(null);
     const manual = Boolean(values.matricule && values.matricule !== autoMatricule.current);
@@ -293,21 +302,37 @@ export function EmployeesManager({
       setFormError("Ce matricule est déjà utilisé.");
       return;
     }
+    savingRef.current = true;
+    setBusy(true);
+    setSaved(false);
+    setSaveNotice("جاري الحفظ…");
     startTransition(async () => {
-      const result = await saveEmployeeFiche(normalized, activeFields, ficheCatalogs);
-      if (!result.ok) {
-        setFormError(result.error);
-        return;
-      }
-      const saved = result.fiche;
-      if (saved) {
-        setRows((prev) => {
-          const without = prev.filter((r) => r.id !== saved.id);
-          return sortEmployees([...without, saved]);
+      try {
+        const result = await saveEmployeeFiche(normalized, activeFields, ficheCatalogs, () => {
+          setSaved(true);
+          setSaveNotice("تم الحفظ");
         });
-        setValues(valuesFromFiche(saved, fields));
+        if (!result.ok) {
+          setFormError(result.error);
+          setSaveNotice(null);
+          setSaved(false);
+          return;
+        }
+        const savedFiche = result.fiche;
+        if (savedFiche) {
+          setRows((prev) => {
+            const without = prev.filter((r) => r.id !== savedFiche.id);
+            return sortEmployees([...without, savedFiche]);
+          });
+          setValues(valuesFromFiche(savedFiche, fields));
+        }
+        setSaved(true);
+        setSaveNotice("تم الحفظ");
+        setInfo([decision.note, result.info].filter(Boolean).join(" "));
+      } finally {
+        savingRef.current = false;
+        setBusy(false);
       }
-      setInfo([decision.note, result.info].filter(Boolean).join(" "));
     });
   }
 
@@ -766,8 +791,15 @@ export function EmployeesManager({
           fields={fields}
           catalogs={ficheCatalogs}
           fiche={fiche}
-          pending={pending}
+          pending={busy || pending}
           formError={formError}
+          saveNotice={saveNotice}
+          saved={saved}
+          onEdit={() => {
+            if (savingRef.current) return;
+            setSaveNotice(null);
+            setSaved(false);
+          }}
           onClose={() => setOpen(false)}
           onSubmit={submit}
           onNew={openCreate}
