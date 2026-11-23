@@ -84,6 +84,7 @@ async function clientOrError(): Promise<{ supabase: ServerClient; flags: CaisseF
     userId: workspace.id,
     flags: {
       isAdmin: !!ctx.isAdmin,
+      isGerant: !!ctx.isGerant,
       isMaster: !!ctx.isMaster,
       isUnlimited: !!ctx.isUnlimited,
       canSeeAllJournal: !!ctx.canSeeAllJournal,
@@ -92,6 +93,7 @@ async function clientOrError(): Promise<{ supabase: ServerClient; flags: CaisseF
       // Caisse admin (SUPER_ADMIN / ADMIN_FINANCE) or a delegated « Ouverture » right.
       canManageOpenings: !!ctx.isAdmin || (!manageOpenings.error && !!manageOpenings.data),
       canManageLists: !!ctx.isAdmin || (!manageLists.error && !!manageLists.data),
+      canValidateBons: !!ctx.isAdmin || !!ctx.isGerant,
       userName: String(ctx.userName || workspace.fullName),
     },
   };
@@ -693,14 +695,14 @@ export async function getCaissePhoto(
   return { ok: true, data: { url: data.photo_data, archiveName } };
 }
 
-/** Admin : valider manuellement le bon (OCR faux positif) → statut ok, plus d’alerte couleur. */
+/** Admin / gérant : valider manuellement le bon → statut ok, plus d’alerte couleur. */
 export async function confirmCaisseBonMatch(
   operationId: string,
 ): Promise<ActionResult<{ message: string }>> {
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
   const { supabase, flags } = gate;
-  if (!flags.isAdmin) return fail("❌ Réservé à l’administrateur");
+  if (!flags.canValidateBons) return fail("❌ Réservé à l’administrateur ou au gérant");
   if (!operationId?.trim()) return fail("❌ Opération invalide");
   const existing = await supabase
     .from("caisse_operations")
@@ -720,17 +722,53 @@ export async function confirmCaisseBonMatch(
     }
     return fail(updated.error.message);
   }
+  const who = flags.isAdmin ? "admin" : "gérant";
   await logAction(
     supabase,
     "UPDATE",
     "ACHAT",
     existing.data.op_number,
     sheetNameFromIso(String(existing.data.op_date).slice(0, 10)),
-    `Validation manuelle du bon (admin) | était: ${existing.data.bon_match_status || "—"}`,
+    `Validation manuelle du bon (${who}) | était: ${existing.data.bon_match_status || "—"}`,
     null,
   );
   refresh();
   return { ok: true, data: { message: `✅ Bon N° ${existing.data.op_number} marqué conforme.` } };
+}
+
+/** Admin : métadonnées des bons déjà attachés (pour ZIP mois, sans charger photo_data). */
+export async function listCaisseMonthBonDownloads(
+  monthSheet: string,
+): Promise<ActionResult<{ items: { operationId: string; op: number; date: string; archiveName: string }[]; count: number }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.isAdmin) return fail("❌ Réservé à l’administrateur");
+  if (!monthSheet?.trim() || monthSheet === "TOUS") return fail("❌ Choisissez un mois");
+
+  const opsRes = await supabase
+    .from("caisse_operations")
+    .select("id, op_number, op_date, kind, has_photo")
+    .eq("kind", "ACHAT")
+    .eq("has_photo", true)
+    .order("op_number", { ascending: true })
+    .limit(5000);
+  if (opsRes.error) return fail(opsRes.error.message);
+
+  const items = (opsRes.data ?? [])
+    .map((op) => {
+      const date = String(op.op_date).slice(0, 10);
+      if (sheetNameFromIso(date) !== monthSheet) return null;
+      return {
+        operationId: op.id,
+        op: Number(op.op_number),
+        date,
+        archiveName: formatBonLabel(op.op_number, date),
+      };
+    })
+    .filter((row): row is { operationId: string; op: number; date: string; archiveName: string } => !!row);
+
+  return { ok: true, data: { items, count: items.length } };
 }
 
 /** Admin : liste des achats d’un mois pour rattacher les bons en masse. */

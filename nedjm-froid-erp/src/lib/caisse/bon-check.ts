@@ -232,6 +232,38 @@ export function extractBonFieldsFromFileName(fileName: string): Pick<BonExtract,
   };
 }
 
+/**
+ * N° d’opération depuis le nom de fichier (rapide, sans OCR).
+ * Ex. Bon_N102_JANVIER_2026.pdf · N102.pdf · N°102.pdf · 102.pdf
+ */
+export function extractOpNumberFromFileName(fileName: string): number | null {
+  const base = String(fileName || "")
+    .split(/[/\\]/)
+    .pop()
+    ?.replace(/\.[^.]+$/, "")
+    .trim() || "";
+  if (!base) return null;
+
+  const bonN = base.match(/(?:^|[^A-Za-z0-9])bon[_\s-]*n[°ºo.]?\s*0*(\d{1,6})(?:[^0-9]|$)/i);
+  if (bonN) {
+    const n = Number(bonN[1]);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  const plainN = base.match(/(?:^|[^A-Za-z0-9])n[°ºo.]?\s*0*(\d{1,6})(?:[^0-9]|$)/i);
+  if (plainN) {
+    const n = Number(plainN[1]);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  if (/^\d{1,6}$/.test(base)) {
+    const n = Number(base);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  return null;
+}
+
 export function extractBonFields(text: string): BonExtract {
   const dates = extractIsoDates(text);
   const amounts = extractAmounts(text);

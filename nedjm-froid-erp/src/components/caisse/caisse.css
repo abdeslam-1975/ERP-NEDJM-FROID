@@ -300,7 +300,10 @@
 
 .caisse-app .bulk-bons { display: flex; flex-direction: column; gap: 12px; }
 .caisse-app .bulk-bons-controls {
-  display: grid; grid-template-columns: minmax(180px, 220px) 1fr 1fr; gap: 12px; align-items: end;
+  display: grid;
+  grid-template-columns: minmax(160px, 200px) minmax(180px, 240px) 1fr 1fr;
+  gap: 12px;
+  align-items: end;
 }
 .caisse-app .bulk-bons-purge {
   display: flex; flex-wrap: wrap; gap: 8px;

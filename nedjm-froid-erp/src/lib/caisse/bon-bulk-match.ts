@@ -15,8 +15,17 @@ export type BonMatchResult = {
   status: BonMatchKind;
   matches: BonAttachTarget[];
   /** Stratégie utilisée (debug / message UI) */
-  strategy?: "date+amount" | "amount-only" | "text-amount+date" | "text-amount";
+  strategy?: "op-number" | "date+amount" | "amount-only" | "text-amount+date" | "text-amount";
 };
+
+/** Match direct par N° d’opération (nom de fichier Bon_N… / N102 / 102). */
+export function matchBonByOpNumber(targets: BonAttachTarget[], opNumber: number | null): BonMatchResult {
+  if (opNumber == null || !Number.isFinite(opNumber) || opNumber <= 0) {
+    return { status: "unreadable", matches: [], strategy: "op-number" };
+  }
+  const hits = targets.filter((row) => row.op === Math.trunc(opNumber));
+  return classify(hits, "op-number");
+}
 
 function uniqById(rows: BonAttachTarget[]): BonAttachTarget[] {
   const seen = new Set<string>();
