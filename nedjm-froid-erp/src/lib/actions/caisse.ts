@@ -746,27 +746,45 @@ export async function listCaisseMonthBonDownloads(
   if (!flags.isAdmin) return fail("❌ Réservé à l’administrateur");
   if (!monthSheet?.trim() || monthSheet === "TOUS") return fail("❌ Choisissez un mois");
 
+  const rpc = await supabase.rpc("caisse_month_bon_downloads", { p_month: monthSheet });
+  if (!rpc.error) {
+    const rows = (Array.isArray(rpc.data) ? rpc.data : []) as {
+      operationId: string;
+      op: number;
+      date: string;
+    }[];
+    const items = rows.map((row) => ({
+      operationId: row.operationId,
+      op: Number(row.op),
+      date: String(row.date).slice(0, 10),
+      archiveName: formatBonLabel(row.op, String(row.date).slice(0, 10)),
+    }));
+    return { ok: true, data: { items, count: items.length } };
+  }
+
+  // Fallback si RPC absente : filtre SQL par mois (évite timeout 8s sur tout l’historique).
+  const bounds = monthBoundsFromSheet(monthSheet);
+  if (!bounds) return fail("❌ Mois invalide");
   const opsRes = await supabase
     .from("caisse_operations")
     .select("id, op_number, op_date, kind, has_photo")
     .eq("kind", "ACHAT")
     .eq("has_photo", true)
+    .gte("op_date", bounds.start)
+    .lt("op_date", bounds.endExclusive)
     .order("op_number", { ascending: true })
-    .limit(5000);
-  if (opsRes.error) return fail(opsRes.error.message);
+    .limit(2000);
+  if (opsRes.error) return fail(opsRes.error.message || rpc.error.message);
 
-  const items = (opsRes.data ?? [])
-    .map((op) => {
-      const date = String(op.op_date).slice(0, 10);
-      if (sheetNameFromIso(date) !== monthSheet) return null;
-      return {
-        operationId: op.id,
-        op: Number(op.op_number),
-        date,
-        archiveName: formatBonLabel(op.op_number, date),
-      };
-    })
-    .filter((row): row is { operationId: string; op: number; date: string; archiveName: string } => !!row);
+  const items = (opsRes.data ?? []).map((op) => {
+    const date = String(op.op_date).slice(0, 10);
+    return {
+      operationId: op.id,
+      op: Number(op.op_number),
+      date,
+      archiveName: formatBonLabel(op.op_number, date),
+    };
+  });
 
   return { ok: true, data: { items, count: items.length } };
 }
@@ -781,19 +799,47 @@ export async function listCaisseBonAttachTargets(
   if (!flags.isAdmin) return fail("❌ Réservé à l’administrateur");
   if (!monthSheet?.trim() || monthSheet === "TOUS") return fail("❌ Choisissez un mois");
 
+  const rpc = await supabase.rpc("caisse_bon_attach_targets", { p_month: monthSheet });
+  if (!rpc.error) {
+    const targets = (Array.isArray(rpc.data) ? rpc.data : []) as BonAttachTarget[];
+    const normalized = targets.map((row) => ({
+      operationId: String(row.operationId),
+      op: Number(row.op),
+      date: String(row.date).slice(0, 10),
+      amount: Math.round(Number(row.amount) * 100) / 100,
+      buyer: String(row.buyer || ""),
+      hasPhoto: !!row.hasPhoto,
+    }));
+    if (normalized.length && normalized.every((row) => !(row.amount > 0))) {
+      return fail(
+        `❌ Les achats de « ${monthSheet} » n’ont pas de lignes/montants lisibles — impossible de rattacher les bons.`,
+      );
+    }
+    return {
+      ok: true,
+      data: {
+        targets: normalized,
+        withoutPhoto: normalized.filter((row) => !row.hasPhoto).length,
+      },
+    };
+  }
+
+  const bounds = monthBoundsFromSheet(monthSheet);
+  if (!bounds) return fail("❌ Mois invalide");
   const opsRes = await supabase
     .from("caisse_operations")
     .select("id, op_number, op_date, kind, has_photo, buyer_name, lines:caisse_lines(qty, unit_price)")
     .eq("kind", "ACHAT")
+    .gte("op_date", bounds.start)
+    .lt("op_date", bounds.endExclusive)
     .order("op_date", { ascending: true })
-    .limit(5000);
-  if (opsRes.error) return fail(opsRes.error.message);
+    .limit(2000);
+  if (opsRes.error) return fail(opsRes.error.message || rpc.error.message);
 
   const targets: BonAttachTarget[] = [];
   let emptyAmount = 0;
   for (const op of opsRes.data ?? []) {
     const date = String(op.op_date).slice(0, 10);
-    if (sheetNameFromIso(date) !== monthSheet) continue;
     const lines = (op.lines || []) as { qty: number; unit_price: number }[];
     const amount = lines.reduce(
       (sum: number, line) => sum + Number(line.qty) * Number(line.unit_price),
@@ -840,18 +886,20 @@ export async function clearCaisseMonthBonPhotos(input: {
   const monthSheet = input.monthSheet?.trim() || "";
   if (!monthSheet || monthSheet === "TOUS") return fail("❌ Choisissez un mois");
   const mode = input.mode === "all" ? "all" : "suspect";
+  const bounds = monthBoundsFromSheet(monthSheet);
+  if (!bounds) return fail("❌ Mois invalide");
 
   const opsRes = await supabase
     .from("caisse_operations")
     .select("id, op_number, op_date, kind, has_photo, bon_match_status")
     .eq("kind", "ACHAT")
     .eq("has_photo", true)
-    .limit(5000);
+    .gte("op_date", bounds.start)
+    .lt("op_date", bounds.endExclusive)
+    .limit(2000);
   if (opsRes.error) return fail(opsRes.error.message);
 
   const targets = (opsRes.data ?? []).filter((op) => {
-    const date = String(op.op_date).slice(0, 10);
-    if (sheetNameFromIso(date) !== monthSheet) return false;
     if (mode === "all") return true;
     const status = op.bon_match_status as string | null;
     return status === "warn" || status === "unknown" || status === "bad" || !status;
@@ -914,12 +962,44 @@ export async function attachCaisseBonPhoto(input: {
   }
   if (photo.length > 3_800_000) return fail("❌ Bon trop lourd (limite ~3,5 Mo).");
 
+  const status = normalizeBonMatchStatus(input.bonMatchStatus) ?? "unknown";
+  const viaRpc = await supabase.rpc("caisse_attach_bon_photo", {
+    p_operation_id: input.operationId,
+    p_photo_data: photo,
+    p_match_status: status,
+    p_replace: !!input.replaceExisting,
+  });
+  if (!viaRpc.error && viaRpc.data && typeof viaRpc.data === "object") {
+    const payload = viaRpc.data as { op: number; date?: string; message?: string };
+    const op = Number(payload.op);
+    const date = String(payload.date || "").slice(0, 10);
+    const archiveName = date ? formatBonLabel(op, date) : `Bon_N${op}`;
+    await logAction(
+      supabase,
+      "UPDATE",
+      "ACHAT",
+      op,
+      date ? sheetNameFromIso(date) : "",
+      `Rattachement bon (import masse) | ${archiveName}`,
+      null,
+    );
+    refresh();
+    return {
+      ok: true,
+      data: {
+        op,
+        archiveName,
+        message: String(payload.message || `✅ Bon lié à N° ${op}`),
+      },
+    };
+  }
+
   const existing = await supabase
     .from("caisse_operations")
     .select("id, op_number, op_date, kind, has_photo")
     .eq("id", input.operationId)
     .maybeSingle();
-  if (existing.error) return fail(existing.error.message);
+  if (existing.error) return fail(existing.error.message || viaRpc.error?.message || "Échec rattachement");
   if (!existing.data) return fail("❌ Opération introuvable.");
   if (existing.data.kind !== "ACHAT") return fail("❌ Uniquement pour les achats.");
   if (existing.data.has_photo && !input.replaceExisting) {
@@ -938,7 +1018,7 @@ export async function attachCaisseBonPhoto(input: {
     Number(existing.data.op_number),
     String(existing.data.op_date).slice(0, 10),
     true,
-    input.bonMatchStatus ?? "unknown",
+    status,
   );
   await logAction(
     supabase,
