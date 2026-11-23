@@ -75,7 +75,7 @@ export function ficheDocData(
     return { css: `fx-line cols-${Math.min(used.length, 4)}`, cells: used.map(cell) };
   };
   const lines = (rows: string[][]) => rows.map(line).filter((l): l is FicheLine => l !== null);
-  const flex = (count: number) => `flex: ${Math.max(count, 1)} 1 0`;
+  const flex = (count: number) => `flex: ${Math.max(count, 1)} 0 auto`;
 
   const identityCount = Math.max(settings.identity_left.length, settings.identity_right.length);
   const identity = lines(
