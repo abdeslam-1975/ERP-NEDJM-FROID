@@ -211,12 +211,57 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   const visibleRows = useMemo(() => {
     const rows = data?.rows ?? [];
     const query = search.trim().toLowerCase();
-    return rows.filter((row) => {
+    const filtered = rows.filter((row) => {
       const text = `${row.op} ${row.date} ${row.type} ${row.affectation} ${row.desc} ${row.buyer} ${row.bon}`.toLowerCase();
       if (query && !text.includes(query)) return false;
       if (dateFrom && row.date < dateFrom) return false;
       if (dateTo && row.date > dateTo) return false;
       return true;
+    });
+    // Si la recherche masque la 1ʳᵉ ligne, la tête visible récupère Voir / Modifier / Supprimer.
+    const headLineNo = new Map<string, number>();
+    for (const row of filtered) {
+      const cur = headLineNo.get(row.operationId);
+      if (cur == null || row.lineNo < cur) headLineNo.set(row.operationId, row.lineNo);
+    }
+    const photoByOp = new Map<string, Pick<JournalLine, "hasPhoto" | "bonMatchStatus" | "bon" | "prixBon" | "depenses" | "recettes">>();
+    for (const row of rows) {
+      if (!row.isFirst && !row.hasPhoto) continue;
+      const cur = photoByOp.get(row.operationId) || {
+        hasPhoto: false,
+        bonMatchStatus: null as JournalLine["bonMatchStatus"],
+        bon: "",
+        prixBon: null as number | null,
+        depenses: null as number | null,
+        recettes: null as number | null,
+      };
+      if (row.hasPhoto) cur.hasPhoto = true;
+      if (row.bonMatchStatus) cur.bonMatchStatus = row.bonMatchStatus;
+      if (row.bon) cur.bon = row.bon;
+      if (row.prixBon != null) cur.prixBon = row.prixBon;
+      if (row.depenses != null) cur.depenses = row.depenses;
+      if (row.recettes != null) cur.recettes = row.recettes;
+      photoByOp.set(row.operationId, cur);
+    }
+    return filtered.map((row) => {
+      const isFirst = headLineNo.get(row.operationId) === row.lineNo;
+      if (!isFirst) {
+        return row.isFirst
+          ? { ...row, isFirst: false, hasPhoto: false, bonMatchStatus: null, bon: "", prixBon: null, depenses: null, recettes: null }
+          : row;
+      }
+      const meta = photoByOp.get(row.operationId);
+      if (!meta) return { ...row, isFirst: true };
+      return {
+        ...row,
+        isFirst: true,
+        hasPhoto: meta.hasPhoto,
+        bonMatchStatus: meta.bonMatchStatus,
+        bon: meta.hasPhoto ? "Voir Bon" : meta.bon || "",
+        prixBon: meta.prixBon ?? row.prixBon,
+        depenses: meta.depenses ?? row.depenses,
+        recettes: meta.recettes ?? row.recettes,
+      };
     });
   }, [data, search, dateFrom, dateTo]);
 
@@ -1253,13 +1298,19 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                       row.bon || "—"
                     )}
                   </td>
-                  <td>
+                  <td className="ops-actions">
                     {flags?.canManage && row.isFirst ? (
-                      <>
-                        <button type="button" className="icon-btn" title="Modifier" onClick={() => openEdit(row)}>✎</button>
-                        <button type="button" className="icon-btn" title="Supprimer" onClick={() => void removeOperation(row)}>🗑</button>
-                      </>
-                    ) : "—"}
+                      <div className="ops-action-btns">
+                        <button type="button" className="btn-light ops-edit-btn" onClick={() => openEdit(row)}>
+                          Modifier
+                        </button>
+                        <button type="button" className="btn-light ops-del-btn" onClick={() => void removeOperation(row)}>
+                          Supprimer
+                        </button>
+                      </div>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                 </tr>
               );
