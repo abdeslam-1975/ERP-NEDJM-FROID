@@ -80,6 +80,8 @@ export function EmployeeFicheDialog({
   onClose,
   onSubmit,
   onNew,
+  onNewEntry,
+  newEntry = false,
   onSearch,
   takenMatricules = [],
 }: {
@@ -98,6 +100,9 @@ export function EmployeeFicheDialog({
   onClose: () => void;
   onSubmit: () => void;
   onNew: () => void;
+  /** Copies this person onto a second card. The current card stays as it is. */
+  onNewEntry?: () => void;
+  newEntry?: boolean;
   onSearch: (query: string) => void;
   takenMatricules?: string[];
 }) {
@@ -234,6 +239,15 @@ export function EmployeeFicheDialog({
             <IconPrint />
             Imprimer
           </Button>
+          {onNewEntry ? (
+            <Button
+              variant="secondary"
+              disabled={pending || newEntry || !values.id}
+              onClick={onNewEntry}
+            >
+              Nouvelle entrée
+            </Button>
+          ) : null}
           <Button variant="secondary" className="gap-2" disabled={pending} onClick={onNew}>
             <IconPlus />
             Nouveau
@@ -371,6 +385,14 @@ export function EmployeeFicheDialog({
         ))}
       </div>
 
+      {newEntry ? (
+        <div className="mt-2">
+          <RhAlert tone="warning">
+            Nouvelle entrée. L&apos;ancienne carte et sa date de recrutement restent inchangées.
+            Indiquez la nouvelle date, puis Enregistrer.
+          </RhAlert>
+        </div>
+      ) : null}
       {fieldHint ? (
         <div className="mt-2">
           <RhAlert tone="warning">{fieldHint}</RhAlert>

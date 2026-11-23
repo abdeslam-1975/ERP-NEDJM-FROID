@@ -33,12 +33,42 @@ function closeMessage(person: PersonHit) {
 /**
  * Applies the matricule rules on every fiche save.
  * A manual number that is not the expected one is refused.
+ * `newEntry` keeps the previous card and opens a second one on the new hire date.
  */
 export function confirmFicheIdentity(
   values: Record<string, string>,
   existing: ExistingEmployee[],
   manualMatricule: boolean,
+  options?: { newEntry?: boolean; previousHiredAt?: string },
 ): IdentityDecision {
+  if (options?.newEntry) {
+    const hired = (values.hired_at ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(hired)) {
+      return { ok: false, error: "Indiquez la date de la nouvelle entrée : jour, mois et année." };
+    }
+    const previous = (options.previousHiredAt ?? "").slice(0, 10);
+    if (previous && hired === previous) {
+      return {
+        ok: false,
+        error: "La nouvelle entrée doit avoir une date différente du premier recrutement.",
+      };
+    }
+    const fresh = { ...values, id: "", matricule: "" };
+    const planned = reviewLiveFiche(fresh, existing, "other", undefined, { separateEntry: true });
+    if (planned.status === "conflict" || planned.status === "duplicate" || planned.status === "confirm") {
+      return { ok: false, error: planned.issues[0] || planned.warnings[0] || "Nouvelle entrée refusée." };
+    }
+    const expected = planned.expectedMatricule || planned.matricule;
+    if (!expected || planned.employeeId) {
+      return { ok: false, error: "Matricule impossible pour cette date de nouvelle entrée." };
+    }
+    return {
+      ok: true,
+      values: { ...fresh, matricule: expected },
+      note: `Nouvelle entrée ${expected}. L'ancienne carte reste inchangée.`,
+    };
+  }
+
   const strong = matchStrongIdentity(values, existing);
   if (strong.conflict) return { ok: false, error: strong.conflict };
   if (strong.person) {

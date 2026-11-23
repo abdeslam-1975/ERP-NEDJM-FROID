@@ -145,10 +145,11 @@ function peek(counters: Map<string, Counter>, yy: string): string {
 export function applyEmployeeMatricules(
   rows: ImportRow[],
   existing: ExistingEmployee[],
-  options: { links?: Record<number, ImportLinkChoice>; today?: string; fromFile?: boolean } = {},
+  options: { links?: Record<number, ImportLinkChoice>; today?: string; fromFile?: boolean; separateEntry?: boolean } = {},
 ): ImportRow[] {
   const links = options.links ?? {};
   const fromFile = options.fromFile === true;
+  const separateEntry = options.separateEntry === true;
   const today = options.today ?? new Date().toISOString().slice(0, 10);
   const known: Known[] = existing.map((e) => ({
     id: e.id ?? null,
@@ -242,7 +243,7 @@ export function applyEmployeeMatricules(
       slot.message = `NIN déjà porté par ${knownNin?.display || groupNin?.display || "un employé"}, NSS déjà porté par ${knownNss?.display || groupNss?.display || "un autre"}. Aucun rattachement.`;
       continue;
     }
-    if (left || right) {
+    if ((left || right) && !separateEntry) {
       const group = groupNin || groupNss || groupForKnown((knownNin || knownNss)!);
       addToGroup(slot, group);
       continue;
@@ -635,12 +636,13 @@ export function reviewLiveFiche(
   existing: ExistingEmployee[],
   choice?: ImportLinkChoice,
   today?: string,
+  options?: { separateEntry?: boolean },
 ): ImportRow {
   const others = existing.filter((person) => !values.id || person.id !== values.id);
   const [planned] = applyEmployeeMatricules(
     [blankImportRow(values)],
     others,
-    { links: choice ? { 2: choice } : {}, today },
+    { links: choice ? { 2: choice } : {}, today, separateEntry: options?.separateEntry },
   );
   return planned;
 }

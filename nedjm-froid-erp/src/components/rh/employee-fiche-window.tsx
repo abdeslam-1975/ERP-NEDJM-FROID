@@ -63,6 +63,9 @@ export function EmployeeFicheWindow({
   const [saved, setSaved] = useState(false);
   const savingRef = useRef(false);
   const autoMatricule = useRef(initialValues.matricule || "");
+  const previousHire = useRef("");
+  const newEntryRef = useRef(false);
+  const [newEntry, setNewEntry] = useState(false);
   const known = useMemo(
     () =>
       employees.map((row) => ({
@@ -98,6 +101,9 @@ export function EmployeeFicheWindow({
   }, [hireMatricule, values.id]);
 
   function open(employeeId: string | null) {
+    newEntryRef.current = false;
+    setNewEntry(false);
+    previousHire.current = "";
     setFormError(null);
     setSaveNotice(null);
     setSaved(false);
@@ -107,8 +113,9 @@ export function EmployeeFicheWindow({
     }
     start(async () => {
       const result = await ficheWindowValues(employeeId, fields);
-      if (result.ok) setValues(result.values);
-      else setFormError(result.error);
+      if (result.ok) {
+        if (!newEntryRef.current) setValues(result.values);
+      } else setFormError(result.error);
     });
   }
 
@@ -118,11 +125,32 @@ export function EmployeeFicheWindow({
     else setFormError(found.error);
   }
 
+  function openNewEntry() {
+    if (!values.id || newEntryRef.current) return;
+    previousHire.current = (values.hired_at || "").slice(0, 10);
+    newEntryRef.current = true;
+    setNewEntry(true);
+    autoMatricule.current = "";
+    setValues((current) => ({
+      ...current,
+      id: "",
+      matricule: "",
+      hired_at: "",
+      declaration_date: "",
+    }));
+    setFormError(null);
+    setSaved(false);
+    setSaveNotice(null);
+  }
+
   function submit() {
     if (savingRef.current) return;
     setFormError(null);
     const manual = Boolean(values.matricule && values.matricule !== autoMatricule.current);
-    const decision = confirmFicheIdentity(values, known, manual);
+    const decision = confirmFicheIdentity(values, known, manual, {
+      newEntry,
+      previousHiredAt: previousHire.current,
+    });
     if (!decision.ok) {
       setFormError(decision.error);
       return;
@@ -146,10 +174,16 @@ export function EmployeeFicheWindow({
     setSaveNotice("جاري الحفظ…");
     start(async () => {
       try {
-        const result = await saveEmployeeFiche(normalized, activeFields, catalogs, () => {
-          setSaved(true);
-          setSaveNotice("تم الحفظ");
-        });
+        const result = await saveEmployeeFiche(
+          normalized,
+          activeFields,
+          catalogs,
+          () => {
+            setSaved(true);
+            setSaveNotice("تم الحفظ");
+          },
+          { newEntry },
+        );
         if (!result.ok) {
           setFormError(result.error);
           setSaveNotice(null);
@@ -159,6 +193,8 @@ export function EmployeeFicheWindow({
         setSaved(true);
         setSaveNotice("تم الحفظ");
         if (result.fiche) setValues(valuesFromFiche(result.fiche, fields));
+        newEntryRef.current = false;
+        setNewEntry(false);
         onSaved?.(result.fiche, result.info);
       } finally {
         savingRef.current = false;
@@ -186,6 +222,8 @@ export function EmployeeFicheWindow({
       onClose={onClose}
       onSubmit={submit}
       onNew={() => open(null)}
+      onNewEntry={openNewEntry}
+      newEntry={newEntry}
       onSearch={search}
       takenMatricules={employees.filter((row) => row.id !== values.id).map((row) => row.matricule)}
     />

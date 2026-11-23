@@ -352,7 +352,7 @@ export async function getHrEmployeeFiche(
 
 async function sameEmployeeElsewhere(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  person: { id?: string; nss: string; nin: string },
+  person: { id?: string; nss: string; nin: string; allowAnotherEntry?: boolean },
 ): Promise<string | null> {
   const nin = person.nin.replace(/\D/g, "");
   const nss = person.nss.replace(/\D/g, "");
@@ -376,6 +376,7 @@ async function sameEmployeeElsewhere(
   }
   const other = ninRow || nssRow;
   if (!other) return null;
+  if (person.allowAnotherEntry) return null;
   const name = [other.last_name, other.first_name].filter(Boolean).join(" ");
   return `Employé déjà connu : ${name}, matricule ${other.matricule}. Ouvrez sa fiche.`;
 }
@@ -384,11 +385,14 @@ export async function upsertHrEmployee(
   input: unknown,
 ): Promise<ActionResult<{ id: string }>> {
   try {
-  const rawInput =
-    input && typeof input === "object"
-      ? (() => {
-          const obj = { ...(input as Record<string, unknown>) };
-          if (obj.attrs && typeof obj.attrs === "object" && !Array.isArray(obj.attrs)) {
+  const rawObject =
+    input && typeof input === "object" ? { ...(input as Record<string, unknown>) } : null;
+  const newEntry = rawObject?.new_entry === true;
+  if (rawObject) delete rawObject.new_entry;
+  const rawInput = rawObject
+    ? (() => {
+        const obj = rawObject;
+        if (obj.attrs && typeof obj.attrs === "object" && !Array.isArray(obj.attrs)) {
             const attrs = { ...(obj.attrs as Record<string, unknown>) };
             for (const [k, v] of Object.entries(attrs)) {
               if (typeof v !== "string") continue;
@@ -419,6 +423,7 @@ export async function upsertHrEmployee(
     id: p.id,
     nss: p.nss ?? "",
     nin: p.nin ?? "",
+    allowAnotherEntry: newEntry && !p.id,
   });
   if (identityError) return { ok: false, error: identityError };
 

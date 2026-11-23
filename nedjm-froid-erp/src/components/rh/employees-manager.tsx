@@ -121,6 +121,9 @@ export function EmployeesManager({
   );
   const [reportOpen, setReportOpen] = useState(false);
   const autoMatricule = useRef("");
+  const previousHire = useRef("");
+  const newEntryRef = useRef(false);
+  const [newEntry, setNewEntry] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
@@ -256,6 +259,9 @@ export function EmployeesManager({
   });
 
   function openCreate() {
+    newEntryRef.current = false;
+    setNewEntry(false);
+    previousHire.current = "";
     autoMatricule.current = "";
     setValues(emptyValues(activeFields));
     setFormError(null);
@@ -265,6 +271,9 @@ export function EmployeesManager({
   }
 
   function openEdit(row: HrEmployeeFiche) {
+    newEntryRef.current = false;
+    setNewEntry(false);
+    previousHire.current = "";
     setFormError(null);
     setSaveNotice(null);
     setSaved(false);
@@ -276,8 +285,27 @@ export function EmployeesManager({
         setFormError(result.error);
         return;
       }
+      if (newEntryRef.current) return;
       setValues(valuesFromFiche(result.data, fields));
     });
+  }
+
+  function openNewEntry() {
+    if (!values.id || newEntryRef.current) return;
+    previousHire.current = (values.hired_at || "").slice(0, 10);
+    newEntryRef.current = true;
+    setNewEntry(true);
+    autoMatricule.current = "";
+    setValues((current) => ({
+      ...current,
+      id: "",
+      matricule: "",
+      hired_at: "",
+      declaration_date: "",
+    }));
+    setFormError(null);
+    setSaved(false);
+    setSaveNotice(null);
   }
 
   function submit() {
@@ -285,7 +313,10 @@ export function EmployeesManager({
     setFormError(null);
     setInfo(null);
     const manual = Boolean(values.matricule && values.matricule !== autoMatricule.current);
-    const decision = confirmFicheIdentity(values, existingIds, manual);
+    const decision = confirmFicheIdentity(values, existingIds, manual, {
+      newEntry,
+      previousHiredAt: previousHire.current,
+    });
     if (!decision.ok) {
       setFormError(decision.error);
       return;
@@ -309,10 +340,16 @@ export function EmployeesManager({
     setSaveNotice("جاري الحفظ…");
     startTransition(async () => {
       try {
-        const result = await saveEmployeeFiche(normalized, activeFields, ficheCatalogs, () => {
-          setSaved(true);
-          setSaveNotice("تم الحفظ");
-        });
+        const result = await saveEmployeeFiche(
+          normalized,
+          activeFields,
+          ficheCatalogs,
+          () => {
+            setSaved(true);
+            setSaveNotice("تم الحفظ");
+          },
+          { newEntry },
+        );
         if (!result.ok) {
           setFormError(result.error);
           setSaveNotice(null);
@@ -327,6 +364,8 @@ export function EmployeesManager({
           });
           setValues(valuesFromFiche(savedFiche, fields));
         }
+        newEntryRef.current = false;
+        setNewEntry(false);
         setSaved(true);
         setSaveNotice("تم الحفظ");
         setInfo([decision.note, result.info].filter(Boolean).join(" "));
@@ -804,6 +843,8 @@ export function EmployeesManager({
           onClose={() => setOpen(false)}
           onSubmit={submit}
           onNew={openCreate}
+          onNewEntry={openNewEntry}
+          newEntry={newEntry}
           onSearch={searchFromFiche}
           takenMatricules={rows.filter((row) => row.id !== values.id).map((row) => row.matricule)}
         />
