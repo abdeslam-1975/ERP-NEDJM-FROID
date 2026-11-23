@@ -39,6 +39,7 @@ import { valuesFromFicheRecord } from "@/lib/hr/employee-field-utils";
 import type { HrFicheSettings } from "@/lib/hr/fiche-settings";
 import { EmployeeCardPreview } from "@/components/rh/employee-card-preview";
 import { EmployeeFicheWindow, ficheWindowValues } from "@/components/rh/employee-fiche-window";
+import { emptyFicheValues, valuesFromFiche } from "@/components/rh/employee-fiche-save";
 import { numberTaken } from "@/components/rh/manual-number-input";
 import { printHtml as printFrame } from "@/components/rh/print-frame";
 import { fetchPrintKit } from "@/components/doc/use-print-kit";
@@ -890,6 +891,12 @@ export function DocumentsManager({
 
   function openFicheWindow(employeeId: string | null) {
     setCardPreview(null);
+    if (!employeeId) {
+      setFicheWindow(emptyFicheValues(employeeFields.filter((field) => field.is_active)));
+      return;
+    }
+    const row = employees.find((item) => item.id === employeeId);
+    setFicheWindow(valuesFromFiche({ ...(row ?? { id: employeeId }), attrs: {} } as HrEmployeeFiche, employeeFields));
     start(async () => {
       const result = await ficheWindowValues(employeeId, employeeFields);
       if (result.ok) setFicheWindow(result.values);

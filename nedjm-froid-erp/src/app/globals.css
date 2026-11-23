@@ -323,6 +323,10 @@ body {
   animation: ui-hero-progress linear both;
 }
 
+:where(a, button, [role="button"], [role="tab"], summary):active {
+  transition-duration: 0s;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ui-stagger > *,
   .ui-draw,

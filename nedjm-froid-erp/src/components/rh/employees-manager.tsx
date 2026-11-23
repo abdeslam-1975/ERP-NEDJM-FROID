@@ -268,6 +268,7 @@ export function EmployeesManager({
     setFormError(null);
     setSaveNotice(null);
     setSaved(false);
+    setValues(valuesFromFiche(row, fields));
     setOpen(true);
     startTransition(async () => {
       const result = await getHrEmployeeFiche(row.id);

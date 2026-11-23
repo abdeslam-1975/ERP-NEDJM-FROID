@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 /* ui-btn / ui-btn-primary (globals.css): original look unless a look is chosen in Paramètres › Interface. */
 export const buttonVariants = cva(
-  "ui-btn inline-flex items-center justify-center text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&_.lucide:not([class*='size-'])]:size-4",
+  "ui-btn inline-flex items-center justify-center text-sm font-semibold transition-colors duration-75 active:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&_.lucide:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
