@@ -136,14 +136,20 @@ export type PurchaseInput = {
 
 export type FinanceInput = {
   operationId?: string;
-  type: "IN" | "OUT";
+  /** IN = banque/espèces → caisse ; OUT = caisse → acheteur ; TRANSFER = acheteur → acheteur */
+  type: "IN" | "OUT" | "TRANSFER";
   date: string;
   amount: number;
   method?: string;
   ref?: string;
   beneficiary?: string;
+  /** Acheteur source pour TRANSFER (celui qui finance). */
+  sourceBuyer?: string;
   /** Justificatif (image/PDF) — archivé sous Bon_N{op}_… comme les achats */
   photoDataUrl?: string | null;
   keepPhoto?: boolean;
   bonMatchStatus?: "ok" | "warn" | "bad" | "unknown" | null;
 };
+
+/** Affectation réservée aux virements entre acheteurs (hors solde caisse centrale). */
+export const CAISSE_TRANSFER_AFFECTATION = "TRANSFERT ACHETEUR";
