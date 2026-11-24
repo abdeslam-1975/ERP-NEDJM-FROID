@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { salInvoiceSaveSchema } from "./ventes";
+import { salInvoiceSaveSchema, salPaymentSchema } from "./ventes";
 
 describe("salInvoiceSaveSchema", () => {
   it("accepts a P invoice draft", () => {
@@ -26,5 +26,16 @@ describe("salInvoiceSaveSchema", () => {
       lines: [{ designation: "RG", qty: 1, source_amount: 1000 }],
     });
     expect(parsed.success).toBe(false);
+  });
+
+  it("accepts internal payment", () => {
+    const parsed = salPaymentSchema.safeParse({
+      invoice_id: "11111111-1111-4111-8111-111111111111",
+      payment_date: "2025-02-01",
+      amount_ttc: 1500.5,
+      account_label: "BEA SETIF",
+      method_label: "Virement",
+    });
+    expect(parsed.success).toBe(true);
   });
 });

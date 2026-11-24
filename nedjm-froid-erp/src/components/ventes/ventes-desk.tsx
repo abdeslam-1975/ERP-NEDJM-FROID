@@ -288,22 +288,41 @@ export function VentesDesk({
     setModal("detail");
   }
 
+  const payableRows = useMemo(
+    () =>
+      rows.filter(
+        (r) =>
+          r.source === "SAL" &&
+          r.status === "EMISE" &&
+          Number(r.due_ttc) > 0.005,
+      ),
+    [rows],
+  );
+
   function openPay(row?: SalesRegisterRow) {
-    if (data && !data.canUpdate) {
+    if (data && !data.canEncaisser) {
       setError("Encaissement refusé (droits Ventes).");
       return;
     }
-    const unpaid = visible.find((r) => Number(r.due_ttc) > 0.005);
-    const target = row ?? unpaid ?? visible[0];
+    if (row && row.source !== "SAL") {
+      setError("Facture hors module Ventes — encaissement non géré ici pour l’instant.");
+      return;
+    }
+    if (row && row.status !== "EMISE") {
+      setError("Émettez la facture avant l’encaissement.");
+      return;
+    }
+    const unpaid = payableRows.find((r) => Number(r.due_ttc) > 0.005);
+    const target = row && row.source === "SAL" ? row : unpaid;
     if (!target) {
-      setError("Aucune facture à encaisser.");
+      setError("Aucune facture Ventes émise à encaisser.");
       return;
     }
     setPayForm({
       invoiceId: target.id,
       paymentDate: today || new Date().toISOString().slice(0, 10),
-      account: target.expected_bank_label || "BEA SETIF",
-      method: "Virement",
+      account: target.expected_bank_label || data?.banks[0]?.label || "",
+      method: data?.paymentModes[0]?.label || "Virement",
       amount: String(Number(target.due_ttc) > 0 ? target.due_ttc : target.net_payable),
     });
     setModal("encaissement");
@@ -419,16 +438,35 @@ export function VentesDesk({
     }
   }
 
-  function applyPayment() {
+  async function applyPayment() {
     const amount = Number(String(payForm.amount).replace(",", "."));
     if (!payForm.invoiceId || !(amount > 0)) {
       setError("Montant d'encaissement invalide.");
       return;
     }
-    setModal(null);
-    flash(
-      `Encaissement ${formatDa(amount)} DA : disponible en phase M4 (via fin_transactions → sal_invoice_payments).`,
-    );
+    setSaving(true);
+    setError(null);
+    try {
+      const { recordSalPayment } = await import("@/lib/actions/ventes");
+      const result = await recordSalPayment({
+        invoice_id: payForm.invoiceId,
+        payment_date: payForm.paymentDate,
+        amount_ttc: amount,
+        account_label: payForm.account,
+        method_label: payForm.method,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setModal(null);
+      flash(
+        `Encaissement ${formatDa(result.data.amount_ttc)} DA enregistré (interne Ventes). Reste dû : ${formatDa(result.data.due_ttc)} DA.`,
+      );
+      await refresh();
+    } finally {
+      setSaving(false);
+    }
   }
 
   function exportCsv() {
@@ -534,7 +572,8 @@ export function VentesDesk({
       </div>
 
       <div className="ui-live-banner">
-        Journal live — création P/F/FP/SIT active (M3). Encaissement → M4 · RG → M5.
+        Journal Ventes — factures + encaissement interne (sans lien Banque/Caisse/contrats). RG →
+        M5.
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -1243,14 +1282,14 @@ export function VentesDesk({
             </div>
             <div className="modal-body" style={{ display: "grid", gap: 12 }}>
               <div className="alert alert-ok">
-                Aperçu — lien Banque/Caisse via fin_transactions en M4.
+                Encaissement interne Ventes uniquement — pas d’écriture Banque/Caisse.
               </div>
               <div>
-                <label className="form-label">Facture</label>
+                <label className="form-label">Facture (SAL émise)</label>
                 <select
                   value={payForm.invoiceId}
                   onChange={(e) => {
-                    const inv = rows.find((x) => x.id === e.target.value);
+                    const inv = payableRows.find((x) => x.id === e.target.value);
                     setPayForm((f) => ({
                       ...f,
                       invoiceId: e.target.value,
@@ -1261,8 +1300,8 @@ export function VentesDesk({
                     }));
                   }}
                 >
-                  {rows.map((inv) => (
-                    <option key={`${inv.source}-${inv.id}`} value={inv.id}>
+                  {payableRows.map((inv) => (
+                    <option key={inv.id} value={inv.id}>
                       N° {inv.invoice_number} — {inv.client_name} ({formatDa(inv.due_ttc)} dû)
                     </option>
                   ))}
@@ -1277,11 +1316,25 @@ export function VentesDesk({
                 />
               </div>
               <div>
-                <label className="form-label">Compte / Banque</label>
-                <input
-                  value={payForm.account}
-                  onChange={(e) => setPayForm((f) => ({ ...f, account: e.target.value }))}
-                />
+                <label className="form-label">Banque (libellé)</label>
+                {(data?.banks.length ?? 0) > 0 ? (
+                  <select
+                    value={payForm.account}
+                    onChange={(e) => setPayForm((f) => ({ ...f, account: e.target.value }))}
+                  >
+                    <option value="">—</option>
+                    {data!.banks.map((b) => (
+                      <option key={b.id} value={b.label}>
+                        {b.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={payForm.account}
+                    onChange={(e) => setPayForm((f) => ({ ...f, account: e.target.value }))}
+                  />
+                )}
               </div>
               <div>
                 <label className="form-label">Mode</label>
@@ -1313,8 +1366,13 @@ export function VentesDesk({
               <button type="button" className="btn-light" onClick={() => setModal(null)}>
                 Annuler
               </button>
-              <button type="button" className="btn-action btn-encaisser" onClick={applyPayment}>
-                Valider
+              <button
+                type="button"
+                className="btn-action btn-encaisser"
+                disabled={saving || payableRows.length === 0}
+                onClick={() => void applyPayment()}
+              >
+                {saving ? "…" : "Valider"}
               </button>
             </div>
           </div>

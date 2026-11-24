@@ -63,3 +63,17 @@ export const salInvoiceSaveSchema = z
   });
 
 export type SalInvoiceSaveInput = z.infer<typeof salInvoiceSaveSchema>;
+
+/** Encaissement interne Ventes — pas de lien Banque/Caisse/fin_transactions. */
+export const salPaymentSchema = z.object({
+  invoice_id: z.string().uuid("Facture invalide."),
+  payment_date: isoDate,
+  amount_ttc: z.coerce.number().positive("Montant invalide."),
+  account_label: z.string().trim().max(160).optional().default(""),
+  method_label: z.string().trim().max(80).optional().default(""),
+  reference: z.string().trim().max(160).optional().default(""),
+  note: z.string().trim().max(500).optional().default(""),
+});
+
+export type SalPaymentInput = z.infer<typeof salPaymentSchema>;
+
