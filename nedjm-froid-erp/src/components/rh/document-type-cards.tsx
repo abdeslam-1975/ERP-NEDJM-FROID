@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { ArrowUpRight, type LucideIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 export type DocumentTypeCard = {
   key: string;
@@ -22,7 +21,7 @@ export function DocumentTypeCards({ cards }: { cards: DocumentTypeCard[] }) {
         const body = (
           <>
             <span
-              className="flex size-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-105"
+              className="flex size-11 shrink-0 items-center justify-center rounded-2xl"
               style={{ background: `${color}17`, color }}
             >
               <Icon className="size-5" strokeWidth={1.8} aria-hidden />
@@ -39,13 +38,14 @@ export function DocumentTypeCards({ cards }: { cards: DocumentTypeCard[] }) {
             ) : null}
           </>
         );
-        const className = cn(
-          "group flex items-center gap-3.5 rounded-2xl border bg-[var(--card-bg,var(--surface))] p-4 text-left shadow-[var(--card-shadow)] transition",
-          selected ? "border-transparent" : "border-border/70 hover:border-brand/30 hover:-translate-y-px",
-        );
-        const style = selected ? { boxShadow: `0 0 0 2px ${color}`, background: `${color}0d` } : undefined;
+        const className =
+          "group flex items-center gap-3.5 rounded-2xl border-2 bg-[var(--card-bg,var(--surface))] p-4 text-left shadow-[var(--card-shadow)] transition hover:-translate-y-0.5";
+        const style = {
+          borderColor: color,
+          background: selected ? `${color}14` : undefined,
+        };
         return href ? (
-          <Link key={key} href={href} className={className}>
+          <Link key={key} href={href} className={className} style={style}>
             {body}
           </Link>
         ) : (
