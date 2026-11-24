@@ -1,22 +1,56 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { createClient } from "@/lib/supabase/server";
-import type { SalDocKindRow, SalesRegisterRow } from "@/lib/ventes/db-types";
+import { computeInvoiceTotals, computeLineHt } from "@/lib/ventes/compute";
+import type {
+  SalDocKindRow,
+  SalInvoiceLineRow,
+  SalInvoiceRow,
+  SalesRegisterRow,
+} from "@/lib/ventes/db-types";
+import { salInvoiceSaveSchema } from "@/lib/validations/ventes";
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
+
+export type VentesClientOption = {
+  id: string;
+  nom_fr: string;
+  adresse: string | null;
+  nif: string | null;
+  article_imposition: string | null;
+  rc: string | null;
+  telephone: string | null;
+};
+
+export type VentesContractOption = {
+  id: string;
+  contract_number: string;
+  status: string;
+};
 
 export type VentesDashboard = {
   rows: SalesRegisterRow[];
   kinds: SalDocKindRow[];
+  clients: VentesClientOption[];
   today: string;
   canCreate: boolean;
   canUpdate: boolean;
+  canDelete: boolean;
+};
+
+export type SalInvoiceDetail = {
+  invoice: SalInvoiceRow;
+  lines: SalInvoiceLineRow[];
 };
 
 function fail(error: { message: string; code?: string } | string): ActionResult<never> {
   const message = typeof error === "string" ? error : error.message;
   const code = typeof error === "string" ? undefined : error.code;
+  if (code === "23505") {
+    return { ok: false, error: "Ce numéro de facture existe déjà pour l'exercice." };
+  }
   return {
     ok: false,
     error:
@@ -35,11 +69,14 @@ function algiersToday(): string {
   }).format(new Date());
 }
 
+function refresh() {
+  revalidatePath("/ventes");
+}
+
 async function can(action: "create" | "read" | "update" | "delete"): Promise<boolean> {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("sal_can", { p_action: action });
   if (!error) return !!data;
-  // Fallback if RPC not yet available in a stale environment.
   const fin = await supabase.rpc("fin_can_access", { p_action: action, p_site_id: null });
   return !fin.error && !!fin.data;
 }
@@ -47,6 +84,11 @@ async function can(action: "create" | "read" | "update" | "delete"): Promise<boo
 function num(v: unknown): number {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+function blank(v: string | null | undefined): string | null {
+  const t = (v ?? "").trim();
+  return t ? t : null;
 }
 
 function mapRegisterRow(raw: Record<string, unknown>): SalesRegisterRow {
@@ -77,42 +119,386 @@ function mapRegisterRow(raw: Record<string, unknown>): SalesRegisterRow {
   };
 }
 
+function mapInvoice(raw: Record<string, unknown>): SalInvoiceRow {
+  return {
+    id: String(raw.id),
+    doc_kind: String(raw.doc_kind ?? ""),
+    number: String(raw.number ?? ""),
+    fiscal_year: Math.trunc(num(raw.fiscal_year)),
+    issue_date: String(raw.issue_date ?? "").slice(0, 10),
+    client_id: String(raw.client_id),
+    contract_id: raw.contract_id ? String(raw.contract_id) : null,
+    client_name: String(raw.client_name ?? ""),
+    client_address: raw.client_address ? String(raw.client_address) : null,
+    client_nif: raw.client_nif ? String(raw.client_nif) : null,
+    client_article: raw.client_article ? String(raw.client_article) : null,
+    client_rc: raw.client_rc ? String(raw.client_rc) : null,
+    client_phone: raw.client_phone ? String(raw.client_phone) : null,
+    contract_ref: raw.contract_ref ? String(raw.contract_ref) : null,
+    period_label: raw.period_label ? String(raw.period_label) : null,
+    established_by: raw.established_by ? String(raw.established_by) : null,
+    expected_bank_label: raw.expected_bank_label ? String(raw.expected_bank_label) : null,
+    situation_type_id: raw.situation_type_id ? String(raw.situation_type_id) : null,
+    tax_mode: (raw.tax_mode as SalInvoiceRow["tax_mode"]) || "TAXABLE",
+    tax_rate: num(raw.tax_rate),
+    exo_attestation_no: raw.exo_attestation_no ? String(raw.exo_attestation_no) : null,
+    exo_attestation_date: raw.exo_attestation_date
+      ? String(raw.exo_attestation_date).slice(0, 10)
+      : null,
+    currency: String(raw.currency ?? "DZD"),
+    status: raw.status as SalInvoiceRow["status"],
+    total_ht: num(raw.total_ht),
+    total_tva: num(raw.total_tva),
+    retention_rate: num(raw.retention_rate),
+    retention_amount: num(raw.retention_amount),
+    stamp_rule_id: raw.stamp_rule_id ? String(raw.stamp_rule_id) : null,
+    stamp_amount: num(raw.stamp_amount),
+    net_payable: num(raw.net_payable),
+    note: raw.note ? String(raw.note) : null,
+    source: (raw.source as SalInvoiceRow["source"]) || "MANUAL",
+    import_batch_id: raw.import_batch_id ? String(raw.import_batch_id) : null,
+    issued_at: raw.issued_at ? String(raw.issued_at) : null,
+    cancelled_at: raw.cancelled_at ? String(raw.cancelled_at) : null,
+    created_by: raw.created_by ? String(raw.created_by) : null,
+    created_at: String(raw.created_at ?? ""),
+    updated_at: String(raw.updated_at ?? ""),
+  };
+}
+
+function mapLine(raw: Record<string, unknown>): SalInvoiceLineRow {
+  return {
+    id: String(raw.id),
+    invoice_id: String(raw.invoice_id),
+    line_no: Math.trunc(num(raw.line_no)),
+    item_code: raw.item_code ? String(raw.item_code) : null,
+    designation: String(raw.designation ?? ""),
+    unit: raw.unit ? String(raw.unit) : null,
+    qty: num(raw.qty),
+    unit_price_ht: num(raw.unit_price_ht),
+    pose_price_ht: num(raw.pose_price_ht),
+    line_ht: num(raw.line_ht),
+    tax_rate_id: raw.tax_rate_id ? String(raw.tax_rate_id) : null,
+    source_invoice_ref: raw.source_invoice_ref ? String(raw.source_invoice_ref) : null,
+    source_invoice_id: raw.source_invoice_id ? String(raw.source_invoice_id) : null,
+    source_amount: num(raw.source_amount),
+    created_at: String(raw.created_at ?? ""),
+  };
+}
+
+async function suggestNumber(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  fiscalYear: number,
+): Promise<string> {
+  const { data } = await supabase
+    .from("sal_invoices")
+    .select("number")
+    .eq("fiscal_year", fiscalYear)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  let max = 0;
+  for (const row of data ?? []) {
+    const n = Number(String((row as { number?: string }).number ?? "").replace(/\D/g, ""));
+    if (Number.isFinite(n)) max = Math.max(max, n);
+  }
+  return String(max + 1);
+}
+
 export async function getVentesDashboard(): Promise<ActionResult<VentesDashboard>> {
   const workspace = await getWorkspaceProfile();
   if (!workspace) return fail("Session requise.");
 
   const supabase = await createClient();
-  const [canRead, canCreate, canUpdate, registerRes, kindsRes] = await Promise.all([
-    can("read"),
-    can("create"),
-    can("update"),
-    supabase
-      .from("v_sales_register")
-      .select(
-        "source, id, invoice_number, issue_date, doc_kind, status, client_id, client_name, contract_id, contract_ref, period_label, expected_bank_label, total_ht, total_tva, retention_amount, stamp_amount, net_payable, paid_ttc, due_ttc, last_payment_date, exo_attestation_no, fiscal_year, created_at",
-      )
-      .order("issue_date", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(2000),
-    supabase
-      .from("sal_doc_kinds")
-      .select("code, label_fr, label_ar, has_pose, is_rg_release, is_free_amount, active, sort_order")
-      .eq("active", true)
-      .order("sort_order"),
-  ]);
+  const [canRead, canCreate, canUpdate, canDelete, registerRes, kindsRes, clientsRes] =
+    await Promise.all([
+      can("read"),
+      can("create"),
+      can("update"),
+      can("delete"),
+      supabase
+        .from("v_sales_register")
+        .select(
+          "source, id, invoice_number, issue_date, doc_kind, status, client_id, client_name, contract_id, contract_ref, period_label, expected_bank_label, total_ht, total_tva, retention_amount, stamp_amount, net_payable, paid_ttc, due_ttc, last_payment_date, exo_attestation_no, fiscal_year, created_at",
+        )
+        .order("issue_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(2000),
+      supabase
+        .from("sal_doc_kinds")
+        .select("code, label_fr, label_ar, has_pose, is_rg_release, is_free_amount, active, sort_order")
+        .eq("active", true)
+        .order("sort_order"),
+      supabase
+        .from("ref_clients")
+        .select("id, nom_fr, adresse, nif, article_imposition, rc, telephone")
+        .order("nom_fr")
+        .limit(2000),
+    ]);
 
   if (!canRead) return fail("Accès refusé (droits Ventes / Finance).");
   if (registerRes.error) return fail(registerRes.error);
   if (kindsRes.error) return fail(kindsRes.error);
+  if (clientsRes.error) return fail(clientsRes.error);
 
   return {
     ok: true,
     data: {
       rows: (registerRes.data ?? []).map((r) => mapRegisterRow(r as Record<string, unknown>)),
       kinds: (kindsRes.data ?? []) as SalDocKindRow[],
+      clients: (clientsRes.data ?? []).map((c) => ({
+        id: String(c.id),
+        nom_fr: String(c.nom_fr ?? ""),
+        adresse: c.adresse ? String(c.adresse) : null,
+        nif: c.nif ? String(c.nif) : null,
+        article_imposition: c.article_imposition ? String(c.article_imposition) : null,
+        rc: c.rc ? String(c.rc) : null,
+        telephone: c.telephone ? String(c.telephone) : null,
+      })),
       today: algiersToday(),
       canCreate,
       canUpdate,
+      canDelete,
     },
   };
+}
+
+export async function listVentesClientContracts(
+  clientId: string,
+): Promise<ActionResult<VentesContractOption[]>> {
+  const workspace = await getWorkspaceProfile();
+  if (!workspace) return fail("Session requise.");
+  if (!(await can("read"))) return fail("Accès refusé (droits Ventes / Finance).");
+  if (!/^[0-9a-f-]{36}$/i.test(clientId)) return fail("Client invalide.");
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("ref_contracts")
+    .select("id, contract_number, status")
+    .eq("client_id", clientId)
+    .order("contract_number");
+  if (error) return fail(error);
+  return {
+    ok: true,
+    data: (data ?? []).map((r) => ({
+      id: String(r.id),
+      contract_number: String(r.contract_number ?? ""),
+      status: String(r.status ?? ""),
+    })),
+  };
+}
+
+export async function getSalInvoiceDetail(
+  invoiceId: string,
+): Promise<ActionResult<SalInvoiceDetail>> {
+  const workspace = await getWorkspaceProfile();
+  if (!workspace) return fail("Session requise.");
+  if (!(await can("read"))) return fail("Accès refusé (droits Ventes / Finance).");
+  if (!/^[0-9a-f-]{36}$/i.test(invoiceId)) return fail("Facture invalide.");
+
+  const supabase = await createClient();
+  const [invRes, linesRes] = await Promise.all([
+    supabase.from("sal_invoices").select("*").eq("id", invoiceId).maybeSingle(),
+    supabase
+      .from("sal_invoice_lines")
+      .select("*")
+      .eq("invoice_id", invoiceId)
+      .order("line_no"),
+  ]);
+  if (invRes.error) return fail(invRes.error);
+  if (!invRes.data) return fail("Facture introuvable.");
+  if (linesRes.error) return fail(linesRes.error);
+
+  return {
+    ok: true,
+    data: {
+      invoice: mapInvoice(invRes.data as Record<string, unknown>),
+      lines: (linesRes.data ?? []).map((l) => mapLine(l as Record<string, unknown>)),
+    },
+  };
+}
+
+export async function saveSalInvoice(
+  input: unknown,
+): Promise<ActionResult<{ id: string; number: string; status: string; net_payable: number }>> {
+  const workspace = await getWorkspaceProfile();
+  if (!workspace) return fail("Session requise.");
+
+  const parsed = salInvoiceSaveSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides." };
+  }
+  const p = parsed.data;
+  const isNew = !p.id;
+  if (isNew && !(await can("create"))) return fail("Création refusée (droits Ventes).");
+  if (!isNew && !(await can("update"))) return fail("Modification refusée (droits Ventes).");
+
+  const fiscalYear = Number(p.issue_date.slice(0, 4));
+  const totals = computeInvoiceTotals({
+    doc_kind: p.doc_kind,
+    tax_rate: p.tax_rate,
+    retention_rate: p.retention_rate,
+    stamp_amount: p.stamp_amount,
+    lines: p.lines,
+  });
+  if (!(totals.net_payable >= 0) || !(totals.total_ht > 0)) {
+    return fail("Montant HT invalide — vérifiez les lignes.");
+  }
+
+  const supabase = await createClient();
+  let number = (p.number || "").trim();
+  if (!number) number = await suggestNumber(supabase, fiscalYear);
+
+  const header = {
+    doc_kind: p.doc_kind,
+    number,
+    fiscal_year: fiscalYear,
+    issue_date: p.issue_date,
+    client_id: p.client_id,
+    contract_id: p.contract_id || null,
+    client_name: p.client_name.trim(),
+    client_address: blank(p.client_address),
+    client_nif: blank(p.client_nif),
+    client_article: blank(p.client_article),
+    client_rc: blank(p.client_rc),
+    client_phone: blank(p.client_phone),
+    contract_ref: blank(p.contract_ref),
+    period_label: blank(p.period_label),
+    established_by: blank(p.established_by),
+    expected_bank_label: blank(p.expected_bank_label),
+    tax_mode: totals.tax_mode,
+    tax_rate: p.tax_rate,
+    exo_attestation_no: blank(p.exo_attestation_no),
+    exo_attestation_date: p.exo_attestation_date || null,
+    retention_rate: p.retention_rate,
+    retention_amount: totals.retention_amount,
+    stamp_amount: totals.stamp_amount,
+    total_ht: totals.total_ht,
+    total_tva: totals.total_tva,
+    net_payable: totals.net_payable,
+    note: blank(p.note),
+    source: "MANUAL" as const,
+  };
+
+  const lineRows = p.lines.map((line, idx) => ({
+    line_no: idx + 1,
+    item_code: blank(line.item_code),
+    designation: line.designation.trim(),
+    unit: blank(line.unit),
+    qty: p.doc_kind === "SIT" ? 1 : line.qty,
+    unit_price_ht: line.unit_price_ht,
+    pose_price_ht: p.doc_kind === "FP" ? line.pose_price_ht : 0,
+    line_ht: computeLineHt(p.doc_kind, line),
+    source_invoice_ref: blank(line.source_invoice_ref),
+    source_amount: line.source_amount || 0,
+  }));
+
+  let invoiceId = p.id ?? "";
+
+  if (isNew) {
+    const insertRes = await supabase
+      .from("sal_invoices")
+      .insert({
+        ...header,
+        status: "BROUILLON",
+        created_by: workspace.id,
+      })
+      .select("id, number, status")
+      .single();
+    if (insertRes.error) return fail(insertRes.error);
+    invoiceId = String(insertRes.data.id);
+  } else {
+    const existing = await supabase
+      .from("sal_invoices")
+      .select("id, status")
+      .eq("id", p.id!)
+      .maybeSingle();
+    if (existing.error) return fail(existing.error);
+    if (!existing.data) return fail("Facture introuvable.");
+    if (existing.data.status !== "BROUILLON") {
+      return fail("Seuls les brouillons sont modifiables.");
+    }
+    const upd = await supabase.from("sal_invoices").update(header).eq("id", p.id!).eq("status", "BROUILLON");
+    if (upd.error) return fail(upd.error);
+    const del = await supabase.from("sal_invoice_lines").delete().eq("invoice_id", p.id!);
+    if (del.error) return fail(del.error);
+  }
+
+  const linesIns = await supabase.from("sal_invoice_lines").insert(
+    lineRows.map((l) => ({ ...l, invoice_id: invoiceId })),
+  );
+  if (linesIns.error) {
+    if (isNew) {
+      await supabase.from("sal_invoices").delete().eq("id", invoiceId).eq("status", "BROUILLON");
+    }
+    return fail(linesIns.error);
+  }
+
+  let status = "BROUILLON";
+  if (p.issue) {
+    if (!(await can("update")) && !isNew) {
+      // already checked update for edit; for new+issue need update OR create is enough if create implies issue
+    }
+    const issueRes = await supabase
+      .from("sal_invoices")
+      .update({ status: "EMISE", issued_at: new Date().toISOString() })
+      .eq("id", invoiceId)
+      .eq("status", "BROUILLON")
+      .select("status")
+      .maybeSingle();
+    if (issueRes.error) return fail(issueRes.error);
+    if (!issueRes.data) return fail("Émission impossible.");
+    status = "EMISE";
+  }
+
+  await supabase.from("sal_audit").insert({
+    actor: workspace.id,
+    action: p.issue ? "ISSUE" : isNew ? "CREATE" : "UPDATE",
+    entity: "sal_invoices",
+    entity_id: invoiceId,
+    detail: `Facture ${number} (${p.doc_kind})`,
+    payload: { number, doc_kind: p.doc_kind, net_payable: totals.net_payable, status },
+  });
+
+  refresh();
+  return {
+    ok: true,
+    data: {
+      id: invoiceId,
+      number,
+      status,
+      net_payable: totals.net_payable,
+    },
+  };
+}
+
+export async function deleteSalInvoiceDraft(
+  invoiceId: string,
+): Promise<ActionResult<{ id: string }>> {
+  const workspace = await getWorkspaceProfile();
+  if (!workspace) return fail("Session requise.");
+  if (!(await can("delete")) && !(await can("update"))) {
+    return fail("Suppression refusée (droits Ventes).");
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(invoiceId)) return fail("Facture invalide.");
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("sal_invoices")
+    .delete()
+    .eq("id", invoiceId)
+    .eq("status", "BROUILLON")
+    .select("id")
+    .maybeSingle();
+  if (error) return fail(error);
+  if (!data) return fail("Brouillon introuvable (ou déjà émis).");
+
+  await supabase.from("sal_audit").insert({
+    actor: workspace.id,
+    action: "DELETE_DRAFT",
+    entity: "sal_invoices",
+    entity_id: invoiceId,
+    detail: "Suppression brouillon",
+    payload: {},
+  });
+  refresh();
+  return { ok: true, data: { id: invoiceId } };
 }

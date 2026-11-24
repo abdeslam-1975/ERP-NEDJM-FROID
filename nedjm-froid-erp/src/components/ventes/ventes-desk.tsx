@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { logoutAction } from "@/lib/actions/auth";
-import type { VentesDashboard } from "@/lib/actions/ventes";
+import type {
+  SalInvoiceDetail,
+  VentesContractOption,
+  VentesDashboard,
+} from "@/lib/actions/ventes";
 import { formatDa, formatDateFr } from "@/lib/banque/ledger";
 import type { SalesRegisterRow } from "@/lib/ventes/db-types";
 import {
@@ -96,6 +100,8 @@ export function VentesDesk({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(loadError || null);
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [clientContracts, setClientContracts] = useState<VentesContractOption[]>([]);
   const [payForm, setPayForm] = useState({
     invoiceId: "",
     paymentDate: initial?.today ?? "",
@@ -106,6 +112,7 @@ export function VentesDesk({
 
   const rows = data?.rows ?? [];
   const today = data?.today ?? "";
+  const clients = data?.clients ?? [];
 
   const visible = useMemo(
     () =>
@@ -143,16 +150,124 @@ export function VentesDesk({
     setMessage(ok);
   }
 
+  async function loadClientContracts(clientId: string) {
+    if (!clientId) {
+      setClientContracts([]);
+      return;
+    }
+    const { listVentesClientContracts } = await import("@/lib/actions/ventes");
+    const result = await listVentesClientContracts(clientId);
+    setClientContracts(result.ok ? result.data : []);
+  }
+
+  function applyClientToDraft(clientId: string) {
+    const client = clients.find((c) => c.id === clientId);
+    setDraft((d) => {
+      if (!d) return d;
+      if (!client) {
+        return { ...d, clientId, contractId: "", contractRef: "" };
+      }
+      return {
+        ...d,
+        clientId: client.id,
+        clientName: client.nom_fr,
+        clientAddress: client.adresse || "",
+        nif: client.nif || "",
+        article: client.article_imposition || "",
+        rc: client.rc || "",
+        phone: client.telephone || "",
+        contractId: "",
+        contractRef: "",
+      };
+    });
+    void loadClientContracts(clientId);
+  }
+
+  function detailToDraft(detailData: SalInvoiceDetail): VentesInvoice {
+    const inv = detailData.invoice;
+    return {
+      id: inv.id,
+      number: inv.number,
+      issueDate: inv.issue_date,
+      docKind: (["P", "F", "FP", "RG", "SIT"].includes(inv.doc_kind)
+        ? inv.doc_kind
+        : "P") as VentesDocKind,
+      clientId: inv.client_id,
+      contractId: inv.contract_id || "",
+      clientName: inv.client_name,
+      clientAddress: inv.client_address || "",
+      nif: inv.client_nif || "",
+      article: inv.client_article || "",
+      rc: inv.client_rc || "",
+      phone: inv.client_phone || "",
+      contractRef: inv.contract_ref || "",
+      periodLabel: inv.period_label || "",
+      establishedBy: inv.established_by || "",
+      exoAttestationNo: inv.exo_attestation_no || "",
+      exoAttestationDate: inv.exo_attestation_date || "",
+      expectedBank: inv.expected_bank_label || "",
+      taxRate: Number(inv.tax_rate) || 0,
+      retentionRate: Number(inv.retention_rate) || 0,
+      stampAmount: Number(inv.stamp_amount) || 0,
+      lines:
+        detailData.lines.length > 0
+          ? detailData.lines.map((l) => ({
+              id: l.id,
+              lineNo: l.line_no,
+              itemCode: l.item_code || "",
+              designation: l.designation,
+              unit: l.unit || "",
+              qty: Number(l.qty) || 0,
+              unitPriceHt: Number(l.unit_price_ht) || 0,
+              posePriceHt: Number(l.pose_price_ht) || 0,
+              sourceInvoiceRef: l.source_invoice_ref || "",
+              sourceAmount: Number(l.source_amount) || 0,
+            }))
+          : [emptyLine(1)],
+      paidAmount: 0,
+      paidDate: "",
+      paidVia: "",
+      status: inv.status,
+      persisted: true,
+    };
+  }
+
   function openNew(kind: VentesDocKind) {
+    if (kind === "RG") {
+      setError("Facture RG : disponible en phase M5.");
+      return;
+    }
     if (data && !data.canCreate) {
       setError("Création refusée (droits Ventes).");
       return;
     }
+    setClientContracts([]);
     setDraft(emptyInvoice(kind, today || new Date().toISOString().slice(0, 10), ""));
     setModal("facture");
   }
 
-  function openDetail(row: SalesRegisterRow) {
+  async function openDetail(row: SalesRegisterRow) {
+    if (row.source === "SAL" && row.status === "BROUILLON") {
+      setBusy(true);
+      try {
+        const { getSalInvoiceDetail } = await import("@/lib/actions/ventes");
+        const result = await getSalInvoiceDetail(row.id);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        if (result.data.invoice.doc_kind === "RG") {
+          setError("Édition RG : disponible en phase M5.");
+          return;
+        }
+        setDraft(detailToDraft(result.data));
+        await loadClientContracts(result.data.invoice.client_id);
+        setModal("facture");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     setDetail(row);
     setModal("detail");
   }
@@ -212,19 +327,80 @@ export function VentesDesk({
     });
   }
 
-  function saveDraft(asIssued: boolean) {
+  async function saveDraft(asIssued: boolean) {
     if (!draft) return;
+    if (draft.docKind === "RG") {
+      setError("Facture RG : disponible en phase M5.");
+      return;
+    }
+    if (!draft.clientId) {
+      setError("Sélectionnez un client du référentiel.");
+      return;
+    }
     if (!draft.clientName.trim()) {
       setError("Client obligatoire.");
       return;
     }
-    setModal(null);
-    setDraft(null);
-    flash(
-      asIssued
-        ? "Émission facture : disponible en phase M3 (écriture sal_invoices)."
-        : "Brouillon : disponible en phase M3 (écriture sal_invoices).",
+    const lines = draft.lines.filter(
+      (l) => l.designation.trim() || l.unitPriceHt || l.qty || l.posePriceHt,
     );
+    if (lines.length === 0) {
+      setError("Ajoutez au moins une ligne.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const { saveSalInvoice } = await import("@/lib/actions/ventes");
+      const result = await saveSalInvoice({
+        id: draft.persisted ? draft.id : undefined,
+        doc_kind: draft.docKind,
+        number: draft.number,
+        issue_date: draft.issueDate,
+        client_id: draft.clientId,
+        contract_id: draft.contractId || null,
+        client_name: draft.clientName,
+        client_address: draft.clientAddress,
+        client_nif: draft.nif,
+        client_article: draft.article,
+        client_rc: draft.rc,
+        client_phone: draft.phone,
+        contract_ref: draft.contractRef,
+        period_label: draft.periodLabel,
+        established_by: draft.establishedBy,
+        expected_bank_label: draft.expectedBank,
+        tax_rate: draft.taxRate,
+        retention_rate: draft.retentionRate,
+        stamp_amount: draft.stampAmount,
+        exo_attestation_no: draft.exoAttestationNo,
+        exo_attestation_date: draft.exoAttestationDate || null,
+        issue: asIssued,
+        lines: lines.map((l) => ({
+          item_code: l.itemCode,
+          designation: l.designation,
+          unit: l.unit,
+          qty: l.qty,
+          unit_price_ht: l.unitPriceHt,
+          pose_price_ht: l.posePriceHt,
+          source_invoice_ref: l.sourceInvoiceRef,
+          source_amount: l.sourceAmount,
+        })),
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setModal(null);
+      setDraft(null);
+      flash(
+        asIssued
+          ? `Facture N° ${result.data.number} émise (${formatDa(result.data.net_payable)} DA).`
+          : `Brouillon N° ${result.data.number} enregistré.`,
+      );
+      await refresh();
+    } finally {
+      setSaving(false);
+    }
   }
 
   function applyPayment() {
@@ -342,8 +518,7 @@ export function VentesDesk({
       </div>
 
       <div className="ui-live-banner">
-        Journal branché sur <strong>v_sales_register</strong> (SAL + contrats). Création / encaissement :
-        phases M3 / M4.
+        Journal live — création P/F/FP/SIT active (M3). Encaissement → M4 · RG → M5.
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -717,13 +892,14 @@ export function VentesDesk({
               </button>
             </div>
             <div className="modal-body">
-              <div className="alert alert-ok" style={{ marginBottom: 12 }}>
-                Aperçu saisie — enregistrement réel en M3.
-              </div>
               <div className="grid-3">
                 <div>
                   <label className="form-label">Facture N°</label>
-                  <input value={draft.number} onChange={(e) => updateDraft("number", e.target.value)} />
+                  <input
+                    value={draft.number}
+                    onChange={(e) => updateDraft("number", e.target.value)}
+                    placeholder="Auto si vide"
+                  />
                 </div>
                 <div>
                   <label className="form-label">Date</label>
@@ -737,9 +913,17 @@ export function VentesDesk({
                   <label className="form-label">Type</label>
                   <select
                     value={draft.docKind}
-                    onChange={(e) => updateDraft("docKind", e.target.value as VentesDocKind)}
+                    onChange={(e) => {
+                      const k = e.target.value as VentesDocKind;
+                      if (k === "RG") {
+                        setError("Facture RG : disponible en phase M5.");
+                        return;
+                      }
+                      updateDraft("docKind", k);
+                    }}
+                    disabled={draft.persisted}
                   >
-                    {KIND_ORDER.map((k) => (
+                    {KIND_ORDER.filter((k) => k !== "RG").map((k) => (
                       <option key={k} value={k}>
                         {k} — {kindLabel(k, kinds)}
                       </option>
@@ -747,7 +931,21 @@ export function VentesDesk({
                   </select>
                 </div>
                 <div className="span-3">
-                  <label className="form-label">Client (Doit)</label>
+                  <label className="form-label">Client (référentiel)</label>
+                  <select
+                    value={draft.clientId}
+                    onChange={(e) => applyClientToDraft(e.target.value)}
+                  >
+                    <option value="">— Choisir un client —</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nom_fr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="span-3">
+                  <label className="form-label">Nom figé sur facture</label>
                   <input
                     value={draft.clientName}
                     onChange={(e) => updateDraft("clientName", e.target.value)}
@@ -755,7 +953,34 @@ export function VentesDesk({
                   />
                 </div>
                 <div>
-                  <label className="form-label">Contrat / BC</label>
+                  <label className="form-label">Contrat (optionnel)</label>
+                  <select
+                    value={draft.contractId}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      const c = clientContracts.find((x) => x.id === id);
+                      setDraft((d) =>
+                        d
+                          ? {
+                              ...d,
+                              contractId: id,
+                              contractRef: c?.contract_number || d.contractRef,
+                            }
+                          : d,
+                      );
+                    }}
+                    disabled={!draft.clientId}
+                  >
+                    <option value="">— Sans contrat —</option>
+                    {clientContracts.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.contract_number} ({c.status})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="form-label">Réf. contrat / BC</label>
                   <input
                     value={draft.contractRef}
                     onChange={(e) => updateDraft("contractRef", e.target.value)}
@@ -778,6 +1003,34 @@ export function VentesDesk({
                     <option value="0.19">19 %</option>
                   </select>
                 </div>
+                <div>
+                  <label className="form-label">% R. Garantie</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="100"
+                    value={Number((draft.retentionRate * 100).toFixed(4))}
+                    onChange={(e) => {
+                      const pct = Number(e.target.value);
+                      updateDraft("retentionRate", Number.isFinite(pct) ? pct / 100 : 0);
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Timbre (DA)</label>
+                  <NumInput
+                    value={draft.stampAmount}
+                    onChange={(n) => updateDraft("stampAmount", n)}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Période</label>
+                  <input
+                    value={draft.periodLabel}
+                    onChange={(e) => updateDraft("periodLabel", e.target.value)}
+                  />
+                </div>
               </div>
 
               <div style={{ marginTop: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -791,9 +1044,14 @@ export function VentesDesk({
                   <tr>
                     <th style={{ width: 40 }}>N°</th>
                     <th>Désignation</th>
-                    <th style={{ width: 70 }}>Qté</th>
-                    <th style={{ width: 90 }}>P.U HT</th>
-                    <th style={{ width: 100 }}>Montant</th>
+                    {draft.docKind !== "SIT" && <th style={{ width: 70 }}>Qté</th>}
+                    {draft.docKind === "FP" && <th style={{ width: 90 }}>P. Fourn.</th>}
+                    {draft.docKind === "FP" && <th style={{ width: 90 }}>P. Pose</th>}
+                    {(draft.docKind === "P" || draft.docKind === "F") && (
+                      <th style={{ width: 90 }}>P.U HT</th>
+                    )}
+                    {draft.docKind === "SIT" && <th style={{ width: 110 }}>Montant DA</th>}
+                    <th style={{ width: 100 }}>Total</th>
                     <th style={{ width: 40 }} />
                   </tr>
                 </thead>
@@ -809,15 +1067,35 @@ export function VentesDesk({
                             onChange={(e) => updateLine(line.id, { designation: e.target.value })}
                           />
                         </td>
-                        <td>
-                          <NumInput value={line.qty} onChange={(n) => updateLine(line.id, { qty: n })} />
-                        </td>
-                        <td>
-                          <NumInput
-                            value={line.unitPriceHt}
-                            onChange={(n) => updateLine(line.id, { unitPriceHt: n })}
-                          />
-                        </td>
+                        {draft.docKind !== "SIT" && (
+                          <td>
+                            <NumInput value={line.qty} onChange={(n) => updateLine(line.id, { qty: n })} />
+                          </td>
+                        )}
+                        {draft.docKind === "FP" && (
+                          <td>
+                            <NumInput
+                              value={line.unitPriceHt}
+                              onChange={(n) => updateLine(line.id, { unitPriceHt: n })}
+                            />
+                          </td>
+                        )}
+                        {draft.docKind === "FP" && (
+                          <td>
+                            <NumInput
+                              value={line.posePriceHt}
+                              onChange={(n) => updateLine(line.id, { posePriceHt: n })}
+                            />
+                          </td>
+                        )}
+                        {(draft.docKind === "P" || draft.docKind === "F" || draft.docKind === "SIT") && (
+                          <td>
+                            <NumInput
+                              value={line.unitPriceHt}
+                              onChange={(n) => updateLine(line.id, { unitPriceHt: n })}
+                            />
+                          </td>
+                        )}
                         <td style={{ fontWeight: 700, textAlign: "right", paddingRight: 8 }}>
                           {formatDa(mt)}
                         </td>
@@ -863,11 +1141,21 @@ export function VentesDesk({
               >
                 Annuler
               </button>
-              <button type="button" className="btn-action btn-admin" onClick={() => saveDraft(false)}>
-                Brouillon
+              <button
+                type="button"
+                className="btn-action btn-admin"
+                disabled={saving}
+                onClick={() => void saveDraft(false)}
+              >
+                {saving ? "…" : "Brouillon"}
               </button>
-              <button type="button" className="btn-action btn-op" onClick={() => saveDraft(true)}>
-                Enregistrer
+              <button
+                type="button"
+                className="btn-action btn-op"
+                disabled={saving}
+                onClick={() => void saveDraft(true)}
+              >
+                {saving ? "…" : "Émettre"}
               </button>
             </div>
           </div>
