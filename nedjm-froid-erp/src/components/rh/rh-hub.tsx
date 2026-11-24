@@ -4,27 +4,19 @@ import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Activity,
-  Banknote,
   BellRing,
   CalendarClock,
   CalendarPlus,
   ChartPie,
   ChevronRight,
   CircleCheck,
-  Clock,
-  Plane,
   FileClock,
   FilePenLine,
   HandCoins,
   FolderOpen,
-  TrendingDown,
-  TrendingUp,
-  TreePalm,
-  UserCheck,
   UserPlus,
   UserRoundPlus,
   UserX,
-  Users,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -32,14 +24,10 @@ import type { HrDashboardStats } from "@/lib/actions/hr-lookups";
 import type { ContractAlert } from "@/lib/hr/dashboard-stats";
 import { useAnimationsEnabled } from "@/components/layout/app-providers";
 import { useUiLayout } from "@/components/layout/ui-layout-context";
+import { RhSenseStrip } from "@/components/rh/rh-sense-strip";
 import { RH_CARD, RhAlert, RhPage } from "@/components/rh/rh-ui";
 import { isPathBlocked } from "@/lib/ui/resolve";
 import { cn } from "@/lib/utils";
-
-function pctChange(current: number, previous: number) {
-  if (previous <= 0) return current > 0 ? 100 : 0;
-  return Math.round(((current - previous) / previous) * 1000) / 10;
-}
 
 export function formatDa(value: number) {
   if (value >= 1_000_000) {
@@ -126,54 +114,6 @@ export function CardTitle({ icon, title, right, color }: { icon: LucideIcon; tit
       </div>
       {right}
     </div>
-  );
-}
-
-function DeltaChip({ change }: { change: number }) {
-  if (change === 0) {
-    return <span className="rounded-full bg-surface-muted px-2.5 py-1 text-xs font-semibold text-foreground/55">= 0 %</span>;
-  }
-  const up = change > 0;
-  const Icon = up ? TrendingUp : TrendingDown;
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold",
-        up
-          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
-          : "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300",
-      )}
-    >
-      <Icon className="h-3.5 w-3.5" aria-hidden />
-      {up ? "+" : "−"}
-      {Math.abs(change).toLocaleString("fr-FR")} %
-    </span>
-  );
-}
-
-function Sparkline({ values, color = "var(--color-brand)" }: { values: number[]; color?: string }) {
-  const gradientId = useId();
-  if (values.length < 2) return null;
-  const w = 200;
-  const h = 70;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const points = values.map(
-    (v, i) => [(i * w) / (values.length - 1), max === min ? h / 2 : h - 6 - ((v - min) / span) * (h - 12)] as [number, number],
-  );
-  const line = smoothPath(points);
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="h-[70px] w-[180px] shrink-0 sm:w-[200px]" aria-hidden>
-      <defs>
-        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.28" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={`${line} L${w},${h} L0,${h} Z`} fill={`url(#${gradientId})`} className="ui-fade" />
-      <path d={line} pathLength={1} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" className="ui-draw" />
-    </svg>
   );
 }
 
@@ -419,66 +359,8 @@ const QUICK_ACTIONS: { icon: LucideIcon; label: string; href: string; color: str
   { icon: UserPlus, label: "Nouvel employé", href: "/rh/employes?nouveau=1", color: "#7c3aed" },
   { icon: CalendarPlus, label: "Congé", href: "/rh/conges", color: "#d97706" },
   { icon: HandCoins, label: "Avance", href: "/rh/paie/avances", color: "#059669" },
-  { icon: FolderOpen, label: "Documents", href: "/rh/documents", color: "#e11d48" },
+  { icon: FolderOpen, label: "Documents", href: "/rh/documents", color: "#64748b" },
 ];
-
-const SUMMARY_TONES = {
-  violet: "linear-gradient(145deg,#4338ca 0%,#7c3aed 58%,#a78bfa 140%)",
-  emerald: "linear-gradient(145deg,#047857 0%,#059669 52%,#34d399 140%)",
-  sky: "linear-gradient(145deg,#0369a1 0%,#0284c7 52%,#38bdf8 140%)",
-  rose: "linear-gradient(145deg,#be123c 0%,#e11d48 55%,#fb7185 140%)",
-} as const;
-
-function SummaryCard({
-  href,
-  icon: Icon,
-  label,
-  value,
-  hint,
-  wash,
-  aside,
-  children,
-}: {
-  href?: string;
-  icon: LucideIcon;
-  label: string;
-  value: ReactNode;
-  hint: string;
-  wash: string;
-  aside?: ReactNode;
-  children?: ReactNode;
-}) {
-  const body = (
-    <>
-      <span className="pointer-events-none absolute -top-10 -right-8 h-32 w-32 rounded-full bg-white/15 blur-2xl" aria-hidden />
-      <span className="pointer-events-none absolute -bottom-12 -left-6 h-28 w-28 rounded-full bg-black/10 blur-2xl" aria-hidden />
-      <div className="relative flex items-start justify-between gap-3">
-        <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/18 ring-1 ring-white/30">
-          <Icon className="h-5 w-5" strokeWidth={1.8} aria-hidden />
-        </span>
-        {aside}
-      </div>
-      <p className="relative mt-5 text-sm font-medium text-white/80">{label}</p>
-      <p className="relative mt-1 text-[2.35rem] leading-none font-semibold tracking-tight tabular-nums">{value}</p>
-      <p className="relative mt-2 text-xs leading-snug text-white/75">{hint}</p>
-      {children ? <div className="relative mt-auto">{children}</div> : null}
-    </>
-  );
-  const className =
-    "ui-lift relative flex h-full min-h-[11.5rem] flex-col overflow-hidden rounded-[1.5rem] p-5 text-white shadow-[0_18px_36px_-22px_rgba(15,23,42,0.7)]";
-  if (!href) {
-    return (
-      <section className={className} style={{ background: wash }}>
-        {body}
-      </section>
-    );
-  }
-  return (
-    <Link href={href} className={cn(className, "transition hover:-translate-y-0.5")} style={{ background: wash }}>
-      {body}
-    </Link>
-  );
-}
 
 export function initialsOf(name: string) {
   return (
@@ -516,22 +398,9 @@ export function Avatar({ name, photo, size = 40 }: { name: string; photo?: strin
 export function RhHub({ stats }: { stats: HrDashboardStats }) {
   const layout = useUiLayout();
   const [range, setRange] = useState<6 | 12>(12);
-  const activeCount = useCountUp(stats.employeesActive);
-  const payroll = useCountUp(stats.payrollBase, 1100);
-  const att = stats.attendance;
-  const marked = att.present + att.absent + att.leave + att.mission;
-  const presenceRate = marked ? Math.round(((att.present + att.mission) / marked) * 100) : 0;
-  const presence = useCountUp(presenceRate);
-  const empChange = pctChange(stats.employeesActive, stats.employeesActivePrev);
   const headcount = useMemo(() => stats.headcount.slice(-range), [stats.headcount, range]);
   const quickActions = useMemo(() => QUICK_ACTIONS.filter((a) => !isPathBlocked(layout, a.href.split("?")[0])), [layout]);
-  const attendanceOpen = !isPathBlocked(layout, "/rh/presence");
-  const alertCount = stats.alerts.reduce((s, a) => s + a.count, 0);
   const today = new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  const month = new Date().toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
-  const attDay = att.date
-    ? new Date(`${att.date}T00:00:00`).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
-    : null;
 
   return (
     <RhPage>
@@ -563,99 +432,9 @@ export function RhHub({ stats }: { stats: HrDashboardStats }) {
         </div>
       </div>
 
+      <RhSenseStrip stats={stats} />
+
       <div className="ui-stagger grid grid-cols-12 gap-4">
-        <div className="col-span-12 sm:col-span-6 xl:col-span-3">
-          <SummaryCard
-            href="/rh/employes"
-            icon={Users}
-            label="Effectif actif"
-            value={activeCount}
-            hint={`${stats.employeesTotal} inscrits · ${stats.contractsOpen} contrat${stats.contractsOpen > 1 ? "s" : ""} ouvert${stats.contractsOpen > 1 ? "s" : ""}`}
-            wash={SUMMARY_TONES.violet}
-            aside={<DeltaChip change={empChange} />}
-          >
-            <div className="relative -mb-1 flex justify-end pt-3 [&_svg]:h-12 [&_svg]:w-36">
-              <Sparkline values={stats.headcount.map((m) => m.count)} color="#ffffff" />
-            </div>
-          </SummaryCard>
-        </div>
-
-        <div className="col-span-12 sm:col-span-6 xl:col-span-3">
-          <SummaryCard
-            href="/rh/paie"
-            icon={Banknote}
-            label="Masse salariale"
-            value={<span className="text-[1.65rem] leading-none">{formatDa(payroll)}</span>}
-            hint={`Moyenne ${formatDa(stats.averageBase)} · salaires de base`}
-            wash={SUMMARY_TONES.emerald}
-          >
-            <div className="relative mt-4">
-              <div className="mb-1.5 flex justify-between text-[11px] text-white/75">
-                <span>Couverture</span>
-                <span className="font-semibold text-white">{stats.coverage} %</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/25">
-                <div className="ui-grow-x h-full rounded-full bg-white" style={{ width: `${stats.coverage}%` }} />
-              </div>
-            </div>
-          </SummaryCard>
-        </div>
-
-        <div className="col-span-12 sm:col-span-6 xl:col-span-3">
-          <SummaryCard
-            href="/rh/presence"
-            icon={Clock}
-            label="Présence"
-            value={marked ? `${presence}%` : "—"}
-            hint={attDay ? `${att.present + att.mission} présents · ${attDay}` : "Aucun pointage ce mois-ci"}
-            wash={SUMMARY_TONES.sky}
-            aside={<Ring pct={presenceRate} size={52} stroke={6} color="#ffffff" track="rgba(255,255,255,0.28)" />}
-          />
-        </div>
-
-        <div className="col-span-12 sm:col-span-6 xl:col-span-3">
-          <SummaryCard
-            href="/rh/documents?onglet=contrats"
-            icon={alertCount ? BellRing : CircleCheck}
-            label={alertCount ? "Points d'attention" : "Situation"}
-            value={alertCount || "OK"}
-            hint={alertCount ? `${stats.alerts.length} sujet${stats.alerts.length > 1 ? "s" : ""} à traiter` : "Contrats et effectifs à jour"}
-            wash={alertCount ? SUMMARY_TONES.rose : SUMMARY_TONES.emerald}
-          />
-        </div>
-
-        {attendanceOpen ? (
-          <div className="col-span-12 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {(
-              [
-                { icon: UserCheck, label: "Présents", value: att.present, wash: "linear-gradient(145deg,#0f766e,#2dd4bf)" },
-                { icon: UserX, label: "Absents", value: att.absent, wash: "linear-gradient(145deg,#9d174d,#db2777)" },
-                { icon: TreePalm, label: "En congé", value: att.leave, wash: "linear-gradient(145deg,#c2410c,#fb923c)" },
-                { icon: Plane, label: "En mission", value: att.mission, wash: "linear-gradient(145deg,#a16207,#facc15)" },
-              ] as const
-            ).map((s) => (
-              <Link
-                key={s.label}
-                href="/rh/presence"
-                className="ui-lift flex items-center gap-3 overflow-hidden rounded-2xl px-4 py-3 text-white shadow-[0_14px_28px_-18px_rgba(15,23,42,0.65)] transition hover:-translate-y-0.5"
-                style={{ background: s.wash }}
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/18 ring-1 ring-white/25">
-                  <s.icon className="h-5 w-5" strokeWidth={1.8} aria-hidden />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-2xl leading-none font-semibold tabular-nums">{s.value}</span>
-                  <span className="mt-1 block text-xs text-white/80">{s.label}</span>
-                </span>
-              </Link>
-            ))}
-            <p className="col-span-2 -mt-1 text-xs text-foreground/50 first-letter:uppercase lg:col-span-4" suppressHydrationWarning>
-              {month}
-              {attDay ? ` · dernier jour pointé : ${attDay}` : " · aucun pointage ce mois-ci"}
-            </p>
-          </div>
-        ) : null}
-
         <section className={cn(RH_CARD, "col-span-12 p-6 xl:col-span-8")}>
           <CardTitle
             icon={Activity}
