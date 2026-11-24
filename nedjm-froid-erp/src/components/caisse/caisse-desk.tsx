@@ -31,6 +31,7 @@ import { prepareBonDataUrl, readBonFromDataUrl } from "@/lib/caisse/bon-ocr";
 import { readCaisseBonWithAi } from "@/lib/actions/caisse";
 import { formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
 import type { CaisseAdminUser, CaisseAuditRow, CaisseDashboard, CloseStatus, JournalLine, PurchaseItemInput } from "@/lib/caisse/types";
+import { CAISSE_TRANSFER_AFFECTATION } from "@/lib/caisse/types";
 import "./caisse.css";
 
 const INACTIVITY_MS = 5 * 60 * 1000;
@@ -104,12 +105,13 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   const [items, setItems] = useState<ItemDraft[]>([]);
   const [financeOpen, setFinanceOpen] = useState(false);
   const [financeEdit, setFinanceEdit] = useState("");
-  const [finType, setFinType] = useState<"IN" | "OUT">("IN");
+  const [finType, setFinType] = useState<"IN" | "OUT" | "TRANSFER">("IN");
   const [finDate, setFinDate] = useState("");
   const [finAmount, setFinAmount] = useState("");
   const [finMethod, setFinMethod] = useState("Espèces");
   const [finRef, setFinRef] = useState("");
   const [finBuyer, setFinBuyer] = useState("");
+  const [finSourceBuyer, setFinSourceBuyer] = useState("");
   const [finPhotoName, setFinPhotoName] = useState("");
   const [finPhotoDataUrl, setFinPhotoDataUrl] = useState("");
   const [finKeepPhoto, setFinKeepPhoto] = useState(false);
@@ -287,12 +289,26 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       notify("Erreur", "Opération introuvable");
       return;
     }
-    if (line.type !== "ACHAT") {
+    const isTransfer = line.affectation === CAISSE_TRANSFER_AFFECTATION;
+    if (line.type !== "ACHAT" || isTransfer) {
       setFinanceEdit(line.operationId);
-      setFinType(line.type === "ALIMENTATION" ? "IN" : "OUT");
+      if (isTransfer) {
+        const fromRef = String(line.desc || "");
+        const deMatch = fromRef.match(/RECEPTION DE \((.+)\)/i);
+        const versMatch = fromRef.match(/TRANSFERT VERS \((.+)\)/i);
+        const source = line.type === "AVANCE" ? (deMatch?.[1] || "") : line.buyer;
+        const dest = line.type === "ACHAT" ? (versMatch?.[1] || "") : line.buyer;
+        setFinType("TRANSFER");
+        setFinSourceBuyer(source || line.buyer);
+        setFinBuyer(dest || "");
+        setFinAmount(String(line.recettes ?? line.depenses ?? line.prixBon ?? ""));
+      } else {
+        setFinType(line.type === "ALIMENTATION" ? "IN" : "OUT");
+        setFinBuyer(line.buyer);
+        setFinSourceBuyer("");
+        setFinAmount(String(line.recettes ?? line.prixBon ?? ""));
+      }
       setFinDate(line.date);
-      setFinAmount(String(line.recettes ?? line.prixBon ?? ""));
-      setFinBuyer(line.buyer);
       setFinMethod("Espèces");
       setFinRef("");
       setFinPhotoName(line.hasPhoto ? "Justificatif existant" : "");
@@ -423,6 +439,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     setFinMethod("Espèces");
     setFinRef("");
     setFinBuyer(data.userList[0] || "");
+    setFinSourceBuyer(data.userList[0] || "");
     setFinPhotoName("");
     setFinPhotoDataUrl("");
     setFinKeepPhoto(false);
@@ -450,6 +467,11 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     const amount = Number(finAmount);
     if (!Number.isFinite(amount) || amount <= 0) return notify("Erreur", "Montant invalide");
     if (finType === "OUT" && !finBuyer) return notify("Erreur", "Choisissez un bénéficiaire");
+    if (finType === "TRANSFER") {
+      if (!finSourceBuyer) return notify("Erreur", "Choisissez l’acheteur qui finance");
+      if (!finBuyer) return notify("Erreur", "Choisissez l’acheteur bénéficiaire");
+      if (finSourceBuyer === finBuyer) return notify("Erreur", "Les deux acheteurs doivent être différents");
+    }
     setBusy(true);
     try {
       const result = await saveCaisseFinance({
@@ -460,6 +482,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
         method: finMethod,
         ref: finRef,
         beneficiary: finBuyer,
+        sourceBuyer: finType === "TRANSFER" ? finSourceBuyer : undefined,
         photoDataUrl: finPhotoDataUrl || null,
         keepPhoto: finKeepPhoto,
         bonMatchStatus: finPhotoDataUrl || finKeepPhoto ? "unknown" : null,
@@ -1449,11 +1472,23 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
             </div>
             <div className="modal-body">
               <div className="field"><label>Type</label>
-                <select value={finType} disabled={!!financeEdit} onChange={(event) => setFinType(event.target.value as "IN" | "OUT")}>
-                  <option value="IN">Alimenter la caisse</option>
-                  <option value="OUT">Donner à un acheteur</option>
+                <select
+                  value={finType}
+                  disabled={!!financeEdit}
+                  onChange={(event) => setFinType(event.target.value as "IN" | "OUT" | "TRANSFER")}
+                >
+                  <option value="IN">Alimenter la caisse (banque / espèces)</option>
+                  <option value="OUT">Avance caisse → un acheteur</option>
+                  <option value="TRANSFER">Un acheteur finance un autre</option>
                 </select>
               </div>
+              <p className="hint" style={{ marginTop: 0 }}>
+                {finType === "IN"
+                  ? "Entrée en caisse centrale depuis la banque ou le cash."
+                  : finType === "OUT"
+                    ? "La caisse centrale donne une avance à un acheteur (solde caisse ↓)."
+                    : "Transfert direct entre deux acheteurs — la caisse centrale n’est pas touchée."}
+              </p>
               <div className="field"><label>Date</label><input type="date" value={finDate} onChange={(event) => setFinDate(event.target.value)} /></div>
               <div className="field"><label>Montant (DA)</label><input type="number" min="0" step="0.01" value={finAmount} onChange={(event) => setFinAmount(event.target.value)} /></div>
               {finType === "IN" ? (
@@ -1466,14 +1501,33 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                   </div>
                   <div className="field"><label>Référence</label><input value={finRef} onChange={(event) => setFinRef(event.target.value)} /></div>
                 </>
-              ) : (
+              ) : null}
+              {finType === "OUT" ? (
                 <div className="field"><label>Bénéficiaire</label>
                   <select value={finBuyer} onChange={(event) => setFinBuyer(event.target.value)}>
                     <option value="">-- Sélectionner --</option>
                     {data.userList.filter((name) => !isCaissePrincipaleName(name)).map((name) => <option key={name}>{name}</option>)}
                   </select>
                 </div>
-              )}
+              ) : null}
+              {finType === "TRANSFER" ? (
+                <>
+                  <div className="field"><label>Acheteur qui finance</label>
+                    <select value={finSourceBuyer} onChange={(event) => setFinSourceBuyer(event.target.value)}>
+                      <option value="">-- Sélectionner --</option>
+                      {data.userList.filter((name) => !isCaissePrincipaleName(name)).map((name) => <option key={name}>{name}</option>)}
+                    </select>
+                  </div>
+                  <div className="field"><label>Acheteur bénéficiaire</label>
+                    <select value={finBuyer} onChange={(event) => setFinBuyer(event.target.value)}>
+                      <option value="">-- Sélectionner --</option>
+                      {data.userList
+                        .filter((name) => !isCaissePrincipaleName(name) && name !== finSourceBuyer)
+                        .map((name) => <option key={name}>{name}</option>)}
+                    </select>
+                  </div>
+                </>
+              ) : null}
               <div className="field finance-bon-field">
                 <label>Photo / PDF du bon</label>
                 <p className="hint" style={{ margin: 0 }}>

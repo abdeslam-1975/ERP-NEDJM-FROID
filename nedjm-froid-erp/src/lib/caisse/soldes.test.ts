@@ -23,6 +23,25 @@ function row(partial: Partial<MoneyRow> & Pick<MoneyRow, "type" | "date" | "buye
 describe("computeSoldesBundle", () => {
   const openings = { Said: 10000, Karim: 5000 };
 
+  it("moves float between buyers when one funds another (ACHAT source + AVANCE dest)", () => {
+    const bundle = computeSoldesBundle({
+      viewer: "Admin",
+      seeAll: true,
+      openings,
+      monthFilter: "OCTOBRE 2026",
+      rows: [
+        row({ type: "ACHAT", date: "2026-10-03", buyer: "Said", op: 10, depenses: 8000, total: 8000 }),
+        row({ type: "AVANCE", date: "2026-10-03", buyer: "Karim", op: 11, recettes: 8000, total: 8000 }),
+      ],
+    });
+    const said = bundle.buyerBalances.find((buyer) => buyer.name === "Said");
+    const karim = bundle.buyerBalances.find((buyer) => buyer.name === "Karim");
+    expect(said?.achats).toBe(8000);
+    expect(said?.solde).toBe(10000 - 8000);
+    expect(karim?.avances).toBe(8000);
+    expect(karim?.solde).toBe(5000 + 8000);
+  });
+
   it("keeps the buyer float: opening + advances − purchases, and ignores cash funding", () => {
     const bundle = computeSoldesBundle({
       viewer: "Admin",

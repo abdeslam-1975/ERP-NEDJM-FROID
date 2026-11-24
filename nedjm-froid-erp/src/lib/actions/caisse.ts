@@ -25,6 +25,7 @@ import type {
   JournalLine,
   PurchaseInput,
 } from "@/lib/caisse/types";
+import { CAISSE_TRANSFER_AFFECTATION } from "@/lib/caisse/types";
 import { createClient } from "@/lib/supabase/server";
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
@@ -164,6 +165,18 @@ function toJournal(op: OperationRow): { lines: JournalLine[]; money: MoneyRow } 
   };
 }
 
+/** Total opération : lignes ACHAT via lineTotal ; AVANCE/ALIM via recettes/prixBon (lineTotal est null). */
+function operationGrandTotal(group: JournalLine[]): number {
+  const fromLines = group.reduce((sum, line) => sum + (Number(line.lineTotal) || 0), 0);
+  if (fromLines !== 0) return fromLines;
+  const priorHead = group.find((line) => line.isFirst) || group[0];
+  if (!priorHead) return 0;
+  if (priorHead.prixBon != null && Number.isFinite(Number(priorHead.prixBon))) return Number(priorHead.prixBon);
+  if (priorHead.recettes != null && Number.isFinite(Number(priorHead.recettes))) return Number(priorHead.recettes);
+  if (priorHead.depenses != null && Number.isFinite(Number(priorHead.depenses))) return Number(priorHead.depenses);
+  return group.reduce((sum, line) => sum + (Number(line.price) || 0) * (Number(line.qty) || 0), 0);
+}
+
 /** Si un filtre masque la 1ʳᵉ ligne, rattache photo / totaux / isFirst à la tête restante. */
 function ensureOperationHeads(lines: JournalLine[]): JournalLine[] {
   const byOp = new Map<string, JournalLine[]>();
@@ -175,7 +188,7 @@ function ensureOperationHeads(lines: JournalLine[]): JournalLine[] {
   const repaired: JournalLine[] = [];
   for (const group of byOp.values()) {
     group.sort((a, b) => a.lineNo - b.lineNo || a.desc.localeCompare(b.desc, "fr"));
-    const grand = group.reduce((sum, line) => sum + (Number(line.lineTotal) || 0), 0);
+    const grand = operationGrandTotal(group);
     const photoLine = group.find((line) => line.hasPhoto);
     const matchStatus = group.find((line) => line.bonMatchStatus)?.bonMatchStatus ?? null;
     const bonLabel = photoLine?.bon || group.find((line) => line.bon)?.bon || "";
@@ -681,6 +694,17 @@ export async function saveCaissePurchase(input: PurchaseInput): Promise<ActionRe
   }
 }
 
+function parseTransferPairId(reference: string | null | undefined): string | null {
+  const match = String(reference || "").match(/pair:([0-9a-f-]{36})/i);
+  return match?.[1] || null;
+}
+
+function transferReference(role: "from" | "to", otherBuyer: string, pairId: string): string {
+  return role === "from"
+    ? `Vers:${otherBuyer}|pair:${pairId}`
+    : `De:${otherBuyer}|pair:${pairId}`;
+}
+
 export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResult<{ message: string }>> {
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
@@ -689,9 +713,6 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
   if (!ISO_DATE.test(input.date || "")) return fail("❌ Date invalide");
   const amount = Number(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) return fail("❌ Montant invalide");
-  const kind = input.type === "IN" ? "ALIMENTATION" : "AVANCE";
-  const beneficiary = input.type === "IN" ? "Caisse Principale" : input.beneficiary?.trim() || "";
-  if (input.type === "OUT" && !beneficiary) return fail("❌ Choisissez un bénéficiaire");
 
   const photoRaw = input.photoDataUrl?.trim() || "";
   if (photoRaw) {
@@ -701,6 +722,238 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
     if (photoRaw.length > 3_800_000) return fail("❌ Justificatif trop lourd (limite ~3,5 Mo).");
   }
   let matchStatus = normalizeBonMatchStatus(input.bonMatchStatus);
+
+  if (input.type === "TRANSFER") {
+    const source = input.sourceBuyer?.trim() || "";
+    const dest = input.beneficiary?.trim() || "";
+    if (!source) return fail("❌ Choisissez l’acheteur qui finance");
+    if (!dest) return fail("❌ Choisissez l’acheteur bénéficiaire");
+    if (source === dest) return fail("❌ Les deux acheteurs doivent être différents");
+    if (isCaissePrincipaleName(source) || isCaissePrincipaleName(dest)) {
+      return fail("❌ Utilisez Alimentation / Avance caisse pour la caisse centrale");
+    }
+
+    try {
+      if (input.operationId) {
+        if (!flags.canManage) return fail("❌ Accès réservé : droit Modifier/Supprimer requis.");
+        const existing = await supabase
+          .from("caisse_operations")
+          .select("id, op_number, kind, affectation, reference, photo_data, bon_match_status, buyer_name")
+          .eq("id", input.operationId)
+          .maybeSingle();
+        if (existing.error) return fail(existing.error.message);
+        if (!existing.data) return fail("❌ Opération introuvable.");
+        if (existing.data.affectation !== CAISSE_TRANSFER_AFFECTATION) {
+          return fail("❌ Cette opération n’est pas un transfert entre acheteurs.");
+        }
+
+        let photoData: string | null = photoRaw || null;
+        if (!photoData && input.keepPhoto) {
+          photoData = existing.data.photo_data ?? null;
+          if (matchStatus == null) {
+            matchStatus = normalizeBonMatchStatus(
+              existing.data.bon_match_status as FinanceInput["bonMatchStatus"],
+            );
+          }
+        }
+        if (photoData && matchStatus == null) matchStatus = "unknown";
+
+        const pairId = parseTransferPairId(existing.data.reference) || crypto.randomUUID();
+        const pairRes = await supabase
+          .from("caisse_operations")
+          .select("id, kind, op_number, reference")
+          .eq("affectation", CAISSE_TRANSFER_AFFECTATION)
+          .is("voided_at", null)
+          .like("reference", `%pair:${pairId}%`);
+        if (pairRes.error) return fail(pairRes.error.message);
+        const pairRows = pairRes.data || [];
+        const debit =
+          pairRows.find((row) => row.kind === "ACHAT") ||
+          (existing.data.kind === "ACHAT" ? existing.data : null);
+        const credit =
+          pairRows.find((row) => row.kind === "AVANCE") ||
+          (existing.data.kind === "AVANCE" ? existing.data : null);
+        if (!debit || !credit) return fail("❌ Paire de transfert introuvable (ACHAT + AVANCE).");
+
+        const debitHeader = {
+          kind: "ACHAT" as const,
+          op_date: input.date,
+          affectation: CAISSE_TRANSFER_AFFECTATION,
+          matricule: "",
+          buyer_name: source,
+          method: "Transfert acheteur",
+          reference: transferReference("from", dest, pairId),
+          photo_data: photoData,
+        };
+        const creditHeader = {
+          kind: "AVANCE" as const,
+          op_date: input.date,
+          affectation: CAISSE_TRANSFER_AFFECTATION,
+          matricule: "",
+          buyer_name: dest,
+          method: "Transfert acheteur",
+          reference: transferReference("to", source, pairId),
+          photo_data: photoData,
+        };
+        const debitLine = {
+          desc: `TRANSFERT VERS (${dest})`,
+          itemVal: "",
+          unit: "U",
+          qte: 1,
+          price: amount,
+        };
+        const creditLine = {
+          desc: `RECEPTION DE (${source})`,
+          itemVal: "",
+          unit: "U",
+          qte: 1,
+          price: amount,
+        };
+
+        for (const [opId, header, line, kind] of [
+          [debit.id, debitHeader, debitLine, "ACHAT"],
+          [credit.id, creditHeader, creditLine, "AVANCE"],
+        ] as const) {
+          const updated = await supabase.from("caisse_operations").update(header).eq("id", opId);
+          if (updated.error) return fail(`❌ ${updated.error.message}`);
+          const removed = await supabase.from("caisse_lines").delete().eq("operation_id", opId);
+          if (removed.error) return fail(removed.error.message);
+          await writeLines(supabase, opId, kind, [line]);
+        }
+
+        const numberedDebit = await refreshOperationNumber(supabase, debit.id, Number(debit.op_number) || 0);
+        const numberedCredit = await refreshOperationNumber(supabase, credit.id, Number(credit.op_number) || 0);
+        await applyBonDisplayAndMatch(
+          supabase,
+          debit.id,
+          numberedDebit.op,
+          input.date,
+          !!photoData,
+          matchStatus,
+        );
+        await applyBonDisplayAndMatch(
+          supabase,
+          credit.id,
+          numberedCredit.op,
+          input.date,
+          !!photoData,
+          matchStatus,
+        );
+        await logAction(
+          supabase,
+          "UPDATE",
+          "AVANCE",
+          numberedCredit.op,
+          sheetNameFromIso(input.date),
+          `Transfert acheteur ${source} → ${dest}`,
+          amount,
+        );
+        refresh();
+        return {
+          ok: true,
+          data: {
+            message: `✅ Transfert ${source} → ${dest} mis à jour (N° ${numberedDebit.op} / ${numberedCredit.op}).`,
+          },
+        };
+      }
+
+      if (photoRaw && matchStatus == null) matchStatus = "unknown";
+      const pairId = crypto.randomUUID();
+      const debitInsert = await supabase
+        .from("caisse_operations")
+        .insert({
+          kind: "ACHAT",
+          op_date: input.date,
+          affectation: CAISSE_TRANSFER_AFFECTATION,
+          matricule: "",
+          buyer_name: source,
+          bon_label: "",
+          method: "Transfert acheteur",
+          reference: transferReference("from", dest, pairId),
+          photo_data: photoRaw || null,
+          created_by: userId,
+        })
+        .select("id, op_number")
+        .maybeSingle();
+      if (debitInsert.error) return fail(`❌ ${debitInsert.error.message}`);
+      if (!debitInsert.data) return fail("❌ Enregistrement du débit refusé.");
+
+      const creditInsert = await supabase
+        .from("caisse_operations")
+        .insert({
+          kind: "AVANCE",
+          op_date: input.date,
+          affectation: CAISSE_TRANSFER_AFFECTATION,
+          matricule: "",
+          buyer_name: dest,
+          bon_label: "",
+          method: "Transfert acheteur",
+          reference: transferReference("to", source, pairId),
+          photo_data: photoRaw || null,
+          created_by: userId,
+        })
+        .select("id, op_number")
+        .maybeSingle();
+      if (creditInsert.error) return fail(`❌ ${creditInsert.error.message}`);
+      if (!creditInsert.data) return fail("❌ Enregistrement du crédit refusé.");
+
+      await writeLines(supabase, debitInsert.data.id, "ACHAT", [
+        { desc: `TRANSFERT VERS (${dest})`, itemVal: "", unit: "U", qte: 1, price: amount },
+      ]);
+      await writeLines(supabase, creditInsert.data.id, "AVANCE", [
+        { desc: `RECEPTION DE (${source})`, itemVal: "", unit: "U", qte: 1, price: amount },
+      ]);
+
+      const numberedDebit = await refreshOperationNumber(
+        supabase,
+        debitInsert.data.id,
+        Number(debitInsert.data.op_number) || 0,
+      );
+      const numberedCredit = await refreshOperationNumber(
+        supabase,
+        creditInsert.data.id,
+        Number(creditInsert.data.op_number) || 0,
+      );
+      await applyBonDisplayAndMatch(
+        supabase,
+        debitInsert.data.id,
+        numberedDebit.op,
+        input.date,
+        !!photoRaw,
+        matchStatus,
+      );
+      await applyBonDisplayAndMatch(
+        supabase,
+        creditInsert.data.id,
+        numberedCredit.op,
+        input.date,
+        !!photoRaw,
+        matchStatus,
+      );
+      await logAction(
+        supabase,
+        "CAISSE",
+        "AVANCE",
+        numberedCredit.op,
+        sheetNameFromIso(input.date),
+        `Transfert acheteur ${source} → ${dest} (N° ${numberedDebit.op}/${numberedCredit.op})`,
+        amount,
+      );
+      refresh();
+      return {
+        ok: true,
+        data: {
+          message: `✅ ${source} a financé ${dest} de ${amount.toFixed(2)} DA (N° ${numberedDebit.op} / ${numberedCredit.op}). La caisse centrale n’est pas touchée.`,
+        },
+      };
+    } catch (error) {
+      return fail(error instanceof Error ? `❌ ${error.message}` : "❌ Erreur");
+    }
+  }
+
+  const kind = input.type === "IN" ? "ALIMENTATION" : "AVANCE";
+  const beneficiary = input.type === "IN" ? "Caisse Principale" : input.beneficiary?.trim() || "";
+  if (input.type === "OUT" && !beneficiary) return fail("❌ Choisissez un bénéficiaire");
 
   const headerBase = {
     kind,
@@ -724,11 +977,14 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
       if (!flags.canManage) return fail("❌ Accès réservé : droit Modifier/Supprimer requis.");
       const existing = await supabase
         .from("caisse_operations")
-        .select("op_number, photo_data, bon_match_status")
+        .select("op_number, photo_data, bon_match_status, affectation")
         .eq("id", input.operationId)
         .maybeSingle();
       if (existing.error) return fail(existing.error.message);
       if (!existing.data) return fail("❌ Opération introuvable.");
+      if (existing.data.affectation === CAISSE_TRANSFER_AFFECTATION) {
+        return fail("❌ Modifiez ce mouvement via le type « Un acheteur finance un autre ».");
+      }
 
       let photoData: string | null = photoRaw || null;
       if (!photoData && input.keepPhoto) {
@@ -806,7 +1062,7 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
       kind,
       numbered.op,
       "Caisse_Centrale",
-      `${kind === "ALIMENTATION" ? "Alimentation Caisse" : `Transfert vers: ${beneficiary}`}${archiveName ? ` | archive ${archiveName}` : ""}`,
+      `${kind === "ALIMENTATION" ? "Alimentation Caisse" : `Avance caisse vers: ${beneficiary}`}${archiveName ? ` | archive ${archiveName}` : ""}`,
       amount,
     );
     refresh();
@@ -814,8 +1070,8 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
     const note = renumberNote(numbered, provisionalOp);
     const message =
       kind === "ALIMENTATION"
-        ? `✅ Alimentation enregistrée (n° ${numbered.op}) — Solde: ${balance.toFixed(2)} DA.${note}`
-        : `✅ Transfert vers ${beneficiary} (n° ${numbered.op})\n(✅ Tiré vers: ${sheetNameFromIso(input.date)}).${note}`;
+        ? `✅ Alimentation (banque / espèces) enregistrée (n° ${numbered.op}) — Solde caisse: ${balance.toFixed(2)} DA.${note}`
+        : `✅ Avance caisse vers ${beneficiary} (n° ${numbered.op})\n(✅ Tiré vers: ${sheetNameFromIso(input.date)}).${note}`;
     return { ok: true, data: { message } };
   } catch (error) {
     return fail(error instanceof Error ? `❌ ${error.message}` : "❌ Erreur");
@@ -827,11 +1083,36 @@ export async function deleteCaisseOperation(operationId: string): Promise<Action
   if ("ok" in gate) return gate;
   const { supabase, flags } = gate;
   if (!flags.canManage) return fail("❌ Accès réservé : droit Modifier/Supprimer requis.");
-  const existing = await supabase.from("caisse_operations").select("id, op_number, kind, op_date").eq("id", operationId).maybeSingle();
+  const existing = await supabase
+    .from("caisse_operations")
+    .select("id, op_number, kind, op_date, affectation, reference")
+    .eq("id", operationId)
+    .maybeSingle();
   if (existing.error) return fail(existing.error.message);
   if (!existing.data) return fail("❌ Opération introuvable.");
-  const updated = await supabase.rpc("caisse_void_operation", { p_id: operationId });
-  if (updated.error) return fail(`❌ ${updated.error.message}`);
+
+  const toVoid = [operationId];
+  if (existing.data.affectation === CAISSE_TRANSFER_AFFECTATION) {
+    const pairId = parseTransferPairId(existing.data.reference);
+    if (pairId) {
+      const pairRes = await supabase
+        .from("caisse_operations")
+        .select("id")
+        .eq("affectation", CAISSE_TRANSFER_AFFECTATION)
+        .is("voided_at", null)
+        .like("reference", `%pair:${pairId}%`);
+      if (!pairRes.error) {
+        for (const row of pairRes.data || []) {
+          if (!toVoid.includes(row.id)) toVoid.push(row.id);
+        }
+      }
+    }
+  }
+
+  for (const id of toVoid) {
+    const updated = await supabase.rpc("caisse_void_operation", { p_id: id });
+    if (updated.error) return fail(`❌ ${updated.error.message}`);
+  }
   await logAction(
     supabase,
     "DELETE",
@@ -842,9 +1123,12 @@ export async function deleteCaisseOperation(operationId: string): Promise<Action
     null,
   );
   refresh();
+  const pairNote = toVoid.length > 1 ? " (paire transfert acheteur)" : "";
   return {
     ok: true,
-    data: { message: `✅ Opération N° ${existing.data.op_number} supprimée. Les numéros ont été réordonnés.` },
+    data: {
+      message: `✅ Opération N° ${existing.data.op_number} supprimée${pairNote}. Les numéros ont été réordonnés.`,
+    },
   };
 }
 
