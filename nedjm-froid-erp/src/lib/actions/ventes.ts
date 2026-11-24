@@ -10,7 +10,7 @@ import type {
   SalInvoiceRow,
   SalesRegisterRow,
 } from "@/lib/ventes/db-types";
-import { salInvoiceSaveSchema } from "@/lib/validations/ventes";
+import { salInvoiceSaveSchema, salPaymentSchema } from "@/lib/validations/ventes";
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -55,6 +55,8 @@ export type VentesDashboard = {
   canUpdate: boolean;
   canDelete: boolean;
   canAdmin: boolean;
+  /** Encaissement interne (sal_invoice_payments) — pas de lien Banque/Caisse. */
+  canEncaisser: boolean;
 };
 
 export type SalInvoiceDetail = {
@@ -309,6 +311,7 @@ export async function getVentesDashboard(): Promise<ActionResult<VentesDashboard
       canUpdate,
       canDelete,
       canAdmin: !canAdminRes.error && !!canAdminRes.data,
+      canEncaisser: canUpdate || canCreate,
     },
   };
 }
@@ -553,4 +556,185 @@ export async function deleteSalInvoiceDraft(
   });
   refresh();
   return { ok: true, data: { id: invoiceId } };
+}
+
+/**
+ * Encaissement interne Ventes uniquement.
+ * Écrit sal_invoice_payments — sans fin_transactions / Banque / Caisse.
+ */
+export async function recordSalPayment(
+  input: unknown,
+): Promise<
+  ActionResult<{ id: string; invoice_id: string; amount_ttc: number; due_ttc: number }>
+> {
+  const workspace = await getWorkspaceProfile();
+  if (!workspace) return fail("Session requise.");
+  if (!(await can("update")) && !(await can("create"))) {
+    return fail("Encaissement refusé (droits Ventes).");
+  }
+
+  const parsed = salPaymentSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Données invalides." };
+  }
+  const p = parsed.data;
+  const supabase = await createClient();
+
+  const invRes = await supabase
+    .from("sal_invoices")
+    .select("id, number, status, net_payable, total_ht, total_tva")
+    .eq("id", p.invoice_id)
+    .maybeSingle();
+  if (invRes.error) return fail(invRes.error);
+  if (!invRes.data) return fail("Facture introuvable (module Ventes uniquement).");
+  if (invRes.data.status !== "EMISE") {
+    return fail("Seules les factures émises peuvent être encaissées.");
+  }
+
+  const paidRes = await supabase
+    .from("sal_invoice_payments")
+    .select("amount_ttc, direction")
+    .eq("invoice_id", p.invoice_id);
+  if (paidRes.error) return fail(paidRes.error);
+  const paid = (paidRes.data ?? []).reduce(
+    (s, row) => s + num(row.amount_ttc) * (Number(row.direction) || 1),
+    0,
+  );
+  const net = num(invRes.data.net_payable);
+  const due = Math.round((Math.max(0, net - paid) + Number.EPSILON) * 100) / 100;
+  if (p.amount_ttc > due + 0.009) {
+    return fail(`Montant supérieur au reste dû (${due.toFixed(2)} DA).`);
+  }
+
+  const totalHt = num(invRes.data.total_ht);
+  const totalTva = num(invRes.data.total_tva);
+  const base = totalHt + totalTva;
+  let amountHt = p.amount_ttc;
+  let amountTva = 0;
+  if (base > 0.009) {
+    amountHt = Math.round(((p.amount_ttc * totalHt) / base) * 100) / 100;
+    amountTva = Math.round((p.amount_ttc - amountHt) * 100) / 100;
+  }
+
+  const noteParts = [
+    blank(p.method_label) ? `Mode: ${p.method_label.trim()}` : null,
+    blank(p.account_label) ? `Banque: ${p.account_label.trim()}` : null,
+    blank(p.note),
+  ].filter(Boolean);
+
+  const insertRes = await supabase
+    .from("sal_invoice_payments")
+    .insert({
+      invoice_id: p.invoice_id,
+      payment_date: p.payment_date,
+      account_id: null,
+      payment_method_id: null,
+      amount_ht: amountHt,
+      amount_tva: amountTva,
+      amount_ttc: p.amount_ttc,
+      direction: 1,
+      financial_transaction_id: null,
+      bank_line_id: null,
+      reference: blank(p.reference) ?? blank(p.account_label),
+      note: noteParts.length ? noteParts.join(" · ") : null,
+      created_by: workspace.id,
+    })
+    .select("id")
+    .single();
+  if (insertRes.error) return fail(insertRes.error);
+
+  const newDue = Math.round((Math.max(0, due - p.amount_ttc) + Number.EPSILON) * 100) / 100;
+
+  await supabase.from("sal_audit").insert({
+    actor: workspace.id,
+    action: "PAYMENT",
+    entity: "sal_invoice_payments",
+    entity_id: insertRes.data.id,
+    detail: `Encaissement ${p.amount_ttc} DA — facture ${invRes.data.number}`,
+    payload: {
+      invoice_id: p.invoice_id,
+      amount_ttc: p.amount_ttc,
+      isolated: true,
+      linked_finance: false,
+    },
+  });
+
+  refresh();
+  return {
+    ok: true,
+    data: {
+      id: String(insertRes.data.id),
+      invoice_id: p.invoice_id,
+      amount_ttc: p.amount_ttc,
+      due_ttc: newDue,
+    },
+  };
+}
+
+/** Annulation d'un encaissement via écriture inverse (append-only). */
+export async function reverseSalPayment(
+  paymentId: string,
+): Promise<ActionResult<{ id: string }>> {
+  const workspace = await getWorkspaceProfile();
+  if (!workspace) return fail("Session requise.");
+  if (!(await can("update")) && !(await can("delete"))) {
+    return fail("Annulation refusée (droits Ventes).");
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(paymentId)) return fail("Paiement invalide.");
+
+  const supabase = await createClient();
+  const { data: pay, error } = await supabase
+    .from("sal_invoice_payments")
+    .select(
+      "id, invoice_id, payment_date, amount_ht, amount_tva, amount_ttc, direction, reversal_of",
+    )
+    .eq("id", paymentId)
+    .maybeSingle();
+  if (error) return fail(error);
+  if (!pay) return fail("Paiement introuvable.");
+  if (Number(pay.direction) !== 1) return fail("Ce mouvement n'est pas un encaissement.");
+  if (pay.reversal_of) return fail("Paiement déjà lié à une annulation.");
+
+  const existingRev = await supabase
+    .from("sal_invoice_payments")
+    .select("id")
+    .eq("reversal_of", paymentId)
+    .limit(1)
+    .maybeSingle();
+  if (existingRev.error) return fail(existingRev.error);
+  if (existingRev.data) return fail("Encaissement déjà annulé.");
+
+  const ins = await supabase
+    .from("sal_invoice_payments")
+    .insert({
+      invoice_id: pay.invoice_id,
+      payment_date: algiersToday(),
+      amount_ht: num(pay.amount_ht),
+      amount_tva: num(pay.amount_tva),
+      amount_ttc: num(pay.amount_ttc),
+      direction: -1,
+      financial_transaction_id: null,
+      bank_line_id: null,
+      account_id: null,
+      payment_method_id: null,
+      reversal_of: pay.id,
+      reference: `ANNULATION ${String(pay.id).slice(0, 8)}`,
+      note: "Annulation encaissement interne Ventes",
+      created_by: workspace.id,
+    })
+    .select("id")
+    .single();
+  if (ins.error) return fail(ins.error);
+
+  await supabase.from("sal_audit").insert({
+    actor: workspace.id,
+    action: "PAYMENT_REVERSE",
+    entity: "sal_invoice_payments",
+    entity_id: ins.data.id,
+    detail: `Annulation paiement ${paymentId}`,
+    payload: { reversal_of: paymentId, isolated: true },
+  });
+
+  refresh();
+  return { ok: true, data: { id: String(ins.data.id) } };
 }
