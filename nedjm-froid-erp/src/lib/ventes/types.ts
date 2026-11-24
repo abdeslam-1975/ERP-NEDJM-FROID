@@ -23,6 +23,8 @@ export type VentesInvoice = {
   number: string;
   issueDate: string; // YYYY-MM-DD
   docKind: VentesDocKind;
+  clientId: string;
+  contractId: string;
   clientName: string;
   clientAddress: string;
   nif: string;
@@ -42,7 +44,8 @@ export type VentesInvoice = {
   paidAmount: number;
   paidDate: string;
   paidVia: string;
-  status: "BROUILLON" | "EMISE";
+  status: "BROUILLON" | "EMISE" | "ANNULEE";
+  persisted: boolean;
 };
 
 export type VentesKindFilter = "TOUS" | VentesDocKind;
@@ -111,9 +114,15 @@ function L(
   };
 }
 
+function mockBase(
+  inv: Omit<VentesInvoice, "clientId" | "contractId" | "persisted">,
+): VentesInvoice {
+  return { clientId: "", contractId: "", persisted: false, ...inv };
+}
+
 /** Jeu mock inspiré du Recap Excel (Sonatrach / Nedjm Froid). */
 export function buildMockInvoices(): VentesInvoice[] {
-  return [
+  const rows: Array<Omit<VentesInvoice, "clientId" | "contractId" | "persisted">> = [
     {
       id: "v-1",
       number: "1",
@@ -418,6 +427,7 @@ export function buildMockInvoices(): VentesInvoice[] {
       ],
     },
   ];
+  return rows.map(mockBase);
 }
 
 export function emptyLine(lineNo: number): VentesInvoiceLine {
@@ -441,6 +451,8 @@ export function emptyInvoice(kind: VentesDocKind, today: string, nextNumber: str
     number: nextNumber,
     issueDate: today,
     docKind: kind,
+    clientId: "",
+    contractId: "",
     clientName: "",
     clientAddress: "",
     nif: "",
@@ -461,5 +473,6 @@ export function emptyInvoice(kind: VentesDocKind, today: string, nextNumber: str
     paidDate: "",
     paidVia: "",
     status: "BROUILLON",
+    persisted: false,
   };
 }
