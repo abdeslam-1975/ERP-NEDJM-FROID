@@ -30,14 +30,31 @@ export type VentesContractOption = {
   status: string;
 };
 
+export type VentesListOption = {
+  id: string;
+  list_key: string;
+  label: string;
+};
+
+export type VentesDefaults = {
+  tax_rate: number;
+  retention_rate: number;
+  stamp_amount: number;
+};
+
 export type VentesDashboard = {
   rows: SalesRegisterRow[];
   kinds: SalDocKindRow[];
   clients: VentesClientOption[];
+  banks: VentesListOption[];
+  etabliePar: VentesListOption[];
+  paymentModes: VentesListOption[];
+  defaults: VentesDefaults;
   today: string;
   canCreate: boolean;
   canUpdate: boolean;
   canDelete: boolean;
+  canAdmin: boolean;
 };
 
 export type SalInvoiceDetail = {
@@ -208,36 +225,62 @@ export async function getVentesDashboard(): Promise<ActionResult<VentesDashboard
   if (!workspace) return fail("Session requise.");
 
   const supabase = await createClient();
-  const [canRead, canCreate, canUpdate, canDelete, registerRes, kindsRes, clientsRes] =
-    await Promise.all([
-      can("read"),
-      can("create"),
-      can("update"),
-      can("delete"),
-      supabase
-        .from("v_sales_register")
-        .select(
-          "source, id, invoice_number, issue_date, doc_kind, status, client_id, client_name, contract_id, contract_ref, period_label, expected_bank_label, total_ht, total_tva, retention_amount, stamp_amount, net_payable, paid_ttc, due_ttc, last_payment_date, exo_attestation_no, fiscal_year, created_at",
-        )
-        .order("issue_date", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(2000),
-      supabase
-        .from("sal_doc_kinds")
-        .select("code, label_fr, label_ar, has_pose, is_rg_release, is_free_amount, active, sort_order")
-        .eq("active", true)
-        .order("sort_order"),
-      supabase
-        .from("ref_clients")
-        .select("id, nom_fr, adresse, nif, article_imposition, rc, telephone")
-        .order("nom_fr")
-        .limit(2000),
-    ]);
+  const [
+    canRead,
+    canCreate,
+    canUpdate,
+    canDelete,
+    canAdminRes,
+    registerRes,
+    kindsRes,
+    clientsRes,
+    listsRes,
+    settingsRes,
+  ] = await Promise.all([
+    can("read"),
+    can("create"),
+    can("update"),
+    can("delete"),
+    supabase.rpc("sal_is_admin"),
+    supabase
+      .from("v_sales_register")
+      .select(
+        "source, id, invoice_number, issue_date, doc_kind, status, client_id, client_name, contract_id, contract_ref, period_label, expected_bank_label, total_ht, total_tva, retention_amount, stamp_amount, net_payable, paid_ttc, due_ttc, last_payment_date, exo_attestation_no, fiscal_year, created_at",
+      )
+      .order("issue_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(2000),
+    supabase
+      .from("sal_doc_kinds")
+      .select("code, label_fr, label_ar, has_pose, is_rg_release, is_free_amount, active, sort_order")
+      .eq("active", true)
+      .order("sort_order"),
+    supabase
+      .from("ref_clients")
+      .select("id, nom_fr, adresse, nif, article_imposition, rc, telephone")
+      .order("nom_fr")
+      .limit(2000),
+    supabase
+      .from("sal_lists")
+      .select("id, list_key, label, sort_order")
+      .eq("active", true)
+      .order("sort_order")
+      .order("label"),
+    supabase.from("sal_settings").select("value").eq("key", "defaults").maybeSingle(),
+  ]);
 
   if (!canRead) return fail("Accès refusé (droits Ventes / Finance).");
   if (registerRes.error) return fail(registerRes.error);
   if (kindsRes.error) return fail(kindsRes.error);
   if (clientsRes.error) return fail(clientsRes.error);
+  // lists/settings may be missing before migration — degrade gracefully
+  const listRows = listsRes.error ? [] : (listsRes.data ?? []);
+  const defaultsRaw = (settingsRes.data?.value ?? {}) as Record<string, unknown>;
+
+  const mapList = (key: string): VentesListOption[] =>
+    listRows
+      .filter((l) => String(l.list_key) === key)
+      .map((l) => ({ id: String(l.id), list_key: String(l.list_key), label: String(l.label) }));
 
   return {
     ok: true,
@@ -253,10 +296,19 @@ export async function getVentesDashboard(): Promise<ActionResult<VentesDashboard
         rc: c.rc ? String(c.rc) : null,
         telephone: c.telephone ? String(c.telephone) : null,
       })),
+      banks: mapList("BANK_EXPECTED"),
+      etabliePar: mapList("ETABLIE_PAR"),
+      paymentModes: mapList("PAYMENT_MODE"),
+      defaults: {
+        tax_rate: Number(defaultsRaw.tax_rate ?? 0) || 0,
+        retention_rate: Number(defaultsRaw.retention_rate ?? 0.1) || 0,
+        stamp_amount: Number(defaultsRaw.stamp_amount ?? 0) || 0,
+      },
       today: algiersToday(),
       canCreate,
       canUpdate,
       canDelete,
+      canAdmin: !canAdminRes.error && !!canAdminRes.data,
     },
   };
 }
