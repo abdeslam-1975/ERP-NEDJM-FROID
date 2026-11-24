@@ -294,10 +294,15 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       setFinanceEdit(line.operationId);
       if (isTransfer) {
         const fromRef = String(line.desc || "");
+        const excelMatch = fromRef.match(/ALIMENTATION DE CAISSE DE (.+) PAR (.+)/i);
         const deMatch = fromRef.match(/RECEPTION DE \((.+)\)/i);
         const versMatch = fromRef.match(/TRANSFERT VERS \((.+)\)/i);
-        const source = line.type === "AVANCE" ? (deMatch?.[1] || "") : line.buyer;
-        const dest = line.type === "ACHAT" ? (versMatch?.[1] || "") : line.buyer;
+        const source =
+          excelMatch?.[2]?.trim() ||
+          (line.type === "AVANCE" ? deMatch?.[1] || "" : line.buyer);
+        const dest =
+          excelMatch?.[1]?.trim() ||
+          (line.type === "ACHAT" ? versMatch?.[1] || "" : line.buyer);
         setFinType("TRANSFER");
         setFinSourceBuyer(source || line.buyer);
         setFinBuyer(dest || "");
@@ -1471,23 +1476,28 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
               <button type="button" className="close-x" onClick={() => setFinanceOpen(false)}>×</button>
             </div>
             <div className="modal-body">
-              <div className="field"><label>Type</label>
+              <div className="field"><label>Type de mouvement</label>
                 <select
                   value={finType}
-                  disabled={!!financeEdit}
-                  onChange={(event) => setFinType(event.target.value as "IN" | "OUT" | "TRANSFER")}
+                  onChange={(event) => {
+                    const next = event.target.value as "IN" | "OUT" | "TRANSFER";
+                    setFinType(next);
+                    if (next === "TRANSFER" && !finSourceBuyer) {
+                      setFinSourceBuyer(data.userList.find((name) => !isCaissePrincipaleName(name) && name !== finBuyer) || "");
+                    }
+                  }}
                 >
-                  <option value="IN">Alimenter la caisse (banque / espèces)</option>
-                  <option value="OUT">Avance caisse → un acheteur</option>
-                  <option value="TRANSFER">Un acheteur finance un autre</option>
+                  <option value="IN">1 — Alimenter la caisse centrale (banque / espèces)</option>
+                  <option value="OUT">2 — Avance de la caisse centrale à un acheteur</option>
+                  <option value="TRANSFER">3 — Alimentation de caisse d’un acheteur PAR un autre</option>
                 </select>
               </div>
               <p className="hint" style={{ marginTop: 0 }}>
                 {finType === "IN"
-                  ? "Entrée en caisse centrale depuis la banque ou le cash."
+                  ? "Comme un dépôt : banque ou cash → caisse centrale."
                   : finType === "OUT"
-                    ? "La caisse centrale donne une avance à un acheteur (solde caisse ↓)."
-                    : "Transfert direct entre deux acheteurs — la caisse centrale n’est pas touchée."}
+                    ? "La caisse centrale avance de l’argent à un acheteur (solde caisse ↓)."
+                    : "Comme dans votre tableau Excel : ALIMENTATION DE CAISSE DE [bénéficiaire] PAR [qui finance]. La caisse centrale n’est pas touchée."}
               </p>
               <div className="field"><label>Date</label><input type="date" value={finDate} onChange={(event) => setFinDate(event.target.value)} /></div>
               <div className="field"><label>Montant (DA)</label><input type="number" min="0" step="0.01" value={finAmount} onChange={(event) => setFinAmount(event.target.value)} /></div>
@@ -1503,7 +1513,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                 </>
               ) : null}
               {finType === "OUT" ? (
-                <div className="field"><label>Bénéficiaire</label>
+                <div className="field"><label>Bénéficiaire (acheteur)</label>
                   <select value={finBuyer} onChange={(event) => setFinBuyer(event.target.value)}>
                     <option value="">-- Sélectionner --</option>
                     {data.userList.filter((name) => !isCaissePrincipaleName(name)).map((name) => <option key={name}>{name}</option>)}
@@ -1512,20 +1522,25 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
               ) : null}
               {finType === "TRANSFER" ? (
                 <>
-                  <div className="field"><label>Acheteur qui finance</label>
+                  <div className="field"><label>PAR — acheteur qui finance</label>
                     <select value={finSourceBuyer} onChange={(event) => setFinSourceBuyer(event.target.value)}>
-                      <option value="">-- Sélectionner --</option>
+                      <option value="">-- Qui paie / finance --</option>
                       {data.userList.filter((name) => !isCaissePrincipaleName(name)).map((name) => <option key={name}>{name}</option>)}
                     </select>
                   </div>
-                  <div className="field"><label>Acheteur bénéficiaire</label>
+                  <div className="field"><label>DE — acheteur dont la caisse est alimentée</label>
                     <select value={finBuyer} onChange={(event) => setFinBuyer(event.target.value)}>
-                      <option value="">-- Sélectionner --</option>
+                      <option value="">-- Qui reçoit --</option>
                       {data.userList
                         .filter((name) => !isCaissePrincipaleName(name) && name !== finSourceBuyer)
                         .map((name) => <option key={name}>{name}</option>)}
                     </select>
                   </div>
+                  {finSourceBuyer && finBuyer ? (
+                    <p className="finance-transfer-preview">
+                      {`ALIMENTATION DE CAISSE DE ${finBuyer} PAR ${finSourceBuyer}`}
+                    </p>
+                  ) : null}
                 </>
               ) : null}
               <div className="field finance-bon-field">
