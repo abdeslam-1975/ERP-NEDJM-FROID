@@ -705,6 +705,11 @@ function transferReference(role: "from" | "to", otherBuyer: string, pairId: stri
     : `De:${otherBuyer}|pair:${pairId}`;
 }
 
+/** Libellé journal aligné sur le tableau Excel : ALIMENTATION DE CAISSE DE {dest} PAR {source} */
+function transferDesignation(source: string, dest: string): string {
+  return `ALIMENTATION DE CAISSE DE ${dest} PAR ${source}`;
+}
+
 export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResult<{ message: string }>> {
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
@@ -743,9 +748,6 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
           .maybeSingle();
         if (existing.error) return fail(existing.error.message);
         if (!existing.data) return fail("❌ Opération introuvable.");
-        if (existing.data.affectation !== CAISSE_TRANSFER_AFFECTATION) {
-          return fail("❌ Cette opération n’est pas un transfert entre acheteurs.");
-        }
 
         let photoData: string | null = photoRaw || null;
         if (!photoData && input.keepPhoto) {
@@ -758,7 +760,100 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
         }
         if (photoData && matchStatus == null) matchStatus = "unknown";
 
+        const label = transferDesignation(source, dest);
         const pairId = parseTransferPairId(existing.data.reference) || crypto.randomUUID();
+        const isAlreadyTransfer = existing.data.affectation === CAISSE_TRANSFER_AFFECTATION;
+
+        // Convertir une ancienne avance caisse (OUT) en alimentation acheteur→acheteur.
+        if (!isAlreadyTransfer) {
+          if (existing.data.kind !== "AVANCE") {
+            return fail("❌ Seule une avance peut être convertie en alimentation entre acheteurs.");
+          }
+          const debitInsert = await supabase
+            .from("caisse_operations")
+            .insert({
+              kind: "ACHAT",
+              op_date: input.date,
+              affectation: CAISSE_TRANSFER_AFFECTATION,
+              matricule: "",
+              buyer_name: source,
+              bon_label: "",
+              method: "Transfert acheteur",
+              reference: transferReference("from", dest, pairId),
+              photo_data: photoData,
+              created_by: userId,
+            })
+            .select("id, op_number")
+            .maybeSingle();
+          if (debitInsert.error) return fail(`❌ ${debitInsert.error.message}`);
+          if (!debitInsert.data) return fail("❌ Création du débit acheteur refusée.");
+
+          const creditUpdate = await supabase
+            .from("caisse_operations")
+            .update({
+              kind: "AVANCE",
+              op_date: input.date,
+              affectation: CAISSE_TRANSFER_AFFECTATION,
+              matricule: "",
+              buyer_name: dest,
+              method: "Transfert acheteur",
+              reference: transferReference("to", source, pairId),
+              photo_data: photoData,
+            })
+            .eq("id", input.operationId);
+          if (creditUpdate.error) return fail(`❌ ${creditUpdate.error.message}`);
+          const removed = await supabase.from("caisse_lines").delete().eq("operation_id", input.operationId);
+          if (removed.error) return fail(removed.error.message);
+          await writeLines(supabase, debitInsert.data.id, "ACHAT", [
+            { desc: label, itemVal: "", unit: "U", qte: 1, price: amount },
+          ]);
+          await writeLines(supabase, input.operationId, "AVANCE", [
+            { desc: label, itemVal: "", unit: "U", qte: 1, price: amount },
+          ]);
+          const numberedDebit = await refreshOperationNumber(
+            supabase,
+            debitInsert.data.id,
+            Number(debitInsert.data.op_number) || 0,
+          );
+          const numberedCredit = await refreshOperationNumber(
+            supabase,
+            input.operationId,
+            Number(existing.data.op_number) || 0,
+          );
+          await applyBonDisplayAndMatch(
+            supabase,
+            debitInsert.data.id,
+            numberedDebit.op,
+            input.date,
+            !!photoData,
+            matchStatus,
+          );
+          await applyBonDisplayAndMatch(
+            supabase,
+            input.operationId,
+            numberedCredit.op,
+            input.date,
+            !!photoData,
+            matchStatus,
+          );
+          await logAction(
+            supabase,
+            "UPDATE",
+            "AVANCE",
+            numberedCredit.op,
+            sheetNameFromIso(input.date),
+            `Conversion avance → ${label}`,
+            amount,
+          );
+          refresh();
+          return {
+            ok: true,
+            data: {
+              message: `✅ Converti en alimentation entre acheteurs : ${label} (N° ${numberedDebit.op} / ${numberedCredit.op}).`,
+            },
+          };
+        }
+
         const pairRes = await supabase
           .from("caisse_operations")
           .select("id, kind, op_number, reference")
@@ -796,14 +891,14 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
           photo_data: photoData,
         };
         const debitLine = {
-          desc: `TRANSFERT VERS (${dest})`,
+          desc: label,
           itemVal: "",
           unit: "U",
           qte: 1,
           price: amount,
         };
         const creditLine = {
-          desc: `RECEPTION DE (${source})`,
+          desc: label,
           itemVal: "",
           unit: "U",
           qte: 1,
@@ -845,14 +940,14 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
           "AVANCE",
           numberedCredit.op,
           sheetNameFromIso(input.date),
-          `Transfert acheteur ${source} → ${dest}`,
+          label,
           amount,
         );
         refresh();
         return {
           ok: true,
           data: {
-            message: `✅ Transfert ${source} → ${dest} mis à jour (N° ${numberedDebit.op} / ${numberedCredit.op}).`,
+            message: `✅ ${label} mis à jour (N° ${numberedDebit.op} / ${numberedCredit.op}).`,
           },
         };
       }
@@ -897,11 +992,12 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
       if (creditInsert.error) return fail(`❌ ${creditInsert.error.message}`);
       if (!creditInsert.data) return fail("❌ Enregistrement du crédit refusé.");
 
+      const label = transferDesignation(source, dest);
       await writeLines(supabase, debitInsert.data.id, "ACHAT", [
-        { desc: `TRANSFERT VERS (${dest})`, itemVal: "", unit: "U", qte: 1, price: amount },
+        { desc: label, itemVal: "", unit: "U", qte: 1, price: amount },
       ]);
       await writeLines(supabase, creditInsert.data.id, "AVANCE", [
-        { desc: `RECEPTION DE (${source})`, itemVal: "", unit: "U", qte: 1, price: amount },
+        { desc: label, itemVal: "", unit: "U", qte: 1, price: amount },
       ]);
 
       const numberedDebit = await refreshOperationNumber(
@@ -936,14 +1032,14 @@ export async function saveCaisseFinance(input: FinanceInput): Promise<ActionResu
         "AVANCE",
         numberedCredit.op,
         sheetNameFromIso(input.date),
-        `Transfert acheteur ${source} → ${dest} (N° ${numberedDebit.op}/${numberedCredit.op})`,
+        `${label} (N° ${numberedDebit.op}/${numberedCredit.op})`,
         amount,
       );
       refresh();
       return {
         ok: true,
         data: {
-          message: `✅ ${source} a financé ${dest} de ${amount.toFixed(2)} DA (N° ${numberedDebit.op} / ${numberedCredit.op}). La caisse centrale n’est pas touchée.`,
+          message: `✅ ${label} — ${amount.toFixed(2)} DA (N° ${numberedDebit.op} / ${numberedCredit.op}). La caisse centrale n’est pas touchée.`,
         },
       };
     } catch (error) {
