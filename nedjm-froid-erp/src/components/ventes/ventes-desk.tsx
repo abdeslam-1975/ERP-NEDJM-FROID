@@ -28,6 +28,7 @@ import {
   type VentesInvoice,
   type VentesInvoiceLine,
 } from "@/lib/ventes/types";
+import { VentesAdminModal } from "@/components/ventes/ventes-admin-modal";
 import "./ventes.css";
 
 type Modal = "facture" | "detail" | "encaissement" | "import" | "admin" | "types" | null;
@@ -242,8 +243,23 @@ export function VentesDesk({
       return;
     }
     setClientContracts([]);
-    setDraft(emptyInvoice(kind, today || new Date().toISOString().slice(0, 10), ""));
+    const draftInv = emptyInvoice(kind, today || new Date().toISOString().slice(0, 10), "");
+    if (data?.defaults) {
+      draftInv.taxRate = data.defaults.tax_rate;
+      draftInv.retentionRate = data.defaults.retention_rate;
+      draftInv.stampAmount = data.defaults.stamp_amount;
+    }
+    if (data?.banks[0]) draftInv.expectedBank = data.banks[0].label;
+    setDraft(draftInv);
     setModal("facture");
+  }
+
+  function openAdmin() {
+    if (data && !data.canAdmin) {
+      setError("Admin Ventes réservé à l'administrateur.");
+      return;
+    }
+    setModal("admin");
   }
 
   async function openDetail(row: SalesRegisterRow) {
@@ -591,7 +607,7 @@ export function VentesDesk({
         <button type="button" className="btn-action btn-import" onClick={() => setModal("import")}>
           IMPORT
         </button>
-        <button type="button" className="btn-action btn-admin" onClick={() => setModal("admin")}>
+        <button type="button" className="btn-action btn-admin" onClick={openAdmin}>
           ADMIN
         </button>
         <button type="button" className="btn-action btn-export" onClick={() => void refresh()} disabled={busy}>
@@ -953,6 +969,25 @@ export function VentesDesk({
                   />
                 </div>
                 <div>
+                  <label className="form-label">ID fiscale (NIF)</label>
+                  <input value={draft.nif} onChange={(e) => updateDraft("nif", e.target.value)} />
+                </div>
+                <div>
+                  <label className="form-label">Article</label>
+                  <input
+                    value={draft.article}
+                    onChange={(e) => updateDraft("article", e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">R.C</label>
+                  <input value={draft.rc} onChange={(e) => updateDraft("rc", e.target.value)} />
+                </div>
+                <div>
+                  <label className="form-label">Contact Tél</label>
+                  <input value={draft.phone} onChange={(e) => updateDraft("phone", e.target.value)} />
+                </div>
+                <div>
                   <label className="form-label">Contrat (optionnel)</label>
                   <select
                     value={draft.contractId}
@@ -988,10 +1023,45 @@ export function VentesDesk({
                 </div>
                 <div>
                   <label className="form-label">Banque prévue</label>
-                  <input
-                    value={draft.expectedBank}
-                    onChange={(e) => updateDraft("expectedBank", e.target.value)}
-                  />
+                  {(data?.banks.length ?? 0) > 0 ? (
+                    <select
+                      value={draft.expectedBank}
+                      onChange={(e) => updateDraft("expectedBank", e.target.value)}
+                    >
+                      <option value="">—</option>
+                      {data!.banks.map((b) => (
+                        <option key={b.id} value={b.label}>
+                          {b.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={draft.expectedBank}
+                      onChange={(e) => updateDraft("expectedBank", e.target.value)}
+                    />
+                  )}
+                </div>
+                <div>
+                  <label className="form-label">Établie par</label>
+                  {(data?.etabliePar.length ?? 0) > 0 ? (
+                    <select
+                      value={draft.establishedBy}
+                      onChange={(e) => updateDraft("establishedBy", e.target.value)}
+                    >
+                      <option value="">—</option>
+                      {data!.etabliePar.map((b) => (
+                        <option key={b.id} value={b.label}>
+                          {b.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={draft.establishedBy}
+                      onChange={(e) => updateDraft("establishedBy", e.target.value)}
+                    />
+                  )}
                 </div>
                 <div>
                   <label className="form-label">Taux TVA</label>
@@ -1219,9 +1289,14 @@ export function VentesDesk({
                   value={payForm.method}
                   onChange={(e) => setPayForm((f) => ({ ...f, method: e.target.value }))}
                 >
-                  <option>Virement</option>
-                  <option>Chèque</option>
-                  <option>Espèces</option>
+                  {(data?.paymentModes.length
+                    ? data.paymentModes.map((m) => m.label)
+                    : ["Virement", "Chèque", "Espèces"]
+                  ).map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -1271,27 +1346,15 @@ export function VentesDesk({
       )}
 
       {modal === "admin" && (
-        <div className="overlay">
-          <div className="modal narrow">
-            <div className="modal-head slate">
-              <span>Admin Ventes</span>
-              <button type="button" className="modal-close" onClick={() => setModal(null)}>
-                ×
-              </button>
-            </div>
-            <div className="modal-body">
-              <p style={{ margin: 0, fontSize: 13, color: "#334155", lineHeight: 1.5 }}>
-                Paramètres (séquence, types, droits) — phase ultérieure. Types actifs :{" "}
-                {kinds.map((k) => k.code).join(", ") || "—"}.
-              </p>
-            </div>
-            <div className="modal-foot">
-              <button type="button" className="btn-light" onClick={() => setModal(null)}>
-                Fermer
-              </button>
-            </div>
-          </div>
-        </div>
+        <VentesAdminModal
+          onClose={() => setModal(null)}
+          onChanged={() => void refresh()}
+          onError={(msg) => {
+            setMessage(null);
+            setError(msg);
+          }}
+          onOk={(msg) => flash(msg)}
+        />
       )}
     </div>
   );
