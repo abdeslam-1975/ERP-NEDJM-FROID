@@ -9,45 +9,49 @@ export function AccueilVitrine() {
   return (
     <div className={styles.frame}>
       <div className={styles.board}>
-      <div className={styles.root}>
-        <section className={styles.hero}>
-          <img src="/accueil/board/hero.png" alt="NEDJM FROID — Solutions industrielles de froid et de climatisation" />
-          <div className={styles.dots} aria-hidden>
-            <i />
-            <i />
-            <i />
-          </div>
-        </section>
+        <div className={styles.root}>
+          <div className={styles.top}>
+            <section className={styles.hero}>
+              <img src="/accueil/board/hero.png" alt="NEDJM FROID — Solutions industrielles de froid et de climatisation" />
+              <div className={styles.dots} aria-hidden>
+                <i />
+                <i />
+                <i />
+              </div>
+            </section>
 
-        <section className={styles.kpis}>
-          {KPIS.map((file) => (
-            <div key={file} className={styles.float}>
-              <img src={`/accueil/board/${file}`} alt="" />
+            <section className={styles.kpis}>
+              {KPIS.map((file) => (
+                <div key={file} className={styles.float}>
+                  <img src={`/accueil/board/${file}`} alt="" />
+                </div>
+              ))}
+            </section>
+          </div>
+
+          <div className={`${styles.clients} ${styles.float}`}>
+            <img src="/accueil/board/clients.png" alt="Nos clients : Bicold Maghreb, Anadarko, Sonatrach, Carrier, Enafor, ENTP" />
+          </div>
+
+          <div className={styles.mid}>
+            <section className={styles.split}>
+              <div className={`${styles.why} ${styles.float}`}>
+                <img src="/accueil/board/why.png" alt="Pourquoi nous choisir : service après-vente, qualité certifiée, produit garanti" />
+              </div>
+              <div className={`${styles.certs} ${styles.float}`}>
+                <img src="/accueil/board/certs.png" alt="Certifications ISO 9001, ISO 45001 et ISO 14001" />
+              </div>
+            </section>
+
+            <div className={`${styles.gallery} ${styles.float}`}>
+              <img src="/accueil/board/gallery.png" alt="Nos réalisations" />
             </div>
-          ))}
-        </section>
-
-        <div className={`${styles.clients} ${styles.float}`}>
-          <img src="/accueil/board/clients.png" alt="Nos clients : Bicold Maghreb, Anadarko, Sonatrach, Carrier, Enafor, ENTP" />
-        </div>
-
-        <section className={styles.split}>
-          <div className={`${styles.why} ${styles.float}`}>
-            <img src="/accueil/board/why.png" alt="Pourquoi nous choisir : service après-vente, qualité certifiée, produit garanti" />
           </div>
-          <div className={`${styles.certs} ${styles.float}`}>
-            <img src="/accueil/board/certs.png" alt="Certifications ISO 9001, ISO 45001 et ISO 14001" />
-          </div>
-        </section>
 
-        <div className={`${styles.gallery} ${styles.float}`}>
-          <img src="/accueil/board/gallery.png" alt="Nos réalisations" />
+          <footer className={styles.foot}>
+            <img src="/accueil/board/footer.png" alt="Nedjm Froid, l'expertise au service de vos projets" />
+          </footer>
         </div>
-
-        <footer className={styles.foot}>
-          <img src="/accueil/board/footer.png" alt="Nedjm Froid, l'expertise au service de vos projets" />
-        </footer>
-      </div>
       </div>
     </div>
   );
