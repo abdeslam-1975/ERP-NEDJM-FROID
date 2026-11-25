@@ -35,7 +35,7 @@ export default async function DocumentsPage({
   const [files, corr, employees, lookups, contracts, fiche, fields, company, customDefs, issued] = await Promise.all([
     listHrFiles(),
     listHrCorrespondences(),
-    listHrEmployeeRows({ withCardPeriods: true }),
+    listHrEmployeeRows({ withCardPeriods: true, withCompletion: true }),
     loadHrLookups(),
     listHrContracts(),
     getHrFicheSettings(),

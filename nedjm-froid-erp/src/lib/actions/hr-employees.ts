@@ -21,7 +21,7 @@ import {
   validateFicheConstraints,
 } from "@/lib/hr/employee-fiche-constraints";
 import { nextMatriculeForHire } from "@/lib/hr/employee-matricule";
-import { compareCompletedFiches } from "@/lib/hr/fiche-completion";
+import { assessFicheCompletion, compareCompletedFiches, type FicheCompletion } from "@/lib/hr/fiche-completion";
 import type { CardPeriod } from "@/lib/hr/filter-sentence";
 import { missingRequiredDocuments } from "@/lib/hr/required-documents";
 import { listCatalogItems } from "@/lib/actions/hr-catalogs";
@@ -54,8 +54,12 @@ export type HrEmployeeRow = {
   fiche_affectation?: string | null;
   fiche_poste?: string | null;
   id_type_code?: string | null;
+  /** Null = pas de carte réalisée. */
+  fiche_done_at?: string | null;
   /** Months when a signed-in save stored an Arabic name on this card. */
   card_periods?: CardPeriod[];
+  /** Documents and fields filled on the card. */
+  card_completion?: FicheCompletion;
 };
 
 export type HrEmployeeFiche = HrEmployeeRow & {
@@ -268,6 +272,82 @@ function withCardPeriods<T extends { id: string }>(rows: T[], periods: Map<strin
   return rows.map((row) => ({ ...row, card_periods: periods.get(row.id) ?? [] }));
 }
 
+function ficheValues(fiche: HrEmployeeFiche, fields: HrEmployeeField[]): Record<string, string> {
+  const values: Record<string, string> = { id: fiche.id };
+  for (const field of fields) {
+    const raw =
+      field.storage_group === "extra"
+        ? fiche.attrs?.[field.code]
+        : (fiche as unknown as Record<string, unknown>)[field.code];
+    values[field.code] = raw == null ? "" : String(raw);
+  }
+  return values;
+}
+
+async function loadCardCompletion(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  rows: Array<HrEmployeeRow & { attrs?: unknown }>,
+): Promise<Map<string, FicheCompletion>> {
+  const empty = new Map<string, FicheCompletion>();
+  const ids = rows.map((row) => row.id);
+  if (!ids.length) return empty;
+  const [civil, contacts, bank, social, qual, files, fieldRows, catalogs] = await Promise.all([
+    supabase.from("hr_employee_civil").select("*").in("employee_id", ids),
+    supabase.from("hr_employee_contacts").select("*").in("employee_id", ids),
+    supabase.from("hr_employee_bank").select("*").in("employee_id", ids),
+    supabase.from("hr_employee_social").select("*").in("employee_id", ids),
+    supabase.from("hr_employee_qualifications").select("*").in("employee_id", ids),
+    supabase.from("hr_employee_files").select("employee_id, doc_type_code").in("employee_id", ids),
+    supabase
+      .from("hr_employee_fields")
+      .select(
+        "id, code, label_ar, label_fr, value_type, catalog_kind, storage_group, section_ar, section_fr, sort_order, is_system, is_active, is_required",
+      )
+      .order("sort_order"),
+    listCatalogItems(),
+  ]);
+  if (files.error || fieldRows.error || !catalogs.ok) return empty;
+  const fields = (fieldRows.data ?? []) as HrEmployeeField[];
+  const mapBy = (list: Array<Record<string, unknown>> | null) => {
+    const mapped = new Map<string, Record<string, unknown>>();
+    for (const row of list ?? []) mapped.set(String(row.employee_id), row);
+    return mapped;
+  };
+  const civils = mapBy(civil.data as Array<Record<string, unknown>> | null);
+  const ks = mapBy(contacts.data as Array<Record<string, unknown>> | null);
+  const banks = mapBy(bank.data as Array<Record<string, unknown>> | null);
+  const socials = mapBy(social.data as Array<Record<string, unknown>> | null);
+  const quals = mapBy(qual.data as Array<Record<string, unknown>> | null);
+  const docs = new Map<string, string[]>();
+  for (const file of (files.data ?? []) as Array<{ employee_id: string; doc_type_code: string }>) {
+    const list = docs.get(file.employee_id) ?? [];
+    list.push(file.doc_type_code);
+    docs.set(file.employee_id, list);
+  }
+  const completion = new Map<string, FicheCompletion>();
+  for (const emp of rows) {
+    const fiche = mergeFiche(
+      { ...emp, irg_category: emp.irg_category as HrEmployeeRow["irg_category"] },
+      civils.get(emp.id) ?? null,
+      ks.get(emp.id) ?? null,
+      banks.get(emp.id) ?? null,
+      socials.get(emp.id) ?? null,
+      quals.get(emp.id) ?? null,
+      docs.get(emp.id) ?? [],
+    );
+    completion.set(
+      emp.id,
+      assessFicheCompletion({
+        values: ficheValues(fiche, fields),
+        fields,
+        catalogs: catalogs.data,
+        uploadedDocTypeCodes: docs.get(emp.id) ?? [],
+      }),
+    );
+  }
+  return completion;
+}
+
 export async function nextHrMatricule(hiredAt?: string): Promise<ActionResult<{ matricule: string }>> {
   const supabase = await createClient();
   const hired = /^\d{4}-\d{2}-\d{2}$/.test(hiredAt ?? "") ? (hiredAt as string) : new Date().toISOString().slice(0, 10);
@@ -355,12 +435,13 @@ export async function listHrEmployeeFiches(): Promise<ActionResult<HrEmployeeFic
 
 export async function listHrEmployeeRows(options?: {
   withCardPeriods?: boolean;
+  withCompletion?: boolean;
 }): Promise<ActionResult<HrEmployeeRow[]>> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("hr_employees")
     .select(
-      "id, matricule, last_name, first_name, last_name_ar, first_name_ar, nss, nin, birth_date, hired_at, photo_url, irg_category, status, created_at, updated_at, attrs",
+      "id, matricule, last_name, first_name, last_name_ar, first_name_ar, nss, nin, birth_date, hired_at, photo_url, irg_category, status, created_at, updated_at, fiche_done_at, attrs",
     )
     .limit(2000);
 
@@ -374,8 +455,10 @@ export async function listHrEmployeeRows(options?: {
     };
   }
 
-  const mapped = (data ?? []).map((row) => {
-    const { attrs, ...rest } = row as typeof row & { attrs?: unknown };
+  const source = (data ?? []) as Array<HrEmployeeRow & { attrs?: unknown }>;
+  const completion = options?.withCompletion ? await loadCardCompletion(supabase, source) : null;
+  const mapped = source.map((row) => {
+    const { attrs, ...rest } = row;
     return {
       ...rest,
       irg_category: rest.irg_category as HrEmployeeRow["irg_category"],
@@ -386,6 +469,8 @@ export async function listHrEmployeeRows(options?: {
       fiche_affectation: attrText(attrs, "affectation"),
       fiche_poste: attrText(attrs, "poste"),
       id_type_code: attrText(attrs, "id_type_code"),
+      fiche_done_at: rest.fiche_done_at ?? null,
+      card_completion: completion?.get(row.id),
     };
   });
   const rows = options?.withCardPeriods

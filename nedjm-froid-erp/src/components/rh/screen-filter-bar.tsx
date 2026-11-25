@@ -277,6 +277,7 @@ export function useScreenFilter<T>({
     rows: filtered,
     active,
     emptyHint: hint,
+    labels: chips.map((chip) => chip.label),
     text: view.chips
       .filter((chip) => chip.kind === "text")
       .map((chip) => chip.value)

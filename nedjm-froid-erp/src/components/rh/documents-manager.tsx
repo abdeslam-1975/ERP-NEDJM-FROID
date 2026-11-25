@@ -35,6 +35,8 @@ import {
   type HrEmployeeRow,
 } from "@/lib/actions/hr-employees";
 import { confirmAnotherCopy, documentDates } from "@/lib/hr/document-notice";
+import { compareByHired, compareByName, compareBySerial } from "@/lib/hr/employee-order";
+import { COMPLETION_LABELS } from "@/lib/hr/fiche-completion";
 import { valuesFromFicheRecord } from "@/lib/hr/employee-field-utils";
 import type { HrFicheSettings } from "@/lib/hr/fiche-settings";
 import { EmployeeCardPreview } from "@/components/rh/employee-card-preview";
@@ -269,8 +271,32 @@ function describeFicheEmployee(row: HrEmployeeRow): FilterRow {
   if (year) facets.push({ field: "annee", value: year, label: `Année d'embauche : ${year}` });
   if (!row.nss) facets.push({ field: "manque", value: "nss", label: "Sans NSS" });
   if (!row.nin) facets.push({ field: "manque", value: "nin", label: "Sans NIN" });
+  if (row.card_completion) {
+    facets.push({
+      field: "documents",
+      value: row.card_completion.documents,
+      label: COMPLETION_LABELS.documents[row.card_completion.documents].ar,
+    });
+    facets.push({
+      field: "champs",
+      value: row.card_completion.fields,
+      label: COMPLETION_LABELS.fields[row.card_completion.fields].ar,
+    });
+  }
   return {
-    text: [row.matricule, row.last_name, row.first_name, row.last_name_ar, row.first_name_ar, row.nss, row.nin]
+    text: [
+      row.matricule,
+      row.last_name,
+      row.first_name,
+      row.last_name_ar,
+      row.first_name_ar,
+      row.nss,
+      row.nin,
+      row.card_completion ? COMPLETION_LABELS.documents[row.card_completion.documents].fr : "",
+      row.card_completion ? COMPLETION_LABELS.documents[row.card_completion.documents].ar : "",
+      row.card_completion ? COMPLETION_LABELS.fields[row.card_completion.fields].fr : "",
+      row.card_completion ? COMPLETION_LABELS.fields[row.card_completion.fields].ar : "",
+    ]
       .filter(Boolean)
       .join(" "),
     matricule: row.matricule,
@@ -331,6 +357,7 @@ export function DocumentsManager({
     : undefined;
   const [tab, setTab] = useState<DocumentsTab>(titleOnArrival ? "conges" : initialTab);
   const [missionOpen, setMissionOpen] = useState(openMission);
+  const [ficheSort, setFicheSort] = useState<"serial" | "hired" | "alpha">("serial");
   const emptyMission = () => emptyMissionDraft(company);
   const [missionForm, setMissionForm] = useState<MissionDraft>(emptyMission);
   const [missionError, setMissionError] = useState<string | null>(null);
@@ -829,11 +856,65 @@ export function DocumentsManager({
     empCol.accessor((r) => `${r.last_name} ${r.first_name}`.trim(), {
       id: "employee",
       header: "Employé",
+      enableSorting: false,
       cell: (info) => <PersonCell name={info.getValue()} matricule={info.row.original.matricule} />,
+    }),
+    empCol.accessor((r) => r.card_completion?.documents ?? "", {
+      id: "documents",
+      header: () => (
+        <span className="flex flex-col items-start">
+          <span>Documents</span>
+          <span className="font-normal normal-case tracking-normal" dir="rtl">
+            الوثائق
+          </span>
+        </span>
+      ),
+      enableSorting: false,
+      meta: { label: "Documents" },
+      cell: ({ row: { original: r } }) => {
+        const level = r.card_completion?.documents;
+        if (!level) return <span className="text-sm text-foreground/40">—</span>;
+        const label = COMPLETION_LABELS.documents[level];
+        return (
+          <span className="block max-w-[14rem] text-xs leading-snug">
+            {label.fr}
+            <span className="mt-0.5 block text-foreground/70" dir="rtl">
+              {label.ar}
+            </span>
+          </span>
+        );
+      },
+    }),
+    empCol.accessor((r) => r.card_completion?.fields ?? "", {
+      id: "fields",
+      header: () => (
+        <span className="flex flex-col items-start">
+          <span>Champs</span>
+          <span className="font-normal normal-case tracking-normal" dir="rtl">
+            الحقول
+          </span>
+        </span>
+      ),
+      enableSorting: false,
+      meta: { label: "Champs" },
+      cell: ({ row: { original: r } }) => {
+        const level = r.card_completion?.fields;
+        if (!level) return <span className="text-sm text-foreground/40">—</span>;
+        const label = COMPLETION_LABELS.fields[level];
+        return (
+          <span className="block max-w-[14rem] text-xs leading-snug">
+            {label.fr}
+            <span className="mt-0.5 block text-foreground/70" dir="rtl">
+              {label.ar}
+            </span>
+          </span>
+        );
+      },
     }),
     empCol.accessor((r) => (archiveOf.get(r.id)?.file_url ? 1 : 0), {
       id: "archive",
       header: "PDF archivé",
+      enableSorting: false,
       cell: ({ row: { original: r } }) => {
         const archive = archiveOf.get(r.id);
         return archive?.file_url ? (
@@ -921,11 +1002,20 @@ export function DocumentsManager({
     rows: leaveRows,
     describe: (row) => describeCorrespondence(row, "Année du titre"),
   });
+  const ficheEmployees = employees.filter((row) => row.fiche_done_at);
   const ficheFilter = useScreenFilter({
     screen: "rh.documents.fiches",
-    rows: employees,
+    rows: ficheEmployees,
     describe: describeFicheEmployee,
   });
+  const ficheRows = [...ficheFilter.rows].sort(
+    ficheSort === "hired" ? compareByHired : ficheSort === "alpha" ? compareByName : compareBySerial,
+  );
+  const ficheSorts = [
+    { id: "serial" as const, fr: "N° de série", ar: "الرقم التسلسلي" },
+    { id: "hired" as const, fr: "Date de travail", ar: "تاريخ العمل" },
+    { id: "alpha" as const, fr: "Alphabétique", ar: "أبجدي" },
+  ];
 
   return (
     <div className="space-y-5">
@@ -936,7 +1026,7 @@ export function DocumentsManager({
             title: "Fiche de renseignements",
             icon: ClipboardList,
             color: "#6366f1",
-            summary: countLabel(employees.length, "fiche", "fiches"),
+            summary: countLabel(ficheEmployees.length, "fiche", "fiches"),
             selected: tab === "fiches",
             onSelect: () => selectTab("fiches"),
           },
@@ -1067,7 +1157,7 @@ export function DocumentsManager({
           icon={ClipboardList}
           color="#6366f1"
           title="Fiches de renseignements"
-          description="Une fiche par employé : affichez-la, imprimez-la ou complétez-la."
+          description="Les fiches enregistrées : affichez-les, imprimez-les ou complétez-les."
           action={
             <Button disabled={pending} onClick={() => openFicheWindow(null)}>
               <Users aria-hidden />
@@ -1076,12 +1166,51 @@ export function DocumentsManager({
           }
         >
           {ficheFilter.bar}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-foreground/60">
+              Tri
+              <span className="ms-1" dir="rtl">
+                الترتيب
+              </span>
+            </span>
+            {ficheSorts.map((item) => (
+              <Button
+                key={item.id}
+                type="button"
+                variant={ficheSort === item.id ? "primary" : "secondary"}
+                aria-pressed={ficheSort === item.id}
+                onClick={() => setFicheSort(item.id)}
+              >
+                <span className="flex flex-col items-start leading-tight">
+                  <span>{item.fr}</span>
+                  <span className="text-[11px] font-normal" dir="rtl">
+                    {item.ar}
+                  </span>
+                </span>
+              </Button>
+            ))}
+          </div>
+          {ficheFilter.active ? (
+            <div className="rounded-xl border border-brand/30 bg-brand-muted px-3 py-2 text-sm" role="status">
+              <p className="font-medium">
+                Filtre utilisé
+                <span className="ms-2 font-normal" dir="rtl">
+                  فلتر مستعمل
+                </span>
+              </p>
+              <p className="mt-1 text-foreground/80">{ficheFilter.labels.join(" · ")}</p>
+              <p className="mt-1 tabular-nums text-foreground/60">
+                {ficheRows.length} / {ficheEmployees.length}
+              </p>
+            </div>
+          ) : null}
           <DataTable
-            data={ficheFilter.rows}
+            key={ficheSort}
+            data={ficheRows}
             columns={ficheColumns}
             getRowId={(r) => r.id}
             searchable={false}
-            emptyTitle="Aucun employé"
+            emptyTitle="Aucune fiche enregistrée"
             emptyBody={ficheFilter.emptyHint ?? "Créez la première fiche avec « Fiche employé »."}
           />
         </RegisterSection>
