@@ -8,68 +8,41 @@
 }
 
 .root {
-  display: grid;
+  display: flex;
   width: 100%;
-  height: 100%;
-  min-height: 0;
-  grid-template-rows: 283fr 124fr 158fr 308fr 223fr 117fr;
-  gap: clamp(4px, 0.7vh, 10px);
+  flex-direction: column;
+  gap: clamp(8px, 1vh, 14px);
 }
 
 .root img {
   display: block;
   width: 100%;
-  height: 100%;
-  object-fit: fill;
+  height: auto;
 }
 
 .hero {
   position: relative;
-  min-height: 0;
   overflow: hidden;
-  border-radius: clamp(16px, 2vh, 28px);
-}
-
-.slides {
-  position: absolute;
-  inset: 0 0 0 46%;
-  pointer-events: none;
-}
-
-.slides img {
-  position: absolute;
-  inset: 0;
-  object-fit: cover;
-  opacity: 0;
-  transition: opacity 0.8s ease;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 16%);
-  mask-image: linear-gradient(90deg, transparent 0%, #000 16%);
-}
-
-.slides img.on {
-  opacity: 1;
+  border-radius: clamp(16px, 1.6vw, 28px);
 }
 
 .dots {
   position: absolute;
   left: 3.4%;
-  bottom: 8.5%;
+  bottom: 9%;
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.dots button {
+.dots i {
   height: 7px;
   width: 7px;
-  padding: 0;
-  border: 0;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.7);
-  cursor: pointer;
+  background: rgba(255, 255, 255, 0.75);
 }
 
-.dots button[aria-current="true"] {
+.dots i:first-child {
   width: 18px;
   background: #7ec8ff;
 }
@@ -77,22 +50,13 @@
 .kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: clamp(6px, 0.7vw, 12px);
-  min-height: 0;
+  gap: clamp(8px, 0.8vw, 14px);
 }
 
 .split {
   display: grid;
   grid-template-columns: minmax(0, 446fr) minmax(0, 372fr);
-  gap: clamp(6px, 0.7vw, 12px);
-  min-height: 0;
-}
-
-.float,
-.foot,
-.hero {
-  min-width: 0;
-  min-height: 0;
+  gap: clamp(8px, 0.8vw, 14px);
 }
 
 .float {
@@ -105,29 +69,13 @@
 }
 
 @media (max-width: 860px) {
-  .root {
-    height: auto !important;
-    grid-template-rows: auto;
-  }
-
-  .hero {
-    aspect-ratio: 824 / 233;
-  }
-
   .kpis,
   .split {
     grid-template-columns: 1fr 1fr;
   }
-
-  .kpis .float,
-  .split .float,
-  .foot {
-    aspect-ratio: 2 / 1;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .slides img,
   .float {
     transition: none;
   }
