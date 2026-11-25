@@ -13,6 +13,8 @@ import {
   executeBanqueVirement,
   importBanqueReleve,
   listBanqueAdminUsers,
+  listDeletedBanqueLines,
+  restoreBanqueLine,
   saveBanqueLine,
   setBanqueRapprochement,
   toggleBanqueAccountActive,
@@ -30,7 +32,7 @@ import {
   formatDateIso,
   parseDocField,
 } from "@/lib/banque/ledger";
-import type { BanqueDashboard, BanqueLine } from "@/lib/banque/types";
+import type { BanqueDashboard, BanqueDeletedLine, BanqueLine } from "@/lib/banque/types";
 import "./banque.css";
 
 type OpForm = {
@@ -107,7 +109,8 @@ export function BanqueDesk({
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [modal, setModal] = useState<"op" | "virement" | "import" | "admin" | null>(null);
+  const [modal, setModal] = useState<"op" | "virement" | "import" | "admin" | "trash" | null>(null);
+  const [trashRows, setTrashRows] = useState<BanqueDeletedLine[]>([]);
   const [opForm, setOpForm] = useState<OpForm>(emptyOp(initialData.today));
   const [virement, setVirement] = useState({
     from_account_id: initialData.selectedAccountId ?? "",
@@ -166,6 +169,46 @@ export function BanqueDesk({
     setAdminBankName("");
     setAdminUserForm({ email: "", password: "", name: "", role: "user" });
     setModal("admin");
+  }
+
+  function openTrash() {
+    if (!data.canRestore && !data.canDelete) {
+      setError("Restauration réservée (droit supprimer Banque).");
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    startTransition(async () => {
+      const result = await listDeletedBanqueLines(accountId);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setTrashRows(result.data.rows);
+      setModal("trash");
+      if (!result.data.rows.length) {
+        setMessage("Corbeille vide — aucune opération Banque supprimée.");
+      }
+    });
+  }
+
+  function restoreTrashItem(row: BanqueDeletedLine) {
+    if (!window.confirm(`Restaurer l'opération « ${row.libelle} » (${row.account_name}) ?`)) {
+      return;
+    }
+    setError(null);
+    setMessage(null);
+    startTransition(async () => {
+      const result = await restoreBanqueLine(row.id);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setMessage(result.data.message);
+      reload(accountId);
+      const refreshed = await listDeletedBanqueLines(accountId);
+      if (refreshed.ok) setTrashRows(refreshed.data.rows);
+    });
   }
 
   function refreshAdminUsers() {
@@ -564,6 +607,11 @@ export function BanqueDesk({
         {data.canUpdate && (
           <button type="button" className="btn-action btn-admin" disabled={pending} onClick={openAdmin}>
             ADMIN
+          </button>
+        )}
+        {(data.canRestore || data.canDelete) && (
+          <button type="button" className="btn-action btn-corbeille" disabled={pending} onClick={openTrash}>
+            CORBEILLE
           </button>
         )}
         <div className="filters">
@@ -1274,6 +1322,81 @@ export function BanqueDesk({
             </div>
             <div className="modal-foot">
               <button type="button" className="btn-light" onClick={() => setModal(null)}>Fermer</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal === "trash" && (
+        <div className="overlay">
+          <div className="modal wide">
+            <div className="modal-head brown">
+              <span>Corbeille — opérations Banque supprimées</span>
+              <button type="button" className="modal-close" onClick={() => setModal(null)}>
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <p style={{ fontSize: 12, color: "#64748b", marginTop: 0 }}>
+                Les suppressions Banque ne sont pas définitives : restaurez une opération pour la
+                remettre dans le journal (les N° sont recalculés). Indépendant de la corbeille Caisse.
+              </p>
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Supprimée le</th>
+                    <th>Banque</th>
+                    <th>Date op.</th>
+                    <th>Type</th>
+                    <th>Libellé</th>
+                    <th>Débit</th>
+                    <th>Crédit</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {!trashRows.length ? (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: "center", color: "#94a3b8", padding: 16 }}>
+                        Corbeille vide.
+                      </td>
+                    </tr>
+                  ) : (
+                    trashRows.map((row) => (
+                      <tr key={row.id}>
+                        <td>
+                          {row.deleted_at
+                            ? new Date(row.deleted_at).toLocaleString("fr-FR", {
+                                timeZone: "Africa/Algiers",
+                              })
+                            : "—"}
+                        </td>
+                        <td style={{ fontWeight: 700 }}>{row.account_name || "—"}</td>
+                        <td>{formatDateFr(row.op_date)}</td>
+                        <td>{row.line_kind}</td>
+                        <td className="libelle-cell">{row.libelle || "—"}</td>
+                        <td className="debit-cell">{moneyDa(row.debit)}</td>
+                        <td className="credit-cell">{moneyDa(row.credit)}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn-action btn-op"
+                            disabled={pending}
+                            onClick={() => restoreTrashItem(row)}
+                          >
+                            Restaurer
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn-light" onClick={() => setModal(null)}>
+                Fermer
+              </button>
             </div>
           </div>
         </div>

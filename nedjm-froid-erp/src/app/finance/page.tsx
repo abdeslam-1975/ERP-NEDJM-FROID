@@ -15,6 +15,7 @@ const emptyData: BanqueDashboard = {
   canCreate: false,
   canUpdate: false,
   canDelete: false,
+  canRestore: false,
   today: new Date().toISOString().slice(0, 10),
   selectedAccountId: null,
 };

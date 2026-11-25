@@ -50,8 +50,27 @@ export type BanqueDashboard = {
   canCreate: boolean;
   canUpdate: boolean;
   canDelete: boolean;
+  /** Soft-deleted lines can be restored (Banque corbeille — not Caisse). */
+  canRestore: boolean;
   today: string;
   selectedAccountId: string | null;
+};
+
+export type BanqueDeletedLine = {
+  id: string;
+  account_id: string;
+  account_name: string;
+  display_no: number;
+  op_date: string;
+  value_date: string;
+  affectation: string;
+  libelle: string;
+  debit: number;
+  credit: number;
+  frais: number;
+  line_kind: BanqueLine["line_kind"];
+  transfer_group_id: string | null;
+  deleted_at: string;
 };
 
 export type BanqueStatementRow = {
