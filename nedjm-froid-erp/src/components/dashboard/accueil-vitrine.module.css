@@ -1,28 +1,16 @@
 .frame {
-  container: home / size;
-  display: flex;
+  container-type: inline-size;
   flex: 1;
-  align-items: center;
-  justify-content: center;
   width: 100%;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
   background: #e8eef8;
 }
 
-.board {
-  width: min(100cqw, calc(100cqh / 1.272));
-  height: min(100cqh, calc(100cqw * 1.272));
-  container-type: size;
-}
-
+.board,
 .root {
-  display: flex;
-  flex-direction: column;
   width: 100%;
-  height: 100%;
-  gap: 1.2cqw;
 }
 
 .top,
@@ -30,47 +18,20 @@
   display: contents;
 }
 
-.hero { flex: 2828 1 0; }
-.kpis { flex: 1267 1 0; }
-.clients { flex: 1582 1 0; }
-.split { flex: 3044 1 0; }
-.gallery { flex: 2227 1 0; }
-.foot { flex: 1167 1 0; }
-
-.hero,
-.kpis,
-.clients,
-.split,
-.gallery,
-.foot,
-.kpis .float,
-.why,
-.certs {
-  min-width: 0;
-  min-height: 0;
-}
-
-.hero,
-.clients,
-.gallery,
-.foot,
-.kpis .float,
-.why,
-.certs {
-  position: relative;
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2cqw;
 }
 
 .root img {
-  position: absolute;
-  inset: 0;
   display: block;
   width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: center;
+  height: auto;
 }
 
 .hero {
+  position: relative;
   overflow: hidden;
   border-radius: 1.8cqw;
 }
@@ -79,7 +40,6 @@
   position: absolute;
   left: 3.4%;
   bottom: 9%;
-  z-index: 1;
   display: flex;
   align-items: center;
   gap: 0.7cqw;
@@ -100,14 +60,12 @@
 .kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 1fr);
   gap: 1.2cqw;
 }
 
 .split {
   display: grid;
   grid-template-columns: minmax(0, 446fr) minmax(0, 372fr);
-  grid-template-rows: minmax(0, 1fr);
   gap: 1.2cqw;
 }
 
