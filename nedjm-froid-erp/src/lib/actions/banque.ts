@@ -287,7 +287,11 @@ export async function restoreBanqueLine(
 
 export async function saveBanqueLine(input: unknown): Promise<ActionResult<{ id: string }>> {
   const parsed = banqueLineSchema.safeParse(input);
-  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Opération invalide.");
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const path = issue?.path?.length ? `${issue.path.join(".")}: ` : "";
+    return fail(`${path}${issue?.message ?? "Opération invalide."}`);
+  }
   const p = parsed.data;
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("fin_bank_save_line", {

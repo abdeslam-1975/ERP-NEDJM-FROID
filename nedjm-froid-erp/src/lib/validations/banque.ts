@@ -2,28 +2,42 @@ import { z } from "zod";
 
 const uuid = z.string().uuid();
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+/** Accepts string | null | undefined → null when empty (UI often sends null). Zod 4. */
 const optionalText = (max: number) =>
-  z.string().trim().max(max).optional().transform((v) => v || null);
+  z
+    .string()
+    .nullish()
+    .transform((v) => {
+      if (v == null) return null;
+      const t = v.trim();
+      return t ? t.slice(0, max) : null;
+    });
+/** Accepts string | null | undefined → trimmed string (default ""). Zod 4. */
+const optionalLabel = (max: number) =>
+  z
+    .string()
+    .nullish()
+    .transform((v) => (v == null ? "" : v.trim().slice(0, max)));
 const money = z.coerce.number().min(0);
 
 export const banqueLineSchema = z
   .object({
-    id: uuid.optional(),
+    id: uuid.nullish().transform((v) => v ?? undefined),
     account_id: uuid,
     op_date: isoDate,
-    affectation: z.string().trim().max(160).optional().default(""),
+    affectation: optionalLabel(160),
     libelle: z.string().trim().min(1).max(500),
     debit: money.default(0),
     credit: money.default(0),
     frais: money.default(0),
-    bc_label: z.string().trim().max(200).optional().default(""),
+    bc_label: optionalLabel(200),
     bc_url: optionalText(1_500_000),
-    mode_label: z.string().trim().max(200).optional().default(""),
+    mode_label: optionalLabel(200),
     mode_url: optionalText(1_500_000),
-    fac_label: z.string().trim().max(200).optional().default(""),
+    fac_label: optionalLabel(200),
     fac_url: optionalText(1_500_000),
     line_kind: z.enum(["MANUAL", "CAUTION", "VIREMENT", "IMPORT"]).default("MANUAL"),
-    value_date: isoDate.optional(),
+    value_date: isoDate.nullish().transform((v) => v ?? undefined),
   })
   .superRefine((value, ctx) => {
     if (value.debit > 0 && value.credit > 0) {

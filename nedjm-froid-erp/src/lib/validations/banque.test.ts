@@ -17,6 +17,31 @@ describe("banque validations", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts null optional labels and urls from the UI", () => {
+    const result = banqueLineSchema.safeParse({
+      account_id: accountId,
+      op_date: "2026-11-15",
+      affectation: null,
+      libelle: "Encaissement client",
+      debit: 100,
+      credit: 0,
+      frais: 0,
+      bc_label: null,
+      bc_url: null,
+      mode_label: null,
+      mode_url: null,
+      fac_label: null,
+      fac_url: null,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.affectation).toBe("");
+      expect(result.data.bc_url).toBeNull();
+      expect(result.data.mode_url).toBeNull();
+      expect(result.data.fac_url).toBeNull();
+    }
+  });
+
   it("rejects debit and credit together", () => {
     const result = banqueLineSchema.safeParse({
       account_id: accountId,
