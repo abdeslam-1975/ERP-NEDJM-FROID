@@ -20,6 +20,7 @@ import type {
   CaisseAuditRow,
   CaisseDashboard,
   CaisseFlags,
+  CaisseVoidedOperation,
   CloseStatus,
   FinanceInput,
   JournalLine,
@@ -74,9 +75,10 @@ async function clientOrError(): Promise<{ supabase: ServerClient; flags: CaisseF
   if (error) return fail(error.message);
   if (!data || typeof data !== "object") return fail("Accès caisse refusé.");
   const ctx = data as Record<string, unknown>;
-  const [manageOpenings, manageLists] = await Promise.all([
+  const [manageOpenings, manageLists, manageRestore] = await Promise.all([
     supabase.rpc("caisse_can_manage_openings"),
     supabase.rpc("caisse_can_manage_lists"),
+    supabase.rpc("caisse_can_restore_operations"),
   ]);
   return {
     supabase,
@@ -94,6 +96,7 @@ async function clientOrError(): Promise<{ supabase: ServerClient; flags: CaisseF
       // Caisse admin (SUPER_ADMIN / ADMIN_FINANCE) or a delegated « Ouverture » right.
       canManageOpenings: !!ctx.isAdmin || (!manageOpenings.error && !!manageOpenings.data),
       canManageLists: !!ctx.isAdmin || (!manageLists.error && !!manageLists.data),
+      canRestore: !!ctx.isAdmin || (!manageRestore.error && !!manageRestore.data),
       canValidateBons: !!ctx.isAdmin || !!ctx.isGerant,
       userName: String(ctx.userName || workspace.fullName),
     },
@@ -1215,7 +1218,7 @@ export async function deleteCaisseOperation(operationId: string): Promise<Action
     existing.data.kind,
     existing.data.op_number,
     sheetNameFromIso(existing.data.op_date),
-    "Suppression définitive",
+    "Mise en corbeille (restaurable par admin)",
     null,
   );
   refresh();
@@ -1223,7 +1226,72 @@ export async function deleteCaisseOperation(operationId: string): Promise<Action
   return {
     ok: true,
     data: {
-      message: `✅ Opération N° ${existing.data.op_number} supprimée${pairNote}. Les numéros ont été réordonnés.`,
+      message: `✅ Opération N° ${existing.data.op_number} mise en corbeille${pairNote}. L’admin peut la restaurer.`,
+    },
+  };
+}
+
+export async function listVoidedCaisseOperations(): Promise<ActionResult<{ rows: CaisseVoidedOperation[] }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.canRestore) return fail("❌ Accès réservé : restauration admin (ou droit délégué).");
+  const listed = await supabase.rpc("caisse_list_voided_operations", { p_limit: 150 });
+  if (listed.error) {
+    if (/caisse_list_voided_operations|manage_restore|caisse_can_restore/i.test(listed.error.message)) {
+      return fail("❌ Migration restauration non appliquée sur Supabase (caisse_restore_voided).");
+    }
+    return fail(listed.error.message);
+  }
+  const rows: CaisseVoidedOperation[] = ((listed.data ?? []) as {
+    id: string;
+    op_number: number;
+    kind: string;
+    op_date: string;
+    affectation: string;
+    buyer_name: string;
+    reference: string;
+    designation: string;
+    amount: number;
+    voided_at: string;
+    has_photo: boolean;
+  }[]).map((row) => ({
+    id: row.id,
+    opNumber: Number(row.op_number) || 0,
+    kind: row.kind || "",
+    date: String(row.op_date || "").slice(0, 10),
+    affectation: row.affectation || "",
+    buyer: row.buyer_name || "",
+    reference: row.reference || "",
+    designation: row.designation || "",
+    amount: Number(row.amount) || 0,
+    voidedAt: row.voided_at || "",
+    hasPhoto: !!row.has_photo,
+  }));
+  return { ok: true, data: { rows } };
+}
+
+export async function restoreCaisseOperation(operationId: string): Promise<ActionResult<{ message: string }>> {
+  const gate = await clientOrError();
+  if ("ok" in gate) return gate;
+  const { supabase, flags } = gate;
+  if (!flags.canRestore) return fail("❌ Accès réservé : restauration admin (ou droit délégué).");
+  const restored = await supabase.rpc("caisse_restore_operation", { p_id: operationId });
+  if (restored.error) {
+    if (/caisse_restore_operation|manage_restore|caisse_can_restore/i.test(restored.error.message)) {
+      return fail("❌ Migration restauration non appliquée sur Supabase (caisse_restore_voided).");
+    }
+    return fail(`❌ ${restored.error.message}`);
+  }
+  const op = Number(restored.data) || 0;
+  await logAction(supabase, "RESTORE", "", op || "", "", `Restauration opération ${operationId}`, null);
+  refresh();
+  return {
+    ok: true,
+    data: {
+      message: op
+        ? `✅ Opération restaurée (nouveau N° ${op}). Les numéros ont été réordonnés.`
+        : "✅ Opération restaurée. Les numéros ont été réordonnés.",
     },
   };
 }
@@ -1804,11 +1872,18 @@ export async function getCaisseAdmin(): Promise<
   if ("ok" in gate) return gate;
   const { supabase, flags } = gate;
   if (!flags.isAdmin) return fail("Réservé à l’administrateur");
-  const [usersRes, buyersRes, openingsRes, rightsRes, settingsRes, listsRes] = await Promise.all([
+  let rightsRes = await supabase
+    .from("caisse_rights")
+    .select("user_id, manage_openings, manage_lists, manage_restore, caisse_active");
+  if (rightsRes.error && /manage_restore/i.test(rightsRes.error.message)) {
+    rightsRes = await supabase
+      .from("caisse_rights")
+      .select("user_id, manage_openings, manage_lists, caisse_active");
+  }
+  const [usersRes, buyersRes, openingsRes, settingsRes, listsRes] = await Promise.all([
     supabase.rpc("caisse_admin_users"),
     supabase.from("caisse_journal_buyers").select("id, name, email, user_id, dates_libres, buy_for_others, see_all, caisse_ops, can_edit, active"),
     supabase.from("caisse_journal_openings").select("buyer_name, amount"),
-    supabase.from("caisse_rights").select("user_id, manage_openings, manage_lists, caisse_active"),
     supabase.from("caisse_settings").select("opening_date").eq("id", 1).maybeSingle(),
     supabase.from("caisse_lists").select("list_key, label, sort_order").order("sort_order"),
   ]);
@@ -1822,6 +1897,7 @@ export async function getCaisseAdmin(): Promise<
       {
         manageOpenings: !!row.manage_openings,
         manageLists: !!row.manage_lists,
+        manageRestore: !!(row as { manage_restore?: boolean }).manage_restore,
         active: row.caisse_active !== false,
       },
     ]),
@@ -1854,6 +1930,7 @@ export async function getCaisseAdmin(): Promise<
     canEdit: !!user.canEdit,
     manageOpenings: rightsByUser.get(user.userId)?.manageOpenings ?? false,
     manageLists: rightsByUser.get(user.userId)?.manageLists ?? false,
+    manageRestore: rightsByUser.get(user.userId)?.manageRestore ?? false,
   }));
   const usersById = new Map(users.filter((row) => row.userId).map((row) => [row.userId as string, row]));
   const usersByEmail = new Map(
@@ -1894,6 +1971,7 @@ export async function getCaisseAdmin(): Promise<
       canEdit: !!buyer.can_edit,
       manageOpenings: false,
       manageLists: false,
+      manageRestore: false,
     });
   }
   users.sort((a, b) => a.name.localeCompare(b.name, "fr"));
@@ -1997,9 +2075,27 @@ export async function saveCaisseRights(rows: CaisseAdminUser[]): Promise<ActionR
         can_edit: flagsRow.can_edit,
         manage_openings: !!row.manageOpenings,
         manage_lists: !!row.manageLists,
+        manage_restore: !!row.manageRestore,
         caisse_active: flagsRow.active,
       });
-      if (saved.error) return fail(saved.error.message);
+      if (saved.error) {
+        if (/manage_restore/i.test(saved.error.message)) {
+          const fallback = await supabase.from("caisse_rights").upsert({
+            user_id: userId,
+            dates_libres: flagsRow.dates_libres,
+            buy_for_others: flagsRow.buy_for_others,
+            see_all: flagsRow.see_all,
+            caisse_ops: flagsRow.caisse_ops,
+            can_edit: flagsRow.can_edit,
+            manage_openings: !!row.manageOpenings,
+            manage_lists: !!row.manageLists,
+            caisse_active: flagsRow.active,
+          });
+          if (fallback.error) return fail(fallback.error.message);
+        } else {
+          return fail(saved.error.message);
+        }
+      }
       if (row.buyerId) {
         const linked = await supabase
           .from("caisse_journal_buyers")

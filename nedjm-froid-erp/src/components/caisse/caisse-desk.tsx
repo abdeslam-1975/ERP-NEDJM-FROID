@@ -17,6 +17,8 @@ import {
   getCaissePhoto,
   removeCaisseListItem,
   renameCaisseListItem,
+  listVoidedCaisseOperations,
+  restoreCaisseOperation,
   saveCaisseFinance,
   saveCaisseOpenings,
   saveCaissePurchase,
@@ -30,7 +32,15 @@ import { bonExtractNeedsAi, evaluateBonMatch, type BonCheckStatus } from "@/lib/
 import { prepareBonDataUrl, readBonFromDataUrl } from "@/lib/caisse/bon-ocr";
 import { readCaisseBonWithAi } from "@/lib/actions/caisse";
 import { formatDa, formatDateFr, isCaissePrincipaleName, recomputePeriodFromDates } from "@/lib/caisse/soldes";
-import type { CaisseAdminUser, CaisseAuditRow, CaisseDashboard, CloseStatus, JournalLine, PurchaseItemInput } from "@/lib/caisse/types";
+import type {
+  CaisseAdminUser,
+  CaisseAuditRow,
+  CaisseDashboard,
+  CaisseVoidedOperation,
+  CloseStatus,
+  JournalLine,
+  PurchaseItemInput,
+} from "@/lib/caisse/types";
 import { CAISSE_TRANSFER_AFFECTATION } from "@/lib/caisse/types";
 import "./caisse.css";
 
@@ -143,6 +153,8 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   const [newEdit, setNewEdit] = useState("");
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditRows, setAuditRows] = useState<CaisseAuditRow[]>([]);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashRows, setTrashRows] = useState<CaisseVoidedOperation[]>([]);
   const [photoUrl, setPhotoUrl] = useState("");
   const [photoArchiveName, setPhotoArchiveName] = useState("");
 
@@ -507,7 +519,11 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
 
   async function removeOperation(line: JournalLine) {
     if (!flags?.canManage) return notify("Accès", "Droit Modifier/Supprimer requis");
-    const answer = await confirmBox("Supprimer ?", `L'opération N° ${line.op} sera supprimée définitivement.`, "Oui, supprimer");
+    const answer = await confirmBox(
+      "Mettre en corbeille ?",
+      `L'opération N° ${line.op} sera retirée du journal. L’admin (ou un droit Restaurer) pourra la récupérer.`,
+      "Oui, corbeille",
+    );
     if (answer === null) return;
     setBusy(true);
     const result = await deleteCaisseOperation(line.operationId);
@@ -799,6 +815,34 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     if (!result.ok) return notify("Audit", result.error);
     setAuditRows(result.data);
     setAuditOpen(true);
+  }
+
+  async function openTrash() {
+    if (!flags?.canRestore) return notify("Accès", "Restauration réservée à l’admin (ou droit délégué)");
+    setBusy(true);
+    const result = await listVoidedCaisseOperations();
+    setBusy(false);
+    if (!result.ok) return notify("Corbeille", result.error);
+    setTrashRows(result.data.rows);
+    setTrashOpen(true);
+  }
+
+  async function restoreTrashItem(row: CaisseVoidedOperation) {
+    if (!flags?.canRestore) return;
+    const answer = await confirmBox(
+      "Restaurer ?",
+      `Remettre l’opération (${row.kind} · ${formatDateFr(row.date)} · ${row.buyer || "—"}) dans le journal ?`,
+      "Oui, restaurer",
+    );
+    if (answer === null) return;
+    setBusy(true);
+    const result = await restoreCaisseOperation(row.id);
+    setBusy(false);
+    notify("Corbeille", result.ok ? result.data.message : result.error);
+    if (!result.ok) return;
+    await reload();
+    const refreshed = await listVoidedCaisseOperations();
+    if (refreshed.ok) setTrashRows(refreshed.data.rows);
   }
 
   async function showPhoto(operationId: string) {
@@ -1217,6 +1261,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
           {flags?.isAdmin ? <button type="button" className="btn-action btn-purple" onClick={() => setBulkBonsOpen(true)}>BONS PDF</button> : null}
           {flags?.canManageOpenings && !flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openOpenings()}>OUVERTURE</button> : null}
           {flags?.canManageLists && !flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openLists()}>LISTES</button> : null}
+          {flags?.canRestore ? <button type="button" className="btn-action btn-brown" onClick={() => void openTrash()}>CORBEILLE</button> : null}
           {flags?.isAdmin ? <button type="button" className="btn-action btn-brown" onClick={() => void openAudit()}>AUDIT</button> : null}
         </div>
         <div className="toolbar">
@@ -1686,8 +1731,8 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                 <section className="admin-section">
                   <p className="hint admin-intro">
                     L’administrateur voit toujours tout. Pour chaque employé, cochez ce qu’il a le droit de faire.
-                    « Ouverture » délègue les soldes d’ouverture ; « Listes » délègue Affectation / Parc roulant / Unités
-                    (déjà inclus pour SUPER_ADMIN / ADMIN_FINANCE).
+                    « Ouverture » / « Listes » / « Restaurer » (corbeille) sont déléguables ; déjà inclus pour
+                    SUPER_ADMIN / ADMIN_FINANCE.
                   </p>
                   <div className="admin-table-wrap">
                     <table className="admin-table rights-table">
@@ -1703,6 +1748,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                           <th>Modifier / Supprimer</th>
                           <th>Ouverture</th>
                           <th>Listes</th>
+                          <th>Restaurer</th>
                           <th>Actions</th>
                         </tr>
                       </thead>
@@ -1725,16 +1771,16 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                               </span>
                             </td>
                             {user.isAdmin ? (
-                              <td colSpan={7}>
+                              <td colSpan={8}>
                                 <span className="admin-badge">Admin — voit tout (droits non modifiables)</span>
                               </td>
                             ) : (
-                              (["datesLibres", "buyForOthers", "seeAll", "caisseOps", "canEdit", "manageOpenings", "manageLists"] as const).map((key) => (
+                              (["datesLibres", "buyForOthers", "seeAll", "caisseOps", "canEdit", "manageOpenings", "manageLists", "manageRestore"] as const).map((key) => (
                                 <td key={key} className="admin-check">
                                   <input
                                     type="checkbox"
                                     checked={user[key]}
-                                    disabled={(key === "manageOpenings" || key === "manageLists") && !user.userId}
+                                    disabled={(key === "manageOpenings" || key === "manageLists" || key === "manageRestore") && !user.userId}
                                     onChange={(event) => setAdminUsers((current) => current.map((row, i) => (i === index ? { ...row, [key]: event.target.checked } : row)))}
                                   />
                                 </td>
@@ -1922,6 +1968,61 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {trashOpen ? (
+        <div className="overlay">
+          <div className="modal">
+            <div className="modal-head brown">
+              <strong>Corbeille — opérations supprimées</strong>
+              <button type="button" className="close-x" onClick={() => setTrashOpen(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p className="hint">
+                Les suppressions ne sont pas définitives : restaurez une opération pour la remettre dans le journal
+                (les N° sont recalculés). Droit réservé à l’admin, ou délégué via la case « Restaurer ».
+              </p>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Supprimée le</th>
+                      <th>Date op.</th>
+                      <th>Type</th>
+                      <th>Acheteur</th>
+                      <th>Désignation</th>
+                      <th>Montant</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!trashRows.length ? (
+                      <tr><td colSpan={7}>Corbeille vide.</td></tr>
+                    ) : null}
+                    {trashRows.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.voidedAt ? new Date(row.voidedAt).toLocaleString("fr-FR", { timeZone: "Africa/Algiers" }) : "—"}</td>
+                        <td>{formatDateFr(row.date)}</td>
+                        <td>{row.kind}</td>
+                        <td>{row.buyer || "—"}</td>
+                        <td className="libelle">{row.designation || row.affectation || "—"}</td>
+                        <td>{formatDa(row.amount)} DA</td>
+                        <td>
+                          <button type="button" className="btn-action btn-green" disabled={busy} onClick={() => void restoreTrashItem(row)}>
+                            Restaurer
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn-light" onClick={() => setTrashOpen(false)}>Fermer</button>
             </div>
           </div>
         </div>
