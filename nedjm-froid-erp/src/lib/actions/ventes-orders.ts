@@ -68,6 +68,7 @@ function algiersToday(): string {
 
 function refresh() {
   revalidatePath("/ventes");
+  revalidatePath("/ventes/bons-de-commande");
 }
 
 async function can(action: "create" | "read" | "update" | "delete"): Promise<boolean> {

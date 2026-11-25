@@ -29,11 +29,9 @@ import {
   type VentesInvoiceLine,
 } from "@/lib/ventes/types";
 import { VentesAdminModal } from "@/components/ventes/ventes-admin-modal";
-import { VentesBcPanel } from "@/components/ventes/ventes-bc-panel";
 import "./ventes.css";
 
 type Modal = "facture" | "detail" | "encaissement" | "import" | "admin" | "types" | null;
-type DeskView = "factures" | "bc";
 
 const KIND_ORDER: VentesDocKind[] = ["P", "F", "FP", "RG", "SIT"];
 
@@ -92,7 +90,6 @@ export function VentesDesk({
   loadError?: string;
 }) {
   const [data, setData] = useState<VentesDashboard | null>(initial);
-  const [deskView, setDeskView] = useState<DeskView>("factures");
   const [kindFilter, setKindFilter] = useState<VentesKindFilter>("TOUS");
   const [payFilter, setPayFilter] = useState<"TOUS" | VentesPayStatus>("TOUS");
   const [dateFrom, setDateFrom] = useState("");
@@ -575,33 +572,10 @@ export function VentesDesk({
       </div>
 
       <div className="ui-live-banner">
-        Journal Ventes — factures + bons de commande (sans lien Banque/Caisse/Achats). RG → M5.
+        Journal Ventes — factures + encaissement interne (sans lien Banque/Caisse/contrats). RG →
+        M5.
       </div>
 
-      <div className="panel">
-        <div className="kind-tabs">
-          <span className="bank-tabs-label">Vue :</span>
-          <button
-            type="button"
-            className={`btn-kind${deskView === "factures" ? " active" : ""}`}
-            onClick={() => setDeskView("factures")}
-          >
-            FACTURES
-          </button>
-          <button
-            type="button"
-            className={`btn-kind${deskView === "bc" ? " active" : ""}`}
-            onClick={() => setDeskView("bc")}
-          >
-            BONS DE COMMANDE
-          </button>
-        </div>
-      </div>
-
-      {deskView === "bc" ? (
-        <VentesBcPanel />
-      ) : (
-        <>
       {error && <div className="alert alert-error">{error}</div>}
       {message && <div className="alert alert-ok">{message}</div>}
 
@@ -1439,8 +1413,6 @@ export function VentesDesk({
           }}
           onOk={(msg) => flash(msg)}
         />
-      )}
-        </>
       )}
     </div>
   );
