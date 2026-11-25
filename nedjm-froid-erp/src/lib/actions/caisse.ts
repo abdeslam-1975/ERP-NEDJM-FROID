@@ -28,6 +28,7 @@ import type {
 } from "@/lib/caisse/types";
 import { CAISSE_TRANSFER_AFFECTATION } from "@/lib/caisse/types";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 
 export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -75,11 +76,14 @@ async function clientOrError(): Promise<{ supabase: ServerClient; flags: CaisseF
   if (error) return fail(error.message);
   if (!data || typeof data !== "object") return fail("Accès caisse refusé.");
   const ctx = data as Record<string, unknown>;
-  const [manageOpenings, manageLists, manageRestore] = await Promise.all([
+  const [manageOpenings, manageLists, manageRestore, rightsRow] = await Promise.all([
     supabase.rpc("caisse_can_manage_openings"),
     supabase.rpc("caisse_can_manage_lists"),
     supabase.rpc("caisse_can_restore_operations"),
+    supabase.from("caisse_rights").select("manage_restore").eq("user_id", workspace.id).maybeSingle(),
   ]);
+  const restoreFromRpc = !manageRestore.error && !!manageRestore.data;
+  const restoreFromRights = !!(rightsRow.data as { manage_restore?: boolean } | null)?.manage_restore;
   return {
     supabase,
     today: String(ctx.today || algiersToday()),
@@ -96,7 +100,8 @@ async function clientOrError(): Promise<{ supabase: ServerClient; flags: CaisseF
       // Caisse admin (SUPER_ADMIN / ADMIN_FINANCE) or a delegated « Ouverture » right.
       canManageOpenings: !!ctx.isAdmin || (!manageOpenings.error && !!manageOpenings.data),
       canManageLists: !!ctx.isAdmin || (!manageLists.error && !!manageLists.data),
-      canRestore: !!ctx.isAdmin || (!manageRestore.error && !!manageRestore.data),
+      // Admin always; else RPC, else caisse_rights.manage_restore (if RPC schema cache lag).
+      canRestore: !!ctx.isAdmin || restoreFromRpc || restoreFromRights,
       canValidateBons: !!ctx.isAdmin || !!ctx.isGerant,
       userName: String(ctx.userName || workspace.fullName),
     },
@@ -1231,6 +1236,50 @@ export async function deleteCaisseOperation(operationId: string): Promise<Action
   };
 }
 
+function mapVoidedRows(
+  rows: {
+    id: string;
+    op_number: number;
+    kind: string;
+    op_date: string;
+    affectation: string | null;
+    buyer_name: string | null;
+    reference: string | null;
+    voided_at: string | null;
+    has_photo: boolean | null;
+    lines?: { line_no: number; designation: string | null; qty: number | null; unit_price: number | null }[] | null;
+    designation?: string;
+    amount?: number;
+  }[],
+): CaisseVoidedOperation[] {
+  return rows.map((row) => {
+    const lines = Array.isArray(row.lines)
+      ? [...row.lines].sort((a, b) => Number(a.line_no) - Number(b.line_no))
+      : [];
+    const designation =
+      row.designation ??
+      lines.find((line) => line.designation)?.designation ??
+      "";
+    const amount =
+      row.amount != null
+        ? Number(row.amount) || 0
+        : lines.reduce((sum, line) => sum + (Number(line.qty) || 0) * (Number(line.unit_price) || 0), 0);
+    return {
+      id: row.id,
+      opNumber: Number(row.op_number) || 0,
+      kind: row.kind || "",
+      date: String(row.op_date || "").slice(0, 10),
+      affectation: row.affectation || "",
+      buyer: row.buyer_name || "",
+      reference: row.reference || "",
+      designation,
+      amount,
+      voidedAt: row.voided_at || "",
+      hasPhoto: !!row.has_photo,
+    };
+  });
+}
+
 export async function listVoidedCaisseOperations(): Promise<ActionResult<{ rows: CaisseVoidedOperation[] }>> {
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
@@ -1238,6 +1287,24 @@ export async function listVoidedCaisseOperations(): Promise<ActionResult<{ rows:
   if (!flags.isAdmin && !flags.canRestore) {
     return fail("❌ Accès réservé : restauration admin (ou droit délégué).");
   }
+
+  // Prefer service role: voided rows are hidden by RLS; avoids PostgREST schema-cache lag on new RPCs.
+  try {
+    const service = createServiceClient();
+    const listed = await service
+      .from("caisse_operations")
+      .select(
+        "id, op_number, kind, op_date, affectation, buyer_name, reference, voided_at, has_photo, lines:caisse_lines(line_no, designation, qty, unit_price)",
+      )
+      .not("voided_at", "is", null)
+      .order("voided_at", { ascending: false })
+      .limit(150);
+    if (listed.error) return fail(listed.error.message);
+    return { ok: true, data: { rows: mapVoidedRows((listed.data ?? []) as Parameters<typeof mapVoidedRows>[0]) } };
+  } catch {
+    // SUPABASE_SERVICE_ROLE_KEY missing in env — fall back to RPC.
+  }
+
   const listed = await supabase.rpc("caisse_list_voided_operations", { p_limit: 150 });
   if (listed.error) {
     const msg = listed.error.message || "";
@@ -1251,32 +1318,12 @@ export async function listVoidedCaisseOperations(): Promise<ActionResult<{ rows:
     }
     return fail(msg);
   }
-  const rows: CaisseVoidedOperation[] = ((listed.data ?? []) as {
-    id: string;
-    op_number: number;
-    kind: string;
-    op_date: string;
-    affectation: string;
-    buyer_name: string;
-    reference: string;
-    designation: string;
-    amount: number;
-    voided_at: string;
-    has_photo: boolean;
-  }[]).map((row) => ({
-    id: row.id,
-    opNumber: Number(row.op_number) || 0,
-    kind: row.kind || "",
-    date: String(row.op_date || "").slice(0, 10),
-    affectation: row.affectation || "",
-    buyer: row.buyer_name || "",
-    reference: row.reference || "",
-    designation: row.designation || "",
-    amount: Number(row.amount) || 0,
-    voidedAt: row.voided_at || "",
-    hasPhoto: !!row.has_photo,
-  }));
-  return { ok: true, data: { rows } };
+  return {
+    ok: true,
+    data: {
+      rows: mapVoidedRows((listed.data ?? []) as Parameters<typeof mapVoidedRows>[0]),
+    },
+  };
 }
 
 export async function restoreCaisseOperation(operationId: string): Promise<ActionResult<{ message: string }>> {
@@ -1286,30 +1333,91 @@ export async function restoreCaisseOperation(operationId: string): Promise<Actio
   if (!flags.isAdmin && !flags.canRestore) {
     return fail("❌ Accès réservé : restauration admin (ou droit délégué).");
   }
+
   const restored = await supabase.rpc("caisse_restore_operation", { p_id: operationId });
-  if (restored.error) {
+  if (!restored.error) {
+    const op = Number(restored.data) || 0;
+    await logAction(supabase, "RESTORE", "", op || "", "", `Restauration opération ${operationId}`, null);
+    refresh();
+    return {
+      ok: true,
+      data: {
+        message: op
+          ? `✅ Opération restaurée (nouveau N° ${op}). Les numéros ont été réordonnés.`
+          : "✅ Opération restaurée. Les numéros ont été réordonnés.",
+      },
+    };
+  }
+
+  // Fallback when restore RPC is missing from PostgREST schema cache.
+  try {
+    const service = createServiceClient();
+    const existing = await service
+      .from("caisse_operations")
+      .select("id, op_number, reference, affectation, voided_at")
+      .eq("id", operationId)
+      .not("voided_at", "is", null)
+      .maybeSingle();
+    if (existing.error) return fail(existing.error.message);
+    if (!existing.data) return fail("❌ Opération supprimée introuvable.");
+
+    const cleared = await service
+      .from("caisse_operations")
+      .update({ voided_at: null })
+      .eq("id", operationId)
+      .not("voided_at", "is", null);
+    if (cleared.error) return fail(cleared.error.message);
+
+    if ((existing.data.affectation || "") === CAISSE_TRANSFER_AFFECTATION) {
+      const pair = String(existing.data.reference || "").match(/pair:([0-9a-f-]{36})/i)?.[1];
+      if (pair) {
+        const siblings = await service
+          .from("caisse_operations")
+          .select("id, reference")
+          .eq("affectation", CAISSE_TRANSFER_AFFECTATION)
+          .not("voided_at", "is", null)
+          .neq("id", operationId);
+        if (!siblings.error) {
+          const ids = (siblings.data ?? [])
+            .filter((row) => String(row.reference || "").includes(`pair:${pair}`))
+            .map((row) => row.id);
+          if (ids.length) {
+            const pairClear = await service
+              .from("caisse_operations")
+              .update({ voided_at: null })
+              .in("id", ids);
+            if (pairClear.error) return fail(pairClear.error.message);
+          }
+        }
+      }
+    }
+
+    await service.rpc("caisse_renumber_active_operations");
+    const refreshed = await service
+      .from("caisse_operations")
+      .select("op_number")
+      .eq("id", operationId)
+      .maybeSingle();
+    const op = Number(refreshed.data?.op_number) || 0;
+    await logAction(supabase, "RESTORE", "", op || "", "", `Restauration opération ${operationId}`, null);
+    refresh();
+    return {
+      ok: true,
+      data: {
+        message: op
+          ? `✅ Opération restaurée (nouveau N° ${op}). Les numéros ont été réordonnés.`
+          : "✅ Opération restaurée. Les numéros ont été réordonnés.",
+      },
+    };
+  } catch {
     const msg = restored.error.message || "";
     if (/schema cache|could not find the function|PGRST202/i.test(msg)) {
       return fail(
         "❌ Fonctions corbeille invisibles pour l’API. Dans Supabase SQL Editor exécutez : NOTIFY pgrst, 'reload schema';",
       );
     }
-    if (/caisse_restore_operation|manage_restore|caisse_can_restore/i.test(msg)) {
-      return fail("❌ Migration restauration non appliquée sur Supabase (caisse_restore_voided).");
-    }
     return fail(`❌ ${msg}`);
   }
-  const op = Number(restored.data) || 0;
-  await logAction(supabase, "RESTORE", "", op || "", "", `Restauration opération ${operationId}`, null);
-  refresh();
-  return {
-    ok: true,
-    data: {
-      message: op
-        ? `✅ Opération restaurée (nouveau N° ${op}). Les numéros ont été réordonnés.`
-        : "✅ Opération restaurée. Les numéros ont été réordonnés.",
-    },
-  };
 }
 
 export async function getCaissePhoto(

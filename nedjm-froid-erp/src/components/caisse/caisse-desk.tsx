@@ -161,9 +161,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   const flags = data?.flags;
   const today = data?.today || "";
 
-  function notify(title: string, text = "") {
+  function notify(title: string, text = "", ms = 2800) {
     setToast({ title, text });
-    window.setTimeout(() => setToast(null), 2800);
+    window.setTimeout(() => setToast(null), ms);
   }
 
   function confirmBox(title: string, text: string, confirm: string, withReason = false, initialReason = "") {
@@ -824,11 +824,11 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     setBusy(true);
     const result = await listVoidedCaisseOperations();
     setBusy(false);
-    if (!result.ok) return notify("Corbeille", result.error);
+    if (!result.ok) return notify("Corbeille", result.error, 8000);
     setTrashRows(result.data.rows);
     setTrashOpen(true);
     if (!result.data.rows.length) {
-      notify("Corbeille", "Vide — aucune opération supprimée pour le moment.");
+      notify("Corbeille", "Vide — aucune opération supprimée pour le moment.", 5000);
     }
   }
 
