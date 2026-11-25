@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import styles from "./accueil-vitrine.module.css";
 
 const SLIDES = [
-  { src: "", label: "Chambres et condenseurs" },
+  { src: "", label: "Chambres et condenseurs", position: "center" },
   { src: "/accueil/hassi-rmel.jpg", label: "Hassi R'mel", position: "68% center" },
   { src: "/accueil/cellules.jpg", label: "Deux cellules", position: "center 40%" },
 ] as const;
