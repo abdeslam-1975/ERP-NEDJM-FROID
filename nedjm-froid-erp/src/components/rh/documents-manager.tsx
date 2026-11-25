@@ -275,6 +275,7 @@ function describeFicheEmployee(row: HrEmployeeRow): FilterRow {
       .join(" "),
     matricule: row.matricule,
     facets,
+    periods: row.card_periods,
   };
 }
 

@@ -22,6 +22,7 @@ import {
 } from "@/lib/hr/employee-fiche-constraints";
 import { nextMatriculeForHire } from "@/lib/hr/employee-matricule";
 import { compareCompletedFiches } from "@/lib/hr/fiche-completion";
+import type { CardPeriod } from "@/lib/hr/filter-sentence";
 import { missingRequiredDocuments } from "@/lib/hr/required-documents";
 import { listCatalogItems } from "@/lib/actions/hr-catalogs";
 import { listHrFilesForEmployee } from "@/lib/actions/hr-documents";
@@ -53,6 +54,8 @@ export type HrEmployeeRow = {
   fiche_affectation?: string | null;
   fiche_poste?: string | null;
   id_type_code?: string | null;
+  /** Months when a signed-in save stored an Arabic name on this card. */
+  card_periods?: CardPeriod[];
 };
 
 export type HrEmployeeFiche = HrEmployeeRow & {
@@ -207,6 +210,64 @@ function attrText(attrs: unknown, key: string): string | null {
 const EMP_CORE_SELECT =
   "id, matricule, last_name, first_name, last_name_ar, first_name_ar, nss, nin, birth_date, hired_at, photo_url, irg_category, status, created_at, updated_at, attrs, fiche_done_at";
 
+function algiersMonth(iso: string): string | null {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Africa/Algiers",
+    year: "numeric",
+    month: "2-digit",
+  })
+    .format(date)
+    .slice(0, 7);
+}
+
+/** Card months come from signed-in saves that stored an Arabic name. Service-role imports are excluded. */
+async function loadCardPeriods(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<Map<string, CardPeriod[]>> {
+  const pageSize = 1000;
+  const months = new Map<string, Set<string>>();
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("sys_audit_logs")
+      .select("target_id, occurred_at")
+      .eq("table_name", "hr_employees")
+      .eq("action", "UPDATE")
+      .not("user_id", "is", null)
+      .or("new_values->>last_name_ar.neq.,new_values->>first_name_ar.neq.")
+      .order("occurred_at", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) return months.size ? periodsFromMonths(months) : new Map();
+    const rows = (data ?? []) as Array<{ target_id: string | null; occurred_at: string }>;
+    for (const row of rows) {
+      if (!row.target_id) continue;
+      const month = algiersMonth(row.occurred_at);
+      if (!month) continue;
+      const set = months.get(row.target_id) ?? new Set<string>();
+      set.add(month);
+      months.set(row.target_id, set);
+    }
+    if (rows.length < pageSize) break;
+  }
+  return periodsFromMonths(months);
+}
+
+function periodsFromMonths(months: Map<string, Set<string>>): Map<string, CardPeriod[]> {
+  const periods = new Map<string, CardPeriod[]>();
+  for (const [id, set] of months) {
+    periods.set(
+      id,
+      [...set].sort().map((value) => ({ field: "card", value })),
+    );
+  }
+  return periods;
+}
+
+function withCardPeriods<T extends { id: string }>(rows: T[], periods: Map<string, CardPeriod[]>): Array<T & { card_periods: CardPeriod[] }> {
+  return rows.map((row) => ({ ...row, card_periods: periods.get(row.id) ?? [] }));
+}
+
 export async function nextHrMatricule(hiredAt?: string): Promise<ActionResult<{ matricule: string }>> {
   const supabase = await createClient();
   const hired = /^\d{4}-\d{2}-\d{2}$/.test(hiredAt ?? "") ? (hiredAt as string) : new Date().toISOString().slice(0, 10);
@@ -269,10 +330,11 @@ export async function listHrEmployeeFiches(): Promise<ActionResult<HrEmployeeFic
   const socials = mapBy(social.data as Array<Record<string, unknown>> | null);
   const quals = mapBy(qual.data as Array<Record<string, unknown>> | null);
 
+  const periods = await loadCardPeriods(supabase);
   return {
     ok: true,
-    data: rows
-      .map((emp) =>
+    data: withCardPeriods(
+      rows.map((emp) =>
         mergeFiche(
           {
             ...emp,
@@ -285,12 +347,15 @@ export async function listHrEmployeeFiches(): Promise<ActionResult<HrEmployeeFic
           quals.get(emp.id) ?? null,
           docsByEmployee.get(emp.id) ?? [],
         ),
-      )
-      .sort(compareCompletedFiches),
+      ),
+      periods,
+    ).sort(compareCompletedFiches),
   };
 }
 
-export async function listHrEmployeeRows(): Promise<ActionResult<HrEmployeeRow[]>> {
+export async function listHrEmployeeRows(options?: {
+  withCardPeriods?: boolean;
+}): Promise<ActionResult<HrEmployeeRow[]>> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("hr_employees")
@@ -309,24 +374,27 @@ export async function listHrEmployeeRows(): Promise<ActionResult<HrEmployeeRow[]
     };
   }
 
+  const mapped = (data ?? []).map((row) => {
+    const { attrs, ...rest } = row as typeof row & { attrs?: unknown };
+    return {
+      ...rest,
+      irg_category: rest.irg_category as HrEmployeeRow["irg_category"],
+      import_seq: importSeq(attrs),
+      id_number: attrText(attrs, "id_number"),
+      id_issued_on: attrText(attrs, "id_issued_on"),
+      id_issued_by: attrText(attrs, "id_issued_by"),
+      fiche_affectation: attrText(attrs, "affectation"),
+      fiche_poste: attrText(attrs, "poste"),
+      id_type_code: attrText(attrs, "id_type_code"),
+    };
+  });
+  const rows = options?.withCardPeriods
+    ? withCardPeriods(mapped, await loadCardPeriods(supabase))
+    : mapped;
+
   return {
     ok: true,
-    data: sortEmployees(
-      (data ?? []).map((row) => {
-        const { attrs, ...rest } = row as typeof row & { attrs?: unknown };
-        return {
-          ...rest,
-          irg_category: rest.irg_category as HrEmployeeRow["irg_category"],
-          import_seq: importSeq(attrs),
-          id_number: attrText(attrs, "id_number"),
-          id_issued_on: attrText(attrs, "id_issued_on"),
-          id_issued_by: attrText(attrs, "id_issued_by"),
-          fiche_affectation: attrText(attrs, "affectation"),
-          fiche_poste: attrText(attrs, "poste"),
-          id_type_code: attrText(attrs, "id_type_code"),
-        };
-      }),
-    ),
+    data: sortEmployees(rows),
   };
 }
 

@@ -64,6 +64,26 @@ describe("screen filter", () => {
     expect(applyFilter(["a", "b"], rows, chips)).toEqual(["a"]);
   });
 
+  it("runs whatever sentence is written and still finds a name inside it", () => {
+    const withPeriods: FilterRow[] = [
+      { ...rows[0], periods: [{ field: "card", value: "2026-11" }] },
+      { ...rows[1], periods: [{ field: "card", value: "2026-11" }] },
+    ];
+    const chip = {
+      id: "1",
+      kind: "text" as const,
+      label: "sentence",
+      value: "اعرض لي benali الذي انجزته خلال شهر نوفمبر 2026",
+    };
+    expect(rowMatches({ ...withPeriods[0], text: "Benali Ahmed" }, [chip])).toBe(true);
+    expect(rowMatches(withPeriods[1], [chip])).toBe(false);
+    expect(rowMatches(withPeriods[0], [{ ...chip, value: "النشطون" }])).toBe(true);
+    expect(rowMatches(withPeriods[1], [{ ...chip, value: "النشطون" }])).toBe(false);
+    expect(rowMatches(withPeriods[1], [{ ...chip, value: "بدون ضمان" }])).toBe(true);
+    expect(rowMatches(withPeriods[0], [{ ...chip, value: "بدون ضمان" }])).toBe(false);
+    expect(suggestFilters("ما تم تعديله في نوفمبر 2026", withPeriods).some((item) => item.label.includes("نوفمبر 2026"))).toBe(true);
+  });
+
   it("offers several meanings for a year and a free-text search", () => {
     const suggestions = suggestFilters("2021", rows);
     expect(suggestions.map((item) => item.label)).toEqual([

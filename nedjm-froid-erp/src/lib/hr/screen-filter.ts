@@ -1,4 +1,10 @@
 import { matriculeKey } from "@/lib/hr/contract-import";
+import {
+  cardPeriodMatches,
+  interpretSentence,
+  normalizeSentence,
+  type CardPeriod,
+} from "@/lib/hr/filter-sentence";
 
 export type FilterChip = {
   id: string;
@@ -21,6 +27,8 @@ export type FilterRow = {
   text: string;
   matricule?: string | null;
   facets: FilterFacet[];
+  /** Set when this screen can answer a sentence such as « أنجزتها نوفمبر 2026 ». */
+  periods?: CardPeriod[];
 };
 
 export type FilterSuggestion = {
@@ -88,7 +96,34 @@ function searchBag(row: FilterRow): string {
   );
 }
 
+function facetFits(row: FilterRow, field: string, hint: string): boolean {
+  const needle = normalizeSentence(hint);
+  return row.facets.some((facet) => {
+    if (facet.field !== field) return false;
+    const value = normalizeSentence(facet.value);
+    const words = normalizeSentence(facet.label).split(" ").filter(Boolean);
+    const hits = (word: string) => word === needle || (needle.length >= 4 && word.startsWith(needle));
+    return hits(value) || words.some(hits);
+  });
+}
+
 function textMatches(row: FilterRow, value: string): boolean {
+  const sentence = interpretSentence(value);
+  if (sentence?.status === "pending") return true;
+  if (sentence?.status === "ready") {
+    const asksWhen = sentence.period != null || sentence.anyCard;
+    if (asksWhen && !row.periods) {
+      if (!sentence.facets.length && !sentence.words.length && !sentence.matricules.length) return false;
+    } else if (sentence.period) {
+      if (!cardPeriodMatches(row.periods, sentence.period)) return false;
+    } else if (sentence.anyCard && (row.periods?.length ?? 0) === 0) {
+      return false;
+    }
+    if (sentence.facets.some((facet) => !facetFits(row, facet.field, facet.hint))) return false;
+    if (sentence.matricules.some((matricule) => matriculeKey(row.matricule) !== matriculeKey(matricule))) return false;
+    const bag = normalizeSentence(searchBag(row));
+    return sentence.words.every((word) => bag.includes(normalizeSentence(word)));
+  }
   const needle = fold(value);
   if (!needle) return true;
   const wholeMatricule = matriculeQuery(value);
@@ -153,7 +188,14 @@ export function suggestFilters(query: string, rows: FilterRow[]): FilterSuggesti
     label: facet.label,
     chip: { kind: "value", field: facet.field, label: facet.label, value: facet.value },
   }));
-  if (typed) {
+  const sentence = typed ? interpretSentence(typed) : null;
+  if (sentence?.status === "ready") {
+    suggestions.unshift({
+      id: "sentence",
+      label: sentence.label,
+      chip: { kind: "text", label: sentence.label, value: typed },
+    });
+  } else if (typed && sentence?.status !== "pending") {
     suggestions.unshift({
       id: "text",
       label: `Rechercher « ${typed} »`,

@@ -255,6 +255,16 @@ export function EmployeesManager({
       catalogs,
       uploadedDocTypeCodes: row.uploaded_doc_codes ?? [],
     });
+    facets.push({
+      field: "documents",
+      value: completion.documents,
+      label: COMPLETION_LABELS.documents[completion.documents].ar,
+    });
+    facets.push({
+      field: "champs",
+      value: completion.fields,
+      label: COMPLETION_LABELS.fields[completion.fields].ar,
+    });
     return {
       text: [
         row.matricule,
@@ -274,6 +284,7 @@ export function EmployeesManager({
         .join(" "),
       matricule: row.matricule,
       facets,
+      periods: row.card_periods,
     };
   }, [assignments, catalogs, fallbackText, fields, statusOptions]);
   const staffFilter = useScreenFilter({
