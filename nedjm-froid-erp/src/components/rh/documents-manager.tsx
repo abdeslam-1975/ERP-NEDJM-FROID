@@ -91,6 +91,37 @@ type SiteOpt = { id: string; name_fr: string };
 const corrCol = dataColumns<HrCorrespondenceRow>();
 const empCol = dataColumns<HrEmployeeRow>();
 
+const COMPLETION_MARK = {
+  all: {
+    chip: "border-alert-success/40 bg-alert-success/10 text-alert-success",
+    dot: "bg-alert-success",
+    ar: "مكتمل",
+  },
+  required: {
+    chip: "border-alert-warning/40 bg-alert-warning/10 text-alert-warning",
+    dot: "bg-alert-warning",
+    ar: "إجباري",
+  },
+  missing: {
+    chip: "border-alert-critical/40 bg-alert-critical/10 text-alert-critical",
+    dot: "bg-alert-critical",
+    ar: "ناقص",
+  },
+} as const;
+
+function CompletionMark({ level, detail }: { level: keyof typeof COMPLETION_MARK; detail: string }) {
+  const mark = COMPLETION_MARK[level];
+  return (
+    <span
+      aria-label={detail}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium ${mark.chip}`}
+    >
+      <span className={`size-1.5 shrink-0 rounded-full ${mark.dot}`} aria-hidden />
+      <bdi>{mark.ar}</bdi>
+    </span>
+  );
+}
+
 function ReferenceCell({ reference, sub }: { reference: string; sub?: string }) {
   return (
     <div className="whitespace-nowrap">
@@ -875,14 +906,7 @@ export function DocumentsManager({
         const level = r.card_completion?.documents;
         if (!level) return <span className="text-sm text-foreground/40">—</span>;
         const label = COMPLETION_LABELS.documents[level];
-        return (
-          <span className="block max-w-[14rem] text-xs leading-snug">
-            {label.fr}
-            <span className="mt-0.5 block text-foreground/70" dir="rtl">
-              {label.ar}
-            </span>
-          </span>
-        );
+        return <CompletionMark level={level} detail={`${label.fr} — ${label.ar}`} />;
       },
     }),
     empCol.accessor((r) => r.card_completion?.fields ?? "", {
@@ -901,14 +925,7 @@ export function DocumentsManager({
         const level = r.card_completion?.fields;
         if (!level) return <span className="text-sm text-foreground/40">—</span>;
         const label = COMPLETION_LABELS.fields[level];
-        return (
-          <span className="block max-w-[14rem] text-xs leading-snug">
-            {label.fr}
-            <span className="mt-0.5 block text-foreground/70" dir="rtl">
-              {label.ar}
-            </span>
-          </span>
-        );
+        return <CompletionMark level={level} detail={`${label.fr} — ${label.ar}`} />;
       },
     }),
     empCol.accessor((r) => (archiveOf.get(r.id)?.file_url ? 1 : 0), {
