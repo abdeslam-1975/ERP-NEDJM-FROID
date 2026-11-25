@@ -1,41 +1,34 @@
 .frame {
-  container-type: size;
-  display: grid;
+  container-type: inline-size;
   flex: 1;
   width: 100%;
   height: 100%;
   min-height: 0;
-  place-items: center;
-  overflow: hidden;
+  overflow: auto;
   background: #e8eef8;
 }
 
-.board {
-  width: min(100cqw, calc(100cqh / 1.2669));
-  aspect-ratio: 1000 / 1267;
-  container-type: size;
+.board,
+.root {
+  width: 100%;
 }
 
 .root {
-  display: grid;
-  width: 100%;
-  height: 100%;
-  grid-template-rows: 283fr 122fr 158fr 304fr 223fr 117fr;
+  display: flex;
+  flex-direction: column;
   gap: 1.2cqw;
 }
 
 .root img {
   display: block;
   width: 100%;
-  height: 100%;
-  object-fit: fill;
+  height: auto;
 }
 
 .hero {
   position: relative;
-  min-height: 0;
   overflow: hidden;
-  border-radius: 2.2cqw;
+  border-radius: 1.8cqw;
 }
 
 .dots {
@@ -63,21 +56,12 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1.2cqw;
-  min-height: 0;
 }
 
 .split {
   display: grid;
   grid-template-columns: minmax(0, 446fr) minmax(0, 372fr);
   gap: 1.2cqw;
-  min-height: 0;
-}
-
-.float,
-.hero,
-.foot {
-  min-width: 0;
-  min-height: 0;
 }
 
 .float {
