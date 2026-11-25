@@ -8,6 +8,7 @@ const KPIS = ["kpi-1.png", "kpi-2.png", "kpi-3.png", "kpi-4.png"] as const;
 export function AccueilVitrine() {
   return (
     <div className={styles.frame}>
+      <div className={styles.board}>
       <div className={styles.root}>
         <section className={styles.hero}>
           <img src="/accueil/board/hero.png" alt="NEDJM FROID — Solutions industrielles de froid et de climatisation" />
@@ -46,6 +47,7 @@ export function AccueilVitrine() {
         <footer className={styles.foot}>
           <img src="/accueil/board/footer.png" alt="Nedjm Froid, l'expertise au service de vos projets" />
         </footer>
+      </div>
       </div>
     </div>
   );
