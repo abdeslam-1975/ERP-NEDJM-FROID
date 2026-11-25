@@ -56,6 +56,8 @@ export type HrEmployeeRow = {
   id_type_code?: string | null;
   /** Null = pas de carte réalisée. */
   fiche_done_at?: string | null;
+  /** Current fiche reference (YYYY/NNN). The matricule does not change on rehire. */
+  fiche_reference?: string | null;
   /** Months when a signed-in save stored an Arabic name on this card. */
   card_periods?: CardPeriod[];
   /** Documents and fields filled on the card. */
@@ -143,6 +145,7 @@ function mergeFiche(
   return {
     id: emp.id,
     matricule: emp.matricule,
+    fiche_reference: emp.fiche_reference ?? null,
     last_name: emp.last_name,
     first_name: emp.first_name,
     last_name_ar: emp.last_name_ar,
@@ -212,7 +215,7 @@ function attrText(attrs: unknown, key: string): string | null {
 }
 
 const EMP_CORE_SELECT =
-  "id, matricule, last_name, first_name, last_name_ar, first_name_ar, nss, nin, birth_date, hired_at, photo_url, irg_category, status, created_at, updated_at, attrs, fiche_done_at";
+  "id, matricule, fiche_reference, last_name, first_name, last_name_ar, first_name_ar, nss, nin, birth_date, hired_at, photo_url, irg_category, status, created_at, updated_at, attrs, fiche_done_at";
 
 function algiersMonth(iso: string): string | null {
   const date = new Date(iso);
@@ -975,6 +978,25 @@ export async function deleteHrEmployeeField(
   if (error) return { ok: false, error: error.message };
   revalidateHr();
   return { ok: true, data: { id } };
+}
+
+/** Assigns the current fiche reference, or the next one when the hire date changes. */
+export async function assignFicheReference(
+  employeeId: string,
+  hiredAt: string,
+  reissue: boolean,
+): Promise<ActionResult<{ reference: string }>> {
+  if (!employeeId) return { ok: false, error: "Employé requis." };
+  const hired = /^\d{4}-\d{2}-\d{2}$/.test(hiredAt) ? hiredAt : null;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("hr_fiche_assign_reference", {
+    p_employee: employeeId,
+    p_hired: hired,
+    p_reissue: reissue,
+  });
+  if (error) return { ok: false, error: error.message };
+  if (typeof data !== "string" || !data) return { ok: false, error: "Référence de fiche non attribuée." };
+  return { ok: true, data: { reference: data } };
 }
 
 export async function uploadHrEmployeePhoto(

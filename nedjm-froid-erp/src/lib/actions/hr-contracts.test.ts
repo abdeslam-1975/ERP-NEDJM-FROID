@@ -80,7 +80,7 @@ describe("upsertHrContract — dated assignments", () => {
 });
 
 describe("upsertHrContract — principal contract", () => {
-  it("ends the previous principal contract in the same save as the new one", async () => {
+  it("refuses a new principal contract while the previous one is still open", async () => {
     h.fake = createSupabaseFake({
       onQuery: () => ({
         data: [{ id: PREVIOUS, start_date: "2026-01-01", end_date: null, status: "ACTIVE" }],
@@ -89,9 +89,9 @@ describe("upsertHrContract — principal contract", () => {
       onRpc: () => ({ data: ID, error: null }),
     });
     const r = await upsertHrContract({ ...base, affectation_principale: true, contract_type_code: "CDD" });
-    expect(r).toMatchObject({ ok: true, data: { id: ID, closed_previous: 1 } });
-    expect(saveArgs().p_close).toEqual([{ id: PREVIOUS, end_date: "2026-08-31" }]);
-    expect(h.fake!.queries.some((q) => q.op !== "select")).toBe(false);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/encore ouvert/);
+    expect(h.fake!.rpcs).toHaveLength(0);
   });
 
   it("maps the principal overlap error", async () => {

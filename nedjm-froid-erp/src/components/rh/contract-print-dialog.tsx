@@ -10,6 +10,7 @@ import {
   contractPrintError,
   type ContractPrintValues,
 } from "@/lib/hr/work-contract";
+import { appendClientTerms, type StoredClientTerms } from "@/lib/hr/client-contract-terms";
 import { usePrintKit } from "@/components/doc/use-print-kit";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhField, RhModal, bi, rhInput } from "@/components/rh/rh-ui";
@@ -89,6 +90,7 @@ export function ContractPrintDialog({
   onArchived?: (url: string) => void;
 }) {
   const [values, setValues] = useState<ContractPrintValues | null>(null);
+  const [clientTerms, setClientTerms] = useState<StoredClientTerms | null>(null);
   const { kit, error: kitError } = usePrintKit(CONTRACT_DOC_TYPES);
   const [error, setError] = useState<string | null>(null);
   const [archive, setArchive] = useState<{ state: "running" | "done"; url?: string } | null>(null);
@@ -98,8 +100,10 @@ export function ContractPrintDialog({
     let cancelled = false;
     getContractPrintContext(contractId).then((r) => {
       if (cancelled) return;
-      if (r.ok) setValues(r.data.values);
-      else setError(r.error);
+      if (r.ok) {
+        setValues(r.data.values);
+        setClientTerms(r.data.client_terms);
+      } else setError(r.error);
     });
     return () => {
       cancelled = true;
@@ -107,7 +111,7 @@ export function ContractPrintDialog({
   }, [contractId]);
 
   const preview = useMemo(() => (values && kit ? contractHtml(kit, values) : null), [values, kit]);
-  const html = preview?.ok ? preview.data : "";
+  const html = preview?.ok ? appendClientTerms(preview.data, clientTerms) : "";
   const reasons = useMemo(() => contractCddReasons(kit?.templates.contrat_cdd ?? ""), [kit]);
   const shownError = error ?? kitError ?? (preview && !preview.ok ? preview.error : null);
 
@@ -133,7 +137,7 @@ export function ContractPrintDialog({
         setError(printed.error);
         return;
       }
-      printHtml(printed.data);
+      printHtml(appendClientTerms(printed.data, clientTerms));
       setArchive({ state: "running" });
       void archiveContractPrint(contractId).then((a) => {
         if (a.ok) {

@@ -123,6 +123,8 @@ export type ContractTerms = {
   salaire_base_monthly?: number | null;
   contract_start?: string | null;
   contract_end?: string | null;
+  /** Fingerprint of the client-contract poste, absence rule and confirmed clauses. */
+  client_terms_key?: string | null;
 };
 
 function clean(value: string | null | undefined): string {
@@ -151,7 +153,8 @@ export function contractTermsChanged(before: ContractTerms, after: ContractTerms
     clean(before.poste_fr) !== clean(after.poste_fr) ||
     money(before.salaire_base_monthly) !== money(after.salaire_base_monthly) ||
     clean(before.contract_start).slice(0, 10) !== clean(after.contract_start).slice(0, 10) ||
-    clean(before.contract_end).slice(0, 10) !== clean(after.contract_end).slice(0, 10)
+    clean(before.contract_end).slice(0, 10) !== clean(after.contract_end).slice(0, 10) ||
+    clean(before.client_terms_key) !== clean(after.client_terms_key)
   );
 }
 

@@ -1,12 +1,17 @@
 import { RhShell } from "@/components/rh/rh-shell";
 import { CandidatesManager } from "@/components/rh/candidates-manager";
 import { listCandidateCycle } from "@/lib/actions/hr-candidates";
+import { listOpenClientContracts } from "@/lib/actions/hr-contracts";
 import { loadHrLookups } from "@/lib/actions/hr-lookups";
 
 export const dynamic = "force-dynamic";
 
 export default async function CandidatsPage() {
-  const [cycle, lookups] = await Promise.all([listCandidateCycle(), loadHrLookups()]);
+  const [cycle, lookups, clients] = await Promise.all([
+    listCandidateCycle(),
+    loadHrLookups(),
+    listOpenClientContracts(),
+  ]);
   const empty = { candidates: [], documents: [], identitySlots: [], notice: null };
 
   return (
@@ -21,7 +26,8 @@ export default async function CandidatsPage() {
         contractTypes={lookups.catalogs
           .filter((item) => item.kind === "contract_type" && item.is_active)
           .map((item) => ({ id: item.code, label: item.label_fr }))}
-        loadError={cycle.ok ? lookups.error : cycle.error}
+        clientContracts={clients.ok ? clients.data : []}
+        loadError={cycle.ok ? (clients.ok ? lookups.error : clients.error) : cycle.error}
       />
     </RhShell>
   );

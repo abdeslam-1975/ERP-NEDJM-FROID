@@ -65,6 +65,8 @@ import { CONTRACT_DOC_TYPES, ContractPrintDialog, contractHtml } from "@/compone
 import { ContractViewDialog } from "@/components/rh/contract-view-dialog";
 import { WorkRegimeField } from "@/components/rh/work-regime-field";
 import { ContractRubriquesField } from "@/components/rh/contract-rubriques-field";
+import type { OpenClientContract } from "@/lib/actions/hr-contracts";
+import { appendClientTerms, storedClientTerms } from "@/lib/hr/client-contract-terms";
 import type { SelectedSalaryLine } from "@/components/rh/contract-salary-fields";
 import {
   ContractLegalFields,
@@ -197,6 +199,8 @@ type FormState = {
   status: "DRAFT" | "ACTIVE" | "SUSPENDED" | "ENDED";
   /** Daily deduction for an unjustified absence, printed in the contract. */
   retenue: string;
+  client_contract_id: string;
+  clause_ids: string[];
 };
 
 const emptyForm = (): FormState => ({
@@ -221,6 +225,8 @@ const emptyForm = (): FormState => ({
   end_date: "",
   status: "DRAFT",
   retenue: "",
+  client_contract_id: "",
+  clause_ids: [],
 });
 
 function describeContract(row: HrContractRow): FilterRow {
@@ -256,6 +262,7 @@ export function ContractsManager({
   postes = [],
   agencies = [],
   contractArchives = NO_ARCHIVES,
+  clientContracts = [],
   loadError,
 }: {
   contractArchives?: Record<string, string>;
@@ -272,6 +279,7 @@ export function ContractsManager({
   isSuperAdmin?: boolean;
   canEditCompliance?: boolean;
   loadError?: string;
+  clientContracts?: OpenClientContract[];
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(initialContracts);
@@ -359,8 +367,21 @@ export function ContractsManager({
     }, contractTypeDefaults(catalogs, form.contract_type_code));
     return contractHtml(printKit, values);
   }, [open, preview, printKit, previewKey, form, catalogs]);
+  const previewClient = clientContracts.find((contract) => contract.id === form.client_contract_id) ?? null;
   const previewHtml = printedPreview?.ok
-    ? printedPreview.data.replace("</head>", "<style>@media screen { body { padding: 28px 34px; } }</style></head>")
+    ? appendClientTerms(
+        printedPreview.data,
+        previewClient
+          ? storedClientTerms({
+              clientContractId: previewClient.id,
+              contractNumber: previewClient.contract_number,
+              poste: form.poste_fr,
+              rules: previewClient.absence,
+              clauses: previewClient.clauses,
+              confirmedIds: form.clause_ids,
+            })
+          : null,
+      ).replace("</head>", "<style>@media screen { body { padding: 28px 34px; } }</style></head>")
     : "";
   const previewProblem =
     previewError ?? kitError ?? (printedPreview && !printedPreview.ok ? printedPreview.error : null);
@@ -497,6 +518,8 @@ export function ContractsManager({
         end_date: row.end_date ?? "",
         status: row.status as FormState["status"],
         retenue: "",
+        client_contract_id: row.client_contract_id ?? "",
+        clause_ids: row.client_terms?.clauses.map((clause) => clause.id) ?? [],
       },
       linesForContract(row.id, row.employee_id),
     );
@@ -587,6 +610,14 @@ export function ContractsManager({
         return;
       }
       const done = result.data;
+      const reissue = done.reissue_notice ? ` ${done.reissue_notice}` : "";
+      if (done.reissue_notice) {
+        setArchives((current) => {
+          const nextArchives = { ...current };
+          delete nextArchives[done.id];
+          return nextArchives;
+        });
+      }
       let scanNote = "";
       if (scan && !form.id) {
         const attached = await attachContractPdf({ contract_id: done.id, path: scan.path, file_name: scan.file_name });
@@ -626,6 +657,8 @@ export function ContractsManager({
         matricule: emp?.matricule ?? "",
         employee_name: emp ? `${emp.last_name} ${emp.first_name}` : "",
         site_name: site?.name_fr ?? "",
+        client_contract_id: form.client_contract_id || null,
+        client_terms: null,
       };
       setRows((prev) => {
         const ended = done.closed_previous
@@ -642,7 +675,7 @@ export function ContractsManager({
       });
       if (done.warning) {
         setForm((f) => ({ ...f, id: done.id }));
-        setError(done.warning + scanNote);
+        setError(done.warning + scanNote + reissue);
         return;
       }
       setAsgRows((prev) => {
@@ -673,7 +706,7 @@ export function ContractsManager({
         if (!saved.ok) {
           setForm((f) => ({ ...f, id: done.id }));
           openedId.current = done.id;
-          setError(`Contrat enregistré, mais la retenue / jour d'absence ne l'a pas été : ${saved.error}`);
+          setError(`Contrat enregistré, mais la retenue / jour d'absence ne l'a pas été : ${saved.error}${reissue}`);
           return;
         }
         setRetenueBase(retenue);
@@ -693,7 +726,7 @@ export function ContractsManager({
           openedId.current = done.id;
           const fresh = await getContractCompliance(done.id);
           if (fresh.ok) setLegalBase(legalChoiceFromCompliance(fresh.data));
-          setError(`Contrat enregistré, mais IRG / CACOBATPH non appliqué : ${legalErrors.join(" · ")}`);
+          setError(`Contrat enregistré, mais IRG / CACOBATPH non appliqué : ${legalErrors.join(" · ")}${reissue}`);
           return;
         }
       }
@@ -711,7 +744,7 @@ export function ContractsManager({
           : `${saved} ${bi(
               "Les bulletins seront calculés à la génération de la paie, sur décision.",
               "تُحسب الكشوف عند توليد الأجور، بقرار.",
-            )}`) + scanNote,
+            )}`) + scanNote + reissue,
       );
     });
   }
@@ -951,8 +984,8 @@ export function ContractsManager({
                       {openPrincipal ? (
                         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
                           {bi(
-                            `Contrat principal déjà ouvert (début ${openPrincipal.start_date.split("-").reverse().join("/")}).`,
-                            "لهذا العامل عقد رئيسي مفتوح.",
+                            `Contrat principal encore ouvert (début ${openPrincipal.start_date.split("-").reverse().join("/")}). Clôturez-le avant d'en créer un autre.`,
+                            "لهذا العامل عقد رئيسي ما زال مفتوحاً. أقفلوه قبل إنشاء عقد جديد.",
                           )}
                           <button
                             type="button"
@@ -975,10 +1008,17 @@ export function ContractsManager({
                         disabled={Boolean(form.id)}
                         onChange={(e) => {
                           const nextSite = sites.find((s) => s.id === e.target.value);
+                          const onSite = clientContracts.filter((contract) => contract.site_id === e.target.value);
+                          const only = onSite.length === 1 ? onSite[0] : null;
+                          const fixed = only?.absence.find((rule) => rule.fixedAmount != null)?.fixedAmount;
                           setForm({
                             ...form,
                             site_id: e.target.value,
                             activity_code_id: nextSite?.activity_code_id || form.activity_code_id,
+                            client_contract_id: only?.id ?? "",
+                            clause_ids: [],
+                            poste_fr: only?.labor.length === 1 ? only.labor[0].designation : form.poste_fr,
+                            retenue: fixed != null && !form.retenue ? String(fixed) : form.retenue,
                           });
                         }}
                       >
@@ -1012,6 +1052,108 @@ export function ContractsManager({
                         ))}
                       </select>
                     </RhField>
+                    <div className="space-y-3 sm:col-span-2">
+                      <RhField
+                        label={bi("Contrat client", "عقد العميل")}
+                        hint={bi(
+                          "Ses postes, la pénalité d'absence et les clauses confirmées entrent dans le contrat de travail.",
+                          "مناصبه وعقوبة الغياب والبنود المؤكدة تدخل في عقد العمل.",
+                        )}
+                      >
+                        <select
+                          className={rhInput}
+                          value={form.client_contract_id}
+                          onChange={(e) => {
+                            const chosen = clientContracts.find((contract) => contract.id === e.target.value);
+                            const fixed = chosen?.absence.find((rule) => rule.fixedAmount != null)?.fixedAmount;
+                            setForm({
+                              ...form,
+                              client_contract_id: e.target.value,
+                              clause_ids: [],
+                              poste_fr: chosen?.labor.length === 1 ? chosen.labor[0].designation : form.poste_fr,
+                              retenue: fixed != null && !form.retenue ? String(fixed) : form.retenue,
+                            });
+                          }}
+                        >
+                          <option value="">—</option>
+                          {clientContracts
+                            .filter((contract) => !form.site_id || contract.site_id === form.site_id)
+                            .map((contract) => (
+                              <option key={contract.id} value={contract.id}>
+                                {contract.contract_number} · {contract.client_name}
+                              </option>
+                            ))}
+                        </select>
+                      </RhField>
+                      {clientContracts.find((contract) => contract.id === form.client_contract_id)?.labor.length ? (
+                        <RhField label={bi("Poste du contrat client", "منصب عقد العميل")} required>
+                          <select
+                            className={rhInput}
+                            value={
+                              clientContracts
+                                .find((contract) => contract.id === form.client_contract_id)
+                                ?.labor.find((item) => item.designation === form.poste_fr)?.id ?? ""
+                            }
+                            onChange={(e) => {
+                              const labor = clientContracts
+                                .find((contract) => contract.id === form.client_contract_id)
+                                ?.labor.find((item) => item.id === e.target.value);
+                              if (labor) setForm({ ...form, poste_fr: labor.designation, poste_ar: labor.designation });
+                            }}
+                          >
+                            <option value="">—</option>
+                            {clientContracts
+                              .find((contract) => contract.id === form.client_contract_id)
+                              ?.labor.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {item.designation}
+                                  {item.unit ? ` · ${item.unit}` : ""}
+                                </option>
+                              ))}
+                          </select>
+                        </RhField>
+                      ) : null}
+                      {clientContracts.find((contract) => contract.id === form.client_contract_id)?.absence.length ? (
+                        <p className="text-xs text-foreground/70">
+                          {bi("Absence", "الغياب")} :{" "}
+                          {clientContracts
+                            .find((contract) => contract.id === form.client_contract_id)
+                            ?.absence.map((rule) => `${rule.label} (${rule.detail})`)
+                            .join(" · ")}
+                        </p>
+                      ) : null}
+                      {clientContracts.find((contract) => contract.id === form.client_contract_id)?.clauses.length ? (
+                        <div className="space-y-1">
+                          <p className="text-xs font-semibold">
+                            {bi("Clauses à reporter dans le contrat de travail", "بنود تُنقل إلى عقد العمل")}
+                          </p>
+                          {clientContracts
+                            .find((contract) => contract.id === form.client_contract_id)
+                            ?.clauses.map((clause) => (
+                              <label key={clause.id} className="flex items-start gap-2 text-xs">
+                                <input
+                                  type="checkbox"
+                                  className="mt-0.5"
+                                  checked={form.clause_ids.includes(clause.id)}
+                                  onChange={(e) =>
+                                    setForm({
+                                      ...form,
+                                      clause_ids: e.target.checked
+                                        ? [...form.clause_ids, clause.id]
+                                        : form.clause_ids.filter((id) => id !== clause.id),
+                                    })
+                                  }
+                                />
+                                <span>
+                                  <span className="font-semibold">{clause.title}</span>
+                                  {clause.article_ref ? ` · ${clause.article_ref}` : ""}
+                                  {clause.content ? <span className="block text-foreground/65">{clause.content}</span> : null}
+                                </span>
+                              </label>
+                            ))}
+                        </div>
+                      ) : null}
+                    </div>
                     <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border/70 bg-surface-muted/40 px-3.5 py-2.5 sm:col-span-2">
                       <span>
                         <span className="block text-sm font-medium text-foreground">

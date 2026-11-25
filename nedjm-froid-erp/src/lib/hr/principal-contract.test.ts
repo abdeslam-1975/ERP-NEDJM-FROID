@@ -7,15 +7,28 @@ describe("principal contract overlap", () => {
     expect(rangesOverlap("2024-01-01", "2024-12-31", "2025-01-01", null)).toBe(false);
   });
 
-  it("closes the previous principal the day before the new start", () => {
+  it("refuses a new principal while the previous one is still open", () => {
     const plan = planPrincipalClose(
       [{ id: "old", start_date: "2024-01-01", end_date: null, status: "ACTIVE" }],
       { start_date: "2026-09-01", end_date: null, status: "DRAFT" },
     );
-    expect(plan.ok).toBe(true);
-    if (plan.ok) {
-      expect(plan.close).toEqual([{ id: "old", end_date: "2026-08-31" }]);
-    }
+    expect(plan.ok).toBe(false);
+  });
+
+  it("accepts a new principal that starts after the previous end date", () => {
+    const plan = planPrincipalClose(
+      [{ id: "old", start_date: "2024-01-01", end_date: "2026-08-31", status: "ENDED" }],
+      { start_date: "2026-09-01", end_date: null, status: "ACTIVE" },
+    );
+    expect(plan).toEqual({ ok: true, close: [] });
+  });
+
+  it("refuses a new principal that starts on the previous end date", () => {
+    const plan = planPrincipalClose(
+      [{ id: "old", start_date: "2024-01-01", end_date: "2026-09-01", status: "ENDED" }],
+      { start_date: "2026-09-01", end_date: null, status: "ACTIVE" },
+    );
+    expect(plan.ok).toBe(false);
   });
 
   it("refuses a second principal starting on the same day", () => {

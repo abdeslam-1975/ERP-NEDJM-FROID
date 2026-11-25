@@ -22,6 +22,7 @@ import {
   type CandidateDocumentRow,
   type CandidateRow,
 } from "@/lib/actions/hr-candidates";
+import type { OpenClientContract } from "@/lib/actions/hr-contracts";
 
 const STEPS: { id: CycleStep; fr: string; ar: string }[] = [
   { id: "IDENTITY", fr: "Pièces d'identité", ar: "وثائق الهوية" },
@@ -60,12 +61,14 @@ export function CandidatesManager({
   sites,
   activities,
   contractTypes,
+  clientContracts,
   loadError,
 }: {
   initial: CandidateCycleData;
   sites: Option[];
   activities: Option[];
   contractTypes: Option[];
+  clientContracts: OpenClientContract[];
   loadError?: string;
 }) {
   const [data, setData] = useState(initial);
@@ -178,6 +181,7 @@ export function CandidatesManager({
               sites={sites}
               activities={activities}
               contractTypes={contractTypes}
+              clientContracts={clientContracts}
               step={step}
               ready={ready}
               pending={pending}
@@ -210,6 +214,7 @@ function CandidateDossier({
   sites,
   activities,
   contractTypes,
+  clientContracts,
   step,
   ready,
   pending,
@@ -226,6 +231,7 @@ function CandidateDossier({
   sites: Option[];
   activities: Option[];
   contractTypes: Option[];
+  clientContracts: OpenClientContract[];
   step: CycleStep;
   ready: boolean;
   pending: boolean;
@@ -248,11 +254,38 @@ function CandidateDossier({
     salaire_base_monthly: number;
     contract_start: string;
     contract_end?: string;
+    client_contract_id?: string;
+    clause_ids?: string[];
   }) => void;
   onGenerate: (kind: "FICHE" | "CONTRACT") => void;
   onPromote: () => void;
 }) {
   const locked = Boolean(candidate.employee_id);
+  const [siteId, setSiteId] = useState(candidate.site_id ?? "");
+  const [clientId, setClientId] = useState(candidate.client_contract_id ?? "");
+  const [poste, setPoste] = useState(candidate.poste_fr ?? "");
+  const [clauseIds, setClauseIds] = useState(candidate.client_terms?.clauses.map((clause) => clause.id) ?? []);
+  const onSite = clientContracts.filter((contract) => contract.site_id === siteId);
+  const chosen = onSite.find((contract) => contract.id === clientId) ?? null;
+
+  function chooseSite(nextSite: string) {
+    const available = clientContracts.filter((contract) => contract.site_id === nextSite);
+    const only = available.length === 1 ? available[0] : null;
+    setSiteId(nextSite);
+    setClientId(only?.id ?? (available.some((contract) => contract.id === clientId) ? clientId : ""));
+    setClauseIds([]);
+    if (only?.labor.length === 1) setPoste(only.labor[0].designation);
+    else if (only && !only.labor.some((item) => item.designation === poste)) setPoste("");
+  }
+
+  function chooseClient(nextId: string) {
+    const contract = onSite.find((item) => item.id === nextId) ?? null;
+    setClientId(nextId);
+    setClauseIds([]);
+    if (contract?.labor.length === 1) setPoste(contract.labor[0].designation);
+    else if (contract && !contract.labor.some((item) => item.designation === poste)) setPoste("");
+  }
+
   return (
     <div className="space-y-4">
       <ol className="flex flex-wrap gap-2">
@@ -376,19 +409,21 @@ function CandidateDossier({
         className="grid gap-3 rounded-2xl border border-border/70 p-4 md:grid-cols-3"
         action={(formData) =>
           onContract({
-            site_id: String(formData.get("site_id") || ""),
+            site_id: siteId,
             activity_code_id: String(formData.get("activity_code_id") || ""),
             contract_type_code: String(formData.get("contract_type_code") || ""),
-            poste_fr: String(formData.get("poste_fr") || ""),
+            poste_fr: poste,
             salaire_base_monthly: Number(formData.get("salaire_base_monthly") || 0),
             contract_start: String(formData.get("contract_start") || ""),
             contract_end: String(formData.get("contract_end") || ""),
+            client_contract_id: clientId,
+            clause_ids: clauseIds,
           })
         }
       >
         <h2 className="md:col-span-3 text-sm font-semibold">Termes du contrat</h2>
         <RhField label="Site" required>
-          <select name="site_id" defaultValue={candidate.site_id ?? ""} className={rhSelect} disabled={locked}>
+          <select name="site_id" value={siteId} className={rhSelect} disabled={locked} onChange={(event) => chooseSite(event.target.value)}>
             <option value="">—</option>
             {sites.map((site) => (
               <option key={site.id} value={site.id}>
@@ -417,9 +452,76 @@ function CandidateDossier({
             ))}
           </select>
         </RhField>
-        <RhField label="Poste">
-          <input name="poste_fr" defaultValue={candidate.poste_fr ?? ""} className={rhInput} disabled={locked} />
-        </RhField>
+        {chosen?.labor.length ? (
+          <RhField label="Poste du contrat client" required>
+            <select
+              className={rhSelect}
+              value={chosen.labor.find((item) => item.designation === poste)?.id ?? ""}
+              disabled={locked}
+              onChange={(event) => {
+                const labor = chosen.labor.find((item) => item.id === event.target.value);
+                setPoste(labor?.designation ?? "");
+              }}
+            >
+              <option value="">—</option>
+              {chosen.labor.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.designation}
+                  {item.unit ? ` · ${item.unit}` : ""}
+                </option>
+              ))}
+            </select>
+          </RhField>
+        ) : (
+          <RhField label="Poste">
+            <input value={poste} onChange={(event) => setPoste(event.target.value)} className={rhInput} disabled={locked} />
+          </RhField>
+        )}
+        <div className="space-y-2 md:col-span-3">
+          <RhField
+            label="Contrat client"
+            hint="Ses postes, la pénalité d'absence et les clauses confirmées entrent dans le contrat. · مناصبه وعقوبة الغياب والبنود المؤكدة تدخل في العقد."
+          >
+            <select className={rhSelect} value={clientId} disabled={locked} onChange={(event) => chooseClient(event.target.value)}>
+              <option value="">—</option>
+              {onSite.map((contract) => (
+                <option key={contract.id} value={contract.id}>
+                  {contract.contract_number} · {contract.client_name}
+                </option>
+              ))}
+            </select>
+          </RhField>
+          {chosen?.absence.length ? (
+            <p className="text-xs text-foreground/70">
+              Absence · الغياب : {chosen.absence.map((rule) => `${rule.label} (${rule.detail})`).join(" · ")}
+            </p>
+          ) : null}
+          {chosen?.clauses.length ? (
+            <div className="space-y-1">
+              <p className="text-xs font-semibold">Clauses à reporter · بنود تُنقل إلى عقد العمل</p>
+              {chosen.clauses.map((clause) => (
+                <label key={clause.id} className="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={clauseIds.includes(clause.id)}
+                    disabled={locked}
+                    onChange={(event) =>
+                      setClauseIds((current) =>
+                        event.target.checked ? [...current, clause.id] : current.filter((id) => id !== clause.id),
+                      )
+                    }
+                  />
+                  <span>
+                    <span className="font-semibold">{clause.title}</span>
+                    {clause.article_ref ? ` · ${clause.article_ref}` : ""}
+                    {clause.content ? <span className="block text-foreground/65">{clause.content}</span> : null}
+                  </span>
+                </label>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <RhField label="Salaire de base" required>
           <input name="salaire_base_monthly" type="number" min={0} step="0.01" defaultValue={candidate.salaire_base_monthly ?? ""} className={rhInput} disabled={locked} />
         </RhField>

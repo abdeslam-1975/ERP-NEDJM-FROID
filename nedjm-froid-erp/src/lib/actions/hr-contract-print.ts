@@ -20,6 +20,7 @@ import {
   type ContractPrintSource,
   type ContractPrintValues,
 } from "@/lib/hr/work-contract";
+import { appendClientTerms, type StoredClientTerms } from "@/lib/hr/client-contract-terms";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -27,16 +28,30 @@ export type ActionResult<T = void> =
 
 export type ContractPrintContext = {
   values: ContractPrintValues;
+  client_terms: StoredClientTerms | null;
 };
+
+function readClientTerms(value: unknown): StoredClientTerms | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as StoredClientTerms;
+  if (typeof row.contract_number !== "string") return null;
+  return {
+    client_contract_id: typeof row.client_contract_id === "string" ? row.client_contract_id : "",
+    contract_number: row.contract_number,
+    poste_label: typeof row.poste_label === "string" ? row.poste_label : "",
+    penalty_text: typeof row.penalty_text === "string" ? row.penalty_text : "",
+    clauses: Array.isArray(row.clauses) ? row.clauses : [],
+  };
+}
 
 async function loadSource(
   supabase: Awaited<ReturnType<typeof createClient>>,
   contractId: string,
-): Promise<ActionResult<{ source: ContractPrintSource; type: ContractTypeDefaults }>> {
+): Promise<ActionResult<{ source: ContractPrintSource; type: ContractTypeDefaults; client_terms: StoredClientTerms | null }>> {
   const { data: ctr, error } = await supabase
     .from("hr_contracts")
     .select(
-      "id, employee_id, contract_number, contract_type_code, poste_ar, poste_fr, start_date, end_date, salaire_net_ref_monthly, salaire_net_recup_monthly, print_data",
+      "id, employee_id, contract_number, contract_type_code, poste_ar, poste_fr, start_date, end_date, salaire_net_ref_monthly, salaire_net_recup_monthly, print_data, client_terms",
     )
     .eq("id", contractId)
     .maybeSingle();
@@ -51,6 +66,7 @@ async function loadSource(
   return {
     ok: true,
     data: {
+      client_terms: readClientTerms(ctr.client_terms),
       type: contractTypeDefaults(types.data, ctr.contract_type_code),
       source: {
         contract_number: ctr.contract_number,
@@ -184,7 +200,13 @@ export async function getContractPrintContext(
   const supabase = await createClient();
   const source = await loadSource(supabase, contractId);
   if (!source.ok) return source;
-  return { ok: true, data: { values: contractPrintDefaults(source.data.source, source.data.type) } };
+  return {
+    ok: true,
+    data: {
+      values: contractPrintDefaults(source.data.source, source.data.type),
+      client_terms: source.data.client_terms,
+    },
+  };
 }
 
 const valuesSchema = z.object({
@@ -276,7 +298,7 @@ export async function archiveContractPrint(contractId: string): Promise<ActionRe
     if (!kit.ok) return kit;
     const html = printFromKit(kit.data, CONTRACT_DOC_TYPE, contractDocData(values, kit.data.company), origin);
     if (!html.ok) return html;
-    const pdf = await htmlToPdf(html.data, hrPdfOptions(supabase, origin));
+    const pdf = await htmlToPdf(appendClientTerms(html.data, context.data.client_terms), hrPdfOptions(supabase, origin));
     const safeNum = (values.numero || "SN").replace(/\//g, "-");
     const path = `${archiveFolder(ctr.employee_id)}/CONTRAT-${safeNum}-${crypto.randomUUID()}.pdf`;
     const uploadError = await uploadHrPdf(supabase, path, pdf);

@@ -1,4 +1,5 @@
 import {
+  assignFicheReference,
   getHrEmployeeFiche,
   upsertHrEmployee,
   type HrEmployeeFiche,
@@ -28,6 +29,7 @@ export function valuesFromFiche(row: HrEmployeeFiche, fields: HrEmployeeField[])
     values[field.code] = asText(raw);
     if (field.code === "irg_category" && !values[field.code]) values[field.code] = "STANDARD";
   }
+  values.fiche_reference = asText(row.fiche_reference);
   return values;
 }
 
@@ -115,14 +117,23 @@ export async function saveEmployeeFiche(
     }
     if (current.ok) previous = valuesFromFiche(current.data, activeFields);
   }
+  if (options?.newEntry && normalized.id) {
+    const prior = await archiveEmployeeFicheRenseignements(normalized.id);
+    if (!prior.ok) return { ok: false, error: prior.error };
+    const reissued = await assignFicheReference(normalized.id, normalized.hired_at || "", true);
+    if (!reissued.ok) return { ok: false, error: reissued.error };
+  }
   const payload = employeePayloadFromValues(normalized, activeFields);
-  if (options?.newEntry && !normalized.id) payload.new_entry = true;
   const result = await upsertHrEmployee(payload);
+  if (result.ok && !options?.newEntry) {
+    const issued = await assignFicheReference(result.data.id, normalized.hired_at || "", false);
+    if (!issued.ok) return { ok: false, error: issued.error };
+  }
   if (!result.ok) return { ok: false, error: result.error };
   onStored?.();
   const fiche = await getHrEmployeeFiche(result.data.id);
   const saved = fiche.ok ? fiche.data : null;
-  if (!printedFicheChanged(previous, normalized, activeFields)) {
+  if (!options?.newEntry && !printedFicheChanged(previous, normalized, activeFields)) {
     return {
       ok: true,
       fiche: saved,
@@ -130,6 +141,7 @@ export async function saveEmployeeFiche(
     };
   }
   if (
+    !options?.newEntry &&
     ficheDates.length &&
     !confirmAnotherCopy("Fiche de renseignements", "بطاقة المعلومات", ficheDates)
   ) {
@@ -141,7 +153,9 @@ export async function saveEmployeeFiche(
   }
   let info = "Fiche enregistrée.";
   try {
-    const archived = await archiveEmployeeFicheRenseignements(result.data.id);
+    const archived = await archiveEmployeeFicheRenseignements(result.data.id, {
+      keepPreviousFile: Boolean(options?.newEntry),
+    });
     info = archived.ok
       ? `Fiche enregistrée. PDF : ${archived.data.file_name}`
       : `Fiche enregistrée. PDF plus tard : ${archived.error}`;

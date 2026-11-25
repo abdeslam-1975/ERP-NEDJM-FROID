@@ -331,11 +331,8 @@ export function EmployeesManager({
     previousHire.current = (values.hired_at || "").slice(0, 10);
     newEntryRef.current = true;
     setNewEntry(true);
-    autoMatricule.current = "";
     setValues((current) => ({
       ...current,
-      id: "",
-      matricule: "",
       hired_at: "",
       declaration_date: "",
     }));

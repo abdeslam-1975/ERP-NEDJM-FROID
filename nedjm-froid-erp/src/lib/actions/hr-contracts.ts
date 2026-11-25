@@ -11,6 +11,18 @@ import {
   isPrincipalExclusionError,
   planPrincipalClose,
 } from "@/lib/hr/principal-contract";
+import { contractAttributesSchema } from "@/lib/contracts/attributes-schema";
+import { withdrawContractArchive } from "@/lib/hr/contract-archive";
+import {
+  absenceRules,
+  asStoredClientTerms,
+  clientTermsKey,
+  laborPostes,
+  posteMatchesLabor,
+  storedClientTerms,
+  transferableClauses,
+  type StoredClientTerms,
+} from "@/lib/hr/client-contract-terms";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -43,7 +55,13 @@ export type HrContractRow = {
   employee_name: string;
   matricule: string;
   site_name: string;
+  client_contract_id: string | null;
+  client_terms: StoredClientTerms | null;
 };
+
+function asStoredTerms(value: unknown): StoredClientTerms | null {
+  return asStoredClientTerms(value);
+}
 
 function revalidate() {
   revalidatePath("/rh");
@@ -66,7 +84,7 @@ export async function listHrContracts(): Promise<ActionResult<HrContractRow[]>> 
       id, employee_id, site_id, activity_code_id, contract_type_code, work_regime_code, cnas_regime_code,
       poste_ar, poste_fr, qualification_code, poste_id, grade, agency_id, interim_daily_rate, affectation_principale,
       salaire_base_monthly, salaire_net_ref_monthly, salaire_net_recup_monthly,
-      start_date, end_date, status,
+      start_date, end_date, status, client_contract_id, client_terms,
       employee:hr_employees ( matricule, last_name, first_name ),
       site:ref_sites ( name_fr )
     `,
@@ -110,15 +128,126 @@ export async function listHrContracts(): Promise<ActionResult<HrContractRow[]>> 
         employee_name: `${emp?.last_name ?? ""} ${emp?.first_name ?? ""}`.trim(),
         matricule: emp?.matricule ?? "",
         site_name: site?.name_fr ?? "",
+        client_contract_id: row.client_contract_id ?? null,
+        client_terms: asStoredTerms(row.client_terms),
       };
     }),
+  };
+}
+
+export type OpenClientContract = {
+  id: string;
+  contract_number: string;
+  client_name: string;
+  site_id: string;
+  labor: { id: string; designation: string; unit: string }[];
+  absence: { id: string; label: string; detail: string; fixedAmount: number | null }[];
+  clauses: { id: string; article_ref: string; title: string; content: string }[];
+};
+
+type ClientTermInput = {
+  site_id: string;
+  poste_fr: string | null;
+  poste_ar: string | null;
+  client_contract_id: string | null;
+  clause_ids?: string[];
+  /** An existing contract can be edited before a client contract is linked. */
+  allowMissing?: boolean;
+};
+
+export async function clientTermsForContract(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  input: ClientTermInput,
+): Promise<ActionResult<StoredClientTerms | null>> {
+  const { data, error } = await supabase
+    .from("ref_contracts")
+    .select(
+      "id, contract_number, client_name, site_id, status, attributes, items:contract_items(id, item_type, designation, unit)",
+    )
+    .eq("site_id", input.site_id)
+    .in("status", ["VALIDE", "EN_COURS"]);
+  if (error) return { ok: false, error: error.message };
+  const open = (data ?? []).filter(
+    (row) => typeof row.contract_number === "string" && typeof row.client_name === "string" && row.site_id === input.site_id,
+  );
+  if (!input.client_contract_id) {
+    if (open.length && !input.allowMissing) {
+      return {
+        ok: false,
+        error: "Choisissez le contrat client de cette affectation. · اختاروا عقد العميل لهذا التعيين.",
+      };
+    }
+    return { ok: true, data: null };
+  }
+  const chosen = open.find((row) => row.id === input.client_contract_id);
+  if (!chosen) {
+    return { ok: false, error: "Le contrat client choisi n'est pas ouvert sur cette affectation." };
+  }
+  const parsed = contractAttributesSchema.safeParse(chosen.attributes ?? {});
+  const attrs = parsed.success ? parsed.data : contractAttributesSchema.parse({});
+  const labor = laborPostes((chosen.items ?? []) as { id: string; item_type: string; designation: string; unit?: string }[]);
+  const poste = posteMatchesLabor(input.poste_fr || input.poste_ar || "", labor);
+  if (!poste) {
+    const names = labor.map((item) => item.designation).join(", ") || "aucun poste";
+    return {
+      ok: false,
+      error: `Le poste doit être l'un des postes du contrat client : ${names}. · المنصب يجب أن يكون مذكوراً في عقد العميل.`,
+    };
+  }
+  return {
+    ok: true,
+    data: storedClientTerms({
+      clientContractId: chosen.id,
+      contractNumber: chosen.contract_number,
+      poste: poste.designation,
+      rules: absenceRules([...attrs.penalties.presets, ...attrs.penalties.custom]),
+      clauses: transferableClauses(attrs.clauses.items),
+      confirmedIds: input.clause_ids ?? [],
+    }),
+  };
+}
+
+/** Open client contracts an HR user can apply to a work contract. */
+export async function listOpenClientContracts(): Promise<ActionResult<OpenClientContract[]>> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("ref_contracts")
+    .select(
+      "id, contract_number, client_name, site_id, status, attributes, items:contract_items(id, item_type, designation, unit)",
+    )
+    .in("status", ["VALIDE", "EN_COURS"])
+    .limit(500);
+  if (error) return { ok: false, error: error.message };
+  return {
+    ok: true,
+    data: (data ?? [])
+      .filter((row) => typeof row.contract_number === "string" && typeof row.client_name === "string")
+      .map((row) => {
+        const parsed = contractAttributesSchema.safeParse(row.attributes ?? {});
+        const attrs = parsed.success ? parsed.data : contractAttributesSchema.parse({});
+        return {
+          id: row.id,
+          contract_number: row.contract_number,
+          client_name: row.client_name,
+          site_id: row.site_id,
+          labor: laborPostes((row.items ?? []) as { id: string; item_type: string; designation: string; unit?: string }[]),
+          absence: absenceRules([...attrs.penalties.presets, ...attrs.penalties.custom]),
+          clauses: transferableClauses(attrs.clauses.items),
+        };
+      }),
   };
 }
 
 export async function upsertHrContract(
   input: unknown,
 ): Promise<
-  ActionResult<{ id: string; closed_previous: number; payroll_notice: string | null; warning: string | null }>
+  ActionResult<{
+    id: string;
+    closed_previous: number;
+    payroll_notice: string | null;
+    warning: string | null;
+    reissue_notice: string | null;
+  }>
 > {
   const parsed = hrContractSchema.safeParse(input);
   if (!parsed.success) {
@@ -161,6 +290,18 @@ export async function upsertHrContract(
     if (!plan.ok) return plan;
     closePlan = plan.close;
   }
+  let previousKey = "";
+  if (p.id) {
+    const previous = await supabase
+      .from("hr_contracts")
+      .select("client_terms")
+      .eq("id", p.id)
+      .maybeSingle();
+    if (previous.error) return { ok: false, error: previous.error.message };
+    previousKey = clientTermsKey(asStoredTerms(previous.data?.client_terms));
+  }
+  const linked = await clientTermsForContract(supabase, { ...p, allowMissing: Boolean(p.id) });
+  if (!linked.ok) return linked;
   const payload = {
     employee_id: p.employee_id,
     site_id: p.site_id,
@@ -169,7 +310,7 @@ export async function upsertHrContract(
     work_regime_code: p.work_regime_code,
     cnas_regime_code: p.cnas_regime_code,
     poste_ar: p.poste_ar,
-    poste_fr: p.poste_fr,
+    poste_fr: linked.data?.poste_label || p.poste_fr,
     qualification_code: p.qualification_code,
     poste_id: p.poste_id,
     grade: p.grade ? p.grade.toUpperCase() : null,
@@ -183,6 +324,8 @@ export async function upsertHrContract(
     end_date: p.end_date,
     status: p.status,
     currency: "DZD",
+    client_contract_id: linked.data?.client_contract_id ?? null,
+    client_terms: linked.data,
   };
   // After creation the site mirrors the dated assignment in force; it changes only through assignments.
   const updatePayload: Partial<typeof payload> = { ...payload };
@@ -207,6 +350,16 @@ export async function upsertHrContract(
   // The contract row is saved from here on: later failures are reported as warnings with its id,
   // otherwise a retry from the form would try to insert a second principal contract.
   let warning: string | null = null;
+  let reissueNotice: string | null = null;
+  if (p.id && clientTermsKey(linked.data) !== previousKey) {
+    const withdrawn = await withdrawContractArchive(supabase, data.id);
+    if (!withdrawn.ok) {
+      warning = `Contrat enregistré, mais l'archive signée n'a pas été retirée : ${withdrawn.error}`;
+    } else if (withdrawn.removed) {
+      reissueNotice =
+        "Conditions du contrat client modifiées : l'archive signée est retirée. Réimprimez et refaites signer. · تغيّرت شروط عقد العميل: سُحبت النسخة الموقّعة. أعيدوا الطباعة والتوقيع.";
+    }
+  }
   if (p.salary_lines) {
     const lines = await replaceContractSalaryLines({
       contract_id: data.id,
@@ -214,7 +367,8 @@ export async function upsertHrContract(
       lines: p.salary_lines,
     });
     if (!lines.ok) {
-      warning = `Contrat enregistré, mais les rubriques de salaire ne l'ont pas été : ${lines.error}`;
+      const failed = `Contrat enregistré, mais les rubriques de salaire ne l'ont pas été : ${lines.error}`;
+      warning = warning ? `${warning}\n${failed}` : failed;
     }
   }
   const signal = await signalPayrollInputChange(supabase, {
@@ -235,6 +389,7 @@ export async function upsertHrContract(
       closed_previous: closePlan.length,
       payroll_notice: signal.ok ? payrollSignalNotice(signal.data) : null,
       warning,
+      reissue_notice: reissueNotice,
     },
   };
 }

@@ -92,13 +92,15 @@ export function ficheDocData(
     }));
   const signNo = sections.length + 2;
   const matricule = v("matricule");
+  const ficheReference = v("fiche_reference");
   const titleFr = settings.title || "FICHE DE RENSEIGNEMENTS";
 
   return {
     letterhead: letterheadUrl,
     company,
-    doc_title: `${titleFr} ${matricule}`.trim(),
+    doc_title: `${titleFr} ${matricule} ${ficheReference}`.trim(),
     title_fr: titleFr,
+    fiche_reference: ficheReference,
     title_letters: Array.from(titleFr).map((c) => (c === " " ? "\u00a0" : c)),
     matricule_label: withColon(settings.matricule_label || "Matricule"),
     matricule,
@@ -128,5 +130,12 @@ export function ficheHtml(
 ) {
   const letterhead = companyLetterheadUrl(settings.letterhead_url, origin);
   const data = ficheDocData(values, catalogs, fields, settings, kit.company, letterhead);
-  return printFromKit(kit, "fiche_renseignements", data, origin);
+  const printed = printFromKit(kit, "fiche_renseignements", data, origin);
+  const reference = (values.fiche_reference ?? "").trim();
+  if (!printed.ok) return printed;
+  if (!reference || printed.data.includes(reference)) return printed;
+  return {
+    ok: true as const,
+    data: printed.data.replace("</body>", `<p class="fiche-ref">مرجع البطاقة : ${reference}</p></body>`),
+  };
 }

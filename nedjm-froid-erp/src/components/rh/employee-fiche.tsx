@@ -174,6 +174,7 @@ export function EmployeeFicheDialog({
           {values.matricule ? (
             <span className="rounded-lg bg-brand/10 px-2.5 py-1 font-mono text-xs font-bold tracking-wide text-brand">
               {values.matricule}
+              {values.fiche_reference ? ` · ${values.fiche_reference}` : ""}
             </span>
           ) : (
             <RhChip tone="brand">Brouillon</RhChip>
@@ -388,8 +389,8 @@ export function EmployeeFicheDialog({
       {newEntry ? (
         <div className="mt-2">
           <RhAlert tone="warning">
-            Nouvelle entrée. L&apos;ancienne carte et sa date de recrutement restent inchangées.
-            Indiquez la nouvelle date, puis Enregistrer.
+            Nouvelle entrée. Le matricule reste le même. L&apos;ancienne fiche est archivée avec son numéro.
+            Indiquez la nouvelle date de début, puis Enregistrer.
           </RhAlert>
         </div>
       ) : null}

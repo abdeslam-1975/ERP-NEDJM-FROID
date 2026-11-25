@@ -121,6 +121,8 @@ describe("voiding a signed copy", () => {
     const before = { site_id: "s", poste_fr: "Frigoriste", salaire_base_monthly: 50000, contract_start: "2026-12-01" };
     expect(contractTermsChanged(before, { ...before, salaire_base_monthly: 50000 })).toBe(false);
     expect(contractTermsChanged(before, { ...before, salaire_base_monthly: 52000 })).toBe(true);
+    expect(contractTermsChanged(before, { ...before, client_terms_key: "poste" })).toBe(true);
+    expect(contractTermsChanged({ ...before, client_terms_key: "poste" }, { ...before, client_terms_key: "poste" })).toBe(false);
   });
 });
 

@@ -1,5 +1,5 @@
 import { ContractsManager } from "@/components/rh/contracts-manager";
-import { listHrContracts } from "@/lib/actions/hr-contracts";
+import { listHrContracts, listOpenClientContracts } from "@/lib/actions/hr-contracts";
 import { listHrEmployeeRows } from "@/lib/actions/hr-employees";
 import { loadHrLookups } from "@/lib/actions/hr-lookups";
 import { listSalaryAssignments, listSalaryRubriques } from "@/lib/actions/hr-salary";
@@ -24,6 +24,7 @@ export async function ContractsRegister() {
     complianceOptions,
     compliance,
     archives,
+    clientContracts,
   ] = await Promise.all([
     listHrContracts(),
     listHrEmployeeRows(),
@@ -36,6 +37,7 @@ export async function ContractsRegister() {
     listContractComplianceOptions(),
     getComplianceAccess(),
     listContractArchives(),
+    listOpenClientContracts(),
   ]);
 
   return (
@@ -64,6 +66,7 @@ export async function ContractsRegister() {
       canEditCompliance={compliance.canWrite}
       contractArchives={archives}
       postes={postes.ok ? postes.data : []}
+      clientContracts={clientContracts.ok ? clientContracts.data : []}
       agencies={(agencies.ok ? agencies.data : [])
         .filter((a) => a.is_active)
         .map((a) => ({ id: a.id, label: `${a.code} · ${a.name}`, default_daily_rate: a.default_daily_rate }))}

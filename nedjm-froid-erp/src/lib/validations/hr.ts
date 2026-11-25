@@ -347,6 +347,11 @@ export const hrContractSchema = z.object({
   end_date: optDate,
   status: z.enum(["DRAFT", "ACTIVE", "SUSPENDED", "ENDED"]).default("DRAFT"),
   salary_lines: z.array(hrContractSalaryLineSchema).max(80).optional(),
+  client_contract_id: z
+    .union([z.string().uuid(), z.literal(""), z.null()])
+    .optional()
+    .transform((v) => (v ? v : null)),
+  clause_ids: z.array(z.string().trim().min(1).max(80)).max(40).optional(),
 });
 
 export const hrFileSchema = z.object({

@@ -3,7 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { listCatalogItems } from "@/lib/actions/hr-catalogs";
-import { upsertHrContract } from "@/lib/actions/hr-contracts";
+import { clientTermsForContract, listOpenClientContracts, upsertHrContract } from "@/lib/actions/hr-contracts";
+import {
+  appendClientTerms,
+  asStoredClientTerms,
+  clientTermsKey,
+  posteMatchesLabor,
+  type StoredClientTerms,
+} from "@/lib/hr/client-contract-terms";
 import { upsertHrFile } from "@/lib/actions/hr-documents";
 import {
   CONTRACT_DOCUMENT,
@@ -41,6 +48,8 @@ export type CandidateRow = IdentityFields & {
   salaire_base_monthly: number | null;
   contract_start: string | null;
   contract_end: string | null;
+  client_contract_id: string | null;
+  client_terms: StoredClientTerms | null;
   promoted_at: string | null;
 };
 
@@ -68,7 +77,7 @@ export type CandidateCycleData = {
 };
 
 const CANDIDATE_SELECT =
-  "id, last_name, first_name, last_name_ar, first_name_ar, nin, birth_date, phone, cycle_step, employee_id, site_id, activity_code_id, contract_type_code, poste_fr, salaire_base_monthly, contract_start, contract_end, promoted_at";
+  "id, last_name, first_name, last_name_ar, first_name_ar, nin, birth_date, phone, cycle_step, employee_id, site_id, activity_code_id, contract_type_code, poste_fr, salaire_base_monthly, contract_start, contract_end, client_contract_id, client_terms, promoted_at";
 
 const DOC_SELECT =
   "id, candidate_id, doc_code, family, version_no, is_current, status, file_url, file_name, storage_path, specimen_url, specimen_name, specimen_path, reject_reason, created_at";
@@ -119,6 +128,8 @@ function mapCandidate(row: Record<string, unknown>): CandidateRow {
     salaire_base_monthly: row.salaire_base_monthly == null ? null : Number(row.salaire_base_monthly),
     contract_start: dateOrNull(row.contract_start),
     contract_end: dateOrNull(row.contract_end),
+    client_contract_id: row.client_contract_id ? String(row.client_contract_id) : null,
+    client_terms: asStoredClientTerms(row.client_terms),
     promoted_at: row.promoted_at ? String(row.promoted_at) : null,
   };
 }
@@ -465,6 +476,8 @@ export async function saveCandidateContract(input: {
   salaire_base_monthly: number;
   contract_start: string;
   contract_end?: string;
+  client_contract_id?: string;
+  clause_ids?: string[];
 }): Promise<ActionResult<CandidateCycleData>> {
   const start = dateOrNull(input.contract_start);
   const end = dateOrNull(input.contract_end);
@@ -485,17 +498,32 @@ export async function saveCandidateContract(input: {
   if (!producedArchived(asCycle(docs), FICHE_DOCUMENT)) {
     return { ok: false, error: "Archivez la fiche signée avant de préparer le contrat." };
   }
+  const linked = await clientTermsForContract(supabase, {
+    site_id: input.site_id,
+    poste_fr: textOrNull(input.poste_fr, 120),
+    poste_ar: null,
+    client_contract_id: textOrNull(input.client_contract_id, 40),
+    clause_ids: input.clause_ids ?? [],
+  });
+  if (!linked.ok) return linked;
   const next = {
     site_id: input.site_id,
     activity_code_id: input.activity_code_id,
     contract_type_code: textOrNull(input.contract_type_code, 40),
-    poste_fr: textOrNull(input.poste_fr, 120),
+    poste_fr: linked.data?.poste_label || textOrNull(input.poste_fr, 120),
     salaire_base_monthly: input.salaire_base_monthly,
     contract_start: start,
     contract_end: end,
+    client_contract_id: linked.data?.client_contract_id ?? null,
+    client_terms: linked.data,
   };
   let notice: string | null = null;
-  if (contractTermsChanged(candidate, next)) {
+  if (
+    contractTermsChanged(
+      { ...candidate, client_terms_key: clientTermsKey(candidate.client_terms) },
+      { ...next, client_terms_key: clientTermsKey(linked.data) },
+    )
+  ) {
     const closed = await closeCurrent(supabase, candidate.id, [CONTRACT_DOCUMENT]);
     if (!closed.ok) return closed;
     if (docs.some((doc) => doc.is_current && doc.doc_code === CONTRACT_DOCUMENT)) {
@@ -534,6 +562,15 @@ export async function generateCandidateDocument(input: {
     if (!candidate.site_id || !candidate.activity_code_id || !candidate.contract_start || candidate.salaire_base_monthly == null) {
       return { ok: false, error: "Enregistrez le site, l'activité, le poste, le salaire et la date de début." };
     }
+    const clients = await listOpenClientContracts();
+    if (!clients.ok) return clients;
+    const onSite = clients.data.filter((row) => row.site_id === candidate.site_id);
+    if (onSite.length && !candidate.client_contract_id) {
+      return {
+        ok: false,
+        error: "Choisissez le contrat client de cette affectation avant d'imprimer. · اختاروا عقد العميل قبل الطباعة.",
+      };
+    }
   }
 
   const version = nextVersion(docs, code);
@@ -543,11 +580,14 @@ export async function generateCandidateDocument(input: {
       supabase.from("ref_sites").select("name_fr").eq("id", candidate.site_id).maybeSingle(),
       supabase.from("ref_activity_codes").select("code, label_fr").eq("id", candidate.activity_code_id).maybeSingle(),
     ]);
-    html = candidateContractHtml(candidate, {
-      ...candidate,
-      site_name: site.data?.name_fr ?? "",
-      activity_label: activity.data ? `${activity.data.code} · ${activity.data.label_fr}` : "",
-    }, version);
+    html = appendClientTerms(
+      candidateContractHtml(candidate, {
+        ...candidate,
+        site_name: site.data?.name_fr ?? "",
+        activity_label: activity.data ? `${activity.data.code} · ${activity.data.label_fr}` : "",
+      }, version),
+      candidate.client_terms,
+    );
   }
   const origin = await requestOrigin();
   let pdf: Buffer;
@@ -604,6 +644,35 @@ export async function promoteCandidate(id: string): Promise<ActionResult<Candida
   );
   if (!matricule) return { ok: false, error: "Matricule impossible à attribuer pour cette date." };
 
+  const clients = await listOpenClientContracts();
+  if (!clients.ok) return clients;
+  const onSite = clients.data.filter((row) => row.site_id === candidate.site_id);
+  let clientContractId: string | null = null;
+  let clauseIds: string[] = [];
+  let posteFr = candidate.poste_fr;
+  if (onSite.length && !candidate.client_contract_id) {
+    return {
+      ok: false,
+      error: "Choisissez le contrat client de cette affectation avant le transfert. · اختاروا عقد العميل قبل النقل.",
+    };
+  }
+  const chosen = onSite.find((row) => row.id === candidate.client_contract_id);
+  if (candidate.client_contract_id && !chosen) {
+    return { ok: false, error: "Le contrat client choisi n'est plus ouvert sur cette affectation." };
+  }
+  if (chosen) {
+    const poste = posteMatchesLabor(candidate.client_terms?.poste_label || candidate.poste_fr || "", chosen.labor);
+    if (chosen.labor.length && !poste) {
+      return {
+        ok: false,
+        error: `Le poste doit être l'un des postes du contrat client ${chosen.contract_number} : ${chosen.labor.map((item) => item.designation).join(", ")}.`,
+      };
+    }
+    clientContractId = chosen.id;
+    clauseIds = candidate.client_terms?.clauses.map((clause) => clause.id) ?? [];
+    if (poste) posteFr = poste.designation;
+  }
+
   const { data: created, error: createError } = await supabase
     .from("hr_employees")
     .insert({
@@ -628,13 +697,15 @@ export async function promoteCandidate(id: string): Promise<ActionResult<Candida
     site_id: candidate.site_id,
     activity_code_id: candidate.activity_code_id,
     contract_type_code: candidate.contract_type_code,
-    poste_fr: candidate.poste_fr,
+    poste_fr: posteFr,
     affectation_principale: true,
     salaire_base_monthly: candidate.salaire_base_monthly,
     salaire_net_ref_monthly: candidate.salaire_base_monthly,
     start_date: candidate.contract_start,
     end_date: candidate.contract_end,
     status: "ACTIVE",
+    client_contract_id: clientContractId,
+    clause_ids: clauseIds,
   });
   if (!contract.ok) {
     await supabase.from("hr_employees").delete().eq("id", created.id);

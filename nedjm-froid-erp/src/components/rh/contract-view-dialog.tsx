@@ -5,6 +5,7 @@ import { Pencil, Printer } from "lucide-react";
 import { getContractPrintContext, type ContractPrintContext } from "@/lib/actions/hr-contract-print";
 import { usePrintKit } from "@/components/doc/use-print-kit";
 import { CONTRACT_DOC_TYPES, contractHtml } from "@/components/rh/contract-print-dialog";
+import { appendClientTerms } from "@/lib/hr/client-contract-terms";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhModal, bi } from "@/components/rh/rh-ui";
 
@@ -40,7 +41,12 @@ export function ContractViewDialog({
   }, [contractId]);
 
   const { kit, error: kitError } = usePrintKit(CONTRACT_DOC_TYPES);
-  const printed = useMemo(() => (context && kit ? contractHtml(kit, context.values) : null), [context, kit]);
+  const printed = useMemo(() => {
+    if (!context || !kit) return null;
+    const html = contractHtml(kit, context.values);
+    if (!html.ok) return html;
+    return { ok: true as const, data: appendClientTerms(html.data, context.client_terms) };
+  }, [context, kit]);
   const html = printed?.ok
     ? printed.data.replace("</head>", "<style>@media screen { body { padding: 28px 34px; } }</style></head>")
     : "";

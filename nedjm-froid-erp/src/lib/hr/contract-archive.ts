@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { hrFileDisplayUrl } from "@/lib/hr/hr-file-url";
+import { HR_DOCS_BUCKET, hrFileDisplayUrl } from "@/lib/hr/hr-file-url";
 
 const PREFIX = "CONTRAT_";
 
@@ -28,4 +28,31 @@ export async function listContractArchives(): Promise<Record<string, string>> {
     if (id && url) out[id] = url;
   }
   return out;
+}
+
+/** Removes the signed archive of a contract so a changed text has to be printed and signed again. */
+export async function withdrawContractArchive(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  contractId: string,
+): Promise<{ ok: true; removed: boolean } | { ok: false; error: string }> {
+  const { data, error } = await supabase
+    .from("hr_employee_files")
+    .select("id, storage_path")
+    .eq("doc_type_code", contractArchiveType(contractId));
+  if (error) return { ok: false, error: error.message };
+  const rows = data ?? [];
+  if (!rows.length) return { ok: true, removed: false };
+  const paths = rows
+    .map((row) => row.storage_path)
+    .filter((path): path is string => typeof path === "string" && path.length > 0);
+  if (paths.length) await supabase.storage.from(HR_DOCS_BUCKET).remove(paths);
+  const { error: deleted } = await supabase
+    .from("hr_employee_files")
+    .delete()
+    .in(
+      "id",
+      rows.map((row) => row.id),
+    );
+  if (deleted) return { ok: false, error: deleted.message };
+  return { ok: true, removed: true };
 }

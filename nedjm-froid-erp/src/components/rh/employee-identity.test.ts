@@ -25,15 +25,17 @@ const copy = {
 };
 
 describe("confirmFicheIdentity nouvelle entrée", () => {
-  it("crée une seconde carte et laisse l'ancienne date", () => {
-    const decision = confirmFicheIdentity(copy, [existing], false, {
-      newEntry: true,
-      previousHiredAt: "2008-12-19",
-    });
+  it("garde le même matricule et la même fiche", () => {
+    const decision = confirmFicheIdentity(
+      { ...copy, id: "old", matricule: "019/08" },
+      [existing],
+      false,
+      { newEntry: true, previousHiredAt: "2008-12-19" },
+    );
     expect(decision.ok).toBe(true);
     if (!decision.ok) return;
-    expect(decision.values.id).toBe("");
-    expect(decision.values.matricule).toBe("01/26");
+    expect(decision.values.id).toBe("old");
+    expect(decision.values.matricule).toBe("019/08");
     expect(decision.values.hired_at).toBe("2026-11-23");
     expect(existing.hired_at).toBe("2008-12-19");
   });

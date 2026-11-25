@@ -372,6 +372,7 @@ export async function deleteHrEmployeeDocument(fileId: string): Promise<ActionRe
 
 export async function archiveEmployeeFicheRenseignements(
   employeeId: string,
+  options?: { keepPreviousFile?: boolean },
 ): Promise<ActionResult<{ id: string; file_name: string; file_url: string }>> {
   try {
     if (!employeeId) {
@@ -390,6 +391,7 @@ export async function archiveEmployeeFicheRenseignements(
     if (!catalogs.ok) return { ok: false, error: catalogs.error };
 
     const values = valuesFromFicheRecord(fiche.data, fields.data);
+    if (fiche.data.fiche_reference) values.fiche_reference = fiche.data.fiche_reference;
     const fileName = buildFicheRenseignementsFileName({
       matricule: values.matricule,
       last_name: values.last_name,
@@ -408,11 +410,19 @@ export async function archiveEmployeeFicheRenseignements(
     );
     if (!html.ok) return html;
 
+    const { data: existing, error: existErr } = await supabase
+      .from("hr_employee_files")
+      .select("id, storage_path")
+      .eq("employee_id", employeeId)
+      .eq("doc_type_code", "FICHE_RENSEIGNEMENTS")
+      .maybeSingle();
+    if (existErr) return { ok: false, error: existErr.message };
     const path = `${employeeId.replace(/[^a-zA-Z0-9-]/g, "")}/FICHE_RENSEIGNEMENTS-${crypto.randomUUID()}.pdf`;
     const stored = await archivePrintPdf(supabase, html.data, origin, path);
     if (!stored.ok) return stored;
     const fileUrl = hrFileHref(path);
     const saved = await upsertHrFile({
+      id: existing?.id,
       employee_id: employeeId,
       doc_type_code: "FICHE_RENSEIGNEMENTS",
       file_url: fileUrl,
@@ -421,6 +431,14 @@ export async function archiveEmployeeFicheRenseignements(
       notes: "Générée automatiquement · مُنشأة تلقائياً",
     });
     if (!saved.ok) return saved;
+    if (existing?.storage_path && existing.storage_path !== path && !options?.keepPreviousFile) {
+      await supabase.storage.from(HR_DOCS_BUCKET).remove([existing.storage_path]);
+    }
+    await supabase
+      .from("hr_fiche_issues")
+      .update({ file_url: fileUrl, storage_path: path, file_name: fileName })
+      .eq("employee_id", employeeId)
+      .eq("is_current", true);
     return {
       ok: true,
       data: { id: saved.data.id, file_name: fileName, file_url: fileUrl },
