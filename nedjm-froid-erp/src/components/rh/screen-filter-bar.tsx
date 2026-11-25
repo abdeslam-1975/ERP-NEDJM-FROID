@@ -181,7 +181,7 @@ export function useScreenFilter<T>({
               aria-expanded={open && suggestions.length > 0}
               aria-controls={listId}
               aria-autocomplete="list"
-              placeholder="اكتب جملة أو كلمة…"
+              placeholder="Rechercher en français ou en arabe…"
               onChange={(event) => {
                 setDraft(event.target.value);
                 setOpen(true);

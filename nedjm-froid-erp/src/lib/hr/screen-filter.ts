@@ -3,6 +3,7 @@ import {
   cardPeriodMatches,
   interpretSentence,
   normalizeSentence,
+  searchFold,
   type CardPeriod,
 } from "@/lib/hr/filter-sentence";
 
@@ -52,11 +53,7 @@ export type FilterView = {
 };
 
 export function fold(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLocaleLowerCase("fr")
-    .trim();
+  return searchFold(value);
 }
 
 function time(value: string | null): number {

@@ -42,6 +42,14 @@ const base: FilterSnapshot = {
 };
 
 describe("screen filter", () => {
+  it("finds an Arabic name despite hamza and a French name without its accent", () => {
+    const row: FilterRow = { text: "أحمد Amélie", matricule: "1/24", facets: [] };
+    const chip = { id: "1", kind: "text" as const, label: "احمد", value: "احمد" };
+    expect(rowMatches(row, [chip])).toBe(true);
+    expect(rowMatches(row, [{ ...chip, label: "amelie", value: "amelie" }])).toBe(true);
+    expect(rowMatches(row, [{ ...chip, label: "cherif", value: "cherif" }])).toBe(false);
+  });
+
   it("matches a matricule written with or without leading zeros", () => {
     const chip = { id: "1", kind: "text" as const, label: "5/08", value: "5/08" };
     expect(rowMatches(rows[0], [chip])).toBe(true);

@@ -35,7 +35,7 @@ const MONTHS: { month: number; names: string[] }[] = [
   { month: 12, names: ["ديسمبر", "decembre"] },
 ];
 
-const MONTH_LABELS = [
+const MONTH_LABELS_AR = [
   "",
   "يناير",
   "فيفري",
@@ -51,7 +51,23 @@ const MONTH_LABELS = [
   "ديسمبر",
 ];
 
-const CARD_VERBS = ["انجز", "منجز", "انجاز", "تعديل", "عدل", "معدل", "حفظ", "سجل", "achev", "realis", "termin", "modif"];
+const MONTH_LABELS_FR = [
+  "",
+  "janvier",
+  "février",
+  "mars",
+  "avril",
+  "mai",
+  "juin",
+  "juillet",
+  "août",
+  "septembre",
+  "octobre",
+  "novembre",
+  "décembre",
+];
+
+const CARD_VERBS = ["انجز", "منجز", "انجاز", "تعديل", "عدل", "معدل", "حفظ", "سجل", "achev", "realis", "termin", "modif", "enregistr", "faite"];
 const STOPWORDS = new Set([
   "في", "من", "على", "الى", "عن", "مع", "هذا", "هذه", "ذلك", "تلك", "التي", "الذي", "الذين", "اللواتي",
   "كل", "جميع", "فقط", "قد", "تم", "لقد", "اريد", "اظهر", "اعرض", "ابحث", "جد", "هات", "اعطني", "ارجو",
@@ -63,7 +79,7 @@ const STOPWORDS = new Set([
   "fiche", "fiches", "mois", "annee", "pour", "dans", "avec", "entre", "vers", "chez", "les", "des", "une", "un",
   "qui", "que", "dont", "donc", "est", "sont", "ete", "etre", "avoir", "pas", "plus", "merci", "veux", "veut",
   "voudrais", "svp", "je", "tu", "il", "elle", "nous", "vous", "mon", "ma", "mes", "son", "sa", "ses", "ce", "cet",
-  "cette", "ces", "au", "aux", "du", "de", "la", "le", "et", "ou", "par", "sur", "sous",
+  "cette", "ces", "au", "aux", "du", "de", "la", "le", "et", "ou", "par", "sur", "sous", "tout", "tous", "toutes",
 ]);
 
 const EASTERN_DIGITS: Record<string, string> = {
@@ -79,16 +95,22 @@ const EASTERN_DIGITS: Record<string, string> = {
   "٩": "9",
 };
 
-export function normalizeSentence(value: string): string {
+/** French accents and Arabic letter variants fold the same way, punctuation stays. */
+export function searchFold(value: string): string {
   const western = value.replace(/[٠-٩]/g, (digit) => EASTERN_DIGITS[digit] ?? digit);
   return western
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
     .replace(/[أإآٱ]/g, "ا")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
     .replace(/ة/g, "ه")
     .replace(/ى/g, "ي")
     .replace(/ـ/g, "")
     .toLocaleLowerCase("fr")
+    .trim();
+}
+
+export function normalizeSentence(value: string): string {
+  return searchFold(value)
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -140,9 +162,9 @@ function relativePeriod(text: string, now: Date): { text: string; period: When |
   const yesterday = zoned(new Date(now.getTime() - 24 * 60 * 60 * 1000));
   const lastWeek = zoned(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000));
   const groups: { phrases: string[]; period: When }[] = [
-    { phrases: ["الاسبوع الماضي", "semaine derniere", "semaine passee"], period: lastWeek },
+    { phrases: ["الاسبوع الماضي", "الاسبوع الفارط", "semaine derniere", "semaine passee"], period: lastWeek },
     { phrases: ["هذا الاسبوع", "الاسبوع الحالي", "cette semaine"], period: today },
-    { phrases: ["الشهر الماضي", "mois dernier", "mois passe"], period: shiftMonth(today.year, today.month, -1) },
+    { phrases: ["الشهر الماضي", "الشهر الفارط", "mois dernier", "mois passe"], period: shiftMonth(today.year, today.month, -1) },
     { phrases: ["هذا الشهر", "الشهر الحالي", "ce mois"], period: today },
     { phrases: ["اليوم", "aujourdhui"], period: today },
     { phrases: ["امس", "hier"], period: yesterday },
@@ -162,22 +184,29 @@ function monthOf(token: string): number | null {
   return MONTHS.find((entry) => entry.names.includes(name))?.month ?? null;
 }
 
-function facetLabel(facet: SentenceFacet): string {
-  const labels: Record<string, string> = {
-    "statut:actif": "نشط",
-    "statut:inactif": "غير نشط",
-    "manque:nss": "بدون ضمان",
-    "manque:nin": "بدون NIN",
-    "manque:contrat": "بدون عقد",
-    "documents:all": "كل الوثائق",
-    "documents:required": "الوثائق الإجبارية",
-    "documents:missing": "وثائق ناقصة",
-    "champs:all": "كل الحقول",
-    "champs:required": "الحقول الإجبارية",
-    "champs:missing": "حقول ناقصة",
-    "retour:retour": "عودة",
+function usesArabic(input: string): boolean {
+  return /\p{Script=Arabic}/u.test(input);
+}
+
+function facetLabel(facet: SentenceFacet, arabic: boolean): string {
+  const labels: Record<string, [string, string]> = {
+    "statut:actif": ["Actif", "نشط"],
+    "statut:inactif": ["Inactif", "غير نشط"],
+    "manque:nss": ["Sans NSS", "بدون ضمان"],
+    "manque:nin": ["Sans NIN", "بدون NIN"],
+    "manque:contrat": ["Sans contrat", "بدون عقد"],
+    "documents:all": ["Tous les documents", "كل الوثائق"],
+    "documents:required": ["Documents obligatoires", "الوثائق الإجبارية"],
+    "documents:missing": ["Documents incomplets", "وثائق ناقصة"],
+    "champs:all": ["Tous les champs", "كل الحقول"],
+    "champs:required": ["Champs obligatoires", "الحقول الإجبارية"],
+    "champs:missing": ["Champs incomplets", "حقول ناقصة"],
+    "retour:retour": ["Retour", "عودة"],
   };
-  return labels[`${facet.field}:${facet.hint}`] ?? (facet.field === "annee" ? `توظيف ${facet.hint}` : facet.hint);
+  const pair = labels[`${facet.field}:${facet.hint}`];
+  if (pair) return arabic ? pair[1] : pair[0];
+  if (facet.field === "annee") return arabic ? `توظيف ${facet.hint}` : `Embauche ${facet.hint}`;
+  return facet.hint;
 }
 
 /**
@@ -242,13 +271,23 @@ export function interpretSentence(input: string, now = new Date()): InterpretedS
   };
 
   const absence = new Set(["بدون", "بلا", "sans", "manque", "non", "غير"]);
+  const skipped = new Set(["رقم", "numero", "num", "social", "sociale"]);
+  const targets: { field: string; hint: string; stems: string[] }[] = [
+    { field: "statut", hint: "inactif", stems: ["نشط", "actif"] },
+    { field: "manque", hint: "nss", stems: ["ضمان", "nss", "cnss", "securite", "garantie", "immatriculation"] },
+    { field: "manque", hint: "nin", stems: ["nin", "identite", "identifiant"] },
+    { field: "manque", hint: "contrat", stems: ["عقد", "contrat"] },
+  ];
   for (let index = 0; index < tokens.length - 1; index += 1) {
     if (used.has(index) || !absence.has(bare(tokens[index]))) continue;
-    const next = bare(tokens[index + 1]);
-    if (starts(tokens[index + 1], "نشط") || starts(tokens[index + 1], "actif")) pushFacet({ field: "statut", hint: "inactif" }, [index, index + 1]);
-    else if (next.startsWith("ضمان") || next === "nss") pushFacet({ field: "manque", hint: "nss" }, [index, index + 1]);
-    else if (next === "nin") pushFacet({ field: "manque", hint: "nin" }, [index, index + 1]);
-    else if (next.startsWith("عقد") || next.startsWith("contrat")) pushFacet({ field: "manque", hint: "contrat" }, [index, index + 1]);
+    for (let next = index + 1; next < tokens.length && next <= index + 4; next += 1) {
+      const token = bare(tokens[next]);
+      if (skipped.has(token) || STOPWORDS.has(token) || token.length <= 2) continue;
+      const target = targets.find((item) => item.stems.some((stem) => token.startsWith(stem)));
+      if (!target) break;
+      pushFacet({ field: target.field, hint: target.hint }, Array.from({ length: next - index + 1 }, (_, offset) => index + offset));
+      break;
+    }
   }
 
   tokens.forEach((token, index) => {
@@ -265,8 +304,8 @@ export function interpretSentence(input: string, now = new Date()): InterpretedS
   const subject = (stems: string[], field: "documents" | "champs") => {
     if (!hasStem(tokens, stems)) return;
     const indexes = tokens.flatMap((token, index) => (stems.some((stem) => starts(token, stem)) ? [index] : []));
-    if (hasStem(tokens, ["ناقص", "incomplet"])) {
-      pushFacet({ field, hint: "missing" }, indexes.concat(tokens.flatMap((token, index) => (starts(token, "ناقص") || starts(token, "incomplet") ? [index] : []))));
+    if (hasStem(tokens, ["ناقص", "incomplet", "manquant", "vide"])) {
+      pushFacet({ field, hint: "missing" }, indexes.concat(tokens.flatMap((token, index) => (["ناقص", "incomplet", "manquant", "vide"].some((stem) => starts(token, stem)) ? [index] : []))));
     } else if (hasStem(tokens, ["اجباري", "obligatoire"])) {
       pushFacet({ field, hint: "required" }, indexes.concat(tokens.flatMap((token, index) => (starts(token, "اجباري") || starts(token, "obligatoire") ? [index] : []))));
     } else if (hasStem(tokens, ["مكتمل", "ممتل", "كامل", "tous"])) {
@@ -297,13 +336,15 @@ export function interpretSentence(input: string, now = new Date()): InterpretedS
     if (!removedFiller || !words.length) return null;
   }
 
+  const arabic = usesArabic(input);
   const parts: string[] = [];
   if (period?.month) {
-    const when = `${MONTH_LABELS[period.month]} ${period.year}`;
-    parts.push(verb === "modified" ? `عُدّلت : ${when}` : verb === "completed" ? `أنجزتها : ${when}` : when);
+    const when = `${(arabic ? MONTH_LABELS_AR : MONTH_LABELS_FR)[period.month]} ${period.year}`;
+    const verbLabel = verb === "modified" ? (arabic ? "عُدّلت" : "Modifiées") : verb === "completed" ? (arabic ? "أنجزتها" : "Réalisées") : "";
+    parts.push(verbLabel ? `${verbLabel} : ${when}` : when);
   } else if (period) parts.push(String(period.year));
-  else if (anyCard) parts.push("البطاقات المسجّلة");
-  facets.forEach((facet) => parts.push(facetLabel(facet)));
+  else if (anyCard) parts.push(arabic ? "البطاقات المسجّلة" : "Fiches enregistrées");
+  facets.forEach((facet) => parts.push(facetLabel(facet, arabic)));
   matricules.forEach((matricule) => parts.push(matricule));
   words.forEach((word) => parts.push(word));
 

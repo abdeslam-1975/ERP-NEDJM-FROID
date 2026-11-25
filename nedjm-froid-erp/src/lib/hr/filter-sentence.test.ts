@@ -52,6 +52,33 @@ describe("interpretSentence", () => {
     expect(interpretSentence("ابحث عن benali", now)).toMatchObject({ status: "ready", words: ["benali"] });
   });
 
+  it("reads the same request in French", () => {
+    const read = interpretSentence("salariés actifs sans numéro de sécurité 048/24", now);
+    expect(read).toMatchObject({
+      status: "ready",
+      facets: [
+        { field: "manque", hint: "nss" },
+        { field: "statut", hint: "actif" },
+      ],
+      matricules: ["048/24"],
+      words: [],
+    });
+    expect(read?.status === "ready" ? read.label : "").toContain("Actif");
+    expect(interpretSentence("fiches modifiées en novembre 2026", now)).toMatchObject({
+      status: "ready",
+      period: { year: 2026, month: 11 },
+    });
+    expect(interpretSentence("documents incomplets", now)).toMatchObject({
+      facets: [{ field: "documents", hint: "missing" }],
+    });
+    expect(interpretSentence("embauchés en 2024", now)).toMatchObject({
+      facets: [{ field: "annee", hint: "2024" }],
+    });
+    expect(interpretSentence("بدون رقم الضمان", now)).toMatchObject({
+      facets: [{ field: "manque", hint: "nss" }],
+    });
+  });
+
   it("reads a hire year and incomplete documents", () => {
     expect(interpretSentence("توظيف 2024", now)).toMatchObject({
       status: "ready",
