@@ -37,7 +37,7 @@
 
 .hero { flex: 2828 1 0; }
 .kpis { flex: 1267 1 0; }
-.clients { flex: 1900 1 0; }
+.clients { flex: 2300 1 0; }
 .split { flex: 3044 1 0; }
 .gallery { flex: 2500 1 0; }
 .foot { flex: 1167 1 0; }
@@ -81,9 +81,11 @@
 
 .slides {
   position: absolute;
-  inset: 0 0 2% 46%;
+  inset: 0 0 0 42%;
   z-index: 1;
+  overflow: hidden;
   pointer-events: none;
+  background: #dbe7f5;
 }
 
 .slides img {
@@ -93,9 +95,9 @@
   height: 100%;
   object-fit: cover;
   opacity: 0;
-  transition: opacity 0.9s ease;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 24%);
-  mask-image: linear-gradient(90deg, transparent 0%, #000 24%);
+  transition: opacity 0.7s ease;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 10%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 10%);
 }
 
 .slides img.on {
@@ -118,8 +120,8 @@
 }
 
 .dots button {
-  height: 0.85cqw;
-  width: 0.85cqw;
+  height: 1.05cqw;
+  width: 1.05cqw;
   padding: 0;
   border: 0;
   border-radius: 99px;
@@ -188,7 +190,7 @@
   display: grid;
   flex: 1;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0.7cqw;
+  gap: 0.85cqw;
   min-height: 0;
   margin: 0;
   padding: 0;
@@ -202,11 +204,38 @@
   overflow: hidden;
 }
 
+.clientCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2cqw;
+  padding: 0.35cqw 0.45cqw 0.4cqw;
+  border: 1px solid rgba(30, 58, 138, 0.12);
+  border-radius: 0.85cqw;
+  background: #fff;
+}
+
 .clientCard img {
   display: block;
   width: 100%;
-  height: 100%;
+  height: auto;
+  max-height: 68%;
+  flex: 1;
+  min-height: 0;
   object-fit: contain;
+}
+
+.clientCard span {
+  width: 100%;
+  overflow: hidden;
+  color: #1e3a8a;
+  font-size: 0.72cqw;
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .workCard {

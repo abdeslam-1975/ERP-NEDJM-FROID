@@ -5,13 +5,11 @@ import styles from "./accueil-vitrine.module.css";
 
 const KPIS = ["kpi-1.png", "kpi-2.png", "kpi-3.png", "kpi-4.png"] as const;
 
-/** The banner photo stays. These two replace only the picture on the right. */
 const SLIDES = [
-  { src: "/accueil/hassi-rmel.jpg", label: "Hassi R'mel", position: "68% center" },
-  { src: "/accueil/cellules.jpg", label: "Deux cellules en service", position: "center 40%" },
+  { src: "/accueil/rooms.jpg", label: "Chambres et condenseurs", position: "center center" },
+  { src: "/accueil/hassi-rmel.jpg", label: "Hassi R'mel", position: "62% center" },
+  { src: "/accueil/cellules.jpg", label: "Deux cellules en service", position: "center 42%" },
 ] as const;
-
-const FRAMES = ["Chambres et condenseurs", SLIDES[0].label, SLIDES[1].label] as const;
 
 const CLIENTS = [
   { name: "Bicold Maghreb", src: "/accueil/bicold.png" },
@@ -36,9 +34,7 @@ export function AccueilVitrine() {
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (media.matches) return;
-    const timer = window.setTimeout(() => setFrame((current) => (current + 1) % FRAMES.length), 6000);
+    const timer = window.setTimeout(() => setFrame((current) => (current + 1) % SLIDES.length), 5000);
     return () => window.clearTimeout(timer);
   }, [frame]);
 
@@ -55,18 +51,18 @@ export function AccueilVitrine() {
                     key={slide.src}
                     src={slide.src}
                     alt={slide.label}
-                    aria-hidden={frame === index + 1 ? undefined : true}
-                    className={frame === index + 1 ? styles.on : undefined}
+                    aria-hidden={frame === index ? undefined : true}
+                    className={frame === index ? styles.on : undefined}
                     style={{ objectPosition: slide.position }}
                   />
                 ))}
               </div>
               <div className={styles.dots}>
-                {FRAMES.map((label, index) => (
+                {SLIDES.map((slide, index) => (
                   <button
-                    key={label}
+                    key={slide.label}
                     type="button"
-                    aria-label={label}
+                    aria-label={slide.label}
                     aria-current={frame === index ? "true" : undefined}
                     onClick={() => setFrame(index)}
                   />
@@ -91,7 +87,8 @@ export function AccueilVitrine() {
             <ul className={styles.clientRow}>
               {CLIENTS.map((client) => (
                 <li key={client.name} className={`${styles.clientCard} ${styles.float}`}>
-                  <img src={client.src} alt={client.name} />
+                  <img src={client.src} alt="" />
+                  <span>{client.name}</span>
                 </li>
               ))}
             </ul>
