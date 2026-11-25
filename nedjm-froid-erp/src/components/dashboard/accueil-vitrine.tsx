@@ -27,20 +27,20 @@ export function AccueilVitrine() {
           ))}
         </section>
 
-        <div className={styles.float}>
+        <div className={`${styles.clients} ${styles.float}`}>
           <img src="/accueil/board/clients.png" alt="Nos clients : Bicold Maghreb, Anadarko, Sonatrach, Carrier, Enafor, ENTP" />
         </div>
 
         <section className={styles.split}>
-          <div className={styles.float}>
+          <div className={`${styles.why} ${styles.float}`}>
             <img src="/accueil/board/why.png" alt="Pourquoi nous choisir : service après-vente, qualité certifiée, produit garanti" />
           </div>
-          <div className={styles.float}>
+          <div className={`${styles.certs} ${styles.float}`}>
             <img src="/accueil/board/certs.png" alt="Certifications ISO 9001, ISO 45001 et ISO 14001" />
           </div>
         </section>
 
-        <div className={styles.float}>
+        <div className={`${styles.gallery} ${styles.float}`}>
           <img src="/accueil/board/gallery.png" alt="Nos réalisations" />
         </div>
 
