@@ -11,6 +11,7 @@ import {
 import type {
   BanqueAccount,
   BanqueDashboard,
+  BanqueDeletedLine,
   BanqueLine,
   BanqueLists,
 } from "@/lib/banque/types";
@@ -195,8 +196,91 @@ export async function getBanqueDashboard(accountId?: string | null): Promise<Act
       canCreate,
       canUpdate,
       canDelete,
+      canRestore: canDelete,
       today: algiersToday(),
       selectedAccountId: selected?.id ?? null,
+    },
+  };
+}
+
+export async function listDeletedBanqueLines(
+  accountId?: string | null,
+): Promise<ActionResult<{ rows: BanqueDeletedLine[] }>> {
+  if (!(await can("delete"))) {
+    return fail("Accès réservé : restauration (droit supprimer Banque).");
+  }
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("fin_bank_list_deleted_lines", {
+    p_account_id: accountId && /^[0-9a-f-]{36}$/i.test(accountId) ? accountId : null,
+    p_limit: 150,
+  });
+  if (error) {
+    const msg = error.message || "";
+    if (/schema cache|could not find the function|PGRST202/i.test(msg)) {
+      return fail(
+        "Fonctions corbeille Banque invisibles pour l'API. Appliquez la migration banque_restore_deleted (ou NOTIFY pgrst, 'reload schema').",
+      );
+    }
+    return fail(error);
+  }
+
+  const rows: BanqueDeletedLine[] = (data ?? []).map((row: Record<string, unknown>) => ({
+    id: String(row.id),
+    account_id: String(row.account_id),
+    account_name: String(row.account_name ?? ""),
+    display_no: Number(row.display_no) || 0,
+    op_date: String(row.op_date ?? ""),
+    value_date: String(row.value_date ?? ""),
+    affectation: String(row.affectation ?? ""),
+    libelle: String(row.libelle ?? ""),
+    debit: Number(row.debit) || 0,
+    credit: Number(row.credit) || 0,
+    frais: Number(row.frais) || 0,
+    line_kind: (String(row.line_kind || "MANUAL") as BanqueDeletedLine["line_kind"]),
+    transfer_group_id: (row.transfer_group_id as string | null) ?? null,
+    deleted_at: String(row.deleted_at ?? ""),
+  }));
+
+  return { ok: true, data: { rows } };
+}
+
+export async function restoreBanqueLine(
+  lineId: string,
+): Promise<ActionResult<{ message: string }>> {
+  if (!/^[0-9a-f-]{36}$/i.test(lineId)) return fail("Opération invalide.");
+  if (!(await can("delete"))) {
+    return fail("Accès réservé : restauration (droit supprimer Banque).");
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("fin_bank_restore_line", { p_line_id: lineId });
+  if (error) {
+    const msg = error.message || "";
+    if (/schema cache|could not find the function|PGRST202/i.test(msg)) {
+      return fail(
+        "Fonction restauration Banque invisible. Appliquez la migration banque_restore_deleted.",
+      );
+    }
+    return fail(error);
+  }
+
+  const check = await supabase
+    .from("fin_bank_lines")
+    .select("id, display_no, deleted_at")
+    .eq("id", lineId)
+    .maybeSingle();
+  if (check.error) return fail(check.error);
+  if (!check.data || check.data.deleted_at) {
+    return fail("Restauration non confirmée en base.");
+  }
+
+  refresh();
+  const no = Number(check.data.display_no) || 0;
+  return {
+    ok: true,
+    data: {
+      message: no
+        ? `Opération restaurée (N° ${no}). Les numéros ont été réordonnés.`
+        : "Opération restaurée.",
     },
   };
 }
