@@ -44,6 +44,13 @@ export const APP_PAGES: AppPage[] = [
   { href: "/referentiels/activites", fr: "Codes d'activité", ar: "رموز النشاط" },
   { href: "/finance", fr: "Banque", ar: "البنك" },
   { href: "/caisse", fr: "Caisse", ar: "الصندوق", keywords: "gestion caisse journal achat avance" },
+  { href: "/ventes", fr: "Ventes", ar: "المبيعات", keywords: "factures encaissement" },
+  {
+    href: "/ventes/bons-de-commande",
+    fr: "Bon de commande",
+    ar: "أمر الطلب",
+    keywords: "bc commande client",
+  },
   { href: "/achats", fr: "Achats", ar: "المشتريات" },
   { href: "/parametres/utilisateurs", fr: "Utilisateurs", ar: "المستخدمون" },
   { href: "/administration/roles", fr: "Rôles & droits", ar: "الأدوار" },
