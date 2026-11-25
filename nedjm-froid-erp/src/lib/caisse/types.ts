@@ -13,6 +13,8 @@ export type CaisseFlags = {
   canManageOpenings: boolean;
   /** Caisse admin, or a user with delegated « Listes » (affectation / matricule / unité). */
   canManageLists: boolean;
+  /** Admin finance / super-admin, ou droit délégué « Restaurer » (corbeille). */
+  canRestore: boolean;
   /** Admin finance / super-admin, ou gérant — bouton Conforme sur les bons. */
   canValidateBons: boolean;
   userName: string;
@@ -100,6 +102,22 @@ export type CaisseAdminUser = {
   canEdit: boolean;
   manageOpenings: boolean;
   manageLists: boolean;
+  /** Corbeille : restaurer les opérations supprimées. */
+  manageRestore: boolean;
+};
+
+export type CaisseVoidedOperation = {
+  id: string;
+  opNumber: number;
+  kind: string;
+  date: string;
+  affectation: string;
+  buyer: string;
+  reference: string;
+  designation: string;
+  amount: number;
+  voidedAt: string;
+  hasPhoto: boolean;
 };
 
 export type CaisseAuditRow = {
