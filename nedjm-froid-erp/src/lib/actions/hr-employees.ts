@@ -21,6 +21,7 @@ import {
   validateFicheConstraints,
 } from "@/lib/hr/employee-fiche-constraints";
 import { nextMatriculeForHire } from "@/lib/hr/employee-matricule";
+import { compareCompletedFiches } from "@/lib/hr/fiche-completion";
 import { missingRequiredDocuments } from "@/lib/hr/required-documents";
 import { listCatalogItems } from "@/lib/actions/hr-catalogs";
 import { listHrFilesForEmployee } from "@/lib/actions/hr-documents";
@@ -86,6 +87,9 @@ export type HrEmployeeFiche = HrEmployeeRow & {
   diploma_fr: string | null;
   experience_years: number | null;
   languages: string | null;
+  /** Null = carte non réalisée (seed / fiche jamais enregistrée). */
+  fiche_done_at: string | null;
+  uploaded_doc_codes: string[];
 };
 
 export type HrEmployeeField = {
@@ -121,12 +125,13 @@ function asAttrs(value: unknown): Record<string, unknown> {
 }
 
 function mergeFiche(
-  emp: HrEmployeeRow & { attrs?: unknown },
+  emp: HrEmployeeRow & { attrs?: unknown; fiche_done_at?: string | null },
   c: Record<string, unknown> | null,
   k: Record<string, unknown> | null,
   b: Record<string, unknown> | null,
   s: Record<string, unknown> | null,
   q: Record<string, unknown> | null,
+  uploadedDocCodes: string[] = [],
 ): HrEmployeeFiche {
   return {
     id: emp.id,
@@ -180,6 +185,8 @@ function mergeFiche(
       q?.experience_years == null ? null : Number(q.experience_years),
     languages: (q?.languages as string | null) ?? null,
     import_seq: importSeq(emp.attrs),
+    fiche_done_at: emp.fiche_done_at ?? null,
+    uploaded_doc_codes: uploadedDocCodes,
   };
 }
 
@@ -198,7 +205,7 @@ function attrText(attrs: unknown, key: string): string | null {
 }
 
 const EMP_CORE_SELECT =
-  "id, matricule, last_name, first_name, last_name_ar, first_name_ar, nss, nin, birth_date, hired_at, photo_url, irg_category, status, created_at, updated_at, attrs";
+  "id, matricule, last_name, first_name, last_name_ar, first_name_ar, nss, nin, birth_date, hired_at, photo_url, irg_category, status, created_at, updated_at, attrs, fiche_done_at";
 
 export async function nextHrMatricule(hiredAt?: string): Promise<ActionResult<{ matricule: string }>> {
   const supabase = await createClient();
@@ -215,6 +222,7 @@ export async function listHrEmployeeFiches(): Promise<ActionResult<HrEmployeeFic
   const { data: emps, error } = await supabase
     .from("hr_employees")
     .select(EMP_CORE_SELECT)
+    .not("fiche_done_at", "is", null)
     .limit(2000);
   if (error) {
     return {
@@ -229,13 +237,24 @@ export async function listHrEmployeeFiches(): Promise<ActionResult<HrEmployeeFic
   const ids = rows.map((r) => r.id);
   if (!ids.length) return { ok: true, data: [] };
 
-  const [civil, contacts, bank, social, qual] = await Promise.all([
+  const [civil, contacts, bank, social, qual, files] = await Promise.all([
     supabase.from("hr_employee_civil").select("*").in("employee_id", ids),
     supabase.from("hr_employee_contacts").select("*").in("employee_id", ids),
     supabase.from("hr_employee_bank").select("*").in("employee_id", ids),
     supabase.from("hr_employee_social").select("*").in("employee_id", ids),
     supabase.from("hr_employee_qualifications").select("*").in("employee_id", ids),
+    supabase
+      .from("hr_employee_files")
+      .select("employee_id, doc_type_code")
+      .in("employee_id", ids),
   ]);
+  if (files.error) return { ok: false, error: files.error.message };
+  const docsByEmployee = new Map<string, string[]>();
+  for (const file of (files.data ?? []) as Array<{ employee_id: string; doc_type_code: string }>) {
+    const list = docsByEmployee.get(file.employee_id) ?? [];
+    list.push(file.doc_type_code);
+    docsByEmployee.set(file.employee_id, list);
+  }
 
   const mapBy = (list: Array<Record<string, unknown>> | null) => {
     const m = new Map<string, Record<string, unknown>>();
@@ -252,8 +271,8 @@ export async function listHrEmployeeFiches(): Promise<ActionResult<HrEmployeeFic
 
   return {
     ok: true,
-    data: sortEmployees(
-      rows.map((emp) =>
+    data: rows
+      .map((emp) =>
         mergeFiche(
           {
             ...emp,
@@ -264,9 +283,10 @@ export async function listHrEmployeeFiches(): Promise<ActionResult<HrEmployeeFic
           banks.get(emp.id) ?? null,
           socials.get(emp.id) ?? null,
           quals.get(emp.id) ?? null,
+          docsByEmployee.get(emp.id) ?? [],
         ),
-      ),
-    ),
+      )
+      .sort(compareCompletedFiches),
   };
 }
 
@@ -322,7 +342,7 @@ export async function getHrEmployeeFiche(
   if (error) return { ok: false, error: error.message };
   if (!emp) return { ok: false, error: "Employé introuvable." };
 
-  const [civil, contacts, bank, social, qual] = await Promise.all([
+  const [civil, contacts, bank, social, qual, files] = await Promise.all([
     supabase.from("hr_employee_civil").select("*").eq("employee_id", id).maybeSingle(),
     supabase.from("hr_employee_contacts").select("*").eq("employee_id", id).maybeSingle(),
     supabase.from("hr_employee_bank").select("*").eq("employee_id", id).maybeSingle(),
@@ -332,7 +352,9 @@ export async function getHrEmployeeFiche(
       .select("*")
       .eq("employee_id", id)
       .maybeSingle(),
+    supabase.from("hr_employee_files").select("doc_type_code").eq("employee_id", id),
   ]);
+  if (files.error) return { ok: false, error: files.error.message };
 
   return {
     ok: true,
@@ -346,6 +368,7 @@ export async function getHrEmployeeFiche(
       (bank.data as Record<string, unknown> | null) ?? null,
       (social.data as Record<string, unknown> | null) ?? null,
       (qual.data as Record<string, unknown> | null) ?? null,
+      ((files.data ?? []) as Array<{ doc_type_code: string }>).map((file) => file.doc_type_code),
     ),
   };
 }
@@ -488,18 +511,21 @@ export async function upsertHrEmployee(
     irg_category: p.irg_category,
     status: p.status,
   };
-  if (full.success) {
-    let previous: Record<string, unknown> = {};
-    if (p.id) {
-      const { data: current } = await supabase
-        .from("hr_employees")
-        .select("attrs")
-        .eq("id", p.id)
-        .maybeSingle();
-      previous = asAttrs(current?.attrs);
+  let existingDoneAt: string | null = null;
+  if (p.id) {
+    const { data: current } = await supabase
+      .from("hr_employees")
+      .select("attrs, fiche_done_at")
+      .eq("id", p.id)
+      .maybeSingle();
+    existingDoneAt = (current?.fiche_done_at as string | null) ?? null;
+    if (full.success) {
+      core.attrs = { ...asAttrs(current?.attrs), ...(full.data.attrs ?? {}) };
     }
-    core.attrs = { ...previous, ...(full.data.attrs ?? {}) };
+  } else if (full.success) {
+    core.attrs = { ...(full.data.attrs ?? {}) };
   }
+  if (!existingDoneAt) core.fiche_done_at = new Date().toISOString();
 
   let satellites: {
     p_civil: Record<string, unknown> | null;

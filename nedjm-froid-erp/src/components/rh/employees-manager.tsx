@@ -55,6 +55,11 @@ import { DEFAULT_FICHE_SETTINGS, type HrFicheSettings } from "@/lib/hr/fiche-set
 import { findEmployeeForFicheSearch } from "@/lib/hr/employee-fiche-search";
 import { mergeAffectationCatalog } from "@/lib/hr/affectation-options";
 import { sortEmployees } from "@/lib/hr/employee-order";
+import {
+  assessFicheCompletion,
+  COMPLETION_LABELS,
+  formatFicheDoneAt,
+} from "@/lib/hr/fiche-completion";
 
 const col = dataColumns<HrEmployeeFiche>();
 const fieldCol = dataColumns<HrEmployeeField>();
@@ -111,10 +116,11 @@ export function EmployeesManager({
   const [activeOnly, setActiveOnly] = useState(false);
   const working = useMemo(() => workingStatusCodes(catalogs), [catalogs]);
   const statusOptions = useMemo(() => activityStatusOptions(catalogs), [catalogs]);
-  const shownRows = useMemo(
-    () => (activeOnly ? rows.filter((r) => working.has(r.status)) : rows),
-    [rows, activeOnly, working],
-  );
+  const ficheCount = rows.filter((row) => row.fiche_done_at).length;
+  const shownRows = useMemo(() => {
+    const completed = rows.filter((row) => row.fiche_done_at);
+    return activeOnly ? completed.filter((r) => working.has(r.status)) : completed;
+  }, [rows, activeOnly, working]);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>(() =>
     startNew ? emptyValues(initialFields.filter((f) => f.is_active)) : {},
@@ -243,14 +249,33 @@ export function EmployeesManager({
     if (keepsFirstEmploymentNumber(row)) {
       facets.push({ field: "retour", value: "1", label: "Retour après une sortie" });
     }
+    const completion = assessFicheCompletion({
+      values: valuesFromFiche(row, fields),
+      fields,
+      catalogs,
+      uploadedDocTypeCodes: row.uploaded_doc_codes ?? [],
+    });
     return {
-      text: [row.matricule, row.last_name, row.first_name, row.nss, row.nin, site, ...activeFields.map((field) => asText(rawValue(row, field)))]
+      text: [
+        row.matricule,
+        row.last_name,
+        row.first_name,
+        row.nss,
+        row.nin,
+        site,
+        formatFicheDoneAt(row.fiche_done_at),
+        COMPLETION_LABELS.documents[completion.documents].fr,
+        COMPLETION_LABELS.documents[completion.documents].ar,
+        COMPLETION_LABELS.fields[completion.fields].fr,
+        COMPLETION_LABELS.fields[completion.fields].ar,
+        ...fields.map((field) => asText(rawValue(row, field))),
+      ]
         .filter(Boolean)
         .join(" "),
       matricule: row.matricule,
       facets,
     };
-  }, [activeFields, assignments, fallbackText, statusOptions]);
+  }, [assignments, catalogs, fallbackText, fields, statusOptions]);
   const staffFilter = useScreenFilter({
     screen: "rh.employes",
     rows: shownRows,
@@ -376,20 +401,16 @@ export function EmployeesManager({
     });
   }
 
-  const existingIds = useMemo(
-    () =>
-      rows.map((r) => ({
-        id: r.id,
-        matricule: r.matricule,
-        nin: r.nin,
-        nss: r.nss,
-        last_name: r.last_name,
-        first_name: r.first_name,
-        birth_date: r.birth_date,
-        hired_at: r.hired_at,
-      })),
-    [rows],
-  );
+  const existingIds = rows.map((r) => ({
+    id: r.id,
+    matricule: r.matricule,
+    nin: r.nin,
+    nss: r.nss,
+    last_name: r.last_name,
+    first_name: r.first_name,
+    birth_date: r.birth_date,
+    hired_at: r.hired_at,
+  }));
 
   function refreshRows() {
     startTransition(async () => {
@@ -423,6 +444,50 @@ export function EmployeesManager({
   }
 
   const columns: DataColumn<HrEmployeeFiche>[] = [
+    col.accessor((row) => formatFicheDoneAt(row.fiche_done_at), {
+      id: "fiche_done_at",
+      header: () => (
+        <span className="flex flex-col items-start">
+          <span>Réalisée le</span>
+          <span className="font-normal normal-case tracking-normal" dir="rtl">
+            تاريخ الإنجاز
+          </span>
+        </span>
+      ),
+      meta: { label: "Réalisée le", className: "whitespace-nowrap" },
+      cell: ({ row }) => formatFicheDoneAt(row.original.fiche_done_at) || "—",
+    }),
+    col.display({
+      id: "fiche_state",
+      header: () => (
+        <span className="flex flex-col items-start">
+          <span>État</span>
+          <span className="font-normal normal-case tracking-normal" dir="rtl">
+            الحالة
+          </span>
+        </span>
+      ),
+      enableSorting: false,
+      meta: { label: "État", className: "whitespace-nowrap" },
+      cell: ({ row }) => {
+        const completion = assessFicheCompletion({
+          values: valuesFromFiche(row.original, fields),
+          fields,
+          catalogs,
+          uploadedDocTypeCodes: row.original.uploaded_doc_codes ?? [],
+        });
+        return (
+          <div className="flex min-w-[14rem] flex-col gap-0.5 text-xs leading-snug">
+            <span>
+              {COMPLETION_LABELS.documents[completion.documents].fr} — {COMPLETION_LABELS.documents[completion.documents].ar}
+            </span>
+            <span>
+              {COMPLETION_LABELS.fields[completion.fields].fr} — {COMPLETION_LABELS.fields[completion.fields].ar}
+            </span>
+          </div>
+        );
+      },
+    }),
     ...activeFields.map((field) =>
       col.accessor((row) => asText(rawValue(row, field)), {
         id: field.code,
@@ -532,7 +597,7 @@ export function EmployeesManager({
   return (
     <RhPage>
       <RhPageHeader
-        eyebrow={`${rows.length} employé${rows.length > 1 ? "s" : ""} inscrit${rows.length > 1 ? "s" : ""}`}
+        eyebrow={`${ficheCount} fiche${ficheCount > 1 ? "s" : ""} réalisée${ficheCount > 1 ? "s" : ""}`}
         title="Personnel"
         actionsTabset="btn_rh_employees"
         actions={
