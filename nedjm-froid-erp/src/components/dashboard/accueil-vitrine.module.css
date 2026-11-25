@@ -65,12 +65,11 @@
 }
 
 .float {
-  transition: transform 0.22s ease, filter 0.22s ease;
+  transition: transform 0.22s ease;
 }
 
 .float:hover {
-  transform: translateY(-0.6cqw);
-  filter: drop-shadow(0 1.4cqw 1.2cqw rgba(15, 23, 42, 0.28));
+  transform: translateY(-0.35cqw);
 }
 
 @media (prefers-reduced-motion: reduce) {
