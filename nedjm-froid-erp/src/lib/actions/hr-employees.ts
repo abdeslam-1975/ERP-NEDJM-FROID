@@ -284,6 +284,23 @@ function ficheValues(fiche: HrEmployeeFiche, fields: HrEmployeeField[]): Record<
   return values;
 }
 
+async function rowsForEmployees<T>(
+  load: (ids: string[], from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  ids: string[],
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += 40) {
+    const slice = ids.slice(i, i + 40);
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await load(slice, from, from + 999);
+      if (error || !data?.length) break;
+      out.push(...data);
+      if (data.length < 1000) break;
+    }
+  }
+  return out;
+}
+
 async function loadCardCompletion(
   supabase: Awaited<ReturnType<typeof createClient>>,
   rows: Array<HrEmployeeRow & { attrs?: unknown }>,
@@ -292,12 +309,36 @@ async function loadCardCompletion(
   const ids = rows.map((row) => row.id);
   if (!ids.length) return empty;
   const [civil, contacts, bank, social, qual, files, fieldRows, catalogs] = await Promise.all([
-    supabase.from("hr_employee_civil").select("*").in("employee_id", ids),
-    supabase.from("hr_employee_contacts").select("*").in("employee_id", ids),
-    supabase.from("hr_employee_bank").select("*").in("employee_id", ids),
-    supabase.from("hr_employee_social").select("*").in("employee_id", ids),
-    supabase.from("hr_employee_qualifications").select("*").in("employee_id", ids),
-    supabase.from("hr_employee_files").select("employee_id, doc_type_code").in("employee_id", ids),
+    rowsForEmployees(
+      (slice, from, to) => supabase.from("hr_employee_civil").select("*").in("employee_id", slice).range(from, to),
+      ids,
+    ),
+    rowsForEmployees(
+      (slice, from, to) => supabase.from("hr_employee_contacts").select("*").in("employee_id", slice).range(from, to),
+      ids,
+    ),
+    rowsForEmployees(
+      (slice, from, to) => supabase.from("hr_employee_bank").select("*").in("employee_id", slice).range(from, to),
+      ids,
+    ),
+    rowsForEmployees(
+      (slice, from, to) => supabase.from("hr_employee_social").select("*").in("employee_id", slice).range(from, to),
+      ids,
+    ),
+    rowsForEmployees(
+      (slice, from, to) =>
+        supabase.from("hr_employee_qualifications").select("*").in("employee_id", slice).range(from, to),
+      ids,
+    ),
+    rowsForEmployees(
+      (slice, from, to) =>
+        supabase
+          .from("hr_employee_files")
+          .select("employee_id, doc_type_code")
+          .in("employee_id", slice)
+          .range(from, to),
+      ids,
+    ),
     supabase
       .from("hr_employee_fields")
       .select(
@@ -306,20 +347,20 @@ async function loadCardCompletion(
       .order("sort_order"),
     listCatalogItems(),
   ]);
-  if (files.error || fieldRows.error || !catalogs.ok) return empty;
+  if (fieldRows.error || !catalogs.ok) return empty;
   const fields = (fieldRows.data ?? []) as HrEmployeeField[];
   const mapBy = (list: Array<Record<string, unknown>> | null) => {
     const mapped = new Map<string, Record<string, unknown>>();
     for (const row of list ?? []) mapped.set(String(row.employee_id), row);
     return mapped;
   };
-  const civils = mapBy(civil.data as Array<Record<string, unknown>> | null);
-  const ks = mapBy(contacts.data as Array<Record<string, unknown>> | null);
-  const banks = mapBy(bank.data as Array<Record<string, unknown>> | null);
-  const socials = mapBy(social.data as Array<Record<string, unknown>> | null);
-  const quals = mapBy(qual.data as Array<Record<string, unknown>> | null);
+  const civils = mapBy(civil);
+  const ks = mapBy(contacts);
+  const banks = mapBy(bank);
+  const socials = mapBy(social);
+  const quals = mapBy(qual);
   const docs = new Map<string, string[]>();
-  for (const file of (files.data ?? []) as Array<{ employee_id: string; doc_type_code: string }>) {
+  for (const file of files as Array<{ employee_id: string; doc_type_code: string }>) {
     const list = docs.get(file.employee_id) ?? [];
     list.push(file.doc_type_code);
     docs.set(file.employee_id, list);
@@ -456,7 +497,12 @@ export async function listHrEmployeeRows(options?: {
   }
 
   const source = (data ?? []) as Array<HrEmployeeRow & { attrs?: unknown }>;
-  const completion = options?.withCompletion ? await loadCardCompletion(supabase, source) : null;
+  const completion = options?.withCompletion
+    ? await loadCardCompletion(
+        supabase,
+        source.filter((row) => row.fiche_done_at),
+      )
+    : null;
   const mapped = source.map((row) => {
     const { attrs, ...rest } = row;
     return {

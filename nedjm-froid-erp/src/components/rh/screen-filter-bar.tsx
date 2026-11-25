@@ -241,7 +241,7 @@ export function useScreenFilter<T>({
                 chip.kind === "text" ? "bg-surface-muted text-foreground/80" : "bg-brand-muted text-brand",
               )}
             >
-              {chip.label}
+              <bdi>{chip.label}</bdi>
               <button
                 type="button"
                 aria-label={`Retirer ${chip.label}`}

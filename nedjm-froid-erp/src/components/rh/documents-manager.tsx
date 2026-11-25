@@ -1165,54 +1165,57 @@ export function DocumentsManager({
             </Button>
           }
         >
-          {ficheFilter.bar}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-foreground/60">
-              Tri
-              <span className="ms-1" dir="rtl">
-                الترتيب
-              </span>
-            </span>
-            {ficheSorts.map((item) => (
-              <Button
-                key={item.id}
-                type="button"
-                variant={ficheSort === item.id ? "primary" : "secondary"}
-                aria-pressed={ficheSort === item.id}
-                onClick={() => setFicheSort(item.id)}
-              >
-                <span className="flex flex-col items-start leading-tight">
-                  <span>{item.fr}</span>
-                  <span className="text-[11px] font-normal" dir="rtl">
-                    {item.ar}
-                  </span>
+          <div className="space-y-3">
+            {ficheFilter.bar}
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              <div className="inline-flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground/50">
+                  <span>Tri</span>
+                  <span aria-hidden className="text-foreground/25">·</span>
+                  <bdi>الترتيب</bdi>
                 </span>
-              </Button>
-            ))}
-          </div>
-          {ficheFilter.active ? (
-            <div className="rounded-xl border border-brand/30 bg-brand-muted px-3 py-2 text-sm" role="status">
-              <p className="font-medium">
-                Filtre utilisé
-                <span className="ms-2 font-normal" dir="rtl">
-                  فلتر مستعمل
-                </span>
-              </p>
-              <p className="mt-1 text-foreground/80">{ficheFilter.labels.join(" · ")}</p>
-              <p className="mt-1 tabular-nums text-foreground/60">
-                {ficheRows.length} / {ficheEmployees.length}
-              </p>
+                <div className="inline-flex rounded-full border border-border/70 bg-surface-muted/60 p-0.5" role="group" aria-label="Tri">
+                  {ficheSorts.map((item) => {
+                    const selected = ficheSort === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setFicheSort(item.id)}
+                        className={
+                          selected
+                            ? "inline-flex items-center rounded-full bg-brand px-3 py-1 text-xs font-semibold text-white"
+                            : "inline-flex items-center rounded-full px-3 py-1 text-xs font-medium text-foreground/70 hover:bg-surface"
+                        }
+                      >
+                        {item.fr}
+                        <span aria-hidden className={selected ? "mx-1.5 text-white/45" : "mx-1.5 text-foreground/25"}>·</span>
+                        <bdi className={selected ? "font-normal text-white/85" : "font-normal text-foreground/50"}>{item.ar}</bdi>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {ficheFilter.active ? (
+                <p className="inline-flex items-center gap-1.5 rounded-full bg-brand-muted px-3 py-1 text-xs text-brand" role="status">
+                  <span className="size-1.5 rounded-full bg-brand" aria-hidden />
+                  <span className="font-semibold">Filtre utilisé</span>
+                  <span aria-hidden className="text-brand/40">·</span>
+                  <bdi>فلتر مستعمل</bdi>
+                </p>
+              ) : null}
             </div>
-          ) : null}
-          <DataTable
-            key={ficheSort}
-            data={ficheRows}
-            columns={ficheColumns}
-            getRowId={(r) => r.id}
-            searchable={false}
-            emptyTitle="Aucune fiche enregistrée"
-            emptyBody={ficheFilter.emptyHint ?? "Créez la première fiche avec « Fiche employé »."}
-          />
+            <DataTable
+              key={ficheSort}
+              data={ficheRows}
+              columns={ficheColumns}
+              getRowId={(r) => r.id}
+              searchable={false}
+              emptyTitle="Aucune fiche enregistrée"
+              emptyBody={ficheFilter.emptyHint ?? "Créez la première fiche avec « Fiche employé »."}
+            />
+          </div>
         </RegisterSection>
       )}
 
