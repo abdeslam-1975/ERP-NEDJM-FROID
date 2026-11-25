@@ -15,6 +15,13 @@ import {
 import { archiveEmployeeFicheRenseignements } from "@/lib/actions/hr-documents";
 import { maritalAllowsChildren, missingRequiredFields } from "@/lib/hr/employee-field-utils";
 import {
+  assessFicheCompletion,
+  compareCompletedFiches,
+  COMPLETION_LABELS,
+  formatFicheDoneAt,
+  type CompletionLevel,
+} from "@/lib/hr/fiche-completion";
+import {
   normalizeFicheValues,
   validateFicheConstraints,
 } from "@/lib/hr/employee-fiche-constraints";
@@ -60,6 +67,12 @@ function statusTone(
   if (status === "SUSPENDED" || status === "INVITED") return "warning";
   if (status === "DISABLED" || status === "INACTIVE") return "critical";
   return "info";
+}
+
+function completionTone(level: CompletionLevel): "success" | "warning" | "critical" {
+  if (level === "all") return "success";
+  if (level === "required") return "warning";
+  return "critical";
 }
 
 function slugify(label: string) {
@@ -136,13 +149,37 @@ export function EmployeesManager({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((row) =>
-      activeFields.some((field) =>
-        asText(rawValue(row, field)).toLowerCase().includes(q),
-      ),
-    );
-  }, [rows, query, activeFields]);
+    const completed = rows.filter((row) => row.fiche_done_at).sort(compareCompletedFiches);
+    if (!q) return completed;
+    return completed.filter((row) => {
+      const completion = assessFicheCompletion({
+        values: valuesFromFiche(row, fields),
+        fields,
+        catalogs,
+        uploadedDocTypeCodes: row.uploaded_doc_codes ?? [],
+      });
+      const bits: string[] = [
+        row.matricule,
+        formatFicheDoneAt(row.fiche_done_at),
+        row.fiche_done_at ?? "",
+        COMPLETION_LABELS.documents[completion.documents].fr,
+        COMPLETION_LABELS.documents[completion.documents].ar,
+        COMPLETION_LABELS.fields[completion.fields].fr,
+        COMPLETION_LABELS.fields[completion.fields].ar,
+      ];
+      for (const field of fields) {
+        const raw = asText(rawValue(row, field));
+        bits.push(raw);
+        if (field.value_type === "catalog" && field.catalog_kind && raw) {
+          const opt = ficheCatalogs.find(
+            (item) => item.kind === field.catalog_kind && item.code === raw,
+          );
+          if (opt) bits.push(catalogOptionLabel(opt), opt.label_ar, opt.label_fr);
+        }
+      }
+      return bits.join(" ").toLowerCase().includes(q);
+    });
+  }, [rows, query, fields, catalogs, ficheCatalogs]);
 
   function display(row: HrEmployeeFiche, field: HrEmployeeField) {
     const raw = rawValue(row, field);
@@ -278,16 +315,7 @@ export function EmployeesManager({
       if (fiche.ok) {
         setRows((prev) => {
           const without = prev.filter((r) => r.id !== fiche.data.id);
-          return [...without, fiche.data].sort((a, b) => {
-            const aOk = a.import_seq != null;
-            const bOk = b.import_seq != null;
-            if (aOk && bOk && a.import_seq !== b.import_seq) {
-              return (a.import_seq as number) - (b.import_seq as number);
-            }
-            if (aOk && !bOk) return -1;
-            if (!aOk && bOk) return 1;
-            return a.matricule.localeCompare(b.matricule, "fr", { numeric: true });
-          });
+          return [...without, fiche.data].sort(compareCompletedFiches);
         });
         setValues(valuesFromFiche(fiche.data, fields));
       }
@@ -358,8 +386,8 @@ export function EmployeesManager({
   return (
     <RhPage>
       <RhPageHeader
-        title="Employés"
-        description="Toutes les données de l'employé apparaissent ici. Ajoutez ou masquez une colonne depuis cet écran."
+        title="Fiches réalisées"
+        description="Le filtre vide affiche toutes les fiches enregistrées. Une fiche n'apparaît qu'après enregistrement."
         actions={
           <>
             <Button type="button" variant="secondary" onClick={() => setColumnsOpen(true)}>
@@ -382,7 +410,7 @@ export function EmployeesManager({
       <RhToolbar>
         <input
           className={`${rhInput} mt-0 max-w-md`}
-          placeholder="Rechercher dans toutes les colonnes"
+          placeholder="Filtrer les fiches (vide = toutes)"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -392,6 +420,18 @@ export function EmployeesManager({
         <table className="min-w-max text-left text-sm">
           <thead className="border-b border-border/70 bg-surface-muted/80">
             <tr>
+              <th className={`whitespace-nowrap ${rhTh()}`}>
+                <span className="block">Réalisée le</span>
+                <span className="block font-normal normal-case tracking-normal" dir="rtl">
+                  تاريخ الإنجاز
+                </span>
+              </th>
+              <th className={`whitespace-nowrap ${rhTh()}`}>
+                <span className="block">État</span>
+                <span className="block font-normal normal-case tracking-normal" dir="rtl">
+                  الحالة
+                </span>
+              </th>
               {activeFields.map((field) => (
                 <th key={field.id} className={`whitespace-nowrap ${rhTh()}`}>
                   <span className="block">{field.label_fr}</span>
@@ -407,15 +447,39 @@ export function EmployeesManager({
             {filtered.length === 0 ? (
               <tr>
                 <td
-                  colSpan={activeFields.length + 1}
+                  colSpan={activeFields.length + 3}
                   className={`${rhTd()} py-6 text-center text-foreground/55`}
                 >
-                  Aucun employé.
+                  {query.trim()
+                    ? "Aucune fiche pour ce filtre."
+                    : "Aucune fiche réalisée. Enregistrez une fiche pour qu'elle apparaisse ici."}
                 </td>
               </tr>
             ) : (
-              filtered.map((row) => (
+              filtered.map((row) => {
+                const completion = assessFicheCompletion({
+                  values: valuesFromFiche(row, fields),
+                  fields,
+                  catalogs,
+                  uploadedDocTypeCodes: row.uploaded_doc_codes ?? [],
+                });
+                return (
                 <tr key={row.id} className="border-b border-border/60">
+                  <td className={`whitespace-nowrap ${rhTd()}`}>
+                    {formatFicheDoneAt(row.fiche_done_at) || "—"}
+                  </td>
+                  <td className={rhTd()}>
+                    <div className="flex min-w-[16rem] flex-col gap-1">
+                      <AlertBadge
+                        label={`${COMPLETION_LABELS.documents[completion.documents].fr} — ${COMPLETION_LABELS.documents[completion.documents].ar}`}
+                        tone={completionTone(completion.documents)}
+                      />
+                      <AlertBadge
+                        label={`${COMPLETION_LABELS.fields[completion.fields].fr} — ${COMPLETION_LABELS.fields[completion.fields].ar}`}
+                        tone={completionTone(completion.fields)}
+                      />
+                    </div>
+                  </td>
                   {activeFields.map((field) => (
                     <td key={field.id} className={`whitespace-nowrap ${rhTd()}`}>
                       {display(row, field)}
@@ -450,7 +514,8 @@ export function EmployeesManager({
                     </div>
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>

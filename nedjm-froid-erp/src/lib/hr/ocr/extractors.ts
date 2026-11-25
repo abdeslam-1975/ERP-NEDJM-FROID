@@ -38,47 +38,185 @@ function digits(text: string, len: number): string | null {
   return runs[0] ?? null;
 }
 
-/** Toutes les dates YYYY.MM.DD / YYYY-MM-DD / DD/MM/YYYY */
+function validYmd(year: string, month: string, day: string): string | null {
+  const mi = Number(month);
+  const di = Number(day);
+  if (!Number.isInteger(mi) || !Number.isInteger(di)) return null;
+  if (mi < 1 || mi > 12 || di < 1 || di > 31) return null;
+  return `${year}-${String(mi).padStart(2, "0")}-${String(di).padStart(2, "0")}`;
+}
+
+/** Toutes les dates YYYY.MM.DD / YYYY-MM-DD / DD/MM/YYYY (jour et mois sur 1 ou 2 chiffres). */
 function findAllIsoDates(text: string): string[] {
   const out: string[] = [];
   const fixed = fixOcrDigits(text);
   const iso = fixed.matchAll(
-    /\b((?:19|20)\d{2})[.\-/](0[1-9]|1[0-2])[.\-/](0[1-9]|[12]\d|3[01])\b/g,
+    /(?:^|[^\d])((?:19|20)\d{2})[.\-/](\d{1,2})[.\-/](\d{1,2})(?!\d)/g,
   );
   for (const m of iso) {
-    out.push(`${m[1]}-${m[2]}-${m[3]}`);
+    const v = validYmd(m[1] ?? "", m[2] ?? "", m[3] ?? "");
+    if (v) out.push(v);
   }
   const fr = fixed.matchAll(
-    /\b(0[1-9]|[12]\d|3[01])[.\-/](0[1-9]|1[0-2])[.\-/]((?:19|20)\d{2})\b/g,
+    /(?:^|[^\d])(\d{1,2})[.\-/](\d{1,2})[.\-/]((?:19|20)\d{2})(?!\d)/g,
   );
   for (const m of fr) {
-    out.push(`${m[3]}-${m[2]}-${m[1]}`);
+    const v = validYmd(m[3] ?? "", m[2] ?? "", m[1] ?? "");
+    if (v) out.push(v);
   }
   return [...new Set(out)];
 }
 
-function findDate(text: string): string | null {
-  return findAllIsoDates(text)[0] ?? null;
+const FR_MONTH_INDEX: Record<string, string> = {
+  janvier: "01",
+  fevrier: "02",
+  mars: "03",
+  avril: "04",
+  mai: "05",
+  juin: "06",
+  juillet: "07",
+  aout: "08",
+  septembre: "09",
+  octobre: "10",
+  novembre: "11",
+  decembre: "12",
+};
+
+const AR_MONTH_INDEX: Record<string, string> = {
+  يناير: "01",
+  فبراير: "02",
+  مارس: "03",
+  أبريل: "04",
+  افريل: "04",
+  أفريل: "04",
+  ماي: "05",
+  مايو: "05",
+  جوان: "06",
+  يونيو: "06",
+  جويلية: "07",
+  يوليو: "07",
+  أوت: "08",
+  اغسطس: "08",
+  أغسطس: "08",
+  سبتمبر: "09",
+  أكتوبر: "10",
+  نوفمبر: "11",
+  ديسمبر: "12",
+};
+
+function monthIndex(token: string): string | null {
+  const ar = token.replace(/[\u064B-\u065F\u0670]/g, "");
+  if (AR_MONTH_INDEX[ar]) return AR_MONTH_INDEX[ar];
+  const lat = token.normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase("fr");
+  return FR_MONTH_INDEX[lat] ?? null;
 }
 
-function normalizeForSearch(s: string): string {
-  return s
-    .normalize("NFKD")
-    .replace(/[\u064B-\u065F\u0670]/g, "")
-    .replace(/\u200f|\u200e/g, "")
-    .toLocaleLowerCase("ar");
+/** 22 septembre 1985 / 16 ديسمبر 2024 */
+function findWrittenDates(text: string): string[] {
+  const out: string[] = [];
+  const re = /(\d{1,2})\s*([A-Za-zÀ-ÿ\u0600-\u06FF]{3,12})\s*((?:19|20)\d{2})/gu;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const month = monthIndex(m[2] ?? "");
+    const v = month ? validYmd(m[3] ?? "", month, m[1] ?? "") : null;
+    if (v) out.push(v);
+  }
+  return out;
+}
+
+/** « décembre 2024 » بلا يوم → أول الشهر، للمراجعة. */
+function findMonthStart(text: string): string | null {
+  const re = /([A-Za-zÀ-ÿ\u0600-\u06FF]{3,12})\s+((?:19|20)\d{2})/gu;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const month = monthIndex(m[1] ?? "");
+    if (!month) continue;
+    const before = text.slice(Math.max(0, (m.index ?? 0) - 4), m.index ?? 0);
+    if (/\d\s*$/.test(before)) continue;
+    return `${m[2]}-${month}-01`;
+  }
+  return null;
+}
+
+function findDate(text: string): string | null {
+  return findAllIsoDates(text)[0] ?? findWrittenDates(text)[0] ?? null;
+}
+
+function findAllDates(text: string): string[] {
+  return [...new Set([...findAllIsoDates(text), ...findWrittenDates(text)])];
+}
+
+/**
+ * Normalise pour la recherche en gardant l'index d'origine.
+ * NFKD / suppression des diacritiques change la longueur : couper le texte
+ * brut avec l'index normalisé faisait rater un champ différent à chaque scan.
+ */
+function foldForSearch(text: string): { folded: string; map: number[] } {
+  let folded = "";
+  const map: number[] = [];
+  for (let i = 0; i < text.length; ) {
+    const cp = text.codePointAt(i) ?? 0;
+    const ch = String.fromCodePoint(cp);
+    const step = cp > 0xffff ? 2 : 1;
+    const origin = i;
+    i += step;
+    if (/[\u064B-\u065F\u0670\u0640\u200e\u200f]/.test(ch)) continue;
+    const base = ch.normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase("ar");
+    for (const c of base) {
+      folded += c;
+      map.push(origin);
+    }
+  }
+  return { folded, map };
+}
+
+function indexAfter(text: string, charIndex: number): number {
+  const cp = text.codePointAt(charIndex) ?? 0;
+  return charIndex + (cp > 0xffff ? 2 : 1);
+}
+
+/** Fin du libellé dans le texte d'origine, ou null. */
+function findLabelEnd(text: string, label: string, from = 0): number | null {
+  const { folded, map } = foldForSearch(text);
+  const needle = foldForSearch(label).folded;
+  if (!needle) return null;
+  const latinShort = /^[a-z0-9]{1,4}$/.test(needle);
+  let startAt = 0;
+  if (from > 0) {
+    startAt = folded.length;
+    for (let i = 0; i < map.length; i++) {
+      if ((map[i] ?? 0) >= from) {
+        startAt = i;
+        break;
+      }
+    }
+  }
+  let fromFold = startAt;
+  while (fromFold <= folded.length - needle.length) {
+    const idx = folded.indexOf(needle, fromFold);
+    if (idx < 0) return null;
+    const prev = idx > 0 ? (folded[idx - 1] ?? "") : "";
+    const next = folded[idx + needle.length] ?? "";
+    const startOk = !prev || !/[\p{L}\p{N}]/u.test(prev);
+    const endOk = !latinShort || !next || !/[a-z0-9]/i.test(next);
+    if (startOk && endOk) {
+      const origin = map[idx + needle.length - 1];
+      if (origin == null) return null;
+      return indexAfter(text, origin);
+    }
+    fromFold = idx + 1;
+  }
+  return null;
 }
 
 /** Cherche une valeur après un libellé (même ligne ou suivante). */
 function afterLabel(text: string, labels: string[], maxLen = 120): string | null {
-  const normText = normalizeForSearch(text);
   for (const label of labels) {
-    const normLabel = normalizeForSearch(label);
     let from = 0;
-    while (from < normText.length) {
-      const idx = normText.indexOf(normLabel, from);
-      if (idx < 0) break;
-      const slice = text.slice(idx + label.length, idx + label.length + 160);
+    while (from < text.length) {
+      const end = findLabelEnd(text, label, from);
+      if (end == null) break;
+      const slice = text.slice(end, end + 160);
       const lines = slice.split(/\n/).map((l) => l.trim()).filter(Boolean);
       for (const line of lines.slice(0, 3)) {
         const cleaned = line
@@ -87,7 +225,7 @@ function afterLabel(text: string, labels: string[], maxLen = 120): string | null
           .trim();
         if (cleaned.length >= 1) return cleaned.slice(0, maxLen);
       }
-      from = idx + normLabel.length;
+      from = Math.max(end, from + 1);
     }
   }
   return null;
@@ -95,9 +233,9 @@ function afterLabel(text: string, labels: string[], maxLen = 120): string | null
 
 function dateAfterLabel(text: string, labels: string[]): string | null {
   for (const label of labels) {
-    const idx = normalizeForSearch(text).indexOf(normalizeForSearch(label));
-    if (idx < 0) continue;
-    const slice = text.slice(idx, idx + label.length + 50);
+    const end = findLabelEnd(text, label);
+    if (end == null) continue;
+    const slice = text.slice(Math.max(0, end - 8), end + 80);
     const d = findDate(slice);
     if (d) return d;
   }
@@ -117,6 +255,7 @@ function isLatinName(s: string): boolean {
 
 function cleanArabicName(s: string): string {
   return s
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
     .replace(/[^\u0600-\u06FF\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -248,7 +387,7 @@ function extractCni(text: string): OcrFieldSuggestion[] {
     ]) ?? null;
   push(out, "birth_date", "Date de naissance", birth, birth ? "high" : "low");
 
-  let birthPlace =
+  const birthPlace =
     afterLabel(text, [
       "مكان الميلاد",
       "LIEU DE NAISSANCE",
@@ -453,108 +592,746 @@ function extractBirth(text: string): OcrFieldSuggestion[] {
   return out;
 }
 
+type SsSlot =
+  | "last"
+  | "first"
+  | "fullName"
+  | "birth"
+  | "bcom"
+  | "bwil"
+  | "act"
+  | "address"
+  | "nss"
+  | "nin"
+  | "rip"
+  | "since"
+  | "hired"
+  | "father"
+  | "mother"
+  | "nation"
+  | "sex"
+  | "marital"
+  | "blood"
+  | "poste";
+
+type SsLabelHit = { slot: SsSlot; start: number; end: number };
+
+const SS_SLOT_RES: { slot: SsSlot; re: RegExp }[] = [
+  {
+    slot: "fullName",
+    re: /اللقب\s*و\s*ال[اأ]سم|nom\s*et\s*pr[eéèê]n[o0]m/iu,
+  },
+  {
+    slot: "father",
+    re: /nom\s*(?:et\s*pr[eéèê]n[o0]m\s*)?du\s*p[eéèê]re|اسم\s*الأب|(?<![\u0600-\u06FF])الأب(?![\u0600-\u06FF])|(?<![\p{L}])p[eéèê]re(?![\p{L}])/iu,
+  },
+  {
+    slot: "mother",
+    re: /nom\s*(?:et\s*pr[eéèê]n[o0]m\s*)?de\s*la\s*m[eéèê]re|اسم\s*الأم|(?<![\u0600-\u06FF])الأم(?![\u0600-\u06FF])|(?<![\p{L}])m[eéèê]re(?![\p{L}])/iu,
+  },
+  {
+    slot: "birth",
+    re: /date\s*(?:et|&)\s*lieu(?:\s*de)?\s*na[i1l][a-z]{0,10}|date\s*de\s*na[i1l][a-z]{0,10}|تاريخ\s*و\s*مكان\s*(?:الميلاد|الازدياد)|تاريخ\s*ومكان\s*(?:الميلاد|الازدياد)|تاريخ\s*(?:الميلاد|الازدياد)/iu,
+  },
+  {
+    slot: "bcom",
+    re: /commune\s*de\s*naissance|بلدية(?:\s*الميلاد)?|(?<![\p{L}])commune(?![\p{L}])/iu,
+  },
+  {
+    slot: "bwil",
+    re: /wilaya\s*(?:de\s*)?(?:naissance)?|ولاية(?:\s*الميلاد)?/iu,
+  },
+  {
+    slot: "since",
+    re: /depuis\s*le|à\s*compter\s*du|a\s*compter\s*du|date\s*d['’]?\s*affiliation|date\s*de\s*d[eé]claration|(?<![\p{L}])d[eé]claration(?![\p{L}])|ابتداء\s*ا?\s*من|تاريخ\s*(?:الانتساب|التصريح)|(?<![\u0600-\u06FF])التصريح(?![\u0600-\u06FF])/iu,
+  },
+  {
+    slot: "hired",
+    re: /date\s*d['’]?\s*entr[eé]e|date\s*de\s*recrutement|date\s*d['’]?\s*embauche|تاريخ\s*(?:التوظيف|الدخول|الالتحاق)/iu,
+  },
+  {
+    slot: "act",
+    re: /n\s*[°ºo.\-]*\s*acte(?:\s*de\s*na[i1l][a-z]{0,10})?|رقم\s*عقد\s*(?:الميلاد|الازدياد)|رقم\s*الحالة(?:\s*المدنية)?|شهادة\s*الميلاد/iu,
+  },
+  {
+    slot: "nin",
+    re: /رقم\s*التعريف\s*الوطني|(?<![\p{L}\p{N}])n\.?\s*i\.?\s*n\.?(?![\p{L}\p{N}])/iu,
+  },
+  {
+    slot: "nss",
+    re: /immatricul[éeèêa-z]*\s*(?:\(\s*e\s*\))?\s*sous\s*le\s*num[éeèêa-z]*|المسجل\s*(?:\(\s*ة\s*\))?\s*تحت\s*رقم|رقم\s*الضمان(?:\s*الاجتماعي)?|(?<![\p{L}\p{N}])n\s*[°ºo.]?\s*s\.?\s*s\.?(?![\p{L}\p{N}])/iu,
+  },
+  {
+    slot: "rip",
+    re: /(?<![\p{L}\p{N}])(?:rip|rib)(?![\p{L}\p{N}])|(?<![\p{L}])ccp(?![\p{L}])|رقم\s*الحساب|الحساب\s*البريدي/iu,
+  },
+  {
+    slot: "address",
+    re: /(?<![\p{L}\p{N}])adres[s5]e(?![\p{L}\p{N}])|العنوان/iu,
+  },
+  {
+    slot: "nation",
+    re: /nationalit[eé]|الجنسية/iu,
+  },
+  {
+    slot: "sex",
+    re: /(?<![\p{L}])sexe(?![\p{L}])|(?<![\u0600-\u06FF])الجنس(?![\u0600-\u06FF])/iu,
+  },
+  {
+    slot: "marital",
+    re: /situation\s*familiale|[eé]tat\s*civil|الوضعية\s*العائلية|الحالة\s*العائلية/iu,
+  },
+  {
+    slot: "blood",
+    re: /groupe\s*sanguin|فصيلة\s*الدم|(?<![\p{L}])rh(?![\p{L}])/iu,
+  },
+  {
+    slot: "poste",
+    re: /(?<![\p{L}])(?:poste|emploi|profession|fonction)(?![\p{L}])|المنصب|المهنة|الوظيفة/iu,
+  },
+  {
+    slot: "first",
+    re: /(?<![\p{L}\p{N}])pr[eéèê]n[o0]m(?![\p{L}\p{N}])|الاسم|الإسم|(?<![\u0600-\u06FF])اسم(?![\u0600-\u06FF])/iu,
+  },
+  {
+    slot: "last",
+    re: /(?<![\p{L}\p{N}])(?:nom|norn|n0m)(?![\p{L}\p{N}])|اللقب|(?<![\u0600-\u06FF])لقب(?![\u0600-\u06FF])/iu,
+  },
+];
+
+const SS_NAME_STOP = new Set([
+  "NOM",
+  "PRENOM",
+  "ADRESSE",
+  "ACTE",
+  "NAISSANCE",
+  "DATE",
+  "LIEU",
+  "ATTESTATION",
+  "AFFILIATION",
+  "IMMATRICULE",
+  "IMMATRICULEE",
+  "CNAS",
+  "CAISSE",
+  "NATIONALE",
+  "ASSURE",
+  "ASSUREE",
+  "CERTIFIE",
+  "REPUBLIQUE",
+  "ALGERIENNE",
+  "DEMOCRATIQUE",
+  "POPULAIRE",
+  "DEPUIS",
+  "SOUS",
+  "NUMERO",
+  "MONSIEUR",
+  "MADAME",
+  "EMPLOYEUR",
+]);
+
+function ssLabelHits(line: string): SsLabelHit[] {
+  const found: SsLabelHit[] = [];
+  for (const def of SS_SLOT_RES) {
+    const flags = def.re.flags.includes("g") ? def.re.flags : `${def.re.flags}g`;
+    const re = new RegExp(def.re.source, flags);
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(line))) {
+      if (m[0].length === 0) {
+        re.lastIndex += 1;
+        continue;
+      }
+      found.push({ slot: def.slot, start: m.index, end: m.index + m[0].length });
+    }
+  }
+  found.sort((a, b) => a.start - b.start || b.end - a.end);
+  const kept: SsLabelHit[] = [];
+  for (const hit of found) {
+    const overlap = kept.findIndex((k) => hit.start < k.end && hit.end > k.start);
+    if (overlap < 0) kept.push(hit);
+    else if (hit.end - hit.start > kept[overlap]!.end - kept[overlap]!.start) {
+      kept[overlap] = hit;
+    }
+  }
+  kept.sort((a, b) => a.start - b.start);
+  return kept;
+}
+
+function cleanSep(raw: string): string {
+  return raw
+    .replace(/^[\s:.\-–—|/\\]+/, "")
+    .replace(/[\s:.–—|/\\]+$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function meaningfulValue(raw: string): string {
+  const cleaned = cleanSep(raw);
+  if (!cleaned) return "";
+  const hits = ssLabelHits(cleaned);
+  if (
+    hits.length === 1 &&
+    hits[0]!.start <= 1 &&
+    hits[0]!.end >= cleaned.length - 1
+  ) {
+    return "";
+  }
+  return cleaned;
+}
+
+function slotParts(line: string, hits: SsLabelHit[]): { slot: SsSlot; parts: string[] }[] {
+  const out: { slot: SsSlot; parts: string[] }[] = [];
+  for (let i = 0; i < hits.length; i++) {
+    const hit = hits[i]!;
+    const next = hits[i + 1];
+    const after = meaningfulValue(line.slice(hit.end, next ? next.start : line.length));
+    const before = i === 0 ? meaningfulValue(line.slice(0, hit.start)) : "";
+    const parts: string[] = [];
+    if (after && before && hasArabic(after) !== hasArabic(before)) parts.push(after, before);
+    else if (after) parts.push(after);
+    else if (before) parts.push(before);
+    if (parts.length) out.push({ slot: hit.slot, parts });
+  }
+  return out;
+}
+
+function isSsNoise(line: string): boolean {
+  if (ssLabelHits(line).length) return false;
+  if (findDate(line)) return false;
+  if (nssCandidates(line).length) return false;
+  return /republique|attestation|affiliation|caisse nationale|assurances sociales|travailleurs salaries|certifie que|الجمهورية|الصندوق الوطني|شهادة الانتساب|www\.|https?:/i.test(
+    line,
+  );
+}
+
+function prepareSsLines(text: string): string[] {
+  const raw = text
+    .split(/\n/)
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const stitched: string[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    let cur = raw[i] ?? "";
+    const next = raw[i + 1];
+    if (
+      next &&
+      /date\s*(?:et|&)\s*lieu/i.test(cur) &&
+      !/na[i1l]|ميلاد|ازدياد/i.test(cur)
+    ) {
+      cur = `${cur} ${next}`;
+      i++;
+    } else if (next && /immatricul/i.test(cur) && nssCandidates(cur).length === 0) {
+      cur = `${cur} ${next}`;
+      i++;
+    } else if (
+      next &&
+      /depuis\s*le|ابتداء|d[eé]claration|التصريح|entr[eé]e|recrutement|التوظيف/i.test(cur) &&
+      !findDate(cur) &&
+      !findMonthStart(cur)
+    ) {
+      cur = `${cur} ${next}`;
+      i++;
+    }
+    stitched.push(cur);
+  }
+  return stitched;
+}
+
+type NssHit = { value: string; index: number; grouped: boolean };
+
+function nssCandidates(text: string): NssHit[] {
+  const fixed = text.replace(
+    /[0-9OoIlSsBb|][0-9OoIlSsBb|\s.\-]{6,}[0-9OoIlSsBb|]/g,
+    (chunk) => fixOcrDigits(chunk),
+  );
+  const out: NssHit[] = [];
+  const solid = /(?:^|[^\d])(\d{12})(?!\d)/g;
+  let m: RegExpExecArray | null;
+  while ((m = solid.exec(fixed))) {
+    out.push({ value: m[1] ?? "", index: m.index, grouped: false });
+  }
+  const grouped = /(?:^|[^\d])(\d{3}(?:[\s.\-]\d{3}){3})(?!\d)/g;
+  while ((m = grouped.exec(fixed))) {
+    const value = (m[1] ?? "").replace(/\D/g, "");
+    if (value.length !== 12) continue;
+    if (out.some((hit) => hit.value === value && Math.abs(hit.index - (m?.index ?? 0)) < 3)) continue;
+    out.push({ value, index: m.index, grouped: true });
+  }
+  return out;
+}
+
+function scoreNss(text: string, hit: NssHit): number {
+  const ctx = text.slice(Math.max(0, hit.index - 90), hit.index).toLocaleLowerCase("fr");
+  let score = 0;
+  if (/immatricul|مسجل|رقم الضمان/.test(ctx)) score += 12;
+  if (hit.grouped) score += 2;
+  if (/employeur|utilisateur|المستخدم/.test(ctx) && score < 12) score -= 6;
+  if (/sous le num/.test(ctx) && !/immatricul/.test(ctx)) score -= 6;
+  return score;
+}
+
+function pickNss(text: string): string | null {
+  const list = nssCandidates(text);
+  let best: { value: string; score: number } | null = null;
+  for (const hit of list) {
+    const score = scoreNss(text, hit);
+    if (!best || score > best.score) best = { value: hit.value, score };
+  }
+  return best?.value ?? null;
+}
+
+function badPersonName(lat: string): boolean {
+  const words = lat.split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  if (words.every((w) => SS_NAME_STOP.has(w))) return true;
+  return words.some((w) =>
+    ["NAISSANCE", "ADRESSE", "ACTE", "IMMATRICULE", "IMMATRICULEE", "ATTESTATION", "EMPLOYEUR"].includes(
+      w,
+    ),
+  );
+}
+
+function personScripts(parts: string[]): { ar: string; lat: string } {
+  let ar = "";
+  let lat = "";
+  for (const part of parts) {
+    if (part.length > 48 || findDate(part) || /^\d+$/.test(part)) continue;
+    if (!ar) {
+      const a = cleanArabicName(part);
+      if (a.length >= 2) ar = a;
+    }
+    if (!lat) {
+      const l = cleanLatinName(part);
+      if (l.length >= 2 && isLatinName(l) && !badPersonName(l)) lat = l;
+    }
+  }
+  return { ar, lat };
+}
+
+function parseBirthParts(parts: string[]): {
+  date: string | null;
+  ar: string;
+  lat: string;
+  commune: string;
+  wilaya: string;
+} {
+  const joined = parts.join(" ");
+  const date = findDate(joined);
+  let place = joined
+    .replace(/\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}/g, " ")
+    .replace(/(?:19|20)\d{2}[.\-/]\d{1,2}[.\-/]\d{1,2}/g, " ")
+    .replace(/\d{1,2}\s*[A-Za-zÀ-ÿ\u0600-\u06FF]{3,12}\s*(?:19|20)\d{2}/g, " ")
+    .replace(/(?:^|\s)(?:à|a|au|en)(?=\s|$)/gi, " ")
+    .replace(/(?:^|\s)(?:في|بـ|ب)(?=\s|$)/g, " ")
+    .split(/depuis\s*le|immatricul|adresse|ابتداء|العنوان|المسجل|d[eé]claration/i)[0] ?? "";
+  const wilayaMatch = place.match(
+    /(?:ولاية|wilaya)(?:\s*(?:de|الميلاد))?\s*[:\-]?\s*([A-Za-zÀ-ÿ\u0600-\u06FF'’\-\s]+)/i,
+  );
+  const communeMatch = place.match(
+    /(?:بلدية|commune)(?:\s*(?:de|الميلاد))?\s*[:\-]?\s*([A-Za-zÀ-ÿ\u0600-\u06FF'’\-\s]+)/i,
+  );
+  const wilaya = placeToken(wilayaMatch?.[1] ?? "");
+  const commune = placeToken(communeMatch?.[1] ?? "");
+  place = place
+    .replace(/(?:ولاية|wilaya|بلدية|commune)(?:\s*(?:de|الميلاد))?\s*[:\-]?\s*[A-Za-zÀ-ÿ\u0600-\u06FF'’\-\s]+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const ar = cleanArabicName(place);
+  let lat = cleanLatinName(place);
+  if (lat.length < 2 || badPersonName(lat) || !isLatinName(lat)) lat = "";
+  return { date, ar, lat, commune, wilaya };
+}
+
+function placeToken(raw: string): string {
+  const lat = cleanLatinName(raw);
+  const ar = cleanArabicName(raw);
+  if (lat && isLatinName(lat) && !badPersonName(lat)) return lat;
+  return ar;
+}
+
+function parseActParts(parts: string[]): string | null {
+  const joined = fixOcrDigits(parts.join(" "));
+  const runs = joined.match(/\d{1,6}/g) ?? [];
+  const candidates = runs.filter((d) => d.length <= 5 && !/^(?:19|20)\d{2}$/.test(d));
+  const exact = candidates.find((d) => d.length === 5);
+  const picked = exact ?? [...candidates].sort((a, b) => b.length - a.length)[0];
+  if (!picked) return null;
+  return picked.length >= 5 ? picked.slice(0, 5) : picked;
+}
+
+function parseAddressParts(parts: string[]): { ar: string; lat: string } {
+  let lat = "";
+  let ar = "";
+  for (const part of parts) {
+    const cut = (part.split(/immatricul|depuis\s*le|المسجل|ابتداء/i)[0] ?? part)
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!cut) continue;
+    if (hasArabic(cut)) {
+      const arabic = cut
+        .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
+        .replace(/[^\u0600-\u06FF\d\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      const latinOnly = cut
+        .replace(/[\u0600-\u06FF]/g, " ")
+        .replace(/[^\dA-Za-zÀ-ÿ'’\-\s,./°º]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      const letters = latinOnly.replace(/[^A-Za-zÀ-ÿ]/g, "");
+      if (!ar && arabic.length >= 3) ar = arabic.slice(0, 220);
+      if (!lat && letters.length >= 3) lat = latinOnly.toLocaleUpperCase("fr-DZ").slice(0, 220);
+      continue;
+    }
+    const latin = cut
+      .replace(/[^\dA-Za-zÀ-ÿ'’\-\s,./°º]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLocaleUpperCase("fr-DZ");
+    if (!lat && latin.length >= 3) lat = latin.slice(0, 220);
+  }
+  return { ar, lat };
+}
+
+function slotNeeds(slot: SsSlot, bag: Map<SsSlot, string[]>): boolean {
+  const parts = bag.get(slot) ?? [];
+  if (!parts.length) return true;
+  if (slot === "last" || slot === "first") {
+    const { ar, lat } = personScripts(parts);
+    return !ar || !lat;
+  }
+  if (slot === "birth") {
+    const birth = parseBirthParts(parts);
+    return !birth.date || (!birth.ar && !birth.lat && !birth.commune);
+  }
+  if (slot === "father" || slot === "mother") {
+    const { ar, lat } = personScripts(parts);
+    return !ar || !lat;
+  }
+  if (slot === "address") {
+    return !parseAddressParts(parts).lat;
+  }
+  return false;
+}
+
+function joinScripts(parts: string[]): string {
+  const { ar, lat } = personScripts(parts);
+  if (lat && ar) return `${lat} ${ar}`;
+  return lat || ar;
+}
+
+function readDigits(text: string, len: number): string | null {
+  const source = fixOcrDigits(text);
+  const re = /\d[\d\s.\-]{0,48}\d/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source))) {
+    const digits = (m[0] ?? "").replace(/\D/g, "");
+    if (digits.length === len) return digits;
+  }
+  const squashed = source.replace(/\D/g, "");
+  return squashed.length === len ? squashed : null;
+}
+
+function parseMarital(text: string): string | null {
+  if (/متزوج|mari[ée]/i.test(text)) return "M";
+  if (/أعزب|اعزب|c[ée]libat/i.test(text)) return "C";
+  if (/مطلق|divor/i.test(text)) return "D";
+  if (/أرمل|ارمل|veuf|veuve/i.test(text)) return "V";
+  return null;
+}
+
+function parseSexValue(text: string): string | null {
+  if (/أنثى|انثى|f[ée]minin|\bfemme\b/i.test(text)) return "F";
+  if (/ذكر|masculin|\bhomme\b/i.test(text)) return "M";
+  return null;
+}
+
+function parseNationality(parts: string[]): string {
+  const joined = parts.join(" ");
+  if (/alg[ée]r|جزائر/i.test(joined)) return "ALGERIE";
+  const { lat, ar } = personScripts(parts);
+  return lat || ar;
+}
+
+function addSlot(bag: Map<SsSlot, string[]>, slot: SsSlot, parts: string[]) {
+  const list = bag.get(slot) ?? [];
+  for (const part of parts) {
+    const v = part.trim();
+    if (!v || list.includes(v)) continue;
+    list.push(v);
+  }
+  if (list.length) bag.set(slot, list);
+}
+
 /**
- * Attestation CNAS — NSS (Immatriculé) + champs utiles de la fiche si lisibles.
+ * Attestation CNAS — tous les champs lisibles, quel que soit l'ordre OCR
+ * (ligne « libellé : valeur », valeur avant le libellé, ou colonnes séparées).
  */
 function extractSs(text: string): OcrFieldSuggestion[] {
   const out: OcrFieldSuggestion[] = [];
+  const lines = prepareSsLines(text).map((textLine) => {
+    const hits = ssLabelHits(textLine);
+    const valued = slotParts(textLine, hits);
+    return {
+      text: textLine,
+      hits,
+      valued,
+      labelOnly: hits.length > 0 && valued.length === 0,
+      noise: isSsNoise(textLine),
+    };
+  });
 
-  // Priorité : Immatriculé(e) sous le numéro / المسجل تحت رقم (pas "Sous le numéro" seul)
-  const labeled =
-    text.match(
-      /(?:Immatricul[éeêe]{1,3}\s*sous\s*le\s*num[éee]ro|المسجل\s*تحت\s*رقم)[^\d]{0,40}(\d[\d\s.\-]{8,24}\d)/i,
-    ) ?? null;
-  let nss: string | null = null;
-  if (labeled?.[1]) {
-    const d = fixOcrDigits(labeled[1]).replace(/\D/g, "");
-    if (d.length >= 12) nss = d.slice(0, 12);
-  }
-  if (!nss) {
-    const alt =
-      text.match(
-        /(?:N[°º.]?\s*SS|NSS|NUM[ÉE]RO\s*SS|رقم\s*الضمان(?:\s*الاجتماعي)?)[^\d]{0,30}(\d[\d\s.\-]{8,24}\d)/i,
-      ) ?? null;
-    if (alt?.[1]) {
-      const d = fixOcrDigits(alt[1]).replace(/\D/g, "");
-      if (d.length >= 12) nss = d.slice(0, 12);
-    }
-  }
-  if (!nss) {
-    // 12 chiffres groupés (souvent 3×4)
-    const grouped = fixOcrDigits(text).match(/\b(\d{3})\s*[.\-]?\s*(\d{3})\s*[.\-]?\s*(\d{3})\s*[.\-]?\s*(\d{3})\b/);
-    if (grouped) nss = `${grouped[1]}${grouped[2]}${grouped[3]}${grouped[4]}`;
-  }
-  if (!nss) nss = digits(text, 12);
-  push(out, "nss", "N° NSS", nss, nss ? "high" : "low");
-
-  const nom = afterLabel(text, ["Nom", "NOM", "اللقب"]);
-  if (nom) {
-    if (hasArabic(nom)) {
-      const a = cleanArabicName(nom);
-      if (a) push(out, "last_name_ar", "Nom AR", a, "medium");
-    } else if (isLatinName(nom)) {
-      push(out, "last_name", "Nom", cleanLatinName(nom), "medium");
-    }
-  }
-  const prenom = afterLabel(text, ["Prénom", "Prenom", "PRÉNOM", "PRENOM", "الاسم", "الإسم"]);
-  if (prenom) {
-    if (hasArabic(prenom)) {
-      const a = cleanArabicName(prenom);
-      if (a) push(out, "first_name_ar", "Prénom AR", a, "medium");
-    } else if (isLatinName(prenom)) {
-      push(out, "first_name", "Prénom", cleanLatinName(prenom), "medium");
-    }
+  const bag = new Map<SsSlot, string[]>();
+  for (const line of lines) {
+    for (const item of line.valued) addSlot(bag, item.slot, item.parts);
   }
 
-  const birthBlock =
-    afterLabel(
-      text,
-      ["Date et lieu de Naissance", "Date et lieu de naissance", "تاريخ و مكان الميلاد", "تاريخ ومكان الميلاد"],
-      80,
-    ) ?? null;
-  if (birthBlock) {
-    const d = findDate(birthBlock);
-    if (d) push(out, "birth_date", "Date de naissance", d, "medium");
-    const place = birthBlock
-      .replace(/\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}/, "")
-      .replace(/\bà\b/gi, " ")
-      .trim();
-    if (place && isLatinName(place)) {
-      push(out, "birth_place_fr", "Lieu naissance FR", cleanLatinName(place), "low");
-      push(out, "commune_birth", "بلدية الميلاد", cleanLatinName(place), "low");
+  const consumed = new Set<number>();
+  let i = 0;
+  while (i < lines.length) {
+    if (!lines[i]?.labelOnly) {
+      i++;
+      continue;
     }
-  } else {
-    const d = dateAfterLabel(text, ["Date de Naissance", "تاريخ الميلاد"]);
-    if (d) push(out, "birth_date", "Date de naissance", d, "medium");
+    const run: number[] = [];
+    let k = i;
+    while (k < lines.length && (lines[k]?.labelOnly || lines[k]?.noise)) {
+      if (lines[k]?.labelOnly) run.push(k);
+      k++;
+    }
+    if (run.length >= 2) {
+      const vals: number[] = [];
+      let j = k;
+      while (j < lines.length && vals.length < run.length) {
+        const ln = lines[j];
+        if (!ln || ln.labelOnly || ln.noise || ln.hits.length) break;
+        vals.push(j);
+        j++;
+      }
+      if (vals.length === run.length) {
+        run.forEach((ri, n) => {
+          const slot = lines[ri]?.hits[0]?.slot;
+          const value = lines[vals[n] ?? -1]?.text ?? "";
+          if (slot && value && slotNeeds(slot, bag)) addSlot(bag, slot, [value]);
+          consumed.add(vals[n] ?? -1);
+        });
+      }
+    }
+    i = Math.max(k, i + 1);
   }
 
-  const act =
-    text.match(
-      /(?:N[°º.]?\s*Acte|رقم\s*عقد\s*الميلاد)[^\d]{0,20}(\d[\d\s]{2,12}\d)/i,
-    ) ?? null;
-  if (act?.[1]) {
-    const digitsAct = fixOcrDigits(act[1]).replace(/\D/g, "");
-    if (digitsAct.length >= 1) {
-      push(
-        out,
-        "birth_act_no",
-        "N° acte de naissance",
-        digitsAct.length >= 5 ? digitsAct.slice(0, 5) : digitsAct,
-        "medium",
-      );
-    }
+  for (let n = 0; n < lines.length; n++) {
+    const ln = lines[n];
+    if (!ln?.labelOnly || ln.hits.length !== 1) continue;
+    if (lines[n - 1]?.labelOnly) continue;
+    const next = lines[n + 1];
+    if (!next || next.hits.length || next.noise || consumed.has(n + 1)) continue;
+    const slot = ln.hits[0]?.slot;
+    if (!slot || !slotNeeds(slot, bag)) continue;
+    addSlot(bag, slot, [next.text]);
+    consumed.add(n + 1);
   }
 
-  const address = afterLabel(text, ["Adresse", "ADRESSE", "العنوان"]);
-  if (address) {
-    const cleaned = address.replace(/\s{2,}/g, " ").trim().slice(0, 160);
-    if (cleaned) {
-      if (hasArabic(cleaned)) push(out, "address_ar", "Adresse AR", cleaned, "low");
-      else push(out, "address_fr", "Adresse FR", cleaned.toLocaleUpperCase("fr-DZ"), "low");
-    }
+  const full = bag.get("fullName") ?? [];
+  const fullParts = full.join(" ").split(/\s*[/|]\s*/);
+  const fullLast = fullParts.length >= 2 ? personScripts([fullParts[0] ?? ""]) : { ar: "", lat: "" };
+  const fullFirst = fullParts.length >= 2 ? personScripts([fullParts[1] ?? ""]) : { ar: "", lat: "" };
+  const last = personScripts(bag.get("last") ?? []);
+  const first = personScripts(bag.get("first") ?? []);
+  push(out, "last_name", "Nom", last.lat || fullLast.lat, (last.lat || fullLast.lat) ? "high" : "low");
+  push(out, "last_name_ar", "Nom AR", last.ar || fullLast.ar, (last.ar || fullLast.ar) ? "high" : "low");
+  push(out, "first_name", "Prénom", first.lat || fullFirst.lat, (first.lat || fullFirst.lat) ? "high" : "low");
+  push(out, "first_name_ar", "Prénom AR", first.ar || fullFirst.ar, (first.ar || fullFirst.ar) ? "high" : "low");
+
+  const birth = parseBirthParts(bag.get("birth") ?? []);
+  push(out, "birth_date", "Date de naissance", birth.date, birth.date ? "high" : "low");
+  const commune = birth.commune || placeToken((bag.get("bcom") ?? []).join(" "));
+  const wilaya = birth.wilaya || placeToken((bag.get("bwil") ?? []).join(" "));
+  const placeBits = [commune || birth.lat || birth.ar, wilaya].filter(Boolean);
+  const place = [...new Set(placeBits)].join(", ");
+  push(out, "birth_place_fr", "Lieu naissance", place, place ? "high" : "low");
+  if (birth.ar && (birth.lat || commune)) {
+    push(out, "birth_place_ar", "Lieu naissance AR", birth.ar, "medium");
   }
+
+  const act = parseActParts(bag.get("act") ?? []);
+  push(out, "birth_act_no", "N° acte de naissance", act, act ? "high" : "low");
+
+  const civil = [
+    ...(bag.get("sex") ?? []),
+    ...(bag.get("marital") ?? []),
+    ...(bag.get("blood") ?? []),
+  ].join(" ");
+  const sexCode = parseSexValue(civil) ?? extractSex(text);
+  push(out, "sex_code", "Sexe", sexCode, sexCode ? "high" : "low");
+  const marital = parseMarital(civil) ?? parseMarital((bag.get("marital") ?? []).join(" "));
+  push(out, "marital_code", "Situation", marital, marital ? "high" : "low");
+  const blood = normalizeBlood(civil) ?? normalizeBlood((bag.get("blood") ?? []).join(" "));
+  push(out, "blood_code", "Groupe sanguin", blood, blood ? "high" : "low");
+
+  push(out, "father_name", "Père", joinScripts(bag.get("father") ?? []), "high");
+  push(out, "mother_name", "Mère", joinScripts(bag.get("mother") ?? []), "high");
+  const nationality = parseNationality(bag.get("nation") ?? []);
+  push(out, "nationality", "Nationalité", nationality, nationality ? "high" : "low");
+
+  const nin = readDigits((bag.get("nin") ?? []).join(" "), 18);
+  push(out, "nin", "NIN", nin, nin ? "high" : "low");
+
+  const address = parseAddressParts(bag.get("address") ?? []);
+  push(out, "address_fr", "Adresse", address.lat, address.lat ? "high" : "low");
+
+  const labeledNss = pickNss((bag.get("nss") ?? []).join(" "));
+  const nss = labeledNss ?? pickNss(text);
+  push(out, "nss", "N° NSS", nss, labeledNss ? "high" : nss ? "medium" : "low");
+
+  const account = readDigits((bag.get("rip") ?? []).join(" "), 20);
+  push(out, "account_no", "RIP", account, account ? "high" : "low");
+  if (account) push(out, "payment_mode_code", "Paiement", "CCP", "high");
+
+  let since = findDate((bag.get("since") ?? []).join(" "));
+  const hired =
+    findDate((bag.get("hired") ?? []).join(" ")) ??
+    findMonthStart((bag.get("hired") ?? []).join(" "));
+  let birthDate = birth.date;
+  const seenDates = findAllDates(text);
+  if (!birthDate && since) {
+    const rest = seenDates.filter((d) => d !== since && d !== hired);
+    if (rest.length === 1) birthDate = rest[0] ?? null;
+  }
+  if (!since && birthDate) {
+    const rest = seenDates.filter((d) => d !== birthDate && d !== hired);
+    if (rest.length === 1) since = rest[0] ?? null;
+  }
+  if (birthDate && birthDate !== birth.date) {
+    push(out, "birth_date", "Date de naissance", birthDate, "medium");
+  }
+  push(out, "declaration_date", "Déclaration", since, since ? "high" : "low");
+  push(out, "hired_at", "Recrutement", hired, hired ? "high" : "low");
+
+  const poste = (bag.get("poste") ?? [])
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+  push(out, "poste", "Poste", poste, poste ? "high" : "low");
 
   return out;
+}
+
+const SUGGESTION_ORDER = [
+  "nss",
+  "last_name",
+  "first_name",
+  "last_name_ar",
+  "first_name_ar",
+  "birth_date",
+  "birth_place_fr",
+  "birth_place_ar",
+  "birth_act_no",
+  "sex_code",
+  "marital_code",
+  "blood_code",
+  "father_name",
+  "mother_name",
+  "nationality",
+  "nin",
+  "account_no",
+  "payment_mode_code",
+  "address_fr",
+  "declaration_date",
+  "hired_at",
+  "poste",
+  "commune_birth",
+  "id_number",
+  "id_issued_on",
+  "id_expires_on",
+  "id_issued_by",
+];
+
+function suggestionKey(code: string, value: string): string {
+  if (
+    code === "nss" ||
+    code === "nin" ||
+    code === "birth_act_no" ||
+    code === "id_number" ||
+    code === "account_no"
+  ) {
+    return value.replace(/\D/g, "");
+  }
+  return value.trim().replace(/\s+/g, " ").toLocaleUpperCase("fr");
+}
+
+/** Fusionne plusieurs lectures : un champ lu sur une passe reste, même s'il manque aux autres. */
+export function mergeOcrSuggestions(groups: OcrFieldSuggestion[][]): OcrFieldSuggestion[] {
+  const rank = { high: 3, medium: 2, low: 1 } as const;
+  const buckets = new Map<string, Map<string, { s: OcrFieldSuggestion; score: number }>>();
+  for (const group of groups) {
+    for (const s of group) {
+      const key = suggestionKey(s.code, s.value);
+      if (!key) continue;
+      let values = buckets.get(s.code);
+      if (!values) {
+        values = new Map();
+        buckets.set(s.code, values);
+      }
+      const prev = values.get(key);
+      if (!prev) values.set(key, { s, score: rank[s.confidence] });
+      else {
+        prev.score += rank[s.confidence];
+        if (rank[s.confidence] > rank[prev.s.confidence]) prev.s = s;
+      }
+    }
+  }
+  const out: OcrFieldSuggestion[] = [];
+  for (const values of buckets.values()) {
+    let best: { s: OcrFieldSuggestion; score: number } | null = null;
+    for (const item of values.values()) {
+      if (!best || item.score > best.score) best = item;
+    }
+    if (best) out.push(best.s);
+  }
+  out.sort((a, b) => {
+    const ia = SUGGESTION_ORDER.indexOf(a.code);
+    const ib = SUGGESTION_ORDER.indexOf(b.code);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  return out;
+}
+
+export type OcrWordBox = {
+  text: string;
+  bbox: { x0: number; y0: number; x1: number; y1: number };
+};
+
+/**
+ * Reconstruit les lignes du formulaire selon la position (même rangée = même ligne).
+ * Le texte brut de Tesseract sépare souvent les colonnes et fait tomber un champ.
+ */
+export function linesFromOcrWords(words: OcrWordBox[]): string {
+  const items = words.filter((w) => w.text.trim() && w.bbox.y1 > w.bbox.y0);
+  if (!items.length) return "";
+  const heights = items.map((w) => w.bbox.y1 - w.bbox.y0).sort((a, b) => a - b);
+  const median = heights[Math.floor(heights.length / 2)] ?? 20;
+  const threshold = Math.max(8, median * 0.55);
+  const rows: OcrWordBox[][] = [];
+  for (const word of [...items].sort((a, b) => a.bbox.y0 - b.bbox.y0 || a.bbox.x0 - b.bbox.x0)) {
+    const cy = (word.bbox.y0 + word.bbox.y1) / 2;
+    const row = rows.find((group) => {
+      const ry =
+        group.reduce((sum, item) => sum + (item.bbox.y0 + item.bbox.y1) / 2, 0) / group.length;
+      return Math.abs(cy - ry) <= threshold;
+    });
+    if (row) row.push(word);
+    else rows.push([word]);
+  }
+  return rows
+    .map((group) => {
+      const arabic = group.filter((w) => hasArabic(w.text)).length;
+      const ltr = arabic * 2 < group.length;
+      const ordered = [...group].sort((a, b) => (ltr ? a.bbox.x0 - b.bbox.x0 : b.bbox.x0 - a.bbox.x0));
+      return ordered.map((w) => w.text.trim()).filter(Boolean).join(" ");
+    })
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function extractFieldsFromOcrText(
