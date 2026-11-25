@@ -215,7 +215,7 @@ export function interpretSentence(input: string, now = new Date()): InterpretedS
       used.add(index);
     }
   });
-  let month = namedMonth;
+  let month: number | null = namedMonth;
   if (!month && year != null) {
     const yearIndex = tokens.findIndex((token) => token === String(year));
     for (const neighbor of [tokens[yearIndex - 1], tokens[yearIndex + 1]]) {
