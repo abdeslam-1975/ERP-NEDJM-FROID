@@ -818,13 +818,18 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   }
 
   async function openTrash() {
-    if (!flags?.canRestore) return notify("Accès", "Restauration réservée à l’admin (ou droit délégué)");
+    if (!flags?.isAdmin && !flags?.canRestore) {
+      return notify("Accès", "Restauration réservée à l’admin (ou droit délégué)");
+    }
     setBusy(true);
     const result = await listVoidedCaisseOperations();
     setBusy(false);
     if (!result.ok) return notify("Corbeille", result.error);
     setTrashRows(result.data.rows);
     setTrashOpen(true);
+    if (!result.data.rows.length) {
+      notify("Corbeille", "Vide — aucune opération supprimée pour le moment.");
+    }
   }
 
   async function restoreTrashItem(row: CaisseVoidedOperation) {
@@ -1258,10 +1263,14 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
           {flags?.canSeeCaisse || flags?.isAdmin ? <button type="button" className="btn-action btn-purple" onClick={() => void openFinance()}>CAISSE</button> : null}
           {flags?.canSeeCaisse || flags?.isAdmin ? <button type="button" className="btn-action btn-teal" onClick={() => void openClose()}>CLÔTURE</button> : null}
           {flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openAdmin()}>ADMIN</button> : null}
+          {flags?.isAdmin || flags?.canRestore ? (
+            <button type="button" className="btn-action btn-brown" onClick={() => void openTrash()} disabled={busy}>
+              CORBEILLE
+            </button>
+          ) : null}
           {flags?.isAdmin ? <button type="button" className="btn-action btn-purple" onClick={() => setBulkBonsOpen(true)}>BONS PDF</button> : null}
           {flags?.canManageOpenings && !flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openOpenings()}>OUVERTURE</button> : null}
           {flags?.canManageLists && !flags?.isAdmin ? <button type="button" className="btn-action btn-navy" onClick={() => void openLists()}>LISTES</button> : null}
-          {flags?.canRestore ? <button type="button" className="btn-action btn-brown" onClick={() => void openTrash()}>CORBEILLE</button> : null}
           {flags?.isAdmin ? <button type="button" className="btn-action btn-brown" onClick={() => void openAudit()}>AUDIT</button> : null}
         </div>
         <div className="toolbar">

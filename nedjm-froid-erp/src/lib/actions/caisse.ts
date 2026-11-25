@@ -1235,13 +1235,21 @@ export async function listVoidedCaisseOperations(): Promise<ActionResult<{ rows:
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
   const { supabase, flags } = gate;
-  if (!flags.canRestore) return fail("❌ Accès réservé : restauration admin (ou droit délégué).");
+  if (!flags.isAdmin && !flags.canRestore) {
+    return fail("❌ Accès réservé : restauration admin (ou droit délégué).");
+  }
   const listed = await supabase.rpc("caisse_list_voided_operations", { p_limit: 150 });
   if (listed.error) {
-    if (/caisse_list_voided_operations|manage_restore|caisse_can_restore/i.test(listed.error.message)) {
+    const msg = listed.error.message || "";
+    if (/schema cache|could not find the function|PGRST202/i.test(msg)) {
+      return fail(
+        "❌ Fonctions corbeille invisibles pour l’API. Dans Supabase SQL Editor exécutez : NOTIFY pgrst, 'reload schema';",
+      );
+    }
+    if (/caisse_list_voided_operations|manage_restore|caisse_can_restore/i.test(msg)) {
       return fail("❌ Migration restauration non appliquée sur Supabase (caisse_restore_voided).");
     }
-    return fail(listed.error.message);
+    return fail(msg);
   }
   const rows: CaisseVoidedOperation[] = ((listed.data ?? []) as {
     id: string;
@@ -1275,13 +1283,21 @@ export async function restoreCaisseOperation(operationId: string): Promise<Actio
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
   const { supabase, flags } = gate;
-  if (!flags.canRestore) return fail("❌ Accès réservé : restauration admin (ou droit délégué).");
+  if (!flags.isAdmin && !flags.canRestore) {
+    return fail("❌ Accès réservé : restauration admin (ou droit délégué).");
+  }
   const restored = await supabase.rpc("caisse_restore_operation", { p_id: operationId });
   if (restored.error) {
-    if (/caisse_restore_operation|manage_restore|caisse_can_restore/i.test(restored.error.message)) {
+    const msg = restored.error.message || "";
+    if (/schema cache|could not find the function|PGRST202/i.test(msg)) {
+      return fail(
+        "❌ Fonctions corbeille invisibles pour l’API. Dans Supabase SQL Editor exécutez : NOTIFY pgrst, 'reload schema';",
+      );
+    }
+    if (/caisse_restore_operation|manage_restore|caisse_can_restore/i.test(msg)) {
       return fail("❌ Migration restauration non appliquée sur Supabase (caisse_restore_voided).");
     }
-    return fail(`❌ ${restored.error.message}`);
+    return fail(`❌ ${msg}`);
   }
   const op = Number(restored.data) || 0;
   await logAction(supabase, "RESTORE", "", op || "", "", `Restauration opération ${operationId}`, null);
