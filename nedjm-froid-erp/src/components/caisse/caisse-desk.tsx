@@ -166,6 +166,17 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     window.setTimeout(() => setToast(null), ms);
   }
 
+  function isSessionError(text: string) {
+    return /session requise|non authentifié|not authenticated|jwt|auth/i.test(text);
+  }
+
+  function goLogin(message?: string) {
+    if (message) notify("Session", message, 4000);
+    window.setTimeout(() => {
+      window.location.assign("/login?next=/caisse");
+    }, message ? 600 : 0);
+  }
+
   function confirmBox(title: string, text: string, confirm: string, withReason = false, initialReason = "") {
     return new Promise<string | null>((resolve) => {
       setReason(initialReason);
@@ -182,6 +193,10 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     });
     setBusy(false);
     if (!result.ok) {
+      if (isSessionError(result.error)) {
+        goLogin("Session expirée — reconnectez-vous.");
+        return;
+      }
       setError(result.error);
       notify("Chargement", result.error);
       return;
@@ -192,10 +207,24 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   }
 
   useEffect(() => {
-    let timer = window.setTimeout(() => void logoutAction(), INACTIVITY_MS);
+    let navigating = false;
+    const softLogout = () => {
+      if (navigating) return;
+      navigating = true;
+      void (async () => {
+        try {
+          await logoutAction();
+        } catch {
+          // redirect() from the server action throws; force navigation below.
+        }
+        window.location.assign("/login?next=/caisse");
+      })();
+    };
+    let timer = window.setTimeout(softLogout, INACTIVITY_MS);
     const reset = () => {
+      if (navigating) return;
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => void logoutAction(), INACTIVITY_MS);
+      timer = window.setTimeout(softLogout, INACTIVITY_MS);
     };
     const events = ["mousemove", "mousedown", "keypress", "scroll", "touchstart"] as const;
     events.forEach((event) => document.addEventListener(event, reset, true));
@@ -824,11 +853,21 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     setBusy(true);
     const result = await listVoidedCaisseOperations();
     setBusy(false);
-    if (!result.ok) return notify("Corbeille", result.error, 8000);
+    if (!result.ok) {
+      if (isSessionError(result.error)) {
+        goLogin("Session expirée — reconnectez-vous pour ouvrir la corbeille.");
+        return;
+      }
+      return notify("Corbeille", result.error, 8000);
+    }
     setTrashRows(result.data.rows);
     setTrashOpen(true);
     if (!result.data.rows.length) {
-      notify("Corbeille", "Vide — aucune opération supprimée pour le moment.", 5000);
+      notify(
+        "Corbeille",
+        "Vide — aucune opération supprimée. Supprimez une opération puis rouvrez la corbeille.",
+        6000,
+      );
     }
   }
 
@@ -843,8 +882,15 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
     setBusy(true);
     const result = await restoreCaisseOperation(row.id);
     setBusy(false);
-    notify("Corbeille", result.ok ? result.data.message : result.error);
-    if (!result.ok) return;
+    if (!result.ok) {
+      if (isSessionError(result.error)) {
+        goLogin("Session expirée — reconnectez-vous.");
+        return;
+      }
+      notify("Corbeille", result.error, 8000);
+      return;
+    }
+    notify("Corbeille", result.data.message);
     await reload();
     const refreshed = await listVoidedCaisseOperations();
     if (refreshed.ok) setTrashRows(refreshed.data.rows);
