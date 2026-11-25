@@ -1326,6 +1326,47 @@ export async function listVoidedCaisseOperations(): Promise<ActionResult<{ rows:
   };
 }
 
+async function verifyRestoredOperation(
+  operationId: string,
+): Promise<{ ok: true; opNumber: number } | { ok: false; error: string }> {
+  try {
+    const service = createServiceClient();
+    const check = await service
+      .from("caisse_operations")
+      .select("id, op_number, voided_at")
+      .eq("id", operationId)
+      .maybeSingle();
+    if (check.error) return { ok: false, error: check.error.message };
+    if (!check.data) return { ok: false, error: "Opération introuvable après restauration." };
+    if (check.data.voided_at) {
+      return {
+        ok: false,
+        error:
+          "Restauration non appliquée en base (voided_at toujours renseigné). Appliquez la migration caisse_restore_really sur Supabase.",
+      };
+    }
+    return { ok: true, opNumber: Number(check.data.op_number) || 0 };
+  } catch {
+    // No service key: fall back to user-visible select (RLS hides voided rows).
+    const gate = await clientOrError();
+    if ("ok" in gate) return { ok: false, error: gate.ok === false ? gate.error : "Session requise." };
+    const check = await gate.supabase
+      .from("caisse_operations")
+      .select("id, op_number, voided_at")
+      .eq("id", operationId)
+      .maybeSingle();
+    if (check.error) return { ok: false, error: check.error.message };
+    if (!check.data || check.data.voided_at) {
+      return {
+        ok: false,
+        error:
+          "Restauration non confirmée. Appliquez la migration caisse_restore_really sur Supabase, puis réessayez.",
+      };
+    }
+    return { ok: true, opNumber: Number(check.data.op_number) || 0 };
+  }
+}
+
 export async function restoreCaisseOperation(operationId: string): Promise<ActionResult<{ message: string }>> {
   const gate = await clientOrError();
   if ("ok" in gate) return gate;
@@ -1335,89 +1376,30 @@ export async function restoreCaisseOperation(operationId: string): Promise<Actio
   }
 
   const restored = await supabase.rpc("caisse_restore_operation", { p_id: operationId });
-  if (!restored.error) {
-    const op = Number(restored.data) || 0;
-    await logAction(supabase, "RESTORE", "", op || "", "", `Restauration opération ${operationId}`, null);
-    refresh();
-    return {
-      ok: true,
-      data: {
-        message: op
-          ? `✅ Opération restaurée (nouveau N° ${op}). Les numéros ont été réordonnés.`
-          : "✅ Opération restaurée. Les numéros ont été réordonnés.",
-      },
-    };
-  }
-
-  // Fallback when restore RPC is missing from PostgREST schema cache.
-  try {
-    const service = createServiceClient();
-    const existing = await service
-      .from("caisse_operations")
-      .select("id, op_number, reference, affectation, voided_at")
-      .eq("id", operationId)
-      .not("voided_at", "is", null)
-      .maybeSingle();
-    if (existing.error) return fail(existing.error.message);
-    if (!existing.data) return fail("❌ Opération supprimée introuvable.");
-
-    const cleared = await service
-      .from("caisse_operations")
-      .update({ voided_at: null })
-      .eq("id", operationId)
-      .not("voided_at", "is", null);
-    if (cleared.error) return fail(cleared.error.message);
-
-    if ((existing.data.affectation || "") === CAISSE_TRANSFER_AFFECTATION) {
-      const pair = String(existing.data.reference || "").match(/pair:([0-9a-f-]{36})/i)?.[1];
-      if (pair) {
-        const siblings = await service
-          .from("caisse_operations")
-          .select("id, reference")
-          .eq("affectation", CAISSE_TRANSFER_AFFECTATION)
-          .not("voided_at", "is", null)
-          .neq("id", operationId);
-        if (!siblings.error) {
-          const ids = (siblings.data ?? [])
-            .filter((row) => String(row.reference || "").includes(`pair:${pair}`))
-            .map((row) => row.id);
-          if (ids.length) {
-            const pairClear = await service
-              .from("caisse_operations")
-              .update({ voided_at: null })
-              .in("id", ids);
-            if (pairClear.error) return fail(pairClear.error.message);
-          }
-        }
-      }
-    }
-
-    await service.rpc("caisse_renumber_active_operations");
-    const refreshed = await service
-      .from("caisse_operations")
-      .select("op_number")
-      .eq("id", operationId)
-      .maybeSingle();
-    const op = Number(refreshed.data?.op_number) || 0;
-    await logAction(supabase, "RESTORE", "", op || "", "", `Restauration opération ${operationId}`, null);
-    refresh();
-    return {
-      ok: true,
-      data: {
-        message: op
-          ? `✅ Opération restaurée (nouveau N° ${op}). Les numéros ont été réordonnés.`
-          : "✅ Opération restaurée. Les numéros ont été réordonnés.",
-      },
-    };
-  } catch {
+  if (restored.error) {
     const msg = restored.error.message || "";
     if (/schema cache|could not find the function|PGRST202/i.test(msg)) {
       return fail(
-        "❌ Fonctions corbeille invisibles pour l’API. Dans Supabase SQL Editor exécutez : NOTIFY pgrst, 'reload schema';",
+        "❌ Fonction restauration invisible pour l’API. Dans Supabase SQL Editor exécutez la migration caisse_restore_really (ou NOTIFY pgrst, 'reload schema';).",
       );
     }
     return fail(`❌ ${msg}`);
   }
+
+  const verified = await verifyRestoredOperation(operationId);
+  if (!verified.ok) return fail(`❌ ${verified.error}`);
+
+  const op = verified.opNumber || Number(restored.data) || 0;
+  await logAction(supabase, "RESTORE", "", op || "", "", `Restauration opération ${operationId}`, null);
+  refresh();
+  return {
+    ok: true,
+    data: {
+      message: op
+        ? `✅ Opération restaurée (nouveau N° ${op}). Les numéros ont été réordonnés.`
+        : "✅ Opération restaurée. Les numéros ont été réordonnés.",
+    },
+  };
 }
 
 export async function getCaissePhoto(

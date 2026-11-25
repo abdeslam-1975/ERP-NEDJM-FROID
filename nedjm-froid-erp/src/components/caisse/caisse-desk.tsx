@@ -872,7 +872,7 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
   }
 
   async function restoreTrashItem(row: CaisseVoidedOperation) {
-    if (!flags?.canRestore) return;
+    if (!flags?.isAdmin && !flags?.canRestore) return;
     const answer = await confirmBox(
       "Restaurer ?",
       `Remettre l’opération (${row.kind} · ${formatDateFr(row.date)} · ${row.buyer || "—"}) dans le journal ?`,
@@ -890,8 +890,9 @@ export function CaisseDesk({ initial, loadError }: { initial: CaisseDashboard | 
       notify("Corbeille", result.error, 8000);
       return;
     }
-    notify("Corbeille", result.data.message);
-    await reload();
+    notify("Corbeille", result.data.message, 5000);
+    // Reload all months/buyers so the restored op is visible in the journal.
+    await reload({ month: "TOUS", buyer: "TOUS", type: "TOUS" });
     const refreshed = await listVoidedCaisseOperations();
     if (refreshed.ok) setTrashRows(refreshed.data.rows);
   }
