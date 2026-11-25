@@ -1,5 +1,5 @@
 .frame {
-  container-type: inline-size;
+  container: home / size;
   flex: 1;
   width: 100%;
   height: 100%;
@@ -40,6 +40,7 @@
   position: absolute;
   left: 3.4%;
   bottom: 9%;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 0.7cqw;
@@ -75,6 +76,93 @@
 
 .float:hover {
   transform: translateY(-0.35cqw);
+}
+
+/* Short or wide windows: keep every section on screen and fill the window. */
+@container home (min-aspect-ratio: 1 / 1) {
+  .frame {
+    overflow: hidden;
+  }
+
+  .board {
+    height: 100%;
+  }
+
+  .root {
+    height: 100%;
+    gap: 0.8cqh;
+  }
+
+  .top,
+  .mid {
+    display: grid;
+    min-width: 0;
+    min-height: 0;
+    gap: 0.8cqh;
+  }
+
+  .top {
+    flex: 4.4 1 0;
+    grid-template-columns: minmax(0, 3.54fr) minmax(0, 1.97fr);
+  }
+
+  .clients {
+    flex: 2.6 1 0;
+  }
+
+  .mid {
+    flex: 3.6 1 0;
+    grid-template-columns: minmax(0, 3.25fr) minmax(0, 4.49fr);
+  }
+
+  .foot {
+    flex: 0.85 1 0;
+  }
+
+  .kpis {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    height: 100%;
+    gap: 0.8cqh;
+  }
+
+  .split {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .hero,
+  .kpis,
+  .clients,
+  .gallery,
+  .foot,
+  .kpis .float,
+  .why,
+  .certs {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .hero {
+    overflow: hidden;
+    border-radius: 1.2cqh;
+  }
+
+  .root img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+  }
+
+  .hero img {
+    object-fit: cover;
+    object-position: left center;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
