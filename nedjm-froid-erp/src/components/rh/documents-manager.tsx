@@ -95,16 +95,19 @@ const COMPLETION_MARK = {
   all: {
     chip: "border-alert-success/40 bg-alert-success/10 text-alert-success",
     dot: "bg-alert-success",
+    fr: "Complet",
     ar: "مكتمل",
   },
   required: {
     chip: "border-alert-warning/40 bg-alert-warning/10 text-alert-warning",
     dot: "bg-alert-warning",
+    fr: "Obligatoire",
     ar: "إجباري",
   },
   missing: {
     chip: "border-alert-critical/40 bg-alert-critical/10 text-alert-critical",
     dot: "bg-alert-critical",
+    fr: "Incomplet",
     ar: "ناقص",
   },
 } as const;
@@ -117,6 +120,8 @@ function CompletionMark({ level, detail }: { level: keyof typeof COMPLETION_MARK
       className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium ${mark.chip}`}
     >
       <span className={`size-1.5 shrink-0 rounded-full ${mark.dot}`} aria-hidden />
+      <span>{mark.fr}</span>
+      <span aria-hidden className="opacity-40">·</span>
       <bdi>{mark.ar}</bdi>
     </span>
   );
