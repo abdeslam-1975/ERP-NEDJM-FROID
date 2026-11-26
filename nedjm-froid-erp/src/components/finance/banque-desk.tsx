@@ -11,15 +11,23 @@ import {
   deleteBanqueAdminUser,
   deleteBanqueLine,
   executeBanqueVirement,
+  importBanqueArchive,
   importBanqueReleve,
   listBanqueAdminUsers,
   listDeletedBanqueLines,
   restoreBanqueLine,
   saveBanqueLine,
   setBanqueRapprochement,
+  syncBanqueArchiveLists,
   toggleBanqueAccountActive,
   type BanqueAdminUser,
 } from "@/lib/actions/banque";
+import {
+  archiveSheetToRpcRows,
+  parseArchiveWorkbookFromExcelJs,
+  type ArchiveBankSheet,
+  type ArchiveSettings,
+} from "@/lib/banque/archive-xlsx";
 import {
   buildBcLabel,
   buildCautionLibelle,
@@ -118,7 +126,14 @@ export function BanqueDesk({
     amount: "",
     op_date: initialData.today,
   });
-  const [adminTab, setAdminTab] = useState<"parametres" | "banques" | "utilisateurs">("parametres");
+  const [adminTab, setAdminTab] = useState<"parametres" | "banques" | "utilisateurs" | "archive">(
+    "parametres",
+  );
+  const [archiveBanks, setArchiveBanks] = useState<ArchiveBankSheet[]>([]);
+  const [archiveSettings, setArchiveSettings] = useState<ArchiveSettings | null>(null);
+  const [archivePick, setArchivePick] = useState<string>("");
+  const [archiveMode, setArchiveMode] = useState<"fill_empty" | "replace">("fill_empty");
+  const [archiveFileName, setArchiveFileName] = useState("");
   const [adminAff, setAdminAff] = useState("");
   const [adminFourn, setAdminFourn] = useState("");
   const [adminMode, setAdminMode] = useState("");
@@ -1050,6 +1065,13 @@ export function BanqueDesk({
                 >
                   👥 Utilisateurs
                 </button>
+                <button
+                  type="button"
+                  className={`admin-tab${adminTab === "archive" ? " active" : ""}`}
+                  onClick={() => setAdminTab("archive")}
+                >
+                  📦 Archive
+                </button>
               </div>
 
               {adminTab === "parametres" && (
@@ -1316,6 +1338,212 @@ export function BanqueDesk({
                         </tbody>
                       </table>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {adminTab === "archive" && (
+                <div className="admin-pane">
+                  <div className="admin-card" style={{ textAlign: "left" }}>
+                    <h6 style={{ textAlign: "left" }}>Import archive GESTION DES BANQUES (.xlsx)</h6>
+                    <p style={{ fontSize: 12, color: "#64748b", marginTop: 0 }}>
+                      Analyse locale du fichier (aucune écriture tant que vous ne confirmez pas).
+                      Commencez par une banque vide (ex. BEA SETIF 053 / AL SALAM). Mode{" "}
+                      <strong>replace</strong> uniquement si vous voulez écraser un journal existant.
+                    </p>
+                    <input
+                      type="file"
+                      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                      disabled={pending}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!file) return;
+                        void (async () => {
+                          try {
+                            const buf = await file.arrayBuffer();
+                            const wb = new ExcelJS.Workbook();
+                            await wb.xlsx.load(buf);
+                            const parsed = await parseArchiveWorkbookFromExcelJs(wb);
+                            setArchiveBanks(parsed.banks);
+                            setArchiveSettings(parsed.settings);
+                            setArchiveFileName(file.name);
+                            const prefer =
+                              parsed.banks.find((b) => b.accountName === "BEA SETIF 053" && b.lines.length > 0) ??
+                              parsed.banks.find((b) => b.accountName === "AL SALAM" && b.lines.length > 0) ??
+                              parsed.banks.find((b) => b.lines.length > 0);
+                            setArchivePick(prefer?.accountName ?? "");
+                          } catch (err) {
+                            window.alert(
+                              err instanceof Error ? err.message : "Lecture du fichier impossible.",
+                            );
+                          }
+                        })();
+                      }}
+                    />
+                    {archiveFileName ? (
+                      <p style={{ fontSize: 12, marginBottom: 8 }}>Fichier : {archiveFileName}</p>
+                    ) : null}
+
+                    {archiveBanks.length > 0 ? (
+                      <>
+                        <table className="admin-table" style={{ marginTop: 8 }}>
+                          <thead>
+                            <tr>
+                              <th>Banque ERP</th>
+                              <th>Ops</th>
+                              <th>Ouverture</th>
+                              <th>Solde final</th>
+                              <th>Liens</th>
+                              <th>Alertes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {archiveBanks.map((b) => (
+                              <tr
+                                key={b.sheetName}
+                                style={{
+                                  background:
+                                    archivePick === b.accountName ? "rgba(45,90,39,0.08)" : undefined,
+                                  cursor: "pointer",
+                                }}
+                                onClick={() => setArchivePick(b.accountName)}
+                              >
+                                <td style={{ fontWeight: 700 }}>{b.accountName}</td>
+                                <td>{b.lines.length}</td>
+                                <td>
+                                  {formatDa(b.openingBalance)}
+                                  {b.openingMismatch ? " *" : ""}
+                                </td>
+                                <td>{formatDa(b.expectedFinal)}</td>
+                                <td>
+                                  {b.linkCounts.bc + b.linkCounts.mode + b.linkCounts.fac}
+                                </td>
+                                <td style={{ fontSize: 11, color: "#b45309" }}>
+                                  {[
+                                    b.openingMismatch ? "ouverture≠libellé" : "",
+                                    b.balanceMismatches > 0
+                                      ? `${b.balanceMismatches} écart(s) solde`
+                                      : "",
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ") || "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <p style={{ fontSize: 11, color: "#94a3b8" }}>
+                          * Si l’ouverture affichée dans Excel contredit la colonne SOLDE, l’import
+                          utilise l’ouverture implicite (cohérente avec les soldes).
+                        </p>
+
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+                          <label style={{ fontSize: 13 }}>
+                            Banque{" "}
+                            <select
+                              value={archivePick}
+                              onChange={(e) => setArchivePick(e.target.value)}
+                            >
+                              <option value="">—</option>
+                              {archiveBanks.map((b) => (
+                                <option key={b.sheetName} value={b.accountName}>
+                                  {b.accountName} ({b.lines.length})
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label style={{ fontSize: 13 }}>
+                            Mode{" "}
+                            <select
+                              value={archiveMode}
+                              onChange={(e) =>
+                                setArchiveMode(e.target.value as "fill_empty" | "replace")
+                              }
+                            >
+                              <option value="fill_empty">fill_empty (compte vide)</option>
+                              <option value="replace">replace (écraser)</option>
+                            </select>
+                          </label>
+                          <button
+                            type="button"
+                            className="btn-add-mode"
+                            disabled={pending || !archivePick}
+                            onClick={() => {
+                              const sheet = archiveBanks.find((b) => b.accountName === archivePick);
+                              if (!sheet || sheet.lines.length === 0) {
+                                window.alert("Aucune opération à importer pour cette banque.");
+                                return;
+                              }
+                              const account = data.accounts.find((a) => a.name === sheet.accountName);
+                              if (!account) {
+                                window.alert(
+                                  `Compte ERP introuvable pour « ${sheet.accountName} ». Créez-le d’abord dans Banques.`,
+                                );
+                                return;
+                              }
+                              if (
+                                archiveMode === "replace" &&
+                                !window.confirm(
+                                  `Remplacer tout le journal de ${sheet.accountName} par l’archive (${sheet.lines.length} ops) ?`,
+                                )
+                              ) {
+                                return;
+                              }
+                              if (
+                                archiveMode === "fill_empty" &&
+                                !window.confirm(
+                                  `Importer ${sheet.lines.length} opérations dans ${sheet.accountName} (ouverture ${formatDa(sheet.openingBalance)} → solde ${formatDa(sheet.expectedFinal)}) ?`,
+                                )
+                              ) {
+                                return;
+                              }
+                              run(
+                                () =>
+                                  importBanqueArchive({
+                                    account_id: account.id,
+                                    opening_balance: sheet.openingBalance,
+                                    opening_date: sheet.openingDate,
+                                    expected_final: sheet.expectedFinal,
+                                    allow_negative: sheet.expectedFinal < 0,
+                                    mode: archiveMode,
+                                    rows: archiveSheetToRpcRows(sheet),
+                                  }),
+                                `Archive importée : ${sheet.accountName}.`,
+                              );
+                            }}
+                          >
+                            IMPORTER LA BANQUE
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-light"
+                            disabled={pending || !archiveSettings}
+                            onClick={() => {
+                              if (!archiveSettings) return;
+                              if (
+                                !window.confirm(
+                                  `Synchroniser les listes ADMIN ?\nAffectations: ${archiveSettings.affectations.length}\nFournisseurs: ${archiveSettings.fournisseurs.length}\nModes: ${archiveSettings.modes.length}`,
+                                )
+                              ) {
+                                return;
+                              }
+                              run(
+                                () =>
+                                  syncBanqueArchiveLists({
+                                    affectations: archiveSettings.affectations,
+                                    fournisseurs: archiveSettings.fournisseurs,
+                                    modes: archiveSettings.modes,
+                                  }),
+                                "Listes ADMIN synchronisées.",
+                              );
+                            }}
+                          >
+                            SYNC LISTES SETTINGS
+                          </button>
+                        </div>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               )}

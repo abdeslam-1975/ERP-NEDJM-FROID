@@ -18,6 +18,8 @@ import type {
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import {
+  banqueArchiveImportSchema,
+  banqueArchiveListsSchema,
   banqueImportSchema,
   banqueLineSchema,
   banqueListItemSchema,
@@ -694,4 +696,79 @@ export async function deleteBanqueAdminUser(userId: string): Promise<ActionResul
 /** Helper for UI edit forms: normalize FR date cells to ISO. */
 export async function normalizeBanqueDate(value: string): Promise<string> {
   return formatDateIso(value);
+}
+
+export type BanqueArchiveImportResult = {
+  added: number;
+  deleted: number;
+  opening_balance: number;
+  final_balance: number;
+  mode: string;
+};
+
+/** Import one bank sheet from the GESTION DES BANQUES archive (after client-side parse). */
+export async function importBanqueArchive(
+  input: unknown,
+): Promise<ActionResult<BanqueArchiveImportResult>> {
+  const parsed = banqueArchiveImportSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Archive invalide.");
+  if (!(await can("update"))) return fail("Accès refusé par les droits financiers (RBAC).");
+
+  const p = parsed.data;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("fin_bank_import_archive", {
+    p_account_id: p.account_id,
+    p_opening_balance: p.opening_balance,
+    p_opening_date: p.opening_date,
+    p_rows: p.rows,
+    p_mode: p.mode,
+    p_expected_final: p.expected_final,
+    p_allow_negative: p.allow_negative ?? p.expected_final < 0,
+  });
+  if (error) return fail(error);
+  refresh();
+  const payload = (data ?? {}) as {
+    added?: number;
+    deleted?: number;
+    opening_balance?: number;
+    final_balance?: number;
+    mode?: string;
+  };
+  return {
+    ok: true,
+    data: {
+      added: Number(payload.added ?? 0),
+      deleted: Number(payload.deleted ?? 0),
+      opening_balance: Number(payload.opening_balance ?? p.opening_balance),
+      final_balance: Number(payload.final_balance ?? p.expected_final),
+      mode: String(payload.mode ?? p.mode),
+    },
+  };
+}
+
+/** Sync ADMIN list values from the archive Settings sheet (no Users / passwords). */
+export async function syncBanqueArchiveLists(input: unknown): Promise<ActionResult<{ added: number }>> {
+  const parsed = banqueArchiveListsSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? "Listes invalides.");
+  if (!(await can("update"))) return fail("Accès refusé par les droits financiers (RBAC).");
+
+  const supabase = await createClient();
+  let added = 0;
+  const batches: { key: "AFFECTATION" | "FOURNISSEUR" | "MODE"; labels: string[] }[] = [
+    { key: "AFFECTATION", labels: parsed.data.affectations },
+    { key: "FOURNISSEUR", labels: parsed.data.fournisseurs },
+    { key: "MODE", labels: parsed.data.modes },
+  ];
+  for (const batch of batches) {
+    for (const label of batch.labels) {
+      const { error } = await supabase.rpc("fin_bank_add_list_item", {
+        p_list_key: batch.key,
+        p_label: label,
+      });
+      if (error) return fail(error);
+      added += 1;
+    }
+  }
+  refresh();
+  return { ok: true, data: { added } };
 }
