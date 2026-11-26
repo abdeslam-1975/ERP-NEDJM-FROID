@@ -35,6 +35,19 @@ export type SalOrdersDashboard = {
   canCreate: boolean;
   canUpdate: boolean;
   canDelete: boolean;
+  canRestore: boolean;
+};
+
+export type SalOrderDeletedItem = {
+  id: string;
+  order_number: string;
+  order_date: string;
+  client_name: string;
+  status: string;
+  total_ht: number;
+  total_tva: number;
+  net_payable: number;
+  deleted_at: string;
 };
 
 export type SalOrderDetail = {
@@ -136,6 +149,7 @@ async function suggestOrderNumber(
     .from("sal_orders")
     .select("order_number")
     .eq("fiscal_year", fiscalYear)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false })
     .limit(50);
   let max = 0;
@@ -156,6 +170,7 @@ export async function getSalOrdersDashboard(): Promise<ActionResult<SalOrdersDas
       .select(
         "id, order_number, order_date, client_name, status, total_ht, total_tva, retention_amount, stamp_amount, net_payable, has_pose, payment_terms",
       )
+      .is("deleted_at", null)
       .order("order_date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(500),
@@ -172,6 +187,7 @@ export async function getSalOrdersDashboard(): Promise<ActionResult<SalOrdersDas
       .order("sort_order"),
   ]);
 
+  let orderRows = ordersRes.data ?? [];
   if (ordersRes.error) {
     if (ordersRes.error.message.toLowerCase().includes("does not exist")) {
       return {
@@ -184,10 +200,24 @@ export async function getSalOrdersDashboard(): Promise<ActionResult<SalOrdersDas
           canCreate: false,
           canUpdate: false,
           canDelete: false,
+          canRestore: false,
         },
       };
     }
-    return fail(ordersRes.error);
+    if (/deleted_at/i.test(ordersRes.error.message)) {
+      const legacy = await supabase
+        .from("sal_orders")
+        .select(
+          "id, order_number, order_date, client_name, status, total_ht, total_tva, retention_amount, stamp_amount, net_payable, has_pose, payment_terms",
+        )
+        .order("order_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (legacy.error) return fail(legacy.error);
+      orderRows = legacy.data ?? [];
+    } else {
+      return fail(ordersRes.error);
+    }
   }
 
   const clients: VentesClientOption[] = (clientsRes.data ?? []).map((c) => ({
@@ -206,10 +236,12 @@ export async function getSalOrdersDashboard(): Promise<ActionResult<SalOrdersDas
     label: String(r.label),
   }));
 
+  const canDelete = await can("delete");
+  const canUpdate = await can("update");
   return {
     ok: true,
     data: {
-      orders: (ordersRes.data ?? []).map((r) => ({
+      orders: orderRows.map((r) => ({
         id: String(r.id),
         order_number: String(r.order_number),
         order_date: String(r.order_date).slice(0, 10),
@@ -227,8 +259,9 @@ export async function getSalOrdersDashboard(): Promise<ActionResult<SalOrdersDas
       etabliePar,
       today: algiersToday(),
       canCreate: await can("create"),
-      canUpdate: await can("update"),
-      canDelete: await can("delete"),
+      canUpdate,
+      canDelete,
+      canRestore: canDelete || canUpdate,
     },
   };
 }
@@ -260,21 +293,36 @@ export async function getSalOrderDetail(orderId: string): Promise<ActionResult<S
   if (!/^[0-9a-f-]{36}$/i.test(orderId)) return fail("Bon de commande invalide.");
   const supabase = await createClient();
   const [orderRes, linesRes] = await Promise.all([
-    supabase.from("sal_orders").select("*").eq("id", orderId).maybeSingle(),
+    supabase
+      .from("sal_orders")
+      .select("*")
+      .eq("id", orderId)
+      .is("deleted_at", null)
+      .maybeSingle(),
     supabase
       .from("sal_order_lines")
       .select("*")
       .eq("order_id", orderId)
       .order("line_no"),
   ]);
-  if (orderRes.error) return fail(orderRes.error);
-  if (!orderRes.data) return fail("Bon de commande introuvable.");
+
+  let orderData = orderRes.data;
+  if (orderRes.error) {
+    if (/deleted_at/i.test(orderRes.error.message)) {
+      const legacy = await supabase.from("sal_orders").select("*").eq("id", orderId).maybeSingle();
+      if (legacy.error) return fail(legacy.error);
+      orderData = legacy.data;
+    } else {
+      return fail(orderRes.error);
+    }
+  }
+  if (!orderData) return fail("Bon de commande introuvable (ou en corbeille).");
   if (linesRes.error) return fail(linesRes.error);
 
   return {
     ok: true,
     data: {
-      order: mapOrder(orderRes.data as Record<string, unknown>),
+      order: mapOrder(orderData as Record<string, unknown>),
       lines: (linesRes.data ?? []).map((l) => ({
         id: String(l.id),
         order_id: String(l.order_id),
@@ -387,11 +435,12 @@ export async function saveSalOrder(
   } else {
     const existing = await supabase
       .from("sal_orders")
-      .select("id, status")
+      .select("id, status, deleted_at")
       .eq("id", p.id!)
       .maybeSingle();
     if (existing.error) return fail(existing.error);
     if (!existing.data) return fail("Bon de commande introuvable.");
+    if (existing.data.deleted_at) return fail("Ce bon de commande est en corbeille.");
     if (existing.data.status !== "BROUILLON") {
       return fail("Seuls les brouillons sont modifiables.");
     }
@@ -399,7 +448,8 @@ export async function saveSalOrder(
       .from("sal_orders")
       .update(header)
       .eq("id", p.id!)
-      .eq("status", "BROUILLON");
+      .eq("status", "BROUILLON")
+      .is("deleted_at", null);
     if (upd.error) return fail(upd.error);
     const del = await supabase.from("sal_order_lines").delete().eq("order_id", p.id!);
     if (del.error) return fail(del.error);
@@ -450,9 +500,10 @@ export async function saveSalOrder(
   };
 }
 
-export async function deleteSalOrderDraft(
+/** Soft-delete → corbeille (restaurable). Remplace la suppression définitive. */
+export async function softDeleteSalOrder(
   orderId: string,
-): Promise<ActionResult<{ id: string }>> {
+): Promise<ActionResult<{ id: string; message: string }>> {
   const workspace = await getWorkspaceProfile();
   if (!workspace) return fail("Session requise.");
   if (!(await can("delete")) && !(await can("update"))) {
@@ -461,26 +512,90 @@ export async function deleteSalOrderDraft(
   if (!/^[0-9a-f-]{36}$/i.test(orderId)) return fail("Bon de commande invalide.");
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("sal_orders")
-    .delete()
-    .eq("id", orderId)
-    .eq("status", "BROUILLON")
-    .select("id")
-    .maybeSingle();
-  if (error) return fail(error);
-  if (!data) return fail("Brouillon introuvable (ou déjà émis).");
+  const { error } = await supabase.rpc("sal_order_soft_delete", { p_order_id: orderId });
+  if (error) {
+    const msg = error.message || "";
+    if (/schema cache|could not find the function|PGRST202/i.test(msg)) {
+      return fail(
+        "Fonction corbeille BC invisible. Appliquez la migration ventes_bc_corbeille (ou NOTIFY pgrst, 'reload schema').",
+      );
+    }
+    return fail(error);
+  }
 
-  await supabase.from("sal_audit").insert({
-    actor: workspace.id,
-    action: "DELETE_DRAFT",
-    entity: "sal_orders",
-    entity_id: orderId,
-    detail: "Suppression brouillon BC",
-    payload: {},
-  });
   refresh();
-  return { ok: true, data: { id: orderId } };
+  return {
+    ok: true,
+    data: { id: orderId, message: "Bon de commande mis en corbeille (restaurable)." },
+  };
+}
+
+/** @deprecated alias — utilise softDeleteSalOrder */
+export async function deleteSalOrderDraft(
+  orderId: string,
+): Promise<ActionResult<{ id: string }>> {
+  const result = await softDeleteSalOrder(orderId);
+  if (!result.ok) return result;
+  return { ok: true, data: { id: result.data.id } };
+}
+
+export async function listDeletedSalOrders(): Promise<
+  ActionResult<{ rows: SalOrderDeletedItem[] }>
+> {
+  if (!(await can("delete")) && !(await can("update")) && !(await can("read"))) {
+    return fail("Accès corbeille refusé (droits Ventes).");
+  }
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("sal_order_list_deleted", { p_limit: 150 });
+  if (error) {
+    const msg = error.message || "";
+    if (/schema cache|could not find the function|PGRST202/i.test(msg)) {
+      return fail(
+        "Fonction corbeille BC invisible. Appliquez la migration ventes_bc_corbeille.",
+      );
+    }
+    return fail(error);
+  }
+
+  const rows: SalOrderDeletedItem[] = (data ?? []).map((row: Record<string, unknown>) => ({
+    id: String(row.id),
+    order_number: String(row.order_number ?? ""),
+    order_date: String(row.order_date ?? "").slice(0, 10),
+    client_name: String(row.client_name ?? ""),
+    status: String(row.status ?? ""),
+    total_ht: num(row.total_ht),
+    total_tva: num(row.total_tva),
+    net_payable: num(row.net_payable),
+    deleted_at: String(row.deleted_at ?? ""),
+  }));
+  return { ok: true, data: { rows } };
+}
+
+export async function restoreSalOrder(
+  orderId: string,
+): Promise<ActionResult<{ id: string; message: string }>> {
+  if (!(await can("delete")) && !(await can("update"))) {
+    return fail("Restauration refusée (droits Ventes).");
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) return fail("Bon de commande invalide.");
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("sal_order_restore", { p_order_id: orderId });
+  if (error) {
+    const msg = error.message || "";
+    if (/schema cache|could not find the function|PGRST202/i.test(msg)) {
+      return fail(
+        "Fonction restauration BC invisible. Appliquez la migration ventes_bc_corbeille.",
+      );
+    }
+    return fail(error);
+  }
+
+  refresh();
+  return {
+    ok: true,
+    data: { id: orderId, message: "Bon de commande restauré." },
+  };
 }
 
 export async function cancelSalOrder(
@@ -497,6 +612,7 @@ export async function cancelSalOrder(
     .update({ status: "ANNULE", cancelled_at: new Date().toISOString() })
     .eq("id", orderId)
     .eq("status", "EMIS")
+    .is("deleted_at", null)
     .select("id, status, order_number")
     .maybeSingle();
   if (error) return fail(error);

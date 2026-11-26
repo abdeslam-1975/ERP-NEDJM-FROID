@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type {
+  SalOrderDeletedItem,
   SalOrderDetail,
   SalOrderListItem,
   SalOrdersDashboard,
@@ -112,6 +113,8 @@ export function VentesBcPanel() {
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [schemaMissing, setSchemaMissing] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashRows, setTrashRows] = useState<SalOrderDeletedItem[]>([]);
 
   async function refresh() {
     setBusy(true);
@@ -312,16 +315,63 @@ export function VentesBcPanel() {
     }
   }
 
-  async function removeDraft(id: string) {
-    const { deleteSalOrderDraft } = await import("@/lib/actions/ventes-orders");
-    const result = await deleteSalOrderDraft(id);
-    if (!result.ok) {
-      setError(result.error);
+  async function softDelete(id: string, label: string) {
+    if (!window.confirm(`Mettre le BC ${label} en corbeille ?\n(Restaurable via CORBEILLE)`)) {
       return;
     }
-    setMessage("Brouillon BC supprimé.");
-    setDraft(null);
-    await refresh();
+    setBusy(true);
+    try {
+      const { softDeleteSalOrder } = await import("@/lib/actions/ventes-orders");
+      const result = await softDeleteSalOrder(id);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setMessage(result.data.message);
+      setDraft(null);
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openTrash() {
+    if (data && !data.canRestore && !data.canDelete) {
+      setError("Corbeille refusée (droits Ventes).");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { listDeletedSalOrders } = await import("@/lib/actions/ventes-orders");
+      const result = await listDeletedSalOrders();
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setTrashRows(result.data.rows);
+      setTrashOpen(true);
+      setError(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function restoreTrashItem(row: SalOrderDeletedItem) {
+    setBusy(true);
+    try {
+      const { restoreSalOrder, listDeletedSalOrders } = await import("@/lib/actions/ventes-orders");
+      const result = await restoreSalOrder(row.id);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setMessage(result.data.message);
+      const refreshed = await listDeletedSalOrders();
+      if (refreshed.ok) setTrashRows(refreshed.data.rows);
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -371,6 +421,16 @@ export function VentesBcPanel() {
         <button type="button" className="btn-action btn-export" onClick={() => void refresh()} disabled={busy}>
           ACTUALISER
         </button>
+        {(data?.canRestore || data?.canDelete) && (
+          <button
+            type="button"
+            className="btn-action btn-corbeille"
+            disabled={busy}
+            onClick={() => void openTrash()}
+          >
+            CORBEILLE
+          </button>
+        )}
         <div className="filters">
           <select
             value={statusFilter}
@@ -412,7 +472,7 @@ export function VentesBcPanel() {
                     ["R.G", 90],
                     ["NET", 110],
                     ["STATUT", 90],
-                    ["ACTIONS", 140],
+                    ["ACTIONS", 200],
                   ] as const
                 ).map(([h, w]) => (
                   <th key={h} style={{ width: w }}>
@@ -452,11 +512,12 @@ export function VentesBcPanel() {
                         {row.status}
                       </span>
                     </td>
-                    <td>
+                    <td style={{ whiteSpace: "nowrap" }}>
                       {row.status === "BROUILLON" ? (
                         <button
                           type="button"
                           className="btn-light"
+                          style={{ marginRight: 4 }}
                           onClick={() => void openEdit(row)}
                         >
                           Éditer
@@ -464,12 +525,24 @@ export function VentesBcPanel() {
                       ) : (
                         <a
                           className="btn-light"
+                          style={{ marginRight: 4 }}
                           href={`/api/ventes/orders/${row.id}/pdf`}
                           target="_blank"
                           rel="noreferrer"
                         >
                           PDF
                         </a>
+                      )}
+                      {(data.canDelete || data.canUpdate) && row.status !== "ANNULE" && (
+                        <button
+                          type="button"
+                          className="btn-light"
+                          title="Mettre en corbeille"
+                          disabled={busy}
+                          onClick={() => void softDelete(row.id, row.order_number)}
+                        >
+                          Supprimer
+                        </button>
                       )}
                     </td>
                   </tr>
@@ -789,12 +862,12 @@ export function VentesBcPanel() {
               </div>
             </div>
             <div className="modal-foot">
-              {draft.persisted && (
+              {draft.persisted && (data?.canDelete || data?.canUpdate) && (
                 <button
                   type="button"
                   className="btn-light"
-                  disabled={saving}
-                  onClick={() => void removeDraft(draft.id)}
+                  disabled={saving || busy}
+                  onClick={() => void softDelete(draft.id, draft.orderNumber || draft.id)}
                 >
                   Supprimer
                 </button>
@@ -817,6 +890,83 @@ export function VentesBcPanel() {
                 onClick={() => void save(true)}
               >
                 Émettre
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {trashOpen && (
+        <div className="overlay">
+          <div className="modal wide">
+            <div className="modal-head brown">
+              <span>Corbeille — bons de commande supprimés</span>
+              <button type="button" className="modal-close" onClick={() => setTrashOpen(false)}>
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <p style={{ fontSize: 12, color: "#64748b", marginTop: 0 }}>
+                Les suppressions ne sont pas définitives : restaurez un BC pour le remettre dans la
+                liste. Indépendant de la corbeille Banque / Caisse.
+              </p>
+              <div className="table-scroll">
+                <table className="main-table">
+                  <thead>
+                    <tr>
+                      <th>Supprimé le</th>
+                      <th>N° BC</th>
+                      <th>Date</th>
+                      <th>Client</th>
+                      <th>Statut</th>
+                      <th>Net</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!trashRows.length ? (
+                      <tr>
+                        <td colSpan={7} className="empty-rows">
+                          Corbeille vide.
+                        </td>
+                      </tr>
+                    ) : (
+                      trashRows.map((row) => (
+                        <tr key={row.id}>
+                          <td>
+                            {row.deleted_at
+                              ? new Date(row.deleted_at).toLocaleString("fr-FR", {
+                                  timeZone: "Africa/Algiers",
+                                })
+                              : "—"}
+                          </td>
+                          <td>{row.order_number}</td>
+                          <td>{formatDateFr(row.order_date)}</td>
+                          <td style={{ textAlign: "left" }}>{row.client_name}</td>
+                          <td>{row.status}</td>
+                          <td>
+                            <strong>{formatDa(row.net_payable)}</strong>
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn-action btn-facture"
+                              disabled={busy}
+                              onClick={() => void restoreTrashItem(row)}
+                            >
+                              Restaurer
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn-light" onClick={() => setTrashOpen(false)}>
+                Fermer
               </button>
             </div>
           </div>
