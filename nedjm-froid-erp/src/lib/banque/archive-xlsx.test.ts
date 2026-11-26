@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  archiveSheetToRpcRows,
   extractHyperlinkCell,
   normalizeBankSheetName,
   parseArchiveBankSheet,
@@ -116,6 +117,49 @@ describe("archive xlsx helpers", () => {
     expect(parsed!.lines[0].fac.url).toContain("drive.google.com");
     expect(parsed!.lines[0].fac.label).toContain("FAC N° 070/2025");
     expect(parsed!.expectedFinal).toBe(Math.round((86 + 1798000 - 5200000) * 100) / 100);
+  });
+
+  it("keeps Excel N° order for same-day FRAIS then Transfert", () => {
+    const rows: unknown[][] = [
+      [
+        "N°",
+        "DATE OP",
+        "DATE VAL",
+        "AFFECTATION",
+        "BC",
+        "MODE",
+        "FAC",
+        "LIBELLE",
+        "DE+",
+        "CR-",
+        "FR,BAN",
+        "SOLDE",
+      ],
+      ["SOLDE AU 31/12/2025", "", "", "", "", "", "", "", "", "", "", 86],
+      [6, "2026-08-18", "2026-08-18", "-", null, "-", null, "FRAIS BANCAIRE - VIREMENT -", 0, 0, 208.25, 5166371.75],
+      [
+        7,
+        "2026-08-18",
+        "2026-08-18",
+        "VIREMENT INTERNE",
+        null,
+        "VIREMENT",
+        null,
+        "Transfert vers BEA  HMD 035/01",
+        0,
+        5200000,
+        0,
+        -33628.25,
+      ],
+    ];
+    const parsed = parseArchiveBankSheet("BEA  SETIF 053", rows)!;
+    expect(parsed.lines.map((l) => l.displayNo)).toEqual([6, 7]);
+    expect(parsed.lines.map((l) => l.libelle)).toEqual([
+      "FRAIS BANCAIRE - VIREMENT -",
+      "Transfert vers BEA  HMD 035/01",
+    ]);
+    const rpc = archiveSheetToRpcRows(parsed);
+    expect(rpc.map((r) => r.display_no)).toEqual([6, 7]);
   });
 
   it("parses Settings lists without Users passwords", () => {
