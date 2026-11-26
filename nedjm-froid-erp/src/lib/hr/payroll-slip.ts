@@ -103,6 +103,8 @@ export type SlipSubject = {
   salary: { base: number; net: number };
   compliance: ResolvedCompliance;
   overtimeHours: Record<string, number>;
+  /** Higher-net complement for the exceptional mission days of the month. */
+  missionLift?: number;
   /** Validated exit of the month (null = no exit). */
   exitLines: SettlementLine[] | null;
   advances: PayrollAdvance[];
@@ -193,6 +195,27 @@ export function computeSlip(input: {
         specs: engine.overtimeSpecs,
       }),
       ...exitSettlementLines(subject.exitLines ?? []),
+      ...(subject.missionLift && subject.missionLift > 0
+        ? [
+            {
+              rubrique_id: null,
+              exception_id: null,
+              source_code: "poste" as const,
+              code: "MISSION_LIFT",
+              label_ar: "فرق أجر المهمة الاستثنائية",
+              label_fr: "Écart de salaire — mission exceptionnelle",
+              category: "1" as const,
+              nature: "prime" as const,
+              unit: "month" as const,
+              cotisable: true,
+              taxable: true,
+              quantity: 1,
+              unit_amount: subject.missionLift,
+              amount: subject.missionLift,
+              sort_order: 5,
+            } satisfies PayrollLine,
+          ]
+        : []),
     ],
   });
   const legal: Omit<LegalPayrollRates, "irgAmount"> = {

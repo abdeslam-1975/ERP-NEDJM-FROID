@@ -25,6 +25,10 @@ export const missionOrderFieldsSchema = z
     affectation: optText(160),
     codeAffectation: optText(40),
     poste: optText(160),
+    pointageCode: z.enum(["MS", "CH", "HP", "CH-HP"]).optional().default("MS"),
+    missionAffectation: optText(160),
+    missionSiteId: optText(40),
+    missionPoste: optText(160),
     dest1: optText(200),
     dest2: optText(200),
     lieuDepart: optText(200),
@@ -56,7 +60,60 @@ export const missionOrderFieldsSchema = z
         path: ["dateRetour"],
       });
     }
+    const code = v.pointageCode ?? "MS";
+    if ((code === "CH" || code === "CH-HP") && !v.missionAffectation) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Choisissez le chantier de la mission. · اختر تعيين المهمة.",
+        path: ["missionAffectation"],
+      });
+    }
+    if ((code === "HP" || code === "CH-HP") && !v.missionPoste) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Choisissez le poste de la mission. · اختر منصب المهمة.",
+        path: ["missionPoste"],
+      });
+    }
   });
+
+export type PointageCode = "MS" | "CH" | "HP" | "CH-HP";
+
+export function showsMissionAffectation(code: string | null | undefined) {
+  return code === "CH" || code === "CH-HP";
+}
+
+export function showsMissionPoste(code: string | null | undefined) {
+  return code === "HP" || code === "CH-HP";
+}
+
+/** Monthly lift so the exceptional days pay the higher net. Zero when the mission net is not higher. */
+export function missionPayLift(contractNet: number, missionNet: number, exceptionalDays: number, monthDays: number) {
+  if (exceptionalDays <= 0 || monthDays <= 0) return 0;
+  const diff = Math.max(0, missionNet - contractNet);
+  if (diff <= 0) return 0;
+  return Math.round((diff * exceptionalDays) / monthDays * 100) / 100;
+}
+
+/** Days of an exceptional window that fall inside the payroll month. An open order runs through the month. */
+export function exceptionalDaysInMonth(
+  start: string,
+  end: string | null,
+  year: number,
+  month: number,
+) {
+  const dim = new Date(year, month, 0).getDate();
+  const mm = String(month).padStart(2, "0");
+  const monthStart = `${year}-${mm}-01`;
+  const monthEnd = `${year}-${mm}-${String(dim).padStart(2, "0")}`;
+  if (start > monthEnd || (end && end < monthStart)) return 0;
+  const from = start > monthStart ? start : monthStart;
+  const to = end && end < monthEnd ? end : monthEnd;
+  if (to < from) return 0;
+  const a = Date.parse(`${from}T00:00:00Z`);
+  const b = Date.parse(`${to}T00:00:00Z`);
+  return Math.round((b - a) / 86400000) + 1;
+}
 
 export type MissionOrderFields = z.infer<typeof missionOrderFieldsSchema>;
 
@@ -97,6 +154,10 @@ export function missionPayload(fields: MissionOrderFields, defaults: SheetDefaul
     affectation: fields.affectation,
     codeAffectation: fields.codeAffectation,
     poste: fields.poste,
+    pointageCode: fields.pointageCode ?? "MS",
+    missionAffectation: showsMissionAffectation(fields.pointageCode) ? fields.missionAffectation : null,
+    missionSiteId: showsMissionAffectation(fields.pointageCode) ? fields.missionSiteId : null,
+    missionPoste: showsMissionPoste(fields.pointageCode) ? fields.missionPoste : null,
     dest1: fields.dest1,
     dest2: fields.dest2,
     lieuDepart: fields.lieuDepart,
@@ -321,6 +382,9 @@ export function missionDocData(
     depart_heure: omJoin(fields.lieuDepart, formatOmDate(fields.dateDepart), fields.heureDepart),
     retour_heure: omJoin(fields.lieuRetour, retour, fields.dateRetour ? fields.heureRetour : null),
     motif: fields.motif,
+    pointage_code: fields.pointageCode ?? "MS",
+    mission_affectation: showsMissionAffectation(fields.pointageCode) ? (fields.missionAffectation ?? "") : "",
+    mission_poste: showsMissionPoste(fields.pointageCode) ? (fields.missionPoste ?? "") : "",
     piece_delivre: formatOmDate(fields.pieceDelivre),
     piece_lieu: fields.pieceLieu,
   };

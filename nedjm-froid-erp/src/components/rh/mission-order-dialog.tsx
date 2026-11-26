@@ -8,8 +8,11 @@ import {
   missionDateBounds,
   missionDateIssue,
   pickMissionContract,
+  showsMissionAffectation,
+  showsMissionPoste,
   todayIsoAlgiers,
   type MissionContractHint,
+  type PointageCode,
   type MissionDefaults,
 } from "@/lib/hr/mission-order";
 import { activeOptions, transportModeOptions } from "@/lib/hr/hr-lists";
@@ -29,6 +32,10 @@ export type MissionDraft = {
   affectation: string;
   codeAffectation: string;
   poste: string;
+  pointageCode: PointageCode;
+  missionAffectation: string;
+  missionSiteId: string;
+  missionPoste: string;
   dest1: string;
   dest2: string;
   lieuDepart: string;
@@ -73,6 +80,10 @@ export const emptyMissionDraft = (defaults: MissionDefaults): MissionDraft => ({
   affectation: "",
   codeAffectation: "",
   poste: "",
+  pointageCode: "MS",
+  missionAffectation: "",
+  missionSiteId: "",
+  missionPoste: "",
   dest1: "",
   dest2: "",
   lieuDepart: defaults.default_departure,
@@ -357,21 +368,8 @@ export function MissionOrderDialog({
                 onChange={(e) => set({ prenom: e.target.value })}
               />
             </RhField>
-            <RhField label="Affectation">
-              <select
-                className={rhInput}
-                value={value.affectation}
-                onChange={(e) => {
-                  const name = e.target.value;
-                  const site = sites.find((row) => row.name_fr === name);
-                  set({ affectation: name, site_id: site?.id ?? value.site_id });
-                }}
-              >
-                <option value="" />
-                {withCurrent(affectations, value.affectation).map((name) => (
-                  <option key={name}>{name}</option>
-                ))}
-              </select>
+            <RhField label="Affectation — من العقد">
+              <input className={rhInput} value={value.affectation} readOnly />
             </RhField>
             <RhField label="Code affectation — رمز التعيين">
               <input
@@ -380,14 +378,61 @@ export function MissionOrderDialog({
                 onChange={(e) => set({ codeAffectation: e.target.value })}
               />
             </RhField>
-            <RhField label="Fonction / Poste">
-              <select className={rhInput} value={value.poste} onChange={(e) => set({ poste: e.target.value })}>
-                <option value="" />
-                {withCurrent(jobs, value.poste).map((name) => (
-                  <option key={name}>{name}</option>
-                ))}
+            <RhField label="Fonction / Poste — من العقد">
+              <input className={rhInput} value={value.poste} readOnly />
+            </RhField>
+            <RhField label="Code — الرمز">
+              <select
+                className={rhInput}
+                value={value.pointageCode}
+                onChange={(e) => {
+                  const pointageCode = e.target.value as PointageCode;
+                  set({
+                    pointageCode,
+                    missionAffectation: showsMissionAffectation(pointageCode) ? value.missionAffectation : "",
+                    missionSiteId: showsMissionAffectation(pointageCode) ? value.missionSiteId : "",
+                    missionPoste: showsMissionPoste(pointageCode) ? value.missionPoste : "",
+                  });
+                }}
+              >
+                <option value="MS">MS — تعيين ومنصب من العقد</option>
+                <option value="CH">CH — تغيير التعيين</option>
+                <option value="HP">HP — تغيير المنصب</option>
+                <option value="CH-HP">CH-HP — التعيين والمنصب</option>
               </select>
             </RhField>
+            {showsMissionAffectation(value.pointageCode) ? (
+              <RhField label="تعيين المهمة — Chantier">
+                <select
+                  className={rhInput}
+                  value={value.missionAffectation}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    const site = sites.find((row) => row.name_fr === name);
+                    set({ missionAffectation: name, missionSiteId: site?.id ?? "" });
+                  }}
+                >
+                  <option value="" />
+                  {affectations.map((name) => (
+                    <option key={name}>{name}</option>
+                  ))}
+                </select>
+              </RhField>
+            ) : null}
+            {showsMissionPoste(value.pointageCode) ? (
+              <RhField label="منصب المهمة — Poste">
+                <select
+                  className={rhInput}
+                  value={value.missionPoste}
+                  onChange={(e) => set({ missionPoste: e.target.value })}
+                >
+                  <option value="" />
+                  {jobs.map((name) => (
+                    <option key={name}>{name}</option>
+                  ))}
+                </select>
+              </RhField>
+            ) : null}
           </div>
           {matches.length > 1 ? (
             <ul className="max-h-40 overflow-auto rounded-xl border border-border/70">

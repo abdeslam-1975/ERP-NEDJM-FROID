@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import Link from "next/link";
-import { saveAttendanceMonth, type AttendanceCell } from "@/lib/actions/hr-ops";
+import { saveAttendanceMonth, type AttendanceCell, type AttendanceLine } from "@/lib/actions/hr-ops";
 import { useScreenFilter } from "@/components/rh/screen-filter-bar";
 import type { FilterRow } from "@/lib/hr/screen-filter";
 import { parseAttendanceImport } from "@/lib/actions/hr-attendance-import";
@@ -262,6 +262,10 @@ function buildPeople(contracts: AttendanceContract[], year: number, month: numbe
   return contractsForMonth(contracts, year, month).map(personFromContract);
 }
 
+function linePersonId(employeeId: string, linePoste: string) {
+  return linePoste ? `${employeeId}#${encodeURIComponent(linePoste)}` : employeeId;
+}
+
 export type AttendanceFocus = {
   employeeId?: string;
   siteId?: string;
@@ -316,6 +320,7 @@ export function AttendanceManager({
   const [month, setMonth] = useState(initial.period?.month ?? now.getMonth() + 1);
   const [pickerYear, setPickerYear] = useState(year);
   const [cells, setCells] = useState<AttendanceCell[]>([]);
+  const [lines, setLines] = useState<AttendanceLine[]>([]);
   const [loadedAt, setLoadedAt] = useState<string | null>(null);
   const [periodStatus, setPeriodStatus] = useState<PayrollRunStatus | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -363,7 +368,30 @@ export function AttendanceManager({
     activeLegends[0]?.code ??
     "";
 
-  const allPeople = useMemo(() => buildPeople(contracts, year, month), [contracts, year, month]);
+  const allPeople = useMemo(() => {
+    const base = buildPeople(contracts, year, month);
+    const seen = new Set(base.map((person) => person.id));
+    const extras: Person[] = [];
+    for (const line of lines) {
+      if (!line.line_poste || line.site_id !== siteId) continue;
+      const id = linePersonId(line.employee_id, line.line_poste);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const host = base.find((person) => person.id === line.employee_id);
+      extras.push({
+        id,
+        last_name: (host?.last_name || line.last_name || "").toUpperCase(),
+        first_name: host?.first_name || line.first_name,
+        matricule: host?.matricule || line.matricule,
+        poste: line.line_poste,
+        affectation: line.line_poste,
+        start_date: `${year}-${String(month).padStart(2, "0")}-01`,
+        site_id: line.site_id,
+        site_name: sites.find((site) => site.id === line.site_id)?.name_fr ?? host?.site_name ?? "",
+      });
+    }
+    return [...base, ...extras];
+  }, [contracts, year, month, lines, siteId, sites]);
 
   const empMatches = useMemo(() => {
     const q = empQuery.trim().toLowerCase();
@@ -397,6 +425,14 @@ export function AttendanceManager({
     for (const c of cells) m.set(`${c.employee_id}|${c.work_date}`, c);
     return m;
   }, [cells]);
+
+  const lineKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const line of lines) {
+      keys.add(`${linePersonId(line.employee_id, line.line_poste)}|${line.work_date}`);
+    }
+    return keys;
+  }, [lines]);
 
   const legendMap = useMemo(
     () => new Map(legends.map((l) => [l.code.toUpperCase(), l])),
@@ -536,6 +572,7 @@ export function AttendanceManager({
         return;
       }
       setCells(r.data.cells);
+      setLines(r.data.lines);
       setLoadedAt(r.data.loaded_at);
       setPeriodStatus(r.data.period_status);
       setAccess(r.data.access);
@@ -544,6 +581,9 @@ export function AttendanceManager({
       const nextDrafts: Record<string, string> = {};
       for (const cell of r.data.cells) {
         nextDrafts[`${cell.employee_id}|${cell.work_date}`] = cell.legend_code;
+      }
+      for (const line of r.data.lines) {
+        nextDrafts[`${linePersonId(line.employee_id, line.line_poste)}|${line.work_date}`] = line.legend_code;
       }
       setDrafts(nextDrafts);
       if (message) setInfo(message);
@@ -835,8 +875,8 @@ export function AttendanceManager({
     return Array.from({ length: days }, (_, i) => {
       const day = i + 1;
       const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      const lockedDay = openFrom.length === 10 && iso < openFrom;
       const key = cellKey(p.id, day);
+      const lockedDay = (openFrom.length === 10 && iso < openFrom) || lineKeys.has(key);
       const cell = grid.get(key);
       const stored = cell?.legend_code ?? "";
       const value = drafts[key] ?? stored;

@@ -450,6 +450,12 @@ export function DocumentsManager({
       affectation: textPayload(row.payload, "affectation"),
       codeAffectation: textPayload(row.payload, "codeAffectation"),
       poste: textPayload(row.payload, "poste") || textPayload(row.payload, "fonction"),
+      pointageCode: (["MS", "CH", "HP", "CH-HP"].includes(textPayload(row.payload, "pointageCode"))
+        ? textPayload(row.payload, "pointageCode")
+        : "MS") as MissionDraft["pointageCode"],
+      missionAffectation: textPayload(row.payload, "missionAffectation"),
+      missionSiteId: textPayload(row.payload, "missionSiteId"),
+      missionPoste: textPayload(row.payload, "missionPoste"),
       dest1: textPayload(row.payload, "dest1") || textPayload(row.payload, "destination_1") || textPayload(row.payload, "destination"),
       dest2: textPayload(row.payload, "dest2") || textPayload(row.payload, "destination_2"),
       lieuDepart: textPayload(row.payload, "lieuDepart") || textPayload(row.payload, "depart_lieu"),

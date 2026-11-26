@@ -23,6 +23,7 @@ import {
   type PayrollRunAction,
   type PayrollRunStatus,
 } from "@/lib/hr/payroll-run-status";
+import { exceptionalDaysInMonth, missionPayLift } from "@/lib/hr/mission-order";
 import { computeSlip, slipEngineRates, type SlipEngine } from "@/lib/hr/payroll-slip";
 import {
   contractPayableInPeriod,
@@ -30,6 +31,7 @@ import {
   PAYROLL_CONTRACT_STATUSES,
   salaryAsOf,
   salaryVersionAt,
+  gridAsOf,
   type SalaryGridRow,
   type PayrollAdvance,
   type PayrollAssignment,
@@ -81,6 +83,17 @@ export type ActionResult<T = void> =
   | { ok: false; error: string };
 
 export type AttendanceStatus = "PROPOSED" | "VALIDATED";
+
+export type AttendanceLine = {
+  employee_id: string;
+  site_id: string;
+  work_date: string;
+  line_poste: string;
+  legend_code: string;
+  last_name: string;
+  first_name: string;
+  matricule: string;
+};
 
 export type AttendanceCell = {
   employee_id: string;
@@ -294,22 +307,33 @@ export async function listAttendanceMonth(input: {
   year: number;
   month: number;
 }): Promise<
-  ActionResult<{ cells: AttendanceCell[]; loaded_at: string; period_status: PayrollRunStatus | null }>
+  ActionResult<{ cells: AttendanceCell[]; lines: AttendanceLine[]; loaded_at: string; period_status: PayrollRunStatus | null }>
 > {
   const supabase = await createClient();
   const loadedAt = new Date().toISOString();
   const start = `${input.year}-${String(input.month).padStart(2, "0")}-01`;
   const endDate = new Date(input.year, input.month, 0).getDate();
   const end = `${input.year}-${String(input.month).padStart(2, "0")}-${String(endDate).padStart(2, "0")}`;
-  const { data, error } = await supabase
-    .from("hr_attendance")
-    .select(
-      "employee_id, site_id, work_date, legend_code, source_code, status_code, correspondence_id, correspondence:hr_correspondences ( number )",
-    )
-    .eq("site_id", input.site_id)
-    .gte("work_date", start)
-    .lte("work_date", end);
+  const [{ data, error }, lineQuery] = await Promise.all([
+    supabase
+      .from("hr_attendance")
+      .select(
+        "employee_id, site_id, work_date, legend_code, source_code, status_code, correspondence_id, correspondence:hr_correspondences ( number )",
+      )
+      .eq("site_id", input.site_id)
+      .gte("work_date", start)
+      .lte("work_date", end),
+    supabase
+      .from("hr_attendance_lines")
+      .select(
+        "employee_id, site_id, work_date, line_poste, legend_code, employee:hr_employees ( last_name, first_name, matricule )",
+      )
+      .eq("site_id", input.site_id)
+      .gte("work_date", start)
+      .lte("work_date", end),
+  ]);
   if (error) return { ok: false, error: error.message };
+  if (lineQuery.error) return { ok: false, error: lineQuery.error.message };
   const cells: AttendanceCell[] = (data ?? []).map((row) => {
     const corr = Array.isArray(row.correspondence) ? row.correspondence[0] : row.correspondence;
     return {
@@ -323,9 +347,22 @@ export async function listAttendanceMonth(input: {
       correspondence_number: corr?.number ?? null,
     };
   });
+  const lines: AttendanceLine[] = (lineQuery.data ?? []).map((row) => {
+    const emp = Array.isArray(row.employee) ? row.employee[0] : row.employee;
+    return {
+      employee_id: row.employee_id,
+      site_id: row.site_id,
+      work_date: row.work_date,
+      line_poste: row.line_poste ?? "",
+      legend_code: row.legend_code,
+      last_name: emp?.last_name ?? "",
+      first_name: emp?.first_name ?? "",
+      matricule: emp?.matricule ?? "",
+    };
+  });
   const period = await loadPeriodStatus(supabase, input.site_id, input.year, input.month);
   if (!period.ok) return period;
-  return { ok: true, data: { cells, loaded_at: loadedAt, period_status: period.status } };
+  return { ok: true, data: { cells, lines, loaded_at: loadedAt, period_status: period.status } };
 }
 
 /**
@@ -1079,6 +1116,44 @@ async function computePayrollSlips(
     grid,
   };
   const slipPayloads: PayrollSlipPayload[] = [];
+  const liftHints = new Map<string, { days: number; missionNet: number }[]>();
+  if (empIds.length) {
+    const [orders, postes] = await Promise.all([
+      supabase
+        .from("hr_correspondences")
+        .select("employee_id, start_date, end_date, payload")
+        .eq("type_code", "OM")
+        .neq("status_code", "CANCELLED")
+        .in("employee_id", empIds)
+        .lte("start_date", end),
+      supabase.from("hr_postes").select("id, label_fr"),
+    ]);
+    if (orders.error) warnings.push(`Missions exceptionnelles non lues : ${orders.error.message}`);
+    if (postes.error) warnings.push(`Postes non lus : ${postes.error.message}`);
+    const posteIdByLabel = new Map(
+      ((postes.data ?? []) as { id: string; label_fr: string | null }[]).map((row) => [
+        (row.label_fr ?? "").trim().toLowerCase(),
+        row.id,
+      ]),
+    );
+    for (const order of orders.data ?? []) {
+      const payload = (order.payload ?? {}) as Record<string, string | null>;
+      if (payload.pointageCode !== "HP" && payload.pointageCode !== "CH-HP") continue;
+      const days = exceptionalDaysInMonth(
+        String(order.start_date).slice(0, 10),
+        order.end_date ? String(order.end_date).slice(0, 10) : null,
+        p.period_year,
+        p.period_month,
+      );
+      if (days <= 0) continue;
+      const posteId = posteIdByLabel.get((payload.missionPoste ?? "").trim().toLowerCase());
+      const missionNet = gridAsOf(grid, posteId, "A", end)?.net_ref_monthly ?? 0;
+      const list = liftHints.get(order.employee_id) ?? [];
+      list.push({ days, missionNet });
+      liftHints.set(order.employee_id, list);
+    }
+  }
+  const monthDays = new Date(p.period_year, p.period_month, 0).getDate();
 
   for (const group of groupContractsByEmployee(
     contracts.map((c) => ({
@@ -1159,6 +1234,10 @@ async function computePayrollSlips(
         salary,
         compliance: resolved,
         overtimeHours: hoursByEmp.get(ctr.employee_id) ?? {},
+        missionLift: (liftHints.get(ctr.employee_id) ?? []).reduce(
+          (sum, hint) => sum + missionPayLift(salary.net, hint.missionNet, hint.days, monthDays),
+          0,
+        ),
         exitLines: exitByEmp.get(ctr.employee_id) ?? null,
         advances,
         deductedElsewhere,

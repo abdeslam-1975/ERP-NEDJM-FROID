@@ -6,8 +6,10 @@ import {
   addDaysIso,
   missionDateBounds,
   missionDateIssue,
+  exceptionalDaysInMonth,
   missionDocData,
   missionOrderFieldsSchema,
+  missionPayLift,
   missionPayload,
   missionPointageHref,
   missionReference,
@@ -65,6 +67,29 @@ describe("mission order fields", () => {
         dateRetour: "2026-09-11",
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("exceptional mission code", () => {
+  it("keeps an ordinary order on MS and requires the field the code opens", () => {
+    const ordinary = missionOrderFieldsSchema.safeParse(sample);
+    expect(ordinary.success && ordinary.data.pointageCode).toBe("MS");
+    expect(missionOrderFieldsSchema.safeParse({ ...sample, pointageCode: "CH" }).success).toBe(false);
+    expect(missionOrderFieldsSchema.safeParse({ ...sample, pointageCode: "HP" }).success).toBe(false);
+    const both = missionOrderFieldsSchema.safeParse({
+      ...sample,
+      pointageCode: "CH-HP",
+      missionAffectation: "EL GASSI",
+      missionPoste: "ING",
+    });
+    expect(both.success).toBe(true);
+  });
+
+  it("pays only the higher net on the exceptional days", () => {
+    expect(missionPayLift(50000, 80000, 10, 30)).toBe(10000);
+    expect(missionPayLift(80000, 50000, 10, 30)).toBe(0);
+    expect(exceptionalDaysInMonth("2026-11-13", "2026-11-22", 2026, 11)).toBe(10);
+    expect(exceptionalDaysInMonth("2026-11-13", "2026-11-22", 2026, 12)).toBe(0);
   });
 });
 

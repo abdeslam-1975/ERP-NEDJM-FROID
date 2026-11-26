@@ -7,6 +7,7 @@ import {
   getAttendancePeriodStatus,
   listAttendanceMonth,
   type AttendanceCell,
+  type AttendanceLine,
 } from "@/lib/actions/hr-ops";
 import type { PayrollRunStatus } from "@/lib/hr/payroll-run-status";
 import {
@@ -142,6 +143,7 @@ export async function loadAttendanceSheet(input: {
 }): Promise<
   ActionResult<{
     cells: AttendanceCell[];
+    lines: AttendanceLine[];
     loaded_at: string;
     period_status: PayrollRunStatus | null;
     access: AttendanceColumnAccess;
@@ -161,6 +163,7 @@ export async function loadAttendanceSheet(input: {
                 ok: true as const,
                 data: {
                   cells: [] as AttendanceCell[],
+                  lines: [] as AttendanceLine[],
                   loaded_at: new Date().toISOString(),
                   period_status: status.data,
                 },
@@ -175,6 +178,7 @@ export async function loadAttendanceSheet(input: {
     ok: true,
     data: {
       cells: month.data.cells,
+      lines: month.data.lines,
       loaded_at: month.data.loaded_at,
       period_status: month.data.period_status,
       access: access.data,
