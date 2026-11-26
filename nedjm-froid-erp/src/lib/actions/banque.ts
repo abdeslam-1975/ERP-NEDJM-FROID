@@ -130,6 +130,7 @@ export async function getBanqueDashboard(accountId?: string | null): Promise<Act
       )
       .eq("account_id", selected.id)
       .is("deleted_at", null)
+      .order("display_no", { ascending: true })
       .order("op_date", { ascending: true })
       .order("created_at", { ascending: true });
     if (linesRes.error) return fail(linesRes.error);
@@ -156,6 +157,7 @@ export async function getBanqueDashboard(accountId?: string | null): Promise<Act
       transfer_group_id: (row.transfer_group_id as string | null) ?? null,
     }));
 
+    // Archive N° is authoritative for running balance (same-day order).
     const withSolde = withRunningBalances(selected.opening_balance, asc);
     lines = [...withSolde].reverse();
   }

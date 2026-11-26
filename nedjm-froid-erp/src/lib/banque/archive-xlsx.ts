@@ -493,7 +493,8 @@ export async function parseArchiveWorkbookFromExcelJs(wb: {
 }
 
 export function archiveSheetToRpcRows(sheet: ArchiveBankSheet) {
-  return sheet.lines.map((l) => ({
+  return sheet.lines.map((l, index) => ({
+    display_no: l.displayNo && l.displayNo > 0 ? l.displayNo : index + 1,
     op_date: l.opDate,
     value_date: l.valueDate,
     affectation: l.affectation,

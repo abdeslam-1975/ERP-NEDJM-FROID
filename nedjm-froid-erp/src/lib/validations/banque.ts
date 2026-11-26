@@ -99,6 +99,7 @@ export const banqueArchiveImportSchema = z.object({
   rows: z
     .array(
       z.object({
+        display_no: z.coerce.number().int().positive().optional(),
         op_date: isoDate,
         value_date: isoDate,
         affectation: optionalLabel(160),
