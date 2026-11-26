@@ -40,6 +40,7 @@ import {
   formatDateIso,
   parseDocField,
 } from "@/lib/banque/ledger";
+import { resolveBanqueDocumentHref } from "@/lib/banque/documents";
 import type { BanqueDashboard, BanqueDeletedLine, BanqueLine } from "@/lib/banque/types";
 import "./banque.css";
 
@@ -740,9 +741,9 @@ export function BanqueDesk({
                       <td>{formatDateFr(line.op_date)}</td>
                       <td>{formatDateFr(line.value_date)}</td>
                       <td>{line.affectation || "—"}</td>
-                      <td>{docCell(line.bc_label, line.bc_url)}</td>
-                      <td>{docCell(line.mode_label, line.mode_url)}</td>
-                      <td>{docCell(line.fac_label, line.fac_url)}</td>
+                      <td>{docCell(line.bc_label, line.bc_url, line.id, "bc")}</td>
+                      <td>{docCell(line.mode_label, line.mode_url, line.id, "mode")}</td>
+                      <td>{docCell(line.fac_label, line.fac_url, line.id, "fac")}</td>
                       <td className="libelle-cell">{line.libelle}</td>
                       <td className="debit-cell">{moneyDa(line.debit)}</td>
                       <td className="credit-cell">{moneyDa(line.credit)}</td>
@@ -1686,12 +1687,18 @@ function moneyDa(value: number, always = false): string {
   return `${formatDa(value)} DA`;
 }
 
-function docCell(label: string, url: string | null) {
+function docCell(
+  label: string,
+  url: string | null,
+  lineId: string,
+  kind: "bc" | "mode" | "fac",
+) {
   const text = label.replace(/🔗/g, "").trim();
   if (!text) return "—";
-  if (url && (url.startsWith("http") || url.startsWith("data:"))) {
+  const href = resolveBanqueDocumentHref(lineId, kind, url);
+  if (href) {
     return (
-      <a href={url} target="_blank" rel="noreferrer" className="doc-link" title="Ouvrir le document">
+      <a href={href} target="_blank" rel="noreferrer" className="doc-link" title="Ouvrir le document">
         📎 {text}
       </a>
     );
