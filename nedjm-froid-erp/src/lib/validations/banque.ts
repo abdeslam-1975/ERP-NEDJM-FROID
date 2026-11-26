@@ -89,6 +89,42 @@ export const banqueImportSchema = z.object({
     .min(1),
 });
 
+export const banqueArchiveImportSchema = z.object({
+  account_id: uuid,
+  opening_balance: z.coerce.number(),
+  opening_date: isoDate,
+  expected_final: z.coerce.number(),
+  allow_negative: z.boolean().optional(),
+  mode: z.enum(["fill_empty", "replace"]).default("fill_empty"),
+  rows: z
+    .array(
+      z.object({
+        op_date: isoDate,
+        value_date: isoDate,
+        affectation: optionalLabel(160),
+        bc_label: optionalLabel(200),
+        bc_url: optionalText(1_500_000),
+        mode_label: optionalLabel(200),
+        mode_url: optionalText(1_500_000),
+        fac_label: optionalLabel(200),
+        fac_url: optionalText(1_500_000),
+        libelle: z.string().trim().min(1).max(500),
+        debit: money.default(0),
+        credit: money.default(0),
+        frais: money.default(0),
+        reconciled: z.boolean().optional().default(false),
+      }),
+    )
+    .min(1)
+    .max(5000),
+});
+
+export const banqueArchiveListsSchema = z.object({
+  affectations: z.array(z.string().trim().min(1).max(160)).max(500).default([]),
+  fournisseurs: z.array(z.string().trim().min(1).max(160)).max(500).default([]),
+  modes: z.array(z.string().trim().min(1).max(160)).max(200).default([]),
+});
+
 export const banqueListItemSchema = z.object({
   list_key: z.enum(["AFFECTATION", "FOURNISSEUR", "MODE"]),
   label: z.string().trim().min(1).max(160),
