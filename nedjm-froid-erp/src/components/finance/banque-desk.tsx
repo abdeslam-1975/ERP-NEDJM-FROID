@@ -404,6 +404,10 @@ export function BanqueDesk({
         setError("Date obligatoire.");
         return;
       }
+      if (!opForm.isCaution && !libelle) {
+        setError("Choisissez un fournisseur / libellé (liste Settings).");
+        return;
+      }
       run(
         () =>
           saveBanqueLine({
@@ -858,7 +862,7 @@ export function BanqueDesk({
 
       {modal === "op" && (
         <div className="overlay">
-          <div className="modal">
+          <div className="modal op-modal">
             <div className={`modal-head ${opForm.isCaution ? "warning" : "green"}`}>
               <span>
                 {opForm.isCaution
@@ -877,7 +881,7 @@ export function BanqueDesk({
                   <label className="form-label">Date *</label>
                   <input type="date" value={opForm.op_date} onChange={(e) => setOpForm((f) => ({ ...f, op_date: e.target.value }))} />
                 </div>
-                <div>
+                <div className={opForm.isCaution ? "" : "span-2"}>
                   <label className="form-label">Affectation (Settings)</label>
                   <select value={opForm.affectation} onChange={(e) => setOpForm((f) => ({ ...f, affectation: e.target.value }))}>
                     <option value="">— Choisir (Settings) —</option>
@@ -898,28 +902,53 @@ export function BanqueDesk({
                       <input type="date" value={opForm.caution_expiry} onChange={(e) => setOpForm((f) => ({ ...f, caution_expiry: e.target.value }))} />
                     </div>
                   </>
-                ) : (
-                  <div>
-                    <label className="form-label">Fournisseur / Libellé * (Settings)</label>
-                    <select
-                      value={opForm.fournisseur}
-                      onChange={(e) => setOpForm((f) => ({ ...f, fournisseur: e.target.value }))}
-                    >
-                      <option value="">— Choisir (Settings) —</option>
-                      {data.lists.fournisseurs.map((f) => (
-                        <option key={f} value={f}>
-                          {f}
-                        </option>
-                      ))}
-                      {/* Keep current edit value even if not yet in Settings */}
-                      {opForm.fournisseur &&
-                      !data.lists.fournisseurs.includes(opForm.fournisseur) ? (
-                        <option value={opForm.fournisseur}>{opForm.fournisseur}</option>
-                      ) : null}
-                    </select>
-                  </div>
-                )}
+                ) : null}
               </div>
+
+              {!opForm.isCaution ? (
+                <div className="fourn-combo" style={{ marginTop: 12 }}>
+                  <label className="form-label">
+                    Fournisseur / Libellé * (Settings · {data.lists.fournisseurs.length})
+                  </label>
+                  <select
+                    className="fourn-select"
+                    value={
+                      data.lists.fournisseurs.includes(opForm.fournisseur) || !opForm.fournisseur
+                        ? opForm.fournisseur
+                        : "__other__"
+                    }
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === "__other__") {
+                        setOpForm((f) => ({ ...f, fournisseur: "" }));
+                        return;
+                      }
+                      setOpForm((f) => ({ ...f, fournisseur: v }));
+                    }}
+                  >
+                    <option value="">— Choisir dans Settings —</option>
+                    {data.lists.fournisseurs.map((f) => (
+                      <option key={f} value={f}>
+                        {f}
+                      </option>
+                    ))}
+                    <option value="__other__">✎ Saisir un autre libellé…</option>
+                  </select>
+                  <input
+                    className="fourn-search"
+                    list="banque-fourn-list"
+                    value={opForm.fournisseur}
+                    onChange={(e) => setOpForm((f) => ({ ...f, fournisseur: e.target.value }))}
+                    placeholder="Recherche / saisie libre (liste Settings)"
+                    autoComplete="off"
+                  />
+                  <datalist id="banque-fourn-list">
+                    {data.lists.fournisseurs.map((f) => (
+                      <option key={`dl-${f}`} value={f} />
+                    ))}
+                  </datalist>
+                </div>
+              ) : null}
 
               <div className="block-box" style={{ marginTop: 14 }}>
                 <label className="form-label" style={{ color: "#15803d" }}>Mode de Paiement (Settings)</label>
