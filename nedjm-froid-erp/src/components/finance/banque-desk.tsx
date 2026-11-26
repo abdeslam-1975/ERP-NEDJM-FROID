@@ -878,9 +878,9 @@ export function BanqueDesk({
                   <input type="date" value={opForm.op_date} onChange={(e) => setOpForm((f) => ({ ...f, op_date: e.target.value }))} />
                 </div>
                 <div>
-                  <label className="form-label">Affectation</label>
+                  <label className="form-label">Affectation (Settings)</label>
                   <select value={opForm.affectation} onChange={(e) => setOpForm((f) => ({ ...f, affectation: e.target.value }))}>
-                    <option value="">—</option>
+                    <option value="">— Choisir (Settings) —</option>
                     {data.lists.affectations.map((a) => <option key={a} value={a}>{a}</option>)}
                   </select>
                 </div>
@@ -900,24 +900,32 @@ export function BanqueDesk({
                   </>
                 ) : (
                   <div>
-                    <label className="form-label">Fournisseur / Libellé</label>
-                    <input
-                      list="banque-fourn"
+                    <label className="form-label">Fournisseur / Libellé * (Settings)</label>
+                    <select
                       value={opForm.fournisseur}
                       onChange={(e) => setOpForm((f) => ({ ...f, fournisseur: e.target.value }))}
-                    />
-                    <datalist id="banque-fourn">
-                      {data.lists.fournisseurs.map((f) => <option key={f} value={f} />)}
-                    </datalist>
+                    >
+                      <option value="">— Choisir (Settings) —</option>
+                      {data.lists.fournisseurs.map((f) => (
+                        <option key={f} value={f}>
+                          {f}
+                        </option>
+                      ))}
+                      {/* Keep current edit value even if not yet in Settings */}
+                      {opForm.fournisseur &&
+                      !data.lists.fournisseurs.includes(opForm.fournisseur) ? (
+                        <option value={opForm.fournisseur}>{opForm.fournisseur}</option>
+                      ) : null}
+                    </select>
                   </div>
                 )}
               </div>
 
               <div className="block-box" style={{ marginTop: 14 }}>
-                <label className="form-label" style={{ color: "#15803d" }}>Mode de Paiement</label>
+                <label className="form-label" style={{ color: "#15803d" }}>Mode de Paiement (Settings)</label>
                 <div className="grid-3">
                   <select value={opForm.mode} onChange={(e) => setOpForm((f) => ({ ...f, mode: e.target.value }))}>
-                    <option value="">—</option>
+                    <option value="">— Choisir (Settings) —</option>
                     {data.lists.modes.map((m) => <option key={m} value={m}>{m}</option>)}
                   </select>
                   <input placeholder="N° Numero" value={opForm.mode_num} onChange={(e) => setOpForm((f) => ({ ...f, mode_num: e.target.value }))} />
@@ -1076,6 +1084,10 @@ export function BanqueDesk({
 
               {adminTab === "parametres" && (
                 <div className="admin-pane">
+                  <p style={{ fontSize: 12, color: "#64748b", marginTop: 0 }}>
+                    Feuille <b>Settings</b> de l&apos;archive — ces listes alimentent les menus
+                    déroulants à l&apos;ajout d&apos;opération (Affectation, Fournisseur/Libellé, Mode).
+                  </p>
                   <div className="admin-param-grid">
                     <div className="admin-card">
                       <div className="admin-ico" style={{ color: "#2563eb" }}>🏷</div>
@@ -1095,6 +1107,16 @@ export function BanqueDesk({
                       >
                         + Ajouter
                       </button>
+                      <div className="admin-list-box">
+                        <div className="admin-list-head">
+                          Archive Settings · {data.lists.affectations.length}
+                        </div>
+                        <ul>
+                          {data.lists.affectations.map((a) => (
+                            <li key={a}>{a}</li>
+                          ))}
+                        </ul>
+                      </div>
                     </div>
                     <div className="admin-card">
                       <div className="admin-ico" style={{ color: "#d97706" }}>🚚</div>
@@ -1114,6 +1136,16 @@ export function BanqueDesk({
                       >
                         + Ajouter
                       </button>
+                      <div className="admin-list-box">
+                        <div className="admin-list-head">
+                          Archive Settings · {data.lists.fournisseurs.length}
+                        </div>
+                        <ul>
+                          {data.lists.fournisseurs.map((f) => (
+                            <li key={f}>{f}</li>
+                          ))}
+                        </ul>
+                      </div>
                     </div>
                     <div className="admin-card">
                       <div className="admin-ico" style={{ color: "#16a34a" }}>💳</div>
@@ -1133,6 +1165,16 @@ export function BanqueDesk({
                       >
                         + Ajouter
                       </button>
+                      <div className="admin-list-box">
+                        <div className="admin-list-head">
+                          Archive Settings · {data.lists.modes.length}
+                        </div>
+                        <ul>
+                          {data.lists.modes.map((m) => (
+                            <li key={m}>{m}</li>
+                          ))}
+                        </ul>
+                      </div>
                     </div>
                   </div>
                 </div>
