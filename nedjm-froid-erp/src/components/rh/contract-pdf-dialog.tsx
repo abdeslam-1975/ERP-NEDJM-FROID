@@ -6,10 +6,16 @@ import { ScanText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhModal } from "@/components/rh/rh-ui";
 import { prepareContractPdfUpload, readContractPdf } from "@/lib/actions/hr-contract-pdf";
-import { CONTRACT_PDF_MAX_BYTES, CONTRACT_PDF_MIME, type ContractPdfMime, type ContractPdfRead } from "@/lib/hr/contract-pdf";
+import {
+  blankContractPdfRead,
+  CONTRACT_PDF_MAX_BYTES,
+  CONTRACT_PDF_MIME,
+  type ContractPdfMime,
+  type ContractPdfRead,
+} from "@/lib/hr/contract-pdf";
 import { HR_DOCS_BUCKET, hrFileHref } from "@/lib/hr/hr-file-url";
 
-export type ContractPdfScan = { path: string; file_name: string; read: ContractPdfRead };
+export type ContractPdfScan = { path: string; file_name: string; read: ContractPdfRead; unread?: string };
 
 function storage() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
@@ -77,10 +83,15 @@ export function ContractPdfDialog({ onClose, onRead }: { onClose: () => void; on
         setError(up.error.message);
         return;
       }
-      setStage("Lecture du contrat par l'IA… (jusqu'à une minute)");
+      setStage("Lecture du contrat… (une à deux minutes)");
       const result = await readContractPdf({ path: slot.data.path, file_name: file.name });
       if (!result.ok) {
-        setError(result.error);
+        onRead({
+          path: slot.data.path,
+          file_name: file.name,
+          read: blankContractPdfRead(),
+          unread: result.error,
+        });
         return;
       }
       onRead({ path: slot.data.path, file_name: file.name, read: result.data });

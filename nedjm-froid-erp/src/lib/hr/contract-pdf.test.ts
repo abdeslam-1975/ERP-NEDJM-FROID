@@ -55,18 +55,18 @@ describe("contract pdf", () => {
     expect(m.candidates).toEqual(expect.arrayContaining(["a", "b"]));
   });
 
-  it("snaps the start to the 1st and fills the form", () => {
+  it("keeps the start day written on the paper", () => {
     const { form, warnings } = contractFormFromPdf(read);
     expect(form).toMatchObject({
       contract_type_code: "CDD",
-      start_date: "2025-12-01",
+      start_date: "2025-12-13",
       end_date: "2026-12-12",
       poste_fr: "INGENIEUR EN FROID ET CLIMATISATION",
       salaire_net_ref_monthly: "210000",
       salaire_net_recup_monthly: "30000",
       retenue: "46000",
+      contract_number: "2025/108",
     });
-    expect(warnings.join(" ")).toMatch(/13\/12\/2025/);
     expect(warnings.join(" ")).toMatch(/Chantier/);
   });
 });

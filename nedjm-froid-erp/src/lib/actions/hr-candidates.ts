@@ -29,7 +29,6 @@ import {
 } from "@/lib/hr/candidate-cycle";
 import { candidateContractHtml, candidateFicheHtml } from "@/lib/hr/candidate-print";
 import { HR_DOCS_BUCKET, hrFileDisplayUrl, hrFileHref } from "@/lib/hr/hr-file-url";
-import { isFirstOfMonth } from "@/lib/hr/assignments";
 import { nextMatriculeForHire } from "@/lib/hr/employee-matricule";
 import { htmlToPdf } from "@/lib/pdf/html-to-pdf";
 import { hrPdfOptions, requestOrigin, uploadHrPdf } from "@/lib/pdf/print-archive";
@@ -481,9 +480,7 @@ export async function saveCandidateContract(input: {
 }): Promise<ActionResult<CandidateCycleData>> {
   const start = dateOrNull(input.contract_start);
   const end = dateOrNull(input.contract_end);
-  if (!start || !isFirstOfMonth(start)) {
-    return { ok: false, error: "Le contrat commence le 1er du mois. · يبدأ العقد في اليوم الأول من الشهر." };
-  }
+  if (!start) return { ok: false, error: "Date de début invalide. · تاريخ البداية غير صالح." };
   if (input.contract_end && !end) return { ok: false, error: "Date de fin invalide." };
   if (end && end < start) return { ok: false, error: "La fin précède le début." };
   if (!input.site_id || !input.activity_code_id) return { ok: false, error: "Site et activité requis." };

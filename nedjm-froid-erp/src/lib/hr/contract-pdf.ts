@@ -35,6 +35,27 @@ export const contractPdfSchema = z.object({
 });
 export type ContractPdfRead = z.infer<typeof contractPdfSchema>;
 
+export function blankContractPdfRead(): ContractPdfRead {
+  return {
+    contract_number: null,
+    contract_kind: null,
+    last_name_ar: null,
+    first_name_ar: null,
+    last_name_latin: null,
+    first_name_latin: null,
+    serial_number: null,
+    birth_date: null,
+    poste_ar: null,
+    poste_fr: null,
+    start_date: null,
+    end_date: null,
+    net_salary_monthly: null,
+    recup_monthly: null,
+    absence_deduction_daily: null,
+    site: null,
+  };
+}
+
 const S = { type: ["string", "null"] };
 const N = { type: ["number", "null"] };
 
@@ -142,17 +163,10 @@ export function matchPdfEmployee(read: ContractPdfRead, employees: readonly PdfE
   return { employee_id: clear ? best.id : null, candidates: scored.slice(0, 5).map((s) => s.id) };
 }
 
-const frDate = (iso: string) => iso.split("-").reverse().join("/");
-
 /** Contract form values proposed from the reading, with what the user must check. */
 export function contractFormFromPdf(read: ContractPdfRead) {
   const warnings: string[] = [];
-  let start = read.start_date ?? "";
-  if (start && !start.endsWith("-01")) {
-    const first = `${start.slice(0, 7)}-01`;
-    warnings.push(`Début lu le ${frDate(start)}, ramené au ${frDate(first)} (un contrat commence le 1er du mois).`);
-    start = first;
-  }
+  const start = read.start_date ?? "";
   if (!start) warnings.push("Date de début non lue : saisissez-la.");
   if (!read.site) warnings.push("Chantier non indiqué dans le contrat : choisissez l'affectation.");
   if (read.net_salary_monthly == null) warnings.push("Salaire net non lu : saisissez-le.");
@@ -166,6 +180,7 @@ export function contractFormFromPdf(read: ContractPdfRead) {
       salaire_net_ref_monthly: read.net_salary_monthly == null ? "" : String(read.net_salary_monthly),
       salaire_net_recup_monthly: read.recup_monthly == null ? "" : String(read.recup_monthly),
       retenue: read.absence_deduction_daily == null ? "" : String(read.absence_deduction_daily),
+      contract_number: read.contract_number ?? "",
     },
     warnings,
   };

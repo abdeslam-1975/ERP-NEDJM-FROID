@@ -17,7 +17,6 @@ import {
   rhTh,
 } from "@/components/rh/rh-ui";
 import {
-  activateContractStartRule,
   requestAllContractStartDecisions,
   requestContractStartDecision,
   type DataQualityReport,
@@ -153,21 +152,6 @@ export function DataQualityReportView({ report }: { report: DataQualityReport })
     });
   }
 
-  function activate() {
-    if (
-      !window.confirm(
-        "Ajouter la contrainte « début au 1er du mois » à la base ? Elle refusera ensuite tout contrat hors du 1er, sauf les exceptions historiques documentées.",
-      )
-    ) {
-      return;
-    }
-    start(async () => {
-      const r = await activateContractStartRule();
-      if (!r.ok) done(null, r.error);
-      else done(r.data.already ? "Contrainte déjà active." : "Contrainte ajoutée à la base.", null);
-    });
-  }
-
   return (
     <div className="space-y-5">
       <RhPageHeader
@@ -261,12 +245,9 @@ export function DataQualityReportView({ report }: { report: DataQualityReport })
             <dt className="text-xs font-semibold uppercase text-foreground/45">{bi("État", "الحالة")}</dt>
             <dd>
               {report.rule.active ? (
-                <RhChip tone="success">
-                  {bi("Active", "مفعلة")} · {frDate(report.rule.activated_at)}
-                  {report.rule.activated_by ? ` · ${report.rule.activated_by}` : ""}
-                </RhChip>
+                <RhChip tone="warning">{bi("Ancienne contrainte encore présente", "القيد القديم ما زال موجوداً")}</RhChip>
               ) : (
-                <RhChip tone="warning">{bi("Pas encore ajoutée", "غير مضافة")}</RhChip>
+                <RhChip tone="success">{bi("N'importe quel jour", "أي يوم")}</RhChip>
               )}
             </dd>
           </div>
@@ -281,17 +262,10 @@ export function DataQualityReportView({ report }: { report: DataQualityReport })
         </dl>
         <p className="mt-3 text-sm text-foreground/65">
           {bi(
-            "Toute nouvelle date de début hors du 1er est déjà refusée. La contrainte de la base s'ajoute une fois toutes les décisions D13 prises (tous chantiers confondus), par le SUPER_ADMIN.",
-            "يُضاف القيد بعد اتخاذ كل قرارات D13.",
+            "Un contrat de travail peut commencer n'importe quel jour. Les jours du mois qui précèdent cette date ne sont pas dus.",
+            "يمكن أن يبدأ عقد العمل في أي يوم. أيام الشهر التي تسبقه غير مستحقة.",
           )}
         </p>
-        {!report.rule.active && report.is_super_admin ? (
-          <div className="mt-3">
-            <Button disabled={pending || report.rule.pending > 0} onClick={activate}>
-              {bi("Ajouter la contrainte à la base", "إضافة القيد")}
-            </Button>
-          </div>
-        ) : null}
       </RhPanel>
     </div>
   );

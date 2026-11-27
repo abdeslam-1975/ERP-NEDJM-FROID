@@ -120,7 +120,7 @@ Chaque document reçoit une référence unique jamais réutilisée et une copie 
   {
     path: "/rh/qualite-donnees",
     title: "Qualité des données",
-    body: `Contrôle du référentiel et des affectations datées : chantiers sans wilaya codée (la wilaya détermine la zone IRG) et contrats qui ne commencent pas le 1er du mois. Rien n'est corrigé d'office : chaque point est confirmé ou soumis à décision.`,
+    body: `Contrôle du référentiel et des affectations datées : chantiers sans wilaya codée (la wilaya détermine la zone IRG). Un contrat de travail peut commencer n'importe quel jour. Rien n'est corrigé d'office : chaque point est confirmé ou soumis à décision.`,
   },
   {
     path: "/parametres/rh",

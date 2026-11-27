@@ -68,7 +68,7 @@ describe("contract import", () => {
     ]);
   });
 
-  it("builds a contract from the sheet, snapping the start to the 1st of the month", () => {
+  it("builds a contract from the sheet and keeps the written start day", () => {
     const [row] = build([
       ["Nom", "Prénom", "Chantier", "Poste", "Type", "Date début", "Date fin", "Salaire de base"],
       ["Fredj", "Saïd", "HMD-DEG", "soudeur", "CDI", "12/03/2024", "", "45 000"],
@@ -81,12 +81,11 @@ describe("contract import", () => {
       contract_type_code: "CDI",
       work_regime_code: "4X4",
       poste_fr: "SOUDEUR",
-      start_date: "2024-03-01",
+      start_date: "2024-03-12",
       end_date: null,
       salaire_base_monthly: 45000,
       status: "ACTIVE",
     });
-    expect(row.warnings.join(" ")).toContain("01/03/2024");
   });
 
   it("falls back on the default site and the hire date, and closes contracts already over", () => {
@@ -94,7 +93,7 @@ describe("contract import", () => {
       ["Nom", "Prénom", "Date fin"],
       ["FREDJ", "SAID", "2025-12-31"],
     ]);
-    expect(row.payload).toMatchObject({ site_id: "s1", start_date: "2024-03-01", end_date: "2025-12-31", status: "ENDED" });
+    expect(row.payload).toMatchObject({ site_id: "s1", start_date: "2024-03-15", end_date: "2025-12-31", status: "ENDED" });
   });
 
   it("asks for the employee when the name is unknown or ambiguous, and accepts a manual choice", () => {

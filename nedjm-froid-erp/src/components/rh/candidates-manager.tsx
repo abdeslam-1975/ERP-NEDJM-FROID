@@ -525,8 +525,8 @@ function CandidateDossier({
         <RhField label="Salaire de base" required>
           <input name="salaire_base_monthly" type="number" min={0} step="0.01" defaultValue={candidate.salaire_base_monthly ?? ""} className={rhInput} disabled={locked} />
         </RhField>
-        <RhField label="Début (1er du mois)" required>
-          <input name="contract_start" type="date" defaultValue={candidate.contract_start ?? ""} className={rhInput} disabled={locked} />
+        <RhField label="Début" required>
+          <input name="contract_start" type="date" lang="fr-DZ" defaultValue={candidate.contract_start ?? ""} className={rhInput} disabled={locked} />
         </RhField>
         <RhField label="Fin">
           <input name="contract_end" type="date" defaultValue={candidate.contract_end ?? ""} className={rhInput} disabled={locked} />

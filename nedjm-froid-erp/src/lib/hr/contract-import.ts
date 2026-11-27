@@ -241,11 +241,6 @@ export function buildContractImportRows(input: {
       if (start) warnings.push(`Début = date d'embauche de la fiche (${frDate(start)})`);
       else issues.push("Date de début absente (ni colonne, ni date d'embauche sur la fiche)");
     }
-    if (start && !start.endsWith("-01")) {
-      const first = `${start.slice(0, 7)}-01`;
-      warnings.push(`Début ramené au ${frDate(first)} (un contrat commence le 1er du mois)`);
-      start = first;
-    }
     const endRaw = cell("end_date");
     const end = endRaw ? toIsoDate(endRaw) : null;
     if (endRaw && !end) issues.push(`Date de fin illisible « ${endRaw} »`);

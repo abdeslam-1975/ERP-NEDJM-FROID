@@ -6,7 +6,6 @@ import { hrContractSchema } from "@/lib/validations/hr";
 import { replaceContractSalaryLines } from "@/lib/actions/hr-salary";
 import { signalPayrollInputChange } from "@/lib/hr/payroll-input-signal";
 import { payrollSignalNotice } from "@/lib/decisions/catalog";
-import { isFirstOfMonth } from "@/lib/hr/assignments";
 import {
   isPrincipalExclusionError,
   planPrincipalClose,
@@ -64,6 +63,7 @@ export type HrContractRow = {
   site_name: string;
   client_contract_id: string | null;
   client_terms: StoredClientTerms | null;
+  contract_number: string | null;
 };
 
 function asStoredTerms(value: unknown): StoredClientTerms | null {
@@ -91,7 +91,7 @@ export async function listHrContracts(): Promise<ActionResult<HrContractRow[]>> 
       id, employee_id, site_id, activity_code_id, contract_type_code, work_regime_code, cnas_regime_code,
       poste_ar, poste_fr, qualification_code, poste_id, grade, agency_id, interim_daily_rate, affectation_principale,
       salaire_base_monthly, salaire_net_ref_monthly, salaire_net_recup_monthly,
-      start_date, end_date, status, client_contract_id, client_terms,
+      start_date, end_date, status, contract_number, client_contract_id, client_terms,
       employee:hr_employees ( matricule, last_name, first_name ),
       site:ref_sites ( name_fr )
     `,
@@ -137,6 +137,7 @@ export async function listHrContracts(): Promise<ActionResult<HrContractRow[]>> 
         site_name: site?.name_fr ?? "",
         client_contract_id: row.client_contract_id ?? null,
         client_terms: asStoredTerms(row.client_terms),
+        contract_number: typeof row.contract_number === "string" && row.contract_number.trim() ? row.contract_number : null,
       };
     }),
   };
@@ -342,13 +343,6 @@ export async function upsertHrContract(
   if (p.contract_type_code === "INTERIM" && !p.agency_id) {
     return { ok: false, error: "Contrat d'intérim : choisissez l'agence." };
   }
-  if (!p.id && !isFirstOfMonth(p.start_date)) {
-    return {
-      ok: false,
-      error:
-        "Un contrat commence le 1er du mois : aucun contrat ne débute en milieu de mois. · يبدأ العقد في اليوم الأول من الشهر.",
-    };
-  }
   const supabase = await createClient();
   let closePlan: { id: string; end_date: string }[] = [];
   if (p.affectation_principale) {
@@ -411,6 +405,7 @@ export async function upsertHrContract(
     currency: "DZD",
     client_contract_id: linked.data?.client_contract_id ?? null,
     client_terms: linked.data,
+    ...(p.id || !p.contract_number ? {} : { contract_number: p.contract_number }),
   };
   // After creation the site mirrors the dated assignment in force; it changes only through assignments.
   const updatePayload: Partial<typeof payload> = { ...payload };
@@ -422,6 +417,9 @@ export async function upsertHrContract(
   });
   const data = typeof savedId === "string" ? { id: savedId } : null;
   if (error) {
+    if (error.code === "23505" && /contract_number|hr_contracts_number/i.test(error.message)) {
+      return { ok: false, error: `Le numéro ${p.contract_number} est déjà utilisé. · الرقم مستعمل` };
+    }
     if (isPrincipalExclusionError(error.message)) {
       return {
         ok: false,

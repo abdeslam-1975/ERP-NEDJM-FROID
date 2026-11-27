@@ -20,7 +20,7 @@ import { CustomDocsRegister } from "@/components/rh/custom-docs-register";
 import { listCustomDocDefs, listIssuedCustomDocs } from "@/lib/actions/hr-custom-docs";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 180;
 
 export default async function DocumentsPage({
   searchParams,

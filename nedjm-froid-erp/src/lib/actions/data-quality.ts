@@ -124,7 +124,7 @@ export async function requestAllContractStartDecisions(): Promise<ActionResult<{
   return { ok: true, data: { count: Number(data ?? 0) } };
 }
 
-/** SUPER_ADMIN: turns "start on the 1st" into a database constraint once every D13 is decided. */
+/** Kept for older clients. The database no longer installs a first-of-month constraint. */
 export async function activateContractStartRule(): Promise<ActionResult<{ already: boolean }>> {
   const ws = await getWorkspaceProfile();
   if (!ws?.isSuperAdmin) return { ok: false, error: "Réservé au SUPER_ADMIN." };

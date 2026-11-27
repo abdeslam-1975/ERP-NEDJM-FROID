@@ -30,18 +30,36 @@ export function structuredModels(): string[] {
   return [...new Set([geminiModel(), ...STRUCTURED_FALLBACKS])];
 }
 
-/** One structured call: the model must answer with JSON matching `schema`. A busy model is retried once, then the next model answers. */
-export async function generateStructured(input: { parts: GeminiPart[]; schema: object }): Promise<unknown> {
+/**
+ * One structured call: the model must answer with JSON matching `schema`.
+ * A busy model is retried once, then the next model answers.
+ * Pass `attemptMs` for a full document that must be read as-is: a silent model is skipped
+ * and the next one reads the same file, instead of stopping after the first wait.
+ */
+export async function generateStructured(input: {
+  parts: GeminiPart[];
+  schema: object;
+  attemptMs?: number;
+}): Promise<unknown> {
   const models = structuredModels();
-  let last: unknown = new OverloadError("Gemini est surchargé en ce moment. Réessayez dans une minute.");
+  const attemptMs = input.attemptMs ?? TIMEOUT_MS;
+  const skipSilent = input.attemptMs != null;
+  const started = Date.now();
+  let last: unknown = new OverloadError(
+    skipSilent
+      ? "La lecture automatique n'a pas abouti à temps. Réessayez."
+      : "Gemini est surchargé en ce moment. Réessayez dans une minute.",
+  );
   for (let index = 0; index < models.length; index++) {
+    if (skipSilent && index > 0 && Date.now() - started + attemptMs > 150_000) break;
     const attempts = index === 0 ? 2 : 1;
     for (let attempt = 0; attempt < attempts; attempt++) {
       try {
-        return await callOnce(input, models[index]);
+        return await callOnce(input, models[index], attemptMs, skipSilent);
       } catch (error) {
         last = error;
         if (!(error instanceof OverloadError)) throw error;
+        if (!error.stayOnModel) break;
         if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, 1_500));
       }
     }
@@ -49,14 +67,26 @@ export async function generateStructured(input: { parts: GeminiPart[]; schema: o
   throw last;
 }
 
-class OverloadError extends Error {}
+class OverloadError extends Error {
+  constructor(
+    message: string,
+    readonly stayOnModel = true,
+  ) {
+    super(message);
+  }
+}
 
-async function callOnce(input: { parts: GeminiPart[]; schema: object }, model: string): Promise<unknown> {
+async function callOnce(
+  input: { parts: GeminiPart[]; schema: object },
+  model: string,
+  timeoutMs: number,
+  skipSilent: boolean,
+): Promise<unknown> {
   const key = process.env.GEMINI_API_KEY?.trim();
   if (!key) throw new Error("Clé Gemini absente (variable GEMINI_API_KEY).");
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   try {
     response = await fetch(`${ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
@@ -75,7 +105,11 @@ async function callOnce(input: { parts: GeminiPart[]; schema: object }, model: s
       cache: "no-store",
     });
   } catch (error) {
-    if (controller.signal.aborted) throw new Error("Gemini n'a pas répondu à temps. Réessayez avec un extrait plus court.");
+    if (controller.signal.aborted) {
+      throw skipSilent
+        ? new OverloadError("La lecture automatique n'a pas abouti à temps. Réessayez.", false)
+        : new Error("Gemini n'a pas répondu à temps. Réessayez avec un extrait plus court.");
+    }
     throw new Error(`Gemini injoignable : ${error instanceof Error ? error.message : "erreur réseau"}`);
   } finally {
     clearTimeout(timer);

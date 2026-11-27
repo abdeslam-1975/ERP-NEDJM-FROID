@@ -161,20 +161,18 @@ begin
     bad := bad || 'd13_stale_not_closed ';
   end if;
 
-  -- Constraint added once every decision is taken
+  -- The first-of-month constraint is retired: a contract may start on any day.
   if (select count(*) from hr_contracts where extract(day from start_date) <> 1 and not start_date_exception) = 0 then
     res := hr_contract_start_rule_activate();
-    if not exists (select 1 from pg_constraint where conname = 'hr_contracts_start_first_of_month') then
-      bad := bad || 'rule_not_activated ';
+    if exists (select 1 from pg_constraint where conname = 'hr_contracts_start_first_of_month') then
+      bad := bad || 'start_day_still_blocked ';
     end if;
     m := '-';
-    alter table hr_contracts disable trigger trg_hr_contract_dates_guard;
     begin
       insert into hr_contracts (employee_id, site_id, activity_code_id, salaire_base_monthly, salaire_net_ref_monthly, start_date, status)
       values (emp, site_a, act, 1, 1, date '2031-09-09', 'ACTIVE');
     exception when others then m := sqlerrm; end;
-    alter table hr_contracts enable trigger trg_hr_contract_dates_guard;
-    if m = '-' or m not like '%hr_contracts_start_first_of_month%' then bad := bad || 'constraint_not_enforced '; end if;
+    if m <> '-' then bad := bad || 'any_day_not_saved '; end if;
   end if;
 
   if bad <> '' then raise exception 'RESULT: FAIL %', bad; end if;

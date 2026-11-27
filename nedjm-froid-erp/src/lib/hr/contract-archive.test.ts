@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: vi.fn() }));
 
-import { contractArchiveType } from "@/lib/hr/contract-archive";
+import { contractArchiveType, contractImportNote } from "@/lib/hr/contract-archive";
 import { hrFileSchema } from "@/lib/validations/hr";
 
 describe("contractArchiveType", () => {
@@ -13,5 +13,9 @@ describe("contractArchiveType", () => {
     expect(
       hrFileSchema.safeParse({ employee_id: "3f2504e0-4f89-11d3-9a0c-0305e82c3301", doc_type_code: type }).success,
     ).toBe(true);
+  });
+
+  it("records the upload day without changing the paper number", () => {
+    expect(contractImportNote(new Date("2026-11-27T12:00:00Z"))).toBe("تم رفع العقد بتاريخ 27/11/2026");
   });
 });

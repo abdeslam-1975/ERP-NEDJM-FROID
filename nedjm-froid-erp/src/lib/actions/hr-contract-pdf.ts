@@ -7,7 +7,7 @@ import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 import { createClient } from "@/lib/supabase/server";
 import { upsertHrFile } from "@/lib/actions/hr-documents";
 import type { ActionResult } from "@/lib/actions/hr-contracts";
-import { contractArchiveType } from "@/lib/hr/contract-archive";
+import { contractArchiveType, contractImportNote } from "@/lib/hr/contract-archive";
 import {
   CONTRACT_PDF_JSON_SCHEMA,
   CONTRACT_PDF_MAX_BYTES,
@@ -64,6 +64,7 @@ export async function readContractPdf(input: unknown): Promise<ActionResult<Cont
         { inline_data: { mime_type: mime, data: Buffer.from(await blob.arrayBuffer()).toString("base64") } },
       ],
       schema: CONTRACT_PDF_JSON_SCHEMA,
+      attemptMs: 36_000,
     });
     const read = contractPdfSchema.safeParse(raw);
     if (!read.success) return { ok: false, error: "Réponse de l'IA illisible : réessayez." };
@@ -74,7 +75,7 @@ export async function readContractPdf(input: unknown): Promise<ActionResult<Cont
 }
 
 /** Files the scanned original as the archived PDF of the saved contract. */
-export async function attachContractPdf(input: unknown): Promise<ActionResult<{ archive_url: string }>> {
+export async function attachContractPdf(input: unknown): Promise<ActionResult<{ archive_url: string; note: string }>> {
   const parsed = z
     .object({ contract_id: z.string().uuid(), path: stagedPath, file_name: z.string().max(200) })
     .safeParse(input);
@@ -95,15 +96,16 @@ export async function attachContractPdf(input: unknown): Promise<ActionResult<{ 
   const moved = await supabase.storage.from(HR_DOCS_BUCKET).move(parsed.data.path, path);
   if (moved.error) path = parsed.data.path;
   const archiveUrl = hrFileHref(path);
+  const note = contractImportNote();
   const filed = await upsertHrFile({
     employee_id: ctr.employee_id,
     doc_type_code: contractArchiveType(parsed.data.contract_id),
     file_url: archiveUrl,
     file_name: `CONTRAT_${archiveFileStem(emp?.matricule || "NA", emp?.last_name || "")}.${ext}`,
     storage_path: path,
-    notes: `Contrat signé importé (${parsed.data.file_name}) · العقد الممضى`,
+    notes: note,
   });
   if (!filed.ok) return filed;
   revalidatePath("/rh/documents");
-  return { ok: true, data: { archive_url: archiveUrl } };
+  return { ok: true, data: { archive_url: archiveUrl, note } };
 }

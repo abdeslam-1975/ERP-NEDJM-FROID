@@ -185,10 +185,10 @@ export function arabicLongDate(iso: string) {
   return `${Number(m[3])} ${MONTHS_AR[Number(m[2]) - 1] ?? m[2]} ${m[1]}`;
 }
 
-/** 2025-12-13 → "2025/12/13" */
+/** 2025-12-13 → "13/12/2025" */
 export function slashDate(iso: string) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso.trim());
-  return m ? `${m[1]}/${m[2]}/${m[3]}` : iso;
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
 }
 
 /** 210000 → "210 000.00" */

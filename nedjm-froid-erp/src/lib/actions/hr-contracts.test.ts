@@ -65,10 +65,10 @@ describe("upsertHrContract — interim", () => {
 });
 
 describe("upsertHrContract — dated assignments", () => {
-  it("refuses a new contract starting mid-month", async () => {
+  it("keeps a start date written on any day of the month", async () => {
     const r = await upsertHrContract({ ...base, contract_type_code: "CDD", start_date: "2026-09-15" });
-    expect(r.ok).toBe(false);
-    expect(h.fake!.rpcs).toHaveLength(0);
+    expect(r.ok).toBe(true);
+    expect(saveArgs().p_payload).toMatchObject({ start_date: "2026-09-15" });
   });
 
   it("never sends the site on update: it changes only through dated assignments", async () => {

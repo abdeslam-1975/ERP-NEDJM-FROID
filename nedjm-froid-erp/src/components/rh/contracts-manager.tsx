@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ContractImportDialog } from "@/components/rh/contract-import-dialog";
+import { DayMonthYearField } from "@/components/rh/day-month-year-field";
 import { ContractPdfDialog, OriginalContractView, type ContractPdfScan } from "@/components/rh/contract-pdf-dialog";
 import { ToolbarSlot } from "@/components/layout/arrange";
 import { attachContractPdf } from "@/lib/actions/hr-contract-pdf";
@@ -119,7 +120,7 @@ const EMPTY_PRINT_EMPLOYEE: ContractPrintSource["employee"] = {
   address_fr: null,
 };
 
-const NO_ARCHIVES: Record<string, string> = {};
+const NO_ARCHIVES: Record<string, { url: string; note: string }> = {};
 
 function termsFor(contract: OpenClientContract | undefined, poste: string): WorkerTerm[] {
   if (!contract || !poste.trim()) return [];
@@ -275,6 +276,8 @@ type FormState = {
   start_date: string;
   end_date: string;
   status: "DRAFT" | "ACTIVE" | "SUSPENDED" | "ENDED";
+  /** Number printed on the paper. Kept as-is when the contract is imported. */
+  contract_number: string;
   /** Daily deduction for an unjustified absence, printed in the contract. */
   retenue: string;
   client_contract_id: string;
@@ -303,6 +306,7 @@ const emptyForm = (): FormState => ({
   start_date: "",
   end_date: "",
   status: "DRAFT",
+  contract_number: "",
   retenue: "",
   client_contract_id: "",
   clause_ids: [],
@@ -322,7 +326,7 @@ function describeContract(row: HrContractRow): FilterRow {
   if (/^\d{4}$/.test(year)) facets.push({ field: "annee", value: year, label: `Année de début : ${year}` });
   if (!row.end_date) facets.push({ field: "fin", value: "ouverte", label: "Sans date de fin" });
   return {
-    text: [row.matricule, row.employee_name, row.site_name, row.contract_type_code, row.poste_fr, status].filter(Boolean).join(" "),
+    text: [row.contract_number, row.matricule, row.employee_name, row.site_name, row.contract_type_code, row.poste_fr, status].filter(Boolean).join(" "),
     matricule: row.matricule,
     facets,
   };
@@ -345,7 +349,7 @@ export function ContractsManager({
   clientContracts = [],
   loadError,
 }: {
-  contractArchives?: Record<string, string>;
+  contractArchives?: Record<string, { url: string; note: string }>;
   postes?: PosteRow[];
   agencies?: { id: string; label: string; default_daily_rate: number }[];
   initialContracts: HrContractRow[];
@@ -706,6 +710,10 @@ export function ContractsManager({
       setError(bi("Date de début obligatoire.", "أدخل تاريخ بداية العقد."));
       return;
     }
+    if (scan && !form.id && !(form.contract_number ?? "").trim()) {
+      setError(bi("Saisissez le numéro écrit sur le contrat.", "أدخل رقم العقد كما هو مكتوب على الورقة."));
+      return;
+    }
     if (form.retenue.trim() && !isRetenueText(form.retenue)) {
       setError("Retenue / jour d'absence : montant en DA, ou le taux du poste (ex. 5 % par jour).");
       return;
@@ -768,7 +776,9 @@ export function ContractsManager({
       let scanNote = "";
       if (scan && !form.id) {
         const attached = await attachContractPdf({ contract_id: done.id, path: scan.path, file_name: scan.file_name });
-        if (attached.ok) setArchives((a) => ({ ...a, [done.id]: attached.data.archive_url }));
+        if (attached.ok) {
+          setArchives((a) => ({ ...a, [done.id]: { url: attached.data.archive_url, note: attached.data.note } }));
+        }
         else scanNote = ` Le PDF importé n'a pas été archivé : ${attached.error}`;
         setScan(null);
       }
@@ -806,6 +816,7 @@ export function ContractsManager({
         site_name: site?.name_fr ?? "",
         client_contract_id: form.client_contract_id || null,
         client_terms: null,
+        contract_number: (form.contract_number ?? "").trim() || null,
       };
       setRows((prev) => {
         const ended = done.closed_previous
@@ -908,6 +919,11 @@ export function ContractsManager({
   const contractFilter = useScreenFilter({ screen: "rh.contrats", rows, describe: describeContract });
 
   const columns = [
+    col.accessor((r) => r.contract_number ?? "", {
+      id: "number",
+      header: bi("N°", "الرقم"),
+      cell: ({ row }) => row.original.contract_number || "—",
+    }),
     col.accessor((r) => `${r.matricule} ${r.employee_name}`, {
       id: "employee",
       header: bi("Employé", "العامل"),
@@ -924,6 +940,11 @@ export function ContractsManager({
       cell: (info) => info.getValue() || "—",
     }),
     col.accessor("salaire_net_ref_monthly", { header: bi("Net chantier", "صافي الميدان") }),
+    col.accessor((r) => archives[r.id]?.note ?? "", {
+      id: "import_note",
+      header: bi("Note", "ملاحظة"),
+      cell: ({ row }) => archives[row.original.id]?.note || "—",
+    }),
     col.accessor("status", {
       header: bi("Statut", "الحالة"),
       cell: (info) => {
@@ -952,7 +973,7 @@ export function ContractsManager({
               {" "}
               <Button
                 variant="secondary"
-                onClick={() => window.open(archives[row.original.id], "_blank", "noopener,noreferrer")}
+                onClick={() => window.open(archives[row.original.id].url, "_blank", "noopener,noreferrer")}
               >
                 <FileText aria-hidden />
                 {bi("PDF archivé", "PDF مؤرشف")}
@@ -1089,8 +1110,16 @@ export function ContractsManager({
             <div className="p-1 pb-3 sm:px-2">
               <RhAlert tone={scan.warnings.length ? "warning" : "info"}>
                 <p className="font-semibold">
-                  {bi(`Lu par l'IA depuis « ${scan.file_name} »`, "قُرئ بالذكاء الاصطناعي")} — vérifiez chaque champ avant
-                  d&apos;enregistrer.
+                  {scan.unread
+                    ? bi(
+                        `Fichier « ${scan.file_name} » affiché. La lecture automatique n'a pas abouti : complétez les champs depuis ses pages.`,
+                        "الملف معروض. القراءة الآلية لم تكتمل: أكمل الحقول من صفحاته.",
+                      )
+                    : bi(
+                        `Lu par l'IA depuis « ${scan.file_name} »`,
+                        "قُرئ بالذكاء الاصطناعي",
+                      )}{" "}
+                  — vérifiez chaque champ avant d&apos;enregistrer.
                 </p>
                 <p className="mt-1">
                   {[
@@ -1113,6 +1142,19 @@ export function ContractsManager({
                 ) : null}
                 <p className="mt-1 text-xs opacity-75">Le fichier sera archivé avec le contrat à l&apos;enregistrement.</p>
               </RhAlert>
+            </div>
+          ) : null}
+          {!form.id ? (
+            <div className="p-1 sm:px-2">
+              <RhField label={bi("Numéro écrit sur le PDF", "رقم العقد المكتوب في الملف")} required={Boolean(scan)}>
+                <input
+                  className={rhInput}
+                  value={form.contract_number ?? ""}
+                  placeholder="2024/049"
+                  autoComplete="off"
+                  onChange={(e) => setForm({ ...form, contract_number: e.target.value })}
+                />
+              </RhField>
             </div>
           ) : null}
           <div
@@ -1571,21 +1613,11 @@ export function ContractsManager({
                         </RhField>
                       </>
                     ) : null}
-                    <RhField label={bi("Début (1er du mois)", "البداية (أول الشهر)")} required>
-                      <input
-                        type="date"
-                        className={rhInput}
-                        value={form.start_date}
-                        onChange={(e) => setForm({ ...form, start_date: e.target.value })}
-                      />
+                    <RhField label={bi("Début", "البداية")} required hint="jour / mois / année">
+                      <DayMonthYearField value={form.start_date} onChange={(iso) => setForm({ ...form, start_date: iso })} />
                     </RhField>
-                    <RhField label={bi("Fin", "النهاية")} hint="Vide = durée indéterminée">
-                      <input
-                        type="date"
-                        className={rhInput}
-                        value={form.end_date}
-                        onChange={(e) => setForm({ ...form, end_date: e.target.value })}
-                      />
+                    <RhField label={bi("Fin", "النهاية")} hint="jour / mois / année · vide = durée indéterminée">
+                      <DayMonthYearField value={form.end_date} onChange={(iso) => setForm({ ...form, end_date: iso })} />
                     </RhField>
                     <div className="sm:col-span-2">
                       <span className="text-[13px] font-semibold text-foreground/85">{bi("Statut", "الحالة")}</span>
@@ -1787,7 +1819,9 @@ export function ContractsManager({
         <ContractPrintDialog
           contractId={printId}
           onClose={() => setPrintId(null)}
-          onArchived={(url) => setArchives((prev) => ({ ...prev, [printId]: url }))}
+          onArchived={(url) =>
+            setArchives((prev) => ({ ...prev, [printId]: { url, note: prev[printId]?.note ?? "" } }))
+          }
         />
       ) : null}
     </div>

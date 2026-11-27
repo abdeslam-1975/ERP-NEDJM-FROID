@@ -346,6 +346,13 @@ export const hrContractSchema = z.object({
   start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   end_date: optDate,
   status: z.enum(["DRAFT", "ACTIVE", "SUSPENDED", "ENDED"]).default("DRAFT"),
+  /** Number printed on an imported contract. Empty for a contract that will receive the next YYYY/NNN. */
+  contract_number: z
+    .string()
+    .trim()
+    .max(40)
+    .optional()
+    .transform((value) => value || null),
   salary_lines: z.array(hrContractSalaryLineSchema).max(80).optional(),
   client_contract_id: z
     .union([z.string().uuid(), z.literal(""), z.null()])
