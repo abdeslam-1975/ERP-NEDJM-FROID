@@ -90,6 +90,8 @@ export type AttendanceLine = {
   work_date: string;
   line_poste: string;
   legend_code: string;
+  source_code: string;
+  status_code: AttendanceStatus;
   last_name: string;
   first_name: string;
   matricule: string;
@@ -326,7 +328,7 @@ export async function listAttendanceMonth(input: {
     supabase
       .from("hr_attendance_lines")
       .select(
-        "employee_id, site_id, work_date, line_poste, legend_code, employee:hr_employees ( last_name, first_name, matricule )",
+        "employee_id, site_id, work_date, line_poste, legend_code, source_code, status_code, employee:hr_employees ( last_name, first_name, matricule )",
       )
       .eq("site_id", input.site_id)
       .gte("work_date", start)
@@ -355,6 +357,8 @@ export async function listAttendanceMonth(input: {
       work_date: row.work_date,
       line_poste: row.line_poste ?? "",
       legend_code: row.legend_code,
+      source_code: row.source_code ?? "OM",
+      status_code: row.status_code === "VALIDATED" ? "VALIDATED" : "PROPOSED",
       last_name: emp?.last_name ?? "",
       first_name: emp?.first_name ?? "",
       matricule: emp?.matricule ?? "",
@@ -416,6 +420,52 @@ export async function saveAttendanceMonth(
     p_rows: rows,
   });
   if (saveErr) return { ok: false, error: saveErr.message };
+  const edits = (p.line_edits ?? []).filter(
+    (line) =>
+      line.site_id === p.site_id &&
+      line.work_date >= start &&
+      line.work_date <= end &&
+      (!p.employee_id || line.employee_id === p.employee_id),
+  );
+  const written = edits.filter((line) => line.legend_code);
+  const removed = edits.filter((line) => !line.legend_code);
+  if (written.length) {
+    const { error: lineErr } = await supabase.from("hr_attendance_lines").upsert(
+      written.map((line) => ({
+        employee_id: line.employee_id,
+        site_id: line.site_id,
+        work_date: line.work_date,
+        line_poste: line.line_poste,
+        legend_code: line.legend_code.toUpperCase(),
+        source_code: "MANUAL",
+        status_code: "VALIDATED",
+        correspondence_id: null,
+        updated_at: new Date().toISOString(),
+      })),
+      { onConflict: "employee_id,site_id,work_date,line_poste" },
+    );
+    if (lineErr) return { ok: false, error: lineErr.message };
+  }
+  for (const line of removed) {
+    const { error: dropErr } = await supabase
+      .from("hr_attendance_lines")
+      .delete()
+      .eq("employee_id", line.employee_id)
+      .eq("site_id", line.site_id)
+      .eq("work_date", line.work_date)
+      .eq("line_poste", line.line_poste);
+    if (dropErr) return { ok: false, error: dropErr.message };
+  }
+  let confirm = supabase
+    .from("hr_attendance_lines")
+    .update({ status_code: "VALIDATED", updated_at: new Date().toISOString() })
+    .eq("site_id", p.site_id)
+    .gte("work_date", start)
+    .lte("work_date", end)
+    .in("source_code", ["OM", "AUTO"]);
+  if (p.employee_id) confirm = confirm.eq("employee_id", p.employee_id);
+  const { error: confirmErr } = await confirm;
+  if (confirmErr) return { ok: false, error: confirmErr.message };
   const signal = await signalPayrollInputChange(supabase, {
     source: "ATTENDANCE",
     siteId: p.site_id,

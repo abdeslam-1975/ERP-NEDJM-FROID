@@ -40,6 +40,8 @@ import {
   cellOriginLabel,
   countPending,
   isAutoProposed,
+  isPendingAuto,
+  lineOriginLabel,
   paintAttendanceCells,
 } from "@/lib/hr/attendance-source";
 import {
@@ -47,7 +49,6 @@ import {
   pointageNetFormula,
   pointageNetFormulaAr,
   pointageNetRuleMap,
-  unknownPointageCodes,
   type PointageNet,
   type PointageNetRule,
 } from "@/lib/hr/pointage-net";
@@ -146,8 +147,6 @@ type MonthCard = {
   code: string;
   pick: "start" | "end";
 };
-
-let cardTimer: number | null = null;
 
 const PROPOSED_CLS =
   "italic bg-slate-100 text-slate-400 dark:bg-slate-800/60 dark:text-slate-500";
@@ -377,6 +376,20 @@ function linePersonId(employeeId: string, linePoste: string) {
   return linePoste ? `${employeeId}#${encodeURIComponent(linePoste)}` : employeeId;
 }
 
+function splitLinePerson(personId: string) {
+  const cut = personId.indexOf("#");
+  if (cut < 0) return { employeeId: personId, linePoste: "" };
+  return { employeeId: personId.slice(0, cut), linePoste: decodeURIComponent(personId.slice(cut + 1)) };
+}
+
+type LineEdit = {
+  employee_id: string;
+  site_id: string;
+  work_date: string;
+  line_poste: string;
+  legend_code: string;
+};
+
 export type AttendanceFocus = {
   employeeId?: string;
   siteId?: string;
@@ -433,6 +446,7 @@ export function AttendanceManager({
   const [pickerYear, setPickerYear] = useState(year);
   const [cells, setCells] = useState<AttendanceCell[]>([]);
   const [lines, setLines] = useState<AttendanceLine[]>([]);
+  const [lineEdits, setLineEdits] = useState<LineEdit[]>([]);
   const [loadedAt, setLoadedAt] = useState<string | null>(null);
   const [periodStatus, setPeriodStatus] = useState<PayrollRunStatus | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -546,12 +560,12 @@ export function AttendanceManager({
     return m;
   }, [cells]);
 
-  const lineKeys = useMemo(() => {
-    const keys = new Set<string>();
+  const lineByKey = useMemo(() => {
+    const found = new Map<string, AttendanceLine>();
     for (const line of lines) {
-      keys.add(`${linePersonId(line.employee_id, line.line_poste)}|${line.work_date}`);
+      found.set(`${linePersonId(line.employee_id, line.line_poste)}|${line.work_date}`, line);
     }
-    return keys;
+    return found;
   }, [lines]);
 
   const legendMap = useMemo(
@@ -598,24 +612,98 @@ export function AttendanceManager({
     return `${employeeId}|${iso(day)}`;
   }
 
-  function paintRange(employeeId: string, startDay: number, endDay: number, code: string) {
+  function paintRange(personId: string, startDay: number, endDay: number, code: string) {
     const from = Math.min(startDay, endDay);
     const to = Math.max(startDay, endDay);
-    const openFrom = allPeople.find((person) => person.id === employeeId)?.start_date.slice(0, 10) ?? "";
+    const openFrom = allPeople.find((person) => person.id === personId)?.start_date.slice(0, 10) ?? "";
     const normalized = code.trim().toUpperCase();
     const dates = Array.from({ length: to - from + 1 }, (_, i) => iso(from + i)).filter(
       (date) => !openFrom || date >= openFrom,
     );
     if (dates.length === 0) return;
-    setCells((prev) =>
-      paintAttendanceCells(prev, { employeeId, siteId, dates, code: normalized }),
-    );
+    const { employeeId, linePoste } = splitLinePerson(personId);
+    const isExtra = personId.includes("#");
+    const dateSet = new Set(dates);
+    if (!isExtra) {
+      setCells((prev) =>
+        paintAttendanceCells(prev, { employeeId, siteId, dates, code: normalized }),
+      );
+    }
+    const edits: LineEdit[] = [];
+    const seen = new Set<string>();
+    const nextLines: AttendanceLine[] = [];
+    for (const line of lines) {
+      if (line.employee_id !== employeeId || line.line_poste !== linePoste || !dateSet.has(line.work_date)) {
+        nextLines.push(line);
+        continue;
+      }
+      seen.add(line.work_date);
+      if (!normalized) {
+        edits.push({
+          employee_id: employeeId,
+          site_id: line.site_id,
+          work_date: line.work_date,
+          line_poste: linePoste,
+          legend_code: "",
+        });
+        continue;
+      }
+      if (line.legend_code.toUpperCase() === normalized) {
+        nextLines.push(line);
+        continue;
+      }
+      nextLines.push({
+        ...line,
+        legend_code: normalized,
+        source_code: "MANUAL",
+        status_code: "PROPOSED",
+      });
+      edits.push({
+        employee_id: employeeId,
+        site_id: line.site_id,
+        work_date: line.work_date,
+        line_poste: linePoste,
+        legend_code: normalized,
+      });
+    }
+    if (isExtra && normalized) {
+      for (const date of dates) {
+        if (seen.has(date)) continue;
+        nextLines.push({
+          employee_id: employeeId,
+          site_id: siteId,
+          work_date: date,
+          line_poste: linePoste,
+          legend_code: normalized,
+          source_code: "MANUAL",
+          status_code: "PROPOSED",
+          last_name: "",
+          first_name: "",
+          matricule: "",
+        });
+        edits.push({
+          employee_id: employeeId,
+          site_id: siteId,
+          work_date: date,
+          line_poste: linePoste,
+          legend_code: normalized,
+        });
+      }
+    }
+    setLines(nextLines);
+    if (edits.length) {
+      setLineEdits((prev) => {
+        const map = new Map(prev.map((item) => [`${item.employee_id}|${item.line_poste}|${item.work_date}`, item]));
+        for (const edit of edits) map.set(`${edit.employee_id}|${edit.line_poste}|${edit.work_date}`, edit);
+        return [...map.values()];
+      });
+    }
     setDirty(true);
     setDrafts((prev) => {
       const copy = { ...prev };
       for (let d = from; d <= to; d += 1) {
         if (openFrom && iso(d) < openFrom) continue;
-        const key = cellKey(employeeId, d);
+        const key = cellKey(personId, d);
         if (!normalized) delete copy[key];
         else copy[key] = normalized;
       }
@@ -623,25 +711,25 @@ export function AttendanceManager({
     });
   }
 
-  function applyCellCode(employeeId: string, day: number, raw: string) {
-    const key = cellKey(employeeId, day);
+  function applyCellCode(personId: string, day: number, raw: string) {
+    const key = cellKey(personId, day);
     const code = raw.trim().toUpperCase();
-    if (code === (grid.get(key)?.legend_code ?? "").toUpperCase()) {
+    const storedCode = (lineByKey.get(key)?.legend_code ?? grid.get(key)?.legend_code ?? "").toUpperCase();
+    if (code === storedCode) {
       setDrafts((prev) => ({ ...prev, [key]: code }));
       return true;
     }
     if (!code) {
-      paintRange(employeeId, day, day, "");
+      paintRange(personId, day, day, "");
       setError(null);
       return true;
     }
     if (!allowedCodes.has(code)) {
       setError(`Code non autorisé : ${code}. Codes : ${[...allowedCodes].join(" · ")}`);
-      const current = grid.get(key)?.legend_code ?? "";
-      setDrafts((prev) => ({ ...prev, [key]: current }));
+      setDrafts((prev) => ({ ...prev, [key]: storedCode }));
       return false;
     }
-    paintRange(employeeId, day, day, code);
+    paintRange(personId, day, day, code);
     setError(null);
     return true;
   }
@@ -693,6 +781,7 @@ export function AttendanceManager({
       }
       setCells(r.data.cells);
       setLines(r.data.lines);
+      setLineEdits([]);
       setLoadedAt(r.data.loaded_at);
       setPeriodStatus(r.data.period_status);
       setAccess(r.data.access);
@@ -785,6 +874,10 @@ export function AttendanceManager({
             source_code: c.source_code,
             correspondence_id: c.correspondence_id,
           })),
+          line_edits: lineEdits.filter((line) => {
+            if (mode !== "employee" || !pickedEmployee) return true;
+            return line.employee_id === splitLinePerson(pickedEmployee.id).employeeId;
+          }),
         });
         if (!r.ok) {
           setError(r.error);
@@ -854,6 +947,7 @@ export function AttendanceManager({
     setYear(y);
     setMonth(m);
     setCells([]);
+    setLineEdits([]);
     setDirty(false);
     setDrafts({});
     return true;
@@ -1172,26 +1266,32 @@ export function AttendanceManager({
       const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       const key = cellKey(p.id, day);
       const beforeContract = openFrom.length === 10 && iso < openFrom;
-      const lockedDay = beforeContract || lineKeys.has(key);
+      const lockedDay = beforeContract;
       const cell = grid.get(key);
-      const stored = cell?.legend_code ?? "";
+      const line = lineByKey.get(key);
+      const stored = line?.legend_code ?? cell?.legend_code ?? "";
       const value = beforeContract ? "0" : (drafts[key] ?? stored);
       const legend = value ? legendMap.get(value.toUpperCase()) : undefined;
-      const proposed = isAutoProposed(cell) && value === stored;
-      const origin = value === stored ? cellOriginLabel(cell) : "";
+      const lineMatch = Boolean(line) && value.toUpperCase() === line!.legend_code.toUpperCase();
+      const proposed = lineMatch
+        ? isPendingAuto(line?.source_code, line?.status_code)
+        : isAutoProposed(cell) && value === (cell?.legend_code ?? "");
+      const origin = lineMatch ? lineOriginLabel(line) : value === (cell?.legend_code ?? "") ? cellOriginLabel(cell) : "";
       const tone = proposed ? undefined : softTone(legend?.color_bg);
-      const omMark = !proposed && value === stored && cell?.source_code === "OM";
+      const omMark = !proposed && lineMatch && line?.source_code === "OM";
       return (
         <td key={day} {...dayMarks(day)} className="attendance-day w-[40px] min-w-[40px] max-w-[40px] p-0 text-center">
           <input
             readOnly={!canEditDays || lockedDay}
-            className={`attendance-day-input outline-none ${proposed ? PROPOSED_CLS : ""} ${
-              canEditDays && !lockedDay ? "cursor-pointer" : "cursor-default"
+            className={`attendance-day-input outline-none ${proposed ? "is-proposed" : ""} ${
+              canEditDays && !lockedDay ? "cursor-text" : "cursor-default"
             }`}
             style={
-              omMark
-                ? { ...tone, boxShadow: "inset 0 -2px 0 rgba(15, 23, 42, 0.4)" }
-                : tone
+              proposed
+                ? ({ "--day-bg": legend?.color_bg || "var(--foreground)" } as CSSProperties)
+                : omMark
+                  ? { ...tone, boxShadow: "inset 0 -2px 0 rgba(15, 23, 42, 0.4)" }
+                  : tone
             }
             value={value}
             title={
@@ -1199,24 +1299,18 @@ export function AttendanceManager({
                 ? `${legend.code} · ${legend.label_fr}${origin ? `\n${origin}` : ""}`
                 : `${day} ${MONTHS[month - 1]}`
             }
-            onClick={() => {
+            onDoubleClick={() => {
               if (!canEditDays || lockedDay) return;
-              const snapshot = {
+              setMonthCard({
                 employeeId: p.id,
                 start: day,
                 end: day,
                 code: value || totauxCode || activeLegends[0]?.code || "",
-                pick: "start" as const,
-              };
-              if (cardTimer) window.clearTimeout(cardTimer);
-              cardTimer = window.setTimeout(() => setMonthCard(snapshot), 280);
+                pick: "start",
+              });
             }}
             onChange={(e) => {
               if (!canEditDays || lockedDay) return;
-              if (cardTimer) {
-                window.clearTimeout(cardTimer);
-                cardTimer = null;
-              }
               setMonthCard(null);
               setDrafts((prev) => ({
                 ...prev,
@@ -1500,12 +1594,6 @@ export function AttendanceManager({
   }, [drafts, legends, month, year]);
 
   const siteName = sites.find((s) => s.id === siteId)?.name_fr ?? "";
-  const formulaUnknown = access?.NET_A_PAYER?.view
-    ? unknownPointageCodes(
-        shownPeople.flatMap((p) => monthCodes(p.id)),
-        netRules,
-      )
-    : [];
 
   return (
     <div className="-mx-2 space-y-3 sm:-mx-4 print:mx-0">
@@ -1521,7 +1609,8 @@ export function AttendanceManager({
         </h2>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/70 bg-surface p-2 shadow-[var(--card-shadow)] print:hidden">
+      <div className="space-y-2 rounded-2xl border border-border/70 bg-surface p-2 shadow-[var(--card-shadow)] print:hidden">
+        <div className="flex flex-wrap items-center gap-2">
         <RhTabs
           uiKey="hr_attendance"
           items={[
@@ -1826,16 +1915,17 @@ export function AttendanceManager({
           </Popover>
 
           <Button
-            className="h-9 gap-2 px-4"
+            className="h-9 gap-2 whitespace-nowrap px-4 text-[12px] font-semibold tracking-wide"
             disabled={saveDisabled}
             onClick={save}
-            title="Valider les valeurs renseignées"
+            title="مصادقة الرموز المقترحة من أمر المهمة أو الإجازة"
           >
             <Icon d={ICONS.check} />
-            Valider
+            VALIDATION DES CODES
             {hasUnsaved ? <span className="h-2 w-2 rounded-full bg-amber-300" /> : null}
           </Button>
         </div>
+        {mode === "site" ? presenceFilter.bar : null}
       </div>
 
       {error ? (
@@ -1861,22 +1951,6 @@ export function AttendanceManager({
           <RhAlert tone="warning">{frozenMessage}</RhAlert>
         </div>
       ) : null}
-
-      {formulaUnknown.length ? (
-        <div className="print:hidden">
-          <RhAlert tone="warning">
-            <>
-              {`Codes hors formule du net : ${formulaUnknown.join(", ")}. Ils ne changent pas le montant. `}
-              <Link href="/parametres/rh/presence" className="underline">
-                Classez-les dans Feuille de présence
-              </Link>
-              {" · رموز خارج المعادلة لا تدخل في المبلغ. صنّفها من الإعدادات ← ورقة الحضور."}
-            </>
-          </RhAlert>
-        </div>
-      ) : null}
-
-      {mode === "site" ? <div className="print:hidden">{presenceFilter.bar}</div> : null}
 
       <div
         className={`attendance-scroll relative max-h-[calc(100dvh-14rem)] overflow-auto rounded-2xl border border-border/70 bg-surface shadow-[var(--card-shadow)] transition-opacity print:max-h-none print:overflow-visible print:shadow-none ${

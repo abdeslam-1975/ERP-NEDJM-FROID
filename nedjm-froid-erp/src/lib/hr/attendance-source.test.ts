@@ -4,6 +4,8 @@ import {
   cellOriginLabel,
   countPending,
   isAutoProposed,
+  isPendingAuto,
+  lineOriginLabel,
   paintAttendanceCells,
 } from "@/lib/hr/attendance-source";
 
@@ -26,6 +28,14 @@ describe("attendance source", () => {
     expect(isAutoProposed({ ...cells[0], status_code: "VALIDATED" })).toBe(false);
     expect(isAutoProposed({ ...cells[0], source_code: "MANUAL" })).toBe(false);
     expect(cellOriginLabel(cells[0])).toContain("000007/26");
+  });
+
+  it("keeps a mission or leave code pale until it is validated", () => {
+    expect(isPendingAuto("OM", "PROPOSED")).toBe(true);
+    expect(isPendingAuto("AUTO", "PROPOSED")).toBe(true);
+    expect(isPendingAuto("OM", "VALIDATED")).toBe(false);
+    expect(isPendingAuto("MANUAL", "PROPOSED")).toBe(false);
+    expect(lineOriginLabel({ source_code: "OM", status_code: "PROPOSED" })).toContain("non validé");
   });
 
   it("turns a changed day into a manual value and keeps untouched OM days", () => {

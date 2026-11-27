@@ -1,7 +1,25 @@
 import type { AttendanceCell } from "@/lib/actions/hr-ops";
 
 export function isAutoProposed(cell: Pick<AttendanceCell, "source_code" | "status_code"> | undefined) {
-  return Boolean(cell) && cell!.source_code !== "MANUAL" && cell!.status_code === "PROPOSED";
+  return isPendingAuto(cell?.source_code, cell?.status_code);
+}
+
+/** A mission or leave code stays pale until VALIDATION DES CODES. A typed code does not. */
+export function isPendingAuto(source: string | undefined, status: string | undefined) {
+  if (!source || source === "MANUAL" || source === "IMPORT") return false;
+  return status !== "VALIDATED";
+}
+
+export function lineOriginLabel(line: { source_code: string; status_code: string } | undefined) {
+  if (!line) return "";
+  if (line.source_code === "MANUAL") {
+    return line.status_code === "VALIDATED"
+      ? "Saisie manuelle — validée · إدخال يدوي — معتمد"
+      : "Saisie manuelle — non validée · إدخال يدوي — غير معتمد";
+  }
+  return isPendingAuto(line.source_code, line.status_code)
+    ? "Proposé par un ordre de mission ou un congé — non validé · مقترح — بانتظار المصادقة"
+    : "Ordre de mission ou congé — validé · من أمر المهمة أو الإجازة — معتمد";
 }
 
 /** Imported values are validated only from the imports screen, never by the pointage grid. */

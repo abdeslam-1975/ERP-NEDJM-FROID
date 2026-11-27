@@ -424,6 +424,18 @@ export const attendanceSaveSchema = z.object({
   employee_id: z.string().uuid().optional(),
   loaded_at: z.string().datetime().optional(),
   cells: z.array(attendanceCellSchema).max(4000),
+  line_edits: z
+    .array(
+      z.object({
+        employee_id: z.string().uuid(),
+        site_id: z.string().uuid(),
+        work_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        line_poste: z.string().max(200),
+        legend_code: z.string().trim().max(16),
+      }),
+    )
+    .max(4000)
+    .optional(),
 });
 
 export const attendanceSheetRowsSaveSchema = z.object({
