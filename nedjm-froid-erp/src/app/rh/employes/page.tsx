@@ -4,6 +4,7 @@ import {
   listHrEmployeeFiches,
   listHrEmployeeFields,
 } from "@/lib/actions/hr-employees";
+import { listHrWorkerRegister } from "@/lib/actions/hr-worker-register";
 import { listHrContracts } from "@/lib/actions/hr-contracts";
 import { loadHrLookups } from "@/lib/actions/hr-lookups";
 import { getHrFicheSettings } from "@/lib/actions/hr-fiche";
@@ -14,12 +15,13 @@ import type { EmployeeAssignment } from "@/components/rh/employees-list";
 export const dynamic = "force-dynamic";
 
 export default async function EmployesPage() {
-  const [result, fields, lookups, fiche, contracts] = await Promise.all([
+  const [result, fields, lookups, fiche, contracts, register] = await Promise.all([
     listHrEmployeeFiches(),
     listHrEmployeeFields(),
     loadHrLookups(),
     getHrFicheSettings(),
     listHrContracts(),
+    listHrWorkerRegister(),
   ]);
 
   const typeLabels = new Map(
@@ -53,12 +55,10 @@ export default async function EmployesPage() {
           poste: a.poste,
         }))}
         fiche={fiche.ok ? fiche.data : DEFAULT_FICHE_SETTINGS}
+        register={register.ok ? register.data : null}
+        registerError={register.ok ? undefined : register.error}
         loadError={
-          result.ok
-            ? fields.ok
-              ? lookups.error
-              : fields.error
-            : result.error
+          result.ok ? (fields.ok ? lookups.error : fields.error) : result.error
         }
       />
     </RhShell>

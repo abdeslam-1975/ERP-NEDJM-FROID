@@ -13,6 +13,7 @@ import {
   Table2,
 } from "lucide-react";
 import type { HrEmployeeFiche } from "@/lib/actions/hr-employees";
+import type { WorkerRegisterRow } from "@/lib/actions/hr-worker-register";
 import { Avatar, Segmented } from "@/components/rh/rh-hub";
 import { RH_CARD } from "@/components/rh/rh-ui";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,28 @@ export type EmployeeAssignment = {
   site: string | null;
   poste: string | null;
 };
+
+function periodDate(iso: string | null) {
+  if (!iso) return "";
+  const [year, month, day] = iso.slice(0, 10).split("-");
+  return day && month && year ? `${day}/${month}/${year}` : iso;
+}
+
+function registerStatus(status: string) {
+  const active = status === "ACTIVE";
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full px-2.5 py-1 text-xs font-medium",
+        active
+          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+          : "bg-slate-100 text-slate-600 dark:bg-white/5 dark:text-slate-300",
+      )}
+    >
+      {active ? "Actif" : "Inactif"}
+    </span>
+  );
+}
 
 const STATUS: Record<string, { label: string; className: string }> = {
   ACTIVE: { label: "Actif", className: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" },
@@ -66,6 +89,108 @@ export function EmployeeViewSwitch({ value, onChange }: { value: EmployeeView; o
   );
 }
 
+function RegisterPanel({
+  rows,
+  total,
+  view,
+  onOpen,
+}: {
+  rows: WorkerRegisterRow[];
+  total: number;
+  view: Exclude<EmployeeView, "table">;
+  onOpen?: (row: WorkerRegisterRow) => void;
+}) {
+  const count = `${rows.length} période${rows.length > 1 ? "s" : ""}${rows.length !== total ? ` sur ${total}` : ""}`;
+  if (!rows.length) {
+    return (
+      <div className={cn(RH_CARD, "flex flex-col items-center p-12 text-center")}>
+        <span className="flex h-12 w-12 items-center justify-center rounded-[0.8rem] bg-brand-muted text-brand">
+          <SearchX className="h-6 w-6" aria-hidden />
+        </span>
+        <p className="mt-4 font-medium text-foreground">Aucune période trouvée</p>
+      </div>
+    );
+  }
+  if (view === "cards") {
+    return (
+      <>
+        <div className="grid max-h-[70vh] gap-4 overflow-auto sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+          {rows.map((row) => {
+            const name = `${row.lastName} ${row.firstName}`.trim();
+            return (
+              <button
+                key={row.id}
+                type="button"
+                onClick={() => onOpen?.(row)}
+                className={cn(RH_CARD, "ui-lift p-5 text-left")}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <Avatar name={name} size={52} />
+                  {registerStatus(row.status)}
+                </div>
+                <div className="mt-4 truncate font-semibold text-foreground">{name}</div>
+                <div className="truncate text-sm text-foreground/50">{row.poste || "—"}</div>
+                <div className="mt-4 flex items-center justify-between border-t border-border/70 pt-4 text-xs text-foreground/50">
+                  <span className="tabular-nums">{periodDate(row.hiredAt)}</span>
+                  <span className="tabular-nums">{row.matricule}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div className={cn(RH_CARD, "px-6 py-3.5 text-sm text-foreground/50")}>{count}</div>
+      </>
+    );
+  }
+  return (
+    <div className={cn(RH_CARD, "overflow-hidden")}>
+      <div className="max-h-[70vh] overflow-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 z-10 bg-surface">
+            <tr className="border-b border-border/70 text-left text-xs text-foreground/50">
+              <th className="px-6 py-4 font-medium">Employé</th>
+              <th className="px-3 py-4 font-medium">Matricule</th>
+              <th className="px-3 py-4 font-medium">Poste</th>
+              <th className="px-3 py-4 font-medium">Date d’entrée</th>
+              <th className="px-3 py-4 font-medium">Date de sortie</th>
+              <th className="px-3 py-4 font-medium">NSS</th>
+              <th className="px-3 py-4 font-medium">Statut</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const name = `${row.lastName} ${row.firstName}`.trim();
+              return (
+                <tr
+                  key={row.id}
+                  onClick={() => onOpen?.(row)}
+                  className="cursor-pointer border-b border-border/60 transition-colors last:border-0 hover:bg-brand/[0.04]"
+                >
+                  <td className="px-6 py-3.5">
+                    <div className="flex items-center gap-3">
+                      <Avatar name={name} size={38} />
+                      <div className="min-w-0 truncate font-medium text-foreground">{name}</div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-3.5 tabular-nums text-foreground/55">{row.matricule}</td>
+                  <td className="px-3 py-3.5 text-foreground/55">{row.poste || <span className="text-foreground/30">—</span>}</td>
+                  <td className="px-3 py-3.5 tabular-nums text-foreground/55">{periodDate(row.hiredAt)}</td>
+                  <td className="px-3 py-3.5 tabular-nums text-foreground/55">
+                    {periodDate(row.endedAt) || <span className="text-foreground/30">—</span>}
+                  </td>
+                  <td className="px-3 py-3.5 tabular-nums text-foreground/55">{row.nss || <span className="text-foreground/30">—</span>}</td>
+                  <td className="px-3 py-3.5">{registerStatus(row.status)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="border-t border-border/70 px-6 py-3.5 text-sm text-foreground/50">{count}</div>
+    </div>
+  );
+}
+
 export function EmployeesList({
   rows,
   assignments,
@@ -81,6 +206,9 @@ export function EmployeesList({
   onDossier,
   onStatus,
   statusOptions,
+  registerRows,
+  registerTotal,
+  onOpenRegister,
 }: {
   rows: HrEmployeeFiche[];
   assignments: EmployeeAssignment[];
@@ -99,6 +227,10 @@ export function EmployeesList({
   onDossier: (row: HrEmployeeFiche) => void;
   onStatus: (row: HrEmployeeFiche, status: string) => void;
   statusOptions: { code: string; label: string }[];
+  /** Employment periods from the worker register. When set, this list shows them instead of the cards. */
+  registerRows?: WorkerRegisterRow[];
+  registerTotal?: number;
+  onOpenRegister?: (row: WorkerRegisterRow) => void;
 }) {
   const [query, setQuery] = useState(initialQuery);
   const [site, setSite] = useState<string | null>(null);
@@ -242,7 +374,14 @@ export function EmployeesList({
         ))}
       </div>}
 
-      {!filtered.length ? (
+      {registerRows ? (
+        <RegisterPanel
+          rows={registerRows}
+          total={registerTotal ?? registerRows.length}
+          view={view}
+          onOpen={onOpenRegister}
+        />
+      ) : !filtered.length ? (
         <div className={cn(RH_CARD, "flex flex-col items-center p-12 text-center")}>
           <span className="flex h-12 w-12 items-center justify-center rounded-[0.8rem] bg-brand-muted text-brand">
             <SearchX className="h-6 w-6" aria-hidden />

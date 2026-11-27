@@ -57,7 +57,7 @@ const MODULE_TABSETS: Record<string, string[]> = {
 
 /** Lists shown inside a tab (its own tabs and the buttons of its page). */
 const ITEM_TABSETS: Record<string, string[]> = {
-  "rh.employes": ["btn_rh_employees"],
+  "rh.employes": ["hr_employees", "btn_rh_employees"],
   "rh.postes": ["btn_rh_postes"],
   "rh.presence": ["hr_attendance"],
   "rh.presence_imports": ["att_imports", "btn_rh_attendance_imports"],

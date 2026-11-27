@@ -26,6 +26,7 @@ import { confirmFicheIdentity } from "@/components/rh/employee-identity";
 import { matriculeKey } from "@/lib/hr/contract-import";
 import { keepsFirstEmploymentNumber, nextMatriculeForHire } from "@/lib/hr/employee-matricule";
 import type { FilterRow } from "@/lib/hr/screen-filter";
+import type { WorkerRegisterRow } from "@/lib/actions/hr-worker-register";
 import { useScreenFilter } from "@/components/rh/screen-filter-bar";
 import type { SiteRow } from "@/lib/actions/sites";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ import {
   RhModal,
   RhPage,
   RhPageHeader,
+  RhTabs,
   catalogOptionLabel,
   rhInput,
 } from "@/components/rh/rh-ui";
@@ -63,6 +65,13 @@ import {
 
 const col = dataColumns<HrEmployeeFiche>();
 const fieldCol = dataColumns<HrEmployeeField>();
+const regCol = dataColumns<WorkerRegisterRow>();
+
+function periodDate(iso: string | null) {
+  if (!iso) return "";
+  const [year, month, day] = iso.slice(0, 10).split("-");
+  return day && month && year ? `${day}/${month}/${year}` : iso;
+}
 
 function rawValue(row: HrEmployeeFiche, field: HrEmployeeField): unknown {
   if (field.storage_group === "extra") return row.attrs?.[field.code];
@@ -91,6 +100,8 @@ export function EmployeesManager({
   sites = [],
   assignments = [],
   fiche = DEFAULT_FICHE_SETTINGS,
+  register = null,
+  registerError,
   loadError,
 }: {
   initialEmployees: HrEmployeeFiche[];
@@ -100,6 +111,9 @@ export function EmployeesManager({
   sites?: Pick<SiteRow, "id" | "name_fr" | "name_ar">[];
   assignments?: EmployeeAssignment[];
   fiche?: HrFicheSettings;
+  /** Worker register. Null when the register could not be loaded. */
+  register?: WorkerRegisterRow[] | null;
+  registerError?: string;
   loadError?: string;
 }) {
   const [rows, setRows] = useState(initialEmployees);
@@ -108,6 +122,11 @@ export function EmployeesManager({
   const urlQuery = searchParams.get("q") ?? "";
   const [startNew] = useState(() => searchParams.get("nouveau") === "1");
   const [view, setView] = useState<EmployeeView>("list");
+  const [panel, setPanel] = useState("fiches");
+  const showBase = panel === "base";
+  const selectPanel = useCallback((id: string) => {
+    setPanel(id === "base" ? "base" : "fiches");
+  }, []);
   const [open, setOpen] = useState(startNew);
   const [dossierEmployee, setDossierEmployee] = useState<HrEmployeeFiche | null>(null);
   const [preview, setPreview] = useState<HrEmployeeFiche | null>(null);
@@ -126,6 +145,7 @@ export function EmployeesManager({
     startNew ? emptyValues(initialFields.filter((f) => f.is_active)) : {},
   );
   const [reportOpen, setReportOpen] = useState(false);
+  const [registerDetail, setRegisterDetail] = useState<WorkerRegisterRow | null>(null);
   const autoMatricule = useRef("");
   const previousHire = useRef("");
   const newEntryRef = useRef(false);
@@ -293,6 +313,57 @@ export function EmployeesManager({
     describe: describeEmployee,
     initialText: urlQuery,
   });
+  const registerBase = useMemo(
+    () =>
+      (register ?? [])
+        .filter((row) => (activeOnly ? row.status === "ACTIVE" : true))
+        .sort((a, b) => b.hiredAt.localeCompare(a.hiredAt) || b.lineNo - a.lineNo),
+    [register, activeOnly],
+  );
+  const describeRegister = useCallback((row: WorkerRegisterRow): FilterRow => {
+    const year = row.hiredAt.slice(0, 4);
+    const statusLabel = row.status === "ACTIVE" ? "Actif" : "Inactif";
+    const facets: FilterRow["facets"] = [
+      { field: "statut", value: row.status, label: `Statut : ${statusLabel}` },
+    ];
+    if (/^\d{4}$/.test(year)) facets.push({ field: "annee", value: year, label: `Année d'embauche : ${year}` });
+    if (!row.nss) facets.push({ field: "manque", value: "nss", label: "Sans NSS" });
+    if (!row.endedAt && row.status !== "ACTIVE") {
+      facets.push({ field: "manque", value: "sortie", label: "Sans date de sortie" });
+    }
+    return {
+      text: [row.matricule, row.lastName, row.firstName, row.nss, row.poste, row.birthPlace].filter(Boolean).join(" "),
+      matricule: row.matricule,
+      facets,
+    };
+  }, []);
+  const registerFilter = useScreenFilter({
+    screen: "rh.employes.registre",
+    rows: registerBase,
+    describe: describeRegister,
+    initialText: urlQuery,
+  });
+  const registerColumns = useMemo(
+    () => [
+      regCol.accessor("matricule", { header: "Matricule" }),
+      regCol.accessor((row) => `${row.lastName} ${row.firstName}`.trim(), { id: "nom", header: "Employé" }),
+      regCol.accessor((row) => row.poste ?? "", { id: "poste", header: "Poste", cell: ({ getValue }) => getValue() || "—" }),
+      regCol.accessor("hiredAt", {
+        header: "Date d'entrée",
+        cell: ({ row }) => periodDate(row.original.hiredAt),
+      }),
+      regCol.accessor("endedAt", {
+        header: "Date de sortie",
+        cell: ({ row }) => periodDate(row.original.endedAt) || "—",
+      }),
+      regCol.accessor((row) => row.nss ?? "", { id: "nss", header: "NSS", cell: ({ getValue }) => getValue() || "—" }),
+      regCol.accessor("status", {
+        header: "Statut",
+        cell: ({ row }) => (row.original.status === "ACTIVE" ? "Actif" : "Inactif"),
+      }),
+    ],
+    [],
+  );
 
   function openCreate() {
     newEntryRef.current = false;
@@ -605,24 +676,30 @@ export function EmployeesManager({
   return (
     <RhPage>
       <RhPageHeader
-        eyebrow={`${ficheCount} fiche${ficheCount > 1 ? "s" : ""} réalisée${ficheCount > 1 ? "s" : ""}`}
+        eyebrow={
+          showBase
+            ? `${register?.length ?? 0} période${(register?.length ?? 0) > 1 ? "s" : ""}`
+            : `${ficheCount} fiche${ficheCount > 1 ? "s" : ""} réalisée${ficheCount > 1 ? "s" : ""}`
+        }
         title="Personnel"
         actionsTabset="btn_rh_employees"
         actions={
-          <>
-            <ToolbarSlot id="columns">
-              <Button type="button" variant="secondary" onClick={() => setColumnsOpen(true)}>
-                <Columns3 aria-hidden />
-                Colonnes
-              </Button>
-            </ToolbarSlot>
-            <ToolbarSlot id="new">
-              <Button type="button" disabled={pending} onClick={openCreate}>
-                <UserPlus aria-hidden />
-                Nouvel employé
-              </Button>
-            </ToolbarSlot>
-          </>
+          showBase ? null : (
+            <>
+              <ToolbarSlot id="columns">
+                <Button type="button" variant="secondary" onClick={() => setColumnsOpen(true)}>
+                  <Columns3 aria-hidden />
+                  Colonnes
+                </Button>
+              </ToolbarSlot>
+              <ToolbarSlot id="new">
+                <Button type="button" disabled={pending} onClick={openCreate}>
+                  <UserPlus aria-hidden />
+                  Nouvel employé
+                </Button>
+              </ToolbarSlot>
+            </>
+          )
         }
       />
 
@@ -632,21 +709,36 @@ export function EmployeesManager({
       {info && !loadError && !formError ? (
         <RhAlert tone="success">{info}</RhAlert>
       ) : null}
+      {showBase && registerError ? <RhAlert tone="danger">{registerError}</RhAlert> : null}
+
+      <RhTabs
+        uiKey="hr_employees"
+        items={[
+          { id: "fiches", label: "Fiches", count: ficheCount },
+          { id: "base", label: "Base de données", count: register?.length },
+        ]}
+        value={showBase ? "base" : "fiches"}
+        onChange={selectPanel}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="secondary" disabled={pending} onClick={() => setImportOpen(true)}>
-            <DatabaseZap aria-hidden />
-            Importer l&apos;ancienne base
-          </Button>
-          <Button type="button" variant="secondary" onClick={() => setReportOpen(true)}>
-            <ClipboardList aria-hidden />
-            RAPPORT
-          </Button>
-          <Button type="button" variant="secondary" onClick={() => setExportOpen(true)}>
-            <FileDown aria-hidden />
-            Télécharger / Imprimer
-          </Button>
+          {showBase ? null : (
+            <>
+              <Button type="button" variant="secondary" disabled={pending} onClick={() => setImportOpen(true)}>
+                <DatabaseZap aria-hidden />
+                Importer l&apos;ancienne base
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setReportOpen(true)}>
+                <ClipboardList aria-hidden />
+                RAPPORT
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setExportOpen(true)}>
+                <FileDown aria-hidden />
+                Télécharger / Imprimer
+              </Button>
+            </>
+          )}
           <Button
             type="button"
             variant={activeOnly ? "primary" : "secondary"}
@@ -655,16 +747,29 @@ export function EmployeesManager({
           >
             <UserCheck aria-hidden />
             Actifs seulement
-            {activeOnly ? ` (${shownRows.length})` : ""}
+            {activeOnly ? ` (${showBase ? registerBase.length : shownRows.length})` : ""}
           </Button>
         </div>
         {view === "table" ? <EmployeeViewSwitch value={view} onChange={setView} /> : null}
       </div>
 
-      {staffFilter.bar}
+      {showBase ? registerFilter.bar : staffFilter.bar}
 
       {view === "table" ? (
-        <>
+        showBase ? (
+          <DataTable
+            data={registerFilter.rows}
+            columns={registerColumns}
+            getRowId={(r) => String(r.id)}
+            searchable={false}
+            columnToggle={false}
+            pageSize={0}
+            maxHeight="70vh"
+            emptyTitle="Aucune période"
+            emptyBody={registerFilter.emptyHint ?? undefined}
+            onRowClick={setRegisterDetail}
+          />
+        ) : (
           <DataTable
             data={staffFilter.rows}
             columns={columns}
@@ -676,7 +781,7 @@ export function EmployeesManager({
             emptyTitle="Aucun employé"
             emptyBody={staffFilter.emptyHint ?? undefined}
           />
-        </>
+        )
       ) : (
         <EmployeesList
           rows={staffFilter.rows}
@@ -684,7 +789,7 @@ export function EmployeesManager({
           fallback={fallbackText}
           initialQuery=""
           hideFilters
-          emptyHint={staffFilter.emptyHint}
+          emptyHint={showBase ? registerFilter.emptyHint : staffFilter.emptyHint}
           view={view}
           onViewChange={setView}
           pending={pending}
@@ -693,6 +798,9 @@ export function EmployeesManager({
           onDossier={setDossierEmployee}
           onStatus={changeStatus}
           statusOptions={statusOptions}
+          registerRows={showBase ? registerFilter.rows : undefined}
+          registerTotal={showBase ? registerBase.length : undefined}
+          onOpenRegister={setRegisterDetail}
         />
       )}
 
@@ -839,6 +947,55 @@ export function EmployeesManager({
           onClose={() => setDossierEmployee(null)}
           onOpenFiche={() => openEdit(dossierEmployee)}
         />
+      ) : null}
+
+      {registerDetail ? (
+        <RhModal
+          title={`${registerDetail.lastName} ${registerDetail.firstName}`.trim()}
+          subtitle={registerDetail.matricule}
+          onClose={() => setRegisterDetail(null)}
+          footer={
+            <>
+              {(() => {
+                const card = rows.find((item) => matriculeKey(item.matricule) === matriculeKey(registerDetail.matricule));
+                return card ? (
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setRegisterDetail(null);
+                      setPreview(card);
+                    }}
+                  >
+                    Ouvrir la fiche
+                  </Button>
+                ) : null;
+              })()}
+              <Button type="button" variant="secondary" onClick={() => setRegisterDetail(null)}>
+                Fermer
+              </Button>
+            </>
+          }
+        >
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            {(
+              [
+                ["Poste", registerDetail.poste],
+                ["NSS", registerDetail.nss],
+                ["Date de naissance", periodDate(registerDetail.birthDate) || null],
+                ["Lieu de naissance", registerDetail.birthPlace],
+                ["Sexe", registerDetail.sex],
+                ["Date d'entrée", periodDate(registerDetail.hiredAt)],
+                ["Date de sortie", periodDate(registerDetail.endedAt) || null],
+                ["Statut", registerDetail.status === "ACTIVE" ? "Actif" : "Inactif"],
+              ] as const
+            ).map(([label, value]) => (
+              <div key={label}>
+                <dt className="text-xs text-foreground/50">{label}</dt>
+                <dd className="mt-0.5 font-medium text-foreground">{value || "—"}</dd>
+              </div>
+            ))}
+          </dl>
+        </RhModal>
       ) : null}
 
       {preview ? (

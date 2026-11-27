@@ -408,6 +408,17 @@ export const UI_TABSETS: UiTabsetDef[] = [
       { id: "employee", labelFr: "Par employé" },
     ],
   },
+  {
+    key: "hr_employees",
+    level: "D",
+    titleFr: "Personnel",
+    titleAr: "الموظفون",
+    whereFr: "RH → Employés",
+    items: [
+      { id: "fiches", labelFr: "Fiches" },
+      { id: "base", labelFr: "Base de données" },
+    ],
+  },
   toolbar("btn_rh_employees", "Employés", "الموظفون", "RH → Employés", [
     ["columns", "Colonnes"],
     ["new", "Nouvel employé"],
