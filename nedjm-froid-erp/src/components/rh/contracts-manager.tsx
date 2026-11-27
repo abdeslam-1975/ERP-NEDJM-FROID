@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ContractImportDialog } from "@/components/rh/contract-import-dialog";
-import { ContractPdfDialog, type ContractPdfScan } from "@/components/rh/contract-pdf-dialog";
+import { ContractPdfDialog, OriginalContractView, type ContractPdfScan } from "@/components/rh/contract-pdf-dialog";
 import { ToolbarSlot } from "@/components/layout/arrange";
 import { attachContractPdf } from "@/lib/actions/hr-contract-pdf";
 import { contractFormFromPdf, matchPdfEmployee } from "@/lib/hr/contract-pdf";
@@ -42,7 +42,6 @@ import {
 } from "@/lib/actions/hr-contract-print";
 import { confirmAnotherCopy } from "@/lib/hr/document-notice";
 import { contractTypeAllowsFixedIrg } from "@/lib/hr/compliance";
-import { hrFileHref } from "@/lib/hr/hr-file-url";
 import { contractPrintDefaults, type ContractPrintSource } from "@/lib/hr/work-contract";
 import { contractTypeDefaults } from "@/lib/hr/hr-lists";
 import { usePrintKit } from "@/components/doc/use-print-kit";
@@ -1747,11 +1746,7 @@ export function ContractsManager({
                   </div>
                   <div className="min-h-0 flex-1 p-3">
                     {scan && showOriginal ? (
-                      <iframe
-                        title={scan.file_name}
-                        src={hrFileHref(scan.path)}
-                        className="h-full w-full rounded-lg bg-white shadow-md ring-1 ring-black/5"
-                      />
+                      <OriginalContractView path={scan.path} />
                     ) : previewHtml ? (
                       <iframe
                         title="Aperçu du contrat"

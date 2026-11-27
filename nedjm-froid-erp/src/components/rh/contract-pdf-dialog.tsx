@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { ScanText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhModal } from "@/components/rh/rh-ui";
 import { prepareContractPdfUpload, readContractPdf } from "@/lib/actions/hr-contract-pdf";
 import { CONTRACT_PDF_MAX_BYTES, CONTRACT_PDF_MIME, type ContractPdfMime, type ContractPdfRead } from "@/lib/hr/contract-pdf";
-import { HR_DOCS_BUCKET } from "@/lib/hr/hr-file-url";
+import { HR_DOCS_BUCKET, hrFileHref } from "@/lib/hr/hr-file-url";
 
 export type ContractPdfScan = { path: string; file_name: string; read: ContractPdfRead };
 
@@ -20,6 +20,37 @@ function storage() {
 function mimeOf(file: File): ContractPdfMime | null {
   const type = file.type || (/\.pdf$/i.test(file.name) ? "application/pdf" : "");
   return (CONTRACT_PDF_MIME as readonly string[]).includes(type) ? (type as ContractPdfMime) : null;
+}
+
+/** The uploaded pages themselves. A direct frame is refused by the site, so the bytes are shown locally. */
+export function OriginalContractView({ path }: { path: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = "";
+    setUrl(null);
+    setError(null);
+    fetch(hrFileHref(path))
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Fichier introuvable.");
+        const type = response.headers.get("content-type")?.split(";")[0]?.trim() || "application/pdf";
+        objectUrl = URL.createObjectURL(new Blob([await response.arrayBuffer()], { type }));
+        if (!cancelled) setUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Le fichier importé n'a pas pu s'afficher.");
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [path]);
+
+  if (error) return <p className="p-6 text-center text-sm text-foreground/60">{error}</p>;
+  if (!url) return <p className="p-6 text-center text-sm text-foreground/60">Chargement du fichier…</p>;
+  return <iframe title="Document importé" src={url} className="h-full w-full rounded-lg bg-white shadow-md ring-1 ring-black/5" />;
 }
 
 export function ContractPdfDialog({ onClose, onRead }: { onClose: () => void; onRead: (scan: ContractPdfScan) => void }) {
