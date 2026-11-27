@@ -646,6 +646,7 @@ export function ContractsManager({
     openModal(
       {
         id: row.id,
+        contract_number: row.contract_number ?? "",
         employee_id: row.employee_id,
         site_id: row.site_id,
         activity_code_id: row.activity_code_id,
