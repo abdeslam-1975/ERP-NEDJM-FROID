@@ -465,6 +465,7 @@ export function EmployeesManager({
           { newEntry },
         );
         if (!result.ok) {
+          if (result.fiche) setValues(valuesFromFiche(result.fiche, fields));
           setFormError(result.error);
           setSaveNotice(null);
           setSaved(false);

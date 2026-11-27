@@ -241,6 +241,19 @@ describe("mission dates", () => {
     );
   });
 
+  it("lets a super admin record a mission that already started", () => {
+    const past = { dateDepart: "2024-12-13", dateRetour: "2024-12-20" };
+    expect(missionDateIssue(past, today, null, { allowPast: true })).toBeNull();
+    expect(missionDateIssue({ dateDepart: "2024-12-13", dateRetour: "" }, today, null, { allowPast: true })).toBeNull();
+    expect(
+      missionDateIssue({ dateDepart: "2024-12-13", dateRetour: "2024-12-13" }, today, null, { allowPast: true })?.field,
+    ).toBe("dateRetour");
+    expect(missionDateBounds({ dateDepart: "2024-12-13", dateRetour: "" }, today, null, { allowPast: true })).toEqual({
+      minDepart: undefined,
+      minRetour: "2024-12-14",
+    });
+  });
+
   it("rejects a return that is not after the departure or not in the future", () => {
     expect(missionDateIssue({ dateDepart: "2026-09-26", dateRetour: "2026-09-26" }, today)?.field).toBe(
       "dateRetour",

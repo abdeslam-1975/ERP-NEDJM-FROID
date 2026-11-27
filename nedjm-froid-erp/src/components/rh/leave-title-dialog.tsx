@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import type { HrCorrespondenceRow } from "@/lib/actions/hr-documents";
 import type { HrEmployeeRow } from "@/lib/actions/hr-employees";
@@ -12,10 +12,16 @@ import {
   leaveDaysLabel,
   leaveNature,
   leaveReprise,
+  leaveTitleDocData,
+  leaveTitleFieldsSchema,
   leaveTitleReference,
   type LeaveTitleFieldKey,
   type LeaveTitleLeave,
 } from "@/lib/hr/leave-title";
+import { usePrintKit } from "@/components/doc/use-print-kit";
+import { printFromKit } from "@/lib/doc/print-kit";
+import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
+import { DayMonthYearField } from "@/components/rh/day-month-year-field";
 import {
   formatOmDate,
   todayIsoAlgiers,
@@ -23,6 +29,7 @@ import {
   type SheetDefaults,
 } from "@/lib/hr/mission-order";
 import { employeeIdentity, findEmployees, withCurrent } from "@/components/rh/mission-order-dialog";
+import { hasOpenWorkContract } from "@/lib/hr/work-cycle";
 import { Button } from "@/components/ui/button";
 import { ManualNumberInput } from "@/components/rh/manual-number-input";
 import { RhAlert, RhField, RhModal, catalogOptions, rhInput } from "@/components/rh/rh-ui";
@@ -76,6 +83,7 @@ export function LeaveTitleDialog({
   onPrint,
   onReset,
   onOpenTitle,
+  letterheadUrl = null,
 }: {
   company: HrCompanyProfile;
   pending: boolean;
@@ -92,6 +100,7 @@ export function LeaveTitleDialog({
   onPrint: () => void;
   onReset: () => void;
   onOpenTitle: (row: HrCorrespondenceRow) => void;
+  letterheadUrl?: string | null;
 }) {
   const [manualNumero, setManualNumero] = useState(false);
   const [titleQuery, setTitleQuery] = useState("");
@@ -122,6 +131,30 @@ export function LeaveTitleDialog({
   const cancelled = value.status_code === "CANCELLED";
   const reference = leaveTitleReference(value.numero, company) || value.numero;
   const calendar = dateDebut && dateFin && dateFin >= dateDebut ? calendarDays(dateDebut, dateFin) : 0;
+  const { kit, error: kitError } = usePrintKit(["titre_conge"]);
+  const preview = useMemo(() => {
+    if (!kit) return null;
+    const origin = typeof window === "undefined" ? "" : window.location.origin;
+    const checked = leaveTitleFieldsSchema.safeParse({
+      ...value,
+      matricule: value.matricule || "—",
+      nom: value.nom || "—",
+    });
+    if (!checked.success) return { ok: false as const, error: checked.error.issues[0]?.message ?? "Données invalides" };
+    return printFromKit(
+      kit,
+      "titre_conge",
+      leaveTitleDocData(
+        checked.data,
+        value.leave,
+        value.numero,
+        kit.company,
+        companyLetterheadUrl(letterheadUrl, origin),
+        kit.lists,
+      ),
+      origin,
+    );
+  }, [kit, letterheadUrl, value]);
 
   function setLeave(patch: Partial<LeaveTitleLeave>) {
     const leave = { ...value.leave, ...patch };
@@ -153,10 +186,15 @@ export function LeaveTitleDialog({
       setLocalError("Saisissez un matricule, un nom ou un prénom.");
       return;
     }
-    const found = findEmployees(employees, needle);
+    const named = findEmployees(employees, needle);
+    const found = named.filter((emp) => hasOpenWorkContract(contracts, emp.id));
     if (found.length === 0) {
       setMatches([]);
-      setLocalError(`Aucun employé trouvé pour « ${needle} ».`);
+      setLocalError(
+        named.length
+          ? "Aucun contrat de travail pour cet employé. · هذا العامل ليس لديه عقد عمل."
+          : `Aucun employé trouvé pour « ${needle} ».`,
+      );
       return;
     }
     if (found.length === 1) {
@@ -200,7 +238,7 @@ export function LeaveTitleDialog({
 
   return (
     <RhModal
-      size="lg"
+      size="xl"
       title="Titre de Congé"
       subtitle={reference || "Nouveau"}
       onClose={onClose}
@@ -231,6 +269,7 @@ export function LeaveTitleDialog({
           <RhAlert tone="danger">Ce congé a été annulé : le titre ne peut plus être imprimé. · هذه الإجازة ملغاة.</RhAlert>
         </div>
       ) : null}
+      <div className="grid items-start gap-4 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(17rem,0.9fr)]">
       <div className="space-y-4">
         <div className="flex flex-wrap gap-2">
           <input
@@ -356,21 +395,15 @@ export function LeaveTitleDialog({
                 </select>
               </RhField>
               <RhField label="Du — من">
-                <input
-                  type="date"
-                  className={rhInput}
-                  value={dateDebut}
-                  onChange={(e) => setLeave({ dateDebut: e.target.value })}
-                />
+                <DayMonthYearField value={dateDebut} onChange={(dateDebut) => setLeave({ dateDebut })} />
               </RhField>
               <RhField label="Au (inclus) — إلى">
-                <input
-                  type="date"
-                  className={rhInput}
-                  min={dateDebut || undefined}
-                  value={dateFin}
-                  onChange={(e) => setLeave({ dateFin: e.target.value })}
-                />
+                <DayMonthYearField value={dateFin} onChange={(dateFin) => setLeave({ dateFin })} />
+                {dateDebut && dateFin && dateFin < dateDebut ? (
+                  <p className="mt-1 text-[11px] font-medium text-red-600">
+                    La fin est avant le début. · تاريخ النهاية قبل البداية.
+                  </p>
+                ) : null}
               </RhField>
               <RhField label="Nombre de jours — عدد الأيام" hint={calendar ? `${calendar} j calendaires` : undefined}>
                 <input
@@ -438,9 +471,33 @@ export function LeaveTitleDialog({
             <RhField label="Établi par">{input("donneur")}</RhField>
             <RhField label="Fonction">{input("pieceFonction")}</RhField>
             <RhField label="Fait à">{input("faitA")}</RhField>
-            <RhField label="Date du document">{input("dateDoc", { type: "date" })}</RhField>
+            <RhField label="Date du document">
+              <DayMonthYearField value={value.dateDoc} onChange={(dateDoc) => set({ dateDoc })} />
+            </RhField>
           </div>
         </section>
+      </div>
+      <aside className="min-[900px]:sticky min-[900px]:top-0">
+        <div className="flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-border/60 bg-surface-muted/70 shadow-[0_1px_3px_rgba(15,23,42,0.05)] min-[900px]:h-[calc(100dvh-11rem)]">
+          <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-surface px-4 py-3">
+            <span className="font-display text-base font-semibold text-foreground">Aperçu · معاينة الإجازة</span>
+            <span className="text-xs text-foreground/60">أثناء الكتابة</span>
+          </div>
+          <div className="min-h-0 flex-1 p-3">
+            {preview?.ok ? (
+              <iframe
+                title="Aperçu du titre de congé"
+                srcDoc={preview.data}
+                className="h-full w-full rounded-lg bg-white shadow-md ring-1 ring-black/5"
+              />
+            ) : (
+              <p className="p-6 text-center text-sm text-foreground/60">
+                {kitError ?? (preview && !preview.ok ? preview.error : "Chargement de l'aperçu…")}
+              </p>
+            )}
+          </div>
+        </div>
+      </aside>
       </div>
     </RhModal>
   );

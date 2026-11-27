@@ -32,9 +32,15 @@ const base = {
 type SaveArgs = { p_close: { id: string; end_date: string }[]; p_id: string | null; p_payload: Record<string, unknown> };
 const saveArgs = () => h.fake!.rpcs.find((r) => r.fn === "hr_contract_save")?.args as SaveArgs;
 
+const fiche = { data: { fiche_done_at: "2026-01-01T00:00:00Z" }, error: null };
+
+function queryResult(q: { table: string }, otherwise: { data: unknown; error: null }) {
+  return q.table === "hr_employees" ? fiche : otherwise;
+}
+
 beforeEach(() => {
   h.fake = createSupabaseFake({
-    onQuery: () => ({ data: [], error: null }),
+    onQuery: (q) => queryResult(q, { data: [], error: null }),
     onRpc: () => ({ data: ID, error: null }),
   });
 });
@@ -65,6 +71,17 @@ describe("upsertHrContract — interim", () => {
 });
 
 describe("upsertHrContract — dated assignments", () => {
+  it("refuses a contract when the information card is not saved", async () => {
+    h.fake = createSupabaseFake({
+      onQuery: () => ({ data: { fiche_done_at: null }, error: null }),
+      onRpc: () => ({ data: ID, error: null }),
+    });
+    const r = await upsertHrContract({ ...base, contract_type_code: "CDD" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/fiche de renseignements/);
+    expect(h.fake!.rpcs).toHaveLength(0);
+  });
+
   it("keeps a start date written on any day of the month", async () => {
     const r = await upsertHrContract({ ...base, contract_type_code: "CDD", start_date: "2026-09-15" });
     expect(r.ok).toBe(true);
@@ -82,10 +99,11 @@ describe("upsertHrContract — dated assignments", () => {
 describe("upsertHrContract — principal contract", () => {
   it("refuses a new principal contract while the previous one is still open", async () => {
     h.fake = createSupabaseFake({
-      onQuery: () => ({
-        data: [{ id: PREVIOUS, start_date: "2026-01-01", end_date: null, status: "ACTIVE" }],
-        error: null,
-      }),
+      onQuery: (q) =>
+        queryResult(q, {
+          data: [{ id: PREVIOUS, start_date: "2026-01-01", end_date: null, status: "ACTIVE" }],
+          error: null,
+        }),
       onRpc: () => ({ data: ID, error: null }),
     });
     const r = await upsertHrContract({ ...base, affectation_principale: true, contract_type_code: "CDD" });
@@ -96,7 +114,7 @@ describe("upsertHrContract — principal contract", () => {
 
   it("maps the principal overlap error", async () => {
     h.fake = createSupabaseFake({
-      onQuery: () => ({ data: [], error: null }),
+      onQuery: (q) => queryResult(q, { data: [], error: null }),
       onRpc: () => ({
         data: null,
         error: { message: 'conflicting key value violates exclusion constraint "hr_contracts_one_principale_excl"' },

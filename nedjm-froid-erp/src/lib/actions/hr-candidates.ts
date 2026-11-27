@@ -682,6 +682,7 @@ export async function promoteCandidate(id: string): Promise<ActionResult<Candida
       birth_date: candidate.birth_date,
       hired_at: candidate.contract_start,
       status: "ACTIVE",
+      fiche_done_at: new Date().toISOString(),
       affiliation_legacy: false,
       affiliation_start: null,
     })

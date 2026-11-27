@@ -506,12 +506,14 @@ export function ContractsManager({
     previewError ?? kitError ?? (printedPreview && !printedPreview.ok ? printedPreview.error : null);
   const employeeOptions = useMemo(
     () =>
-      employees.map((e) => ({
-        value: e.id,
-        label: `${e.matricule} · ${e.last_name} ${e.first_name}`,
-        keywords: `${e.first_name} ${e.last_name}`,
-      })),
-    [employees],
+      employees
+        .filter((e) => e.fiche_done_at || e.id === form.employee_id)
+        .map((e) => ({
+          value: e.id,
+          label: `${e.matricule} · ${e.last_name} ${e.first_name}`,
+          keywords: `${e.first_name} ${e.last_name}`,
+        })),
+    [employees, form.employee_id],
   );
   const gridSuggestion = useMemo(() => {
     const p = postes.find((x) => x.id === form.poste_id);

@@ -231,14 +231,18 @@ type MissionDates = {
  * only needs a return after the departure.
  * Dates already stored on an existing order are not re-checked against `today`,
  * so an ordre can still be completed (km, heures) after the mission started.
+ * A super admin may record a mission that already started: past dates are accepted,
+ * and the return still has to fall after the departure.
  */
 export function missionDateIssue(
   value: MissionDates,
   today: string,
   original?: MissionDates | null,
+  options?: { allowPast?: boolean },
 ): { field: MissionDateField; message: string } | null {
   const depart = value.dateDepart || "";
   const retour = value.dateRetour || "";
+  const allowPast = options?.allowPast === true;
   if (!depart) {
     return { field: "dateDepart", message: "Date de départ obligatoire. · تاريخ الذهاب إجباري." };
   }
@@ -246,7 +250,7 @@ export function missionDateIssue(
   const retourKept = Boolean(original) && (original?.dateRetour || "") === retour;
   const closingOpen = Boolean(original) && !original?.dateRetour;
   if (departKept && retourKept) return null;
-  if (!departKept && depart < today) {
+  if (!allowPast && !departKept && depart < today) {
     return {
       field: "dateDepart",
       message:
@@ -254,7 +258,7 @@ export function missionDateIssue(
     };
   }
   if (!retour) return null;
-  if (!retourKept && !closingOpen && retour <= today) {
+  if (!allowPast && !retourKept && !closingOpen && retour <= today) {
     return {
       field: "dateRetour",
       message: "La date de retour doit être une date future. · تاريخ العودة يجب أن يكون تاريخًا مستقبليًا.",
@@ -270,13 +274,20 @@ export function missionDateIssue(
   return null;
 }
 
-export function missionDateBounds(value: MissionDates, today: string, original?: MissionDates | null) {
+export function missionDateBounds(
+  value: MissionDates,
+  today: string,
+  original?: MissionDates | null,
+  options?: { allowPast?: boolean },
+) {
+  const allowPast = options?.allowPast === true;
   const departKept = Boolean(original) && (original?.dateDepart || "") === (value.dateDepart || "");
-  const minDepart = departKept ? undefined : today;
+  const minDepart = allowPast || departKept ? undefined : today;
   const afterDepart = value.dateDepart ? addDaysIso(value.dateDepart, 1) : "";
   const tomorrow = addDaysIso(today, 1);
   const closingOpen = Boolean(original) && !original?.dateRetour;
-  const minRetour = closingOpen ? afterDepart || undefined : afterDepart > tomorrow ? afterDepart : tomorrow;
+  const minRetour =
+    allowPast || closingOpen ? afterDepart || undefined : afterDepart > tomorrow ? afterDepart : tomorrow;
   return { minDepart, minRetour };
 }
 

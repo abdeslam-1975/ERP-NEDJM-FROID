@@ -361,6 +361,7 @@ export function DocumentsManager({
   customCount = null,
   openTitleId,
   loadError,
+  allowPastMissions = false,
 }: {
   files: HrFileRow[];
   correspondences: HrCorrespondenceRow[];
@@ -386,6 +387,8 @@ export function DocumentsManager({
   /** LEAVE correspondence whose titre de congé opens on arrival. */
   openTitleId?: string;
   loadError?: string;
+  /** Super admin may create a mission order on a past date. */
+  allowPastMissions?: boolean;
 }) {
   const router = useRouter();
   const titleOnArrival = openTitleId
@@ -517,7 +520,7 @@ export function DocumentsManager({
       setMissionError(checked.error.issues[0]?.message ?? "Données invalides");
       return;
     }
-    const dateIssue = missionDraftDateIssue(missionForm);
+    const dateIssue = missionDraftDateIssue(missionForm, undefined, allowPastMissions);
     if (dateIssue) {
       setMissionError(dateIssue.message);
       return;
@@ -1074,7 +1077,14 @@ export function DocumentsManager({
             color: "#0ea5e9",
             summary: countLabel(omRows.length, "ordre", "ordres"),
             selected: tab === "missions",
-            onSelect: () => selectTab("missions"),
+            onSelect: () => {
+              if (tab === "missions") {
+                newMission();
+                return;
+              }
+              setTab("missions");
+              startNavigation(() => router.push("/rh/documents?onglet=missions&nouveau=om", { scroll: false }));
+            },
           },
           {
             key: "conges",
@@ -1293,6 +1303,8 @@ export function DocumentsManager({
             setMissionForm(emptyMission());
           }}
           onOpenOrder={openMissionRow}
+          allowPastDates={allowPastMissions}
+          letterheadUrl={letterheadUrl}
         />
       ) : null}
       {titleForm ? (
@@ -1315,6 +1327,7 @@ export function DocumentsManager({
           onPrint={() => printTitle(titleForm)}
           onReset={newTitle}
           onOpenTitle={openTitle}
+          letterheadUrl={letterheadUrl}
         />
       ) : null}
     </div>

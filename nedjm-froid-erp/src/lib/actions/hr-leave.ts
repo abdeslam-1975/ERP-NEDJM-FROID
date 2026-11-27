@@ -10,6 +10,7 @@ import { loadHrListItems } from "@/lib/doc/print-kit";
 import { calendarDays, computeLeaveBalance, type LeaveBalance, type LeaveStatus } from "@/lib/hr/leave";
 import { annualLeaveCodes, LEAVE_KIND_LIST, leaveKindOptions, type LeaveKindOption } from "@/lib/hr/hr-lists";
 import { todayIsoAlgiers } from "@/lib/hr/mission-order";
+import { coversWorkPeriod, NO_COVERING_CONTRACT } from "@/lib/hr/work-cycle";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -185,6 +186,23 @@ export async function createLeaveRequest(input: unknown): Promise<ActionResult<{
   if (overlap?.length) {
     return { ok: false, error: "Chevauchement avec une autre demande. · تداخل مع طلب آخر" };
   }
+  const { data: contracts, error: contractErr } = await supabase
+    .from("hr_contracts")
+    .select("status, start_date, end_date")
+    .eq("employee_id", p.employee_id);
+  if (contractErr) return { ok: false, error: contractErr.message };
+  const covered = (contracts ?? []).some((row) =>
+    coversWorkPeriod(
+      {
+        status: String(row.status),
+        start_date: String(row.start_date),
+        end_date: row.end_date ? String(row.end_date) : null,
+      },
+      p.start_date,
+      p.end_date,
+    ),
+  );
+  if (!covered) return { ok: false, error: NO_COVERING_CONTRACT };
   const { data, error } = await supabase
     .from("hr_leave_requests")
     .insert({

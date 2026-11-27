@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogItem } from "@/lib/actions/hr-catalogs";
 import type { HrCorrespondenceRow } from "@/lib/actions/hr-documents";
 import type { HrEmployeeRow } from "@/lib/actions/hr-employees";
+import { hasOpenWorkContract } from "@/lib/hr/work-cycle";
 import {
-  missionDateBounds,
   missionDateIssue,
+  missionDocData,
   pickMissionContract,
   showsMissionAffectation,
   showsMissionPoste,
@@ -19,7 +20,11 @@ import { activeOptions, transportModeOptions } from "@/lib/hr/hr-lists";
 import { catalogOptions } from "@/components/rh/rh-ui";
 import { Button } from "@/components/ui/button";
 import { ManualNumberInput } from "@/components/rh/manual-number-input";
+import { usePrintKit } from "@/components/doc/use-print-kit";
+import { printFromKit } from "@/lib/doc/print-kit";
+import { companyLetterheadUrl } from "@/lib/hr/company-letterhead";
 import { RhAlert, RhField, RhModal, rhInput } from "@/components/rh/rh-ui";
+import { DayMonthYearField } from "@/components/rh/day-month-year-field";
 
 export type MissionDraft = {
   id?: string;
@@ -62,11 +67,12 @@ export type MissionDraft = {
   savedDateRetour?: string;
 };
 
-export function missionDraftDateIssue(draft: MissionDraft, today = todayIsoAlgiers()) {
+export function missionDraftDateIssue(draft: MissionDraft, today = todayIsoAlgiers(), allowPast = false) {
   return missionDateIssue(
     draft,
     today,
     draft.id ? { dateDepart: draft.savedDateDepart, dateRetour: draft.savedDateRetour } : null,
+    { allowPast },
   );
 }
 
@@ -110,10 +116,80 @@ export const emptyMissionDraft = (defaults: MissionDefaults): MissionDraft => ({
 
 type SiteOpt = { id: string; name_fr: string };
 
+/** Extra destination choice: several workshops, still typed as free text. */
+export const MULTI_DESTINATIONS = "multidestinations";
+
+/** Active workshops, then the multi-destination phrase. Free text stays allowed. */
+export function destinationChoices(sites: readonly SiteOpt[]) {
+  const names = sites.map((site) => site.name_fr).filter(Boolean);
+  if (!names.some((name) => name.toLowerCase() === MULTI_DESTINATIONS)) names.push(MULTI_DESTINATIONS);
+  return names;
+}
+
 export function withCurrent(options: string[], current: string) {
   const values = options.filter(Boolean);
   if (current && !values.includes(current)) values.unshift(current);
   return values;
+}
+
+/** Suggestions sit under the field. The browser datalist draws them far from a dialog. */
+function DestinationField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: PointerEvent) => {
+      if (!box.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", close, true);
+    return () => document.removeEventListener("pointerdown", close, true);
+  }, [open]);
+  return (
+    <RhField label={label}>
+      <div className="relative" ref={box}>
+        <input
+          className={rhInput}
+          value={value}
+          autoComplete="off"
+          name={label}
+          onPointerDown={() => setOpen(true)}
+          onChange={(event) => {
+            onChange(event.target.value);
+            setOpen(false);
+          }}
+        />
+        {open && options.length ? (
+          <ul className="absolute inset-x-0 top-full z-30 mt-1 max-h-40 overflow-auto rounded-xl border border-border/70 bg-surface shadow-lg">
+            {options.map((name) => (
+              <li key={name}>
+                <button
+                  type="button"
+                  className="block w-full px-3 py-2 text-left text-sm hover:bg-brand/10"
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    onChange(name);
+                    setOpen(false);
+                  }}
+                >
+                  {name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </RhField>
+  );
 }
 
 /** Employees matching a matricule, last name or first name (exact, prefix, or contains from 3 letters). */
@@ -173,6 +249,8 @@ export function MissionOrderDialog({
   onPrint,
   onReset,
   onOpenOrder,
+  allowPastDates = false,
+  letterheadUrl = null,
 }: {
   pending: boolean;
   error: string | null;
@@ -188,6 +266,9 @@ export function MissionOrderDialog({
   onPrint: () => void;
   onReset: () => void;
   onOpenOrder: (row: HrCorrespondenceRow) => void;
+  /** Super admin may record a mission that already started. */
+  allowPastDates?: boolean;
+  letterheadUrl?: string | null;
 }) {
   const [manualNumero, setManualNumero] = useState(false);
   const [orderQuery, setOrderQuery] = useState("");
@@ -197,18 +278,28 @@ export function MissionOrderDialog({
   const set = (patch: Partial<MissionDraft>) => onChange({ ...value, ...patch });
   const jobs = catalogOptions(catalogs, "job_title").map((item) => item.label_fr);
   const affectations = sites.map((site) => site.name_fr);
+  const destinations = destinationChoices(sites);
   const transportChoices = activeOptions(transportModeOptions(catalogs)).map((m) => m.fr);
   const today = todayIsoAlgiers();
-  const saved = value.id ? { dateDepart: value.savedDateDepart, dateRetour: value.savedDateRetour } : null;
-  const bounds = missionDateBounds(value, today, saved);
   const dateIssue =
-    value.dateDepart || value.dateRetour ? missionDraftDateIssue(value, today) : null;
+    value.dateDepart || value.dateRetour ? missionDraftDateIssue(value, today, allowPastDates) : null;
   const dateError = (field: "dateDepart" | "dateRetour") =>
     dateIssue?.field === field ? (
       <p className="mt-1 text-[11px] font-medium text-red-600">{dateIssue.message}</p>
     ) : null;
   const dateClass = (field: "dateDepart" | "dateRetour") =>
-    dateIssue?.field === field ? `${rhInput} border-red-500 ring-1 ring-red-300` : rhInput;
+    dateIssue?.field === field ? "border-red-500 ring-1 ring-red-300" : undefined;
+  const { kit, error: kitError } = usePrintKit(["ordre_mission"]);
+  const preview = useMemo(() => {
+    if (!kit) return null;
+    const origin = typeof window === "undefined" ? "" : window.location.origin;
+    return printFromKit(
+      kit,
+      "ordre_mission",
+      missionDocData(value, kit.company, companyLetterheadUrl(letterheadUrl, origin), kit.lists),
+      origin,
+    );
+  }, [kit, letterheadUrl, value]);
 
   function applyEmployee(emp: HrEmployeeRow) {
     onChange({ ...value, employee_id: emp.id, ...employeeIdentity(emp, contracts, sites, catalogs) });
@@ -223,10 +314,15 @@ export function MissionOrderDialog({
       setLocalError("Saisissez un matricule, un nom ou un prénom.");
       return;
     }
-    const found = findEmployees(employees, needle);
+    const named = findEmployees(employees, needle);
+    const found = named.filter((emp) => hasOpenWorkContract(contracts, emp.id));
     if (found.length === 0) {
       setMatches([]);
-      setLocalError(`Aucun employé trouvé pour « ${needle} ».`);
+      setLocalError(
+        named.length
+          ? "Aucun contrat de travail pour cet employé. · هذا العامل ليس لديه عقد عمل."
+          : `Aucun employé trouvé pour « ${needle} ».`,
+      );
       return;
     }
     if (found.length === 1) {
@@ -269,7 +365,7 @@ export function MissionOrderDialog({
 
   return (
     <RhModal
-      size="lg"
+      size="xl"
       title="Ordre de Mission"
       subtitle={value.numero || "Nouveau"}
       onClose={onClose}
@@ -295,6 +391,7 @@ export function MissionOrderDialog({
           <RhAlert tone="danger">{error || localError}</RhAlert>
         </div>
       ) : null}
+      <div className="grid items-start gap-4 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(17rem,0.9fr)]">
       <div className="space-y-4">
         <div className="flex flex-wrap gap-2">
           <input
@@ -459,22 +556,16 @@ export function MissionOrderDialog({
         <section className="space-y-3 rounded-2xl border border-border/70 p-4">
           <h4 className="text-sm font-semibold">Déplacement</h4>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <RhField label="1ère destination">
-              <input className={rhInput} list="om-dest-list" value={value.dest1} onChange={(e) => set({ dest1: e.target.value })} />
-            </RhField>
-            <RhField label="2ème destination">
-              <input className={rhInput} list="om-dest-list" value={value.dest2} onChange={(e) => set({ dest2: e.target.value })} />
-            </RhField>
+            <DestinationField label="1ère destination" value={value.dest1} options={destinations} onChange={(dest1) => set({ dest1 })} />
+            <DestinationField label="2ème destination" value={value.dest2} options={destinations} onChange={(dest2) => set({ dest2 })} />
             <RhField label="Lieu de départ">
               <input className={rhInput} value={value.lieuDepart} onChange={(e) => set({ lieuDepart: e.target.value })} />
             </RhField>
             <RhField label="Date de départ — تاريخ الذهاب">
-              <input
-                type="date"
-                className={dateClass("dateDepart")}
-                min={bounds.minDepart}
+              <DayMonthYearField
                 value={value.dateDepart}
-                onChange={(e) => set({ dateDepart: e.target.value })}
+                className={dateClass("dateDepart")}
+                onChange={(dateDepart) => set({ dateDepart })}
               />
               {dateError("dateDepart")}
             </RhField>
@@ -482,12 +573,10 @@ export function MissionOrderDialog({
               <input className={rhInput} value={value.lieuRetour} onChange={(e) => set({ lieuRetour: e.target.value })} />
             </RhField>
             <RhField label="Date de retour — تاريخ العودة">
-              <input
-                type="date"
-                className={dateClass("dateRetour")}
-                min={bounds.minRetour}
+              <DayMonthYearField
                 value={value.dateRetour}
-                onChange={(e) => set({ dateRetour: e.target.value })}
+                className={dateClass("dateRetour")}
+                onChange={(dateRetour) => set({ dateRetour })}
               />
               {dateError("dateRetour") ??
                 (value.dateRetour ? null : (
@@ -513,11 +602,6 @@ export function MissionOrderDialog({
             pointage de l&apos;employé (non validés). · عند الحفظ تُقترح أيام المهمة بالرمز MS في جدول
             الحضور (غير معتمدة).
           </p>
-          <datalist id="om-dest-list">
-            {affectations.map((name) => (
-              <option key={name} value={name} />
-            ))}
-          </datalist>
         </section>
 
         <section className="space-y-3 rounded-2xl border border-border/70 p-4">
@@ -571,10 +655,32 @@ export function MissionOrderDialog({
               <input className={rhInput} value={value.faitA} onChange={(e) => set({ faitA: e.target.value })} />
             </RhField>
             <RhField label="Date du document">
-              <input type="date" className={rhInput} value={value.dateDoc} onChange={(e) => set({ dateDoc: e.target.value })} />
+              <DayMonthYearField value={value.dateDoc} onChange={(dateDoc) => set({ dateDoc })} />
             </RhField>
           </div>
         </section>
+      </div>
+      <aside className="min-[900px]:sticky min-[900px]:top-0">
+        <div className="flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-border/60 bg-surface-muted/70 shadow-[0_1px_3px_rgba(15,23,42,0.05)] min-[900px]:h-[calc(100dvh-11rem)]">
+          <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-surface px-4 py-3">
+            <span className="font-display text-base font-semibold text-foreground">Aperçu · معاينة الأمر</span>
+            <span className="text-xs text-foreground/60">أثناء الكتابة</span>
+          </div>
+          <div className="min-h-0 flex-1 p-3">
+            {preview?.ok ? (
+              <iframe
+                title="Aperçu de l'ordre de mission"
+                srcDoc={preview.data}
+                className="h-full w-full rounded-lg bg-white shadow-md ring-1 ring-black/5"
+              />
+            ) : (
+              <p className="p-6 text-center text-sm text-foreground/60">
+                {kitError ?? (preview && !preview.ok ? preview.error : "Chargement de l'aperçu…")}
+              </p>
+            )}
+          </div>
+        </div>
+      </aside>
       </div>
     </RhModal>
   );

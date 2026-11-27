@@ -8,15 +8,17 @@ import { dayFirstToIso, isoToDayFirst, maskDayFirst } from "@/lib/hr/day-first-d
 export function DayMonthYearField({
   value,
   onChange,
+  className,
 }: {
   value: string;
   onChange: (iso: string) => void;
+  className?: string;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
 
   return (
     <input
-      className={rhInput}
+      className={className ? `${rhInput} ${className}` : rhInput}
       dir="ltr"
       inputMode="numeric"
       autoComplete="off"

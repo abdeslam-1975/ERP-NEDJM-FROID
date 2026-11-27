@@ -675,29 +675,26 @@ export async function upsertHrEmployee(
     }
   }
 
-  // Documents obligatoires : après la 1re création (employé déjà identifié)
-  if (p.id) {
-    const [cats, files] = await Promise.all([
-      listCatalogItems(),
-      listHrFilesForEmployee(p.id),
-    ]);
-    if (cats.ok && files.ok) {
-      const missingDocs = missingRequiredDocuments(
-        cats.data,
-        files.data.map((f) => f.doc_type_code),
-      );
-      if (missingDocs.length) {
-        const labels = missingDocs
-          .slice(0, 6)
-          .map((d) => d.label_fr || d.code)
-          .join(", ");
-        return {
-          ok: false,
-          error: `Documents obligatoires manquants : ${labels}. Téléversez-les dans l'onglet Documents puis réessayez.`,
-        };
-      }
-    }
+  // The information card is saved only after every required personal document is uploaded.
+  const catalogs = await listCatalogItems();
+  if (!catalogs.ok) return { ok: false, error: catalogs.error };
+  const uploaded = p.id ? await listHrFilesForEmployee(p.id) : { ok: true as const, data: [] };
+  if (!uploaded.ok) return { ok: false, error: uploaded.error };
+  const missingDocs = missingRequiredDocuments(
+    catalogs.data,
+    uploaded.data.map((file) => file.doc_type_code),
+  );
+  if (p.id && missingDocs.length) {
+    const labels = missingDocs
+      .slice(0, 6)
+      .map((doc) => doc.label_fr || doc.code)
+      .join(", ");
+    return {
+      ok: false,
+      error: `Documents obligatoires manquants : ${labels}. Téléversez-les dans l'onglet Documents puis réessayez. · الوثائق الإجبارية ناقصة.`,
+    };
   }
+  const documentsReady = missingDocs.length === 0;
 
   const core: Record<string, unknown> = {
     matricule: p.matricule,
@@ -727,7 +724,7 @@ export async function upsertHrEmployee(
   } else if (full.success) {
     core.attrs = { ...(full.data.attrs ?? {}) };
   }
-  if (!existingDoneAt) core.fiche_done_at = new Date().toISOString();
+  if (!existingDoneAt && documentsReady) core.fiche_done_at = new Date().toISOString();
 
   let satellites: {
     p_civil: Record<string, unknown> | null;

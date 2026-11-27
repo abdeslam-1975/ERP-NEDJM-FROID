@@ -67,7 +67,7 @@ export function checkFicheValues(values: Record<string, string>, activeFields: H
 
 export type FicheSaveResult =
   | { ok: true; fiche: HrEmployeeFiche | null; info: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string; fiche?: HrEmployeeFiche | null };
 
 function printedFicheChanged(
   before: Record<string, string> | null,
@@ -125,14 +125,22 @@ export async function saveEmployeeFiche(
   }
   const payload = employeePayloadFromValues(normalized, activeFields);
   const result = await upsertHrEmployee(payload);
-  if (result.ok && !options?.newEntry) {
-    const issued = await assignFicheReference(result.data.id, normalized.hired_at || "", false);
-    if (!issued.ok) return { ok: false, error: issued.error };
-  }
   if (!result.ok) return { ok: false, error: result.error };
-  onStored?.();
   const fiche = await getHrEmployeeFiche(result.data.id);
   const saved = fiche.ok ? fiche.data : null;
+  if (!saved?.fiche_done_at) {
+    return {
+      ok: false,
+      error:
+        "Documents obligatoires manquants. Téléversez-les, puis enregistrez la fiche. · الوثائق الإجبارية ناقصة. ارفعوها ثم احفظوا البطاقة.",
+      fiche: saved,
+    };
+  }
+  if (!options?.newEntry) {
+    const issued = await assignFicheReference(result.data.id, normalized.hired_at || "", false);
+    if (!issued.ok) return { ok: false, error: issued.error, fiche: saved };
+  }
+  onStored?.();
   if (!options?.newEntry && !printedFicheChanged(previous, normalized, activeFields)) {
     return {
       ok: true,

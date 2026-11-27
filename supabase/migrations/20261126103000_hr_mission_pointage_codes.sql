@@ -98,6 +98,10 @@ begin
     select
       d.*,
       case
+        when d.type_code = 'OM' and d.end_date is not null then least(
+          d.end_date,
+          coalesce(d.next_start - 1, d.end_date)
+        )
         when d.type_code = 'OM' then least(
           (date_trunc('month', greatest(v_today, d.start_date)) + interval '12 months - 1 day')::date,
           coalesce(d.next_start - 1, 'infinity'::date)
@@ -119,6 +123,13 @@ begin
     from spans s
     cross join lateral generate_series(s.start_date, s.stop_date, interval '1 day') as g(day)
     where s.stop_date >= s.start_date
+      and exists (
+        select 1 from public.hr_contracts k
+        where k.employee_id = p_employee
+          and k.status in ('ACTIVE', 'DRAFT', 'SUSPENDED', 'ENDED')
+          and k.start_date <= g.day::date
+          and (k.end_date is null or k.end_date >= g.day::date)
+      )
     order by g.day::date, s.start_date desc, s.created_at desc, s.id desc
   )
   select p_employee, site_id, work_date, legend, source_code, id from days;
@@ -147,7 +158,7 @@ begin
             'infinity'::date
           )
         )
-        else (date_trunc('month', c.end_date) + interval '1 month - 1 day')::date
+        else c.end_date
       end,
       interval '1 day'
     ) as g(day)
@@ -157,11 +168,19 @@ begin
       and c.start_date is not null
       and c.site_id is not null
       and coalesce(c.payload->>'pointageCode', 'MS') in ('CH', 'HP', 'CH-HP')
+      and (c.end_date is null or g.day::date <= c.end_date)
   ) x
   where not exists (
     select 1 from hr_chain_wanted w
     where w.site_id = x.site_id and w.work_date = x.work_date
-  );
+  )
+    and exists (
+      select 1 from public.hr_contracts k
+      where k.employee_id = p_employee
+        and k.status in ('ACTIVE', 'DRAFT', 'SUSPENDED', 'ENDED')
+        and k.start_date <= x.work_date
+        and (k.end_date is null or k.end_date >= x.work_date)
+    );
 
   delete from hr_chain_wanted w
   using public.hr_attendance_chain_skips k
@@ -258,7 +277,7 @@ begin
             'infinity'::date
           )
         )
-        else (date_trunc('month', c.end_date) + interval '1 month - 1 day')::date
+        else c.end_date
       end,
       interval '1 day'
     ) as g(day)
@@ -268,9 +287,10 @@ begin
       and c.start_date is not null
       and c.site_id is not null
       and coalesce(c.payload->>'pointageCode', 'MS') in ('CH', 'HP', 'CH-HP')
+      and (c.end_date is null or g.day::date <= c.end_date)
   ) s
   cross join lateral (
-    select s.home_id as site_id, ''::text as line_poste,
+    select s.home_id as site_id, s.work_date, ''::text as line_poste,
       case
         when s.work_date < s.start_date then 'MS'
         when s.end_date is null or s.work_date <= s.end_date then s.code
@@ -282,7 +302,7 @@ begin
       end as legend_code,
       s.id
     union all
-    select s.mission_id, s.mission_line,
+    select s.mission_id, s.work_date, s.mission_line,
       case
         when s.work_date < s.start_date then s.code
         when s.end_date is null or s.work_date <= s.end_date then 'MS'
@@ -292,6 +312,13 @@ begin
     where s.mission_id is not null and s.mission_line <> ''
   ) v
   where coalesce(public.hr_payroll_period_status(v.site_id, v.work_date), '') <> 'LOCKED'
+    and exists (
+      select 1 from public.hr_contracts k
+      where k.employee_id = p_employee
+        and k.status in ('ACTIVE', 'DRAFT', 'SUSPENDED', 'ENDED')
+        and k.start_date <= v.work_date
+        and (k.end_date is null or k.end_date >= v.work_date)
+    )
   on conflict (employee_id, site_id, work_date, line_poste) do update set
     legend_code = excluded.legend_code,
     correspondence_id = excluded.correspondence_id,

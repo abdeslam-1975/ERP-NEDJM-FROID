@@ -344,6 +344,19 @@ export async function upsertHrContract(
     return { ok: false, error: "Contrat d'intérim : choisissez l'agence." };
   }
   const supabase = await createClient();
+  const holder = await supabase
+    .from("hr_employees")
+    .select("fiche_done_at")
+    .eq("id", p.employee_id)
+    .maybeSingle();
+  if (holder.error) return { ok: false, error: holder.error.message };
+  if (!holder.data?.fiche_done_at) {
+    return {
+      ok: false,
+      error:
+        "Aucune fiche de renseignements enregistrée pour cet employé. · لا توجد بطاقة معلومات محفوظة لهذا العامل.",
+    };
+  }
   let closePlan: { id: string; end_date: string }[] = [];
   if (p.affectation_principale) {
     const { data: existing, error: existingErr } = await supabase

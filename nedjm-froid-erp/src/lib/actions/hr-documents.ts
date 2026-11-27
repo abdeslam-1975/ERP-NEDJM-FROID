@@ -10,9 +10,7 @@ import {
   missionDocData,
   missionOrderFieldsSchema,
   missionPayload,
-  pickMissionContract,
   todayIsoAlgiers,
-  type MissionContractHint,
   type MissionOrderFields,
   type SheetDefaults,
 } from "@/lib/hr/mission-order";
@@ -28,6 +26,7 @@ import { HR_DOCS_BUCKET, hrFileDisplayUrl, hrFileHref } from "@/lib/hr/hr-file-u
 import { loadCompanyProfile, loadHrListItems, loadPrintKit, printFromKit } from "@/lib/doc/print-kit";
 import { isAnnualLeave, LEAVE_KIND_LIST, leaveKindOptions } from "@/lib/hr/hr-lists";
 import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
+import { coversWorkPeriod, NO_COVERING_CONTRACT } from "@/lib/hr/work-cycle";
 import { listCatalogItems } from "@/lib/actions/hr-catalogs";
 import { listSites } from "@/lib/actions/sites";
 import { mergeAffectationCatalog } from "@/lib/hr/affectation-options";
@@ -572,15 +571,28 @@ async function archiveMissionOrderSnapshot(input: {
   }
 }
 
-async function missionSiteOf(
+async function coveringContractSite(
   supabase: Awaited<ReturnType<typeof createClient>>,
   employeeId: string,
+  start: string,
+  end: string,
 ): Promise<string | null> {
   const { data } = await supabase
     .from("hr_contracts")
-    .select("employee_id, site_id, poste_fr, poste_ar, affectation_principale, status, start_date")
+    .select("site_id, status, start_date, end_date")
     .eq("employee_id", employeeId);
-  return pickMissionContract((data ?? []) as MissionContractHint[], employeeId)?.site_id ?? null;
+  const row = (data ?? []).find((contract) =>
+    coversWorkPeriod(
+      {
+        status: String(contract.status),
+        start_date: String(contract.start_date),
+        end_date: contract.end_date ? String(contract.end_date) : null,
+      },
+      start,
+      end,
+    ),
+  );
+  return row?.site_id ?? null;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -848,22 +860,19 @@ export async function upsertHrCorrespondence(input: unknown): Promise<
       return { ok: false, error: checked.error.issues[0]?.message ?? "Données de mission invalides" };
     }
     fields = checked.data;
+    const actor = await getWorkspaceProfile();
     const issue = missionDateIssue(
       fields,
       todayIsoAlgiers(),
       existing ? { dateDepart: existing.start_date, dateRetour: existing.end_date } : null,
+      { allowPast: actor?.isSuperAdmin === true },
     );
     if (issue) return { ok: false, error: issue.message };
     startDate = fields.dateDepart;
     endDate = fields.dateRetour;
-    if (!siteId) siteId = await missionSiteOf(supabase, p.employee_id);
-    if (!siteId) {
-      return {
-        ok: false,
-        error:
-          "Affectation introuvable : impossible de lier l'ordre au pointage. · لا توجد Affectation للعامل، تعذّر ربط الأمر بجدول الحضور.",
-      };
-    }
+    const covered = await coveringContractSite(supabase, p.employee_id, startDate ?? "", endDate ?? startDate ?? "");
+    if (!covered) return { ok: false, error: NO_COVERING_CONTRACT };
+    if (!siteId) siteId = covered;
   }
 
   const previous = (existing?.payload ?? {}) as Record<string, unknown>;

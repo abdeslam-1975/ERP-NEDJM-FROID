@@ -18,6 +18,7 @@ import { ContractsRegister } from "@/components/rh/contracts-register";
 import { BulletinsRegister } from "@/components/rh/bulletins-register";
 import { CustomDocsRegister } from "@/components/rh/custom-docs-register";
 import { listCustomDocDefs, listIssuedCustomDocs } from "@/lib/actions/hr-custom-docs";
+import { getWorkspaceProfile } from "@/lib/auth/get-workspace";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 180;
@@ -32,18 +33,20 @@ export default async function DocumentsPage({
   const initialTab = tabs.find((tab) => tab === sp.onglet);
   const register =
     initialTab === "contrats" ? <ContractsRegister /> : initialTab === "bulletins" ? <BulletinsRegister /> : null;
-  const [files, corr, employees, lookups, contracts, fiche, fields, company, customDefs, issued] = await Promise.all([
-    listHrFiles(),
-    listHrCorrespondences(),
-    listHrEmployeeRows({ withCardPeriods: true, withCompletion: true }),
-    loadHrLookups(),
-    listHrContracts(),
-    getHrFicheSettings(),
-    listHrEmployeeFields(),
-    getHrCompanyProfile(),
-    listCustomDocDefs(),
-    listIssuedCustomDocs(),
-  ]);
+  const [files, corr, employees, lookups, contracts, fiche, fields, company, customDefs, issued, workspace] =
+    await Promise.all([
+      listHrFiles(),
+      listHrCorrespondences(),
+      listHrEmployeeRows({ withCardPeriods: true, withCompletion: true }),
+      loadHrLookups(),
+      listHrContracts(),
+      getHrFicheSettings(),
+      listHrEmployeeFields(),
+      getHrCompanyProfile(),
+      listCustomDocDefs(),
+      listIssuedCustomDocs(),
+      getWorkspaceProfile(),
+    ]);
   const customRegister = (
     <CustomDocsRegister
       defs={customDefs.ok ? customDefs.data.defs.filter((d) => d.is_active && d.approved_version != null) : []}
@@ -92,6 +95,7 @@ export default async function DocumentsPage({
           ficheCatalogs={mergeAffectationCatalog(lookups.catalogs, lookups.sites)}
           ficheSettings={fiche.ok ? fiche.data : DEFAULT_FICHE_SETTINGS}
           openMission={sp.nouveau === "om"}
+          allowPastMissions={workspace?.isSuperAdmin === true}
           loadError={
             (!files.ok && files.error) ||
             (!corr.ok && corr.error) ||
