@@ -23,24 +23,35 @@ type GeminiResponse = {
   error?: { message?: string; status?: string };
 };
 
-const RETRY_DELAYS_MS = [3_000, 8_000];
+const STRUCTURED_FALLBACKS = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-lite-latest"];
 
-/** One structured call: the model must answer with JSON matching `schema`. Overload (503) is retried briefly. */
+/** Models tried in order when reading a document. A busy model is skipped for the next one. */
+export function structuredModels(): string[] {
+  return [...new Set([geminiModel(), ...STRUCTURED_FALLBACKS])];
+}
+
+/** One structured call: the model must answer with JSON matching `schema`. A busy model is retried once, then the next model answers. */
 export async function generateStructured(input: { parts: GeminiPart[]; schema: object }): Promise<unknown> {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await callOnce(input);
-    } catch (error) {
-      const delay = RETRY_DELAYS_MS[attempt];
-      if (!(error instanceof OverloadError) || delay === undefined) throw error;
-      await new Promise((resolve) => setTimeout(resolve, delay));
+  const models = structuredModels();
+  let last: unknown = new OverloadError("Gemini est surchargé en ce moment. Réessayez dans une minute.");
+  for (let index = 0; index < models.length; index++) {
+    const attempts = index === 0 ? 2 : 1;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      try {
+        return await callOnce(input, models[index]);
+      } catch (error) {
+        last = error;
+        if (!(error instanceof OverloadError)) throw error;
+        if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, 1_500));
+      }
     }
   }
+  throw last;
 }
 
 class OverloadError extends Error {}
 
-async function callOnce(input: { parts: GeminiPart[]; schema: object }): Promise<unknown> {
+async function callOnce(input: { parts: GeminiPart[]; schema: object }, model: string): Promise<unknown> {
   const key = process.env.GEMINI_API_KEY?.trim();
   if (!key) throw new Error("Clé Gemini absente (variable GEMINI_API_KEY).");
 
@@ -48,7 +59,7 @@ async function callOnce(input: { parts: GeminiPart[]; schema: object }): Promise
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(`${ENDPOINT}/${encodeURIComponent(geminiModel())}:generateContent`, {
+    response = await fetch(`${ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
@@ -76,10 +87,7 @@ async function callOnce(input: { parts: GeminiPart[]; schema: object }): Promise
     if (response.status === 400 && /api key/i.test(reason)) {
       throw new Error("Clé Gemini refusée. Vérifiez GEMINI_API_KEY.");
     }
-    if (response.status === 429) {
-      throw new Error("Quota Gemini atteint. Réessayez dans quelques minutes.");
-    }
-    if (response.status === 503) {
+    if (response.status === 429 || response.status === 503 || /unavailable|overloaded|resource exhausted/i.test(reason)) {
       throw new OverloadError("Gemini est surchargé en ce moment. Réessayez dans une minute.");
     }
     throw new Error(`Gemini : ${reason}`);
