@@ -3,6 +3,7 @@
 import {
   Fragment,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -26,8 +27,10 @@ import { legendCoefficientAt } from "@/lib/hr/legend-coefficient";
 import {
   contractsForMonth,
   editableRowValueCodes,
+  pointageColumns,
   POSTE_EFFECTIF,
   visibleColumns,
+  withSonatrachColumn,
   type AttendanceColumn,
   type AttendanceColumnAccess,
   type AttendanceContract,
@@ -39,6 +42,12 @@ import {
   isAutoProposed,
   paintAttendanceCells,
 } from "@/lib/hr/attendance-source";
+import {
+  POINTAGE_NET_FORMULA,
+  pointageNet,
+  unknownPointageCodes,
+  type PointageNet,
+} from "@/lib/hr/pointage-net";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhTabs } from "@/components/rh/rh-ui";
 
@@ -77,6 +86,29 @@ const WEEK = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
 /** Algerian weekend: Friday and Saturday. */
 const WEEKEND = new Set([5, 6]);
 
+type NetRate = { net_ref: number; net_recup: number | null };
+
+const NET_MONEY = new Intl.NumberFormat("fr-DZ", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function netMoney(amount: number) {
+  return NET_MONEY.format(amount);
+}
+
+function netTitle(result: PointageNet) {
+  const lines = [
+    POINTAGE_NET_FORMULA,
+    `P/MS ${netMoney(result.dailyPms)} × ${result.paidDays} j · CRP ${netMoney(result.dailyCrp)} × ${result.crpDays} j · Sonatrach ${netMoney(result.sanction)} × ${result.anDays} j`,
+  ];
+  if (result.unknown.length) {
+    lines.push(`Hors formule : ${result.unknown.join(", ")} · خارج المعادلة`);
+  }
+  if (result.amount == null) lines.push("Salaire net mensuel manquant · الراتب الشهري غير موجود");
+  return lines.join("\n");
+}
+
 type Person = {
   id: string;
   last_name: string;
@@ -114,6 +146,37 @@ let cardTimer: number | null = null;
 
 const PROPOSED_CLS =
   "italic bg-slate-100 text-slate-400 dark:bg-slate-800/60 dark:text-slate-500";
+
+/** Stored validation is free text; these marks count as approved. */
+function isSheetValidated(value: string) {
+  return ["OK", "OUI", "YES", "1", "TRUE", "X"].includes(value.trim().toUpperCase());
+}
+
+/** Short, quiet labels. The stored label stays on the tooltip. */
+function sheetHeader(col: { code: string; label_fr: string }) {
+  switch (col.code) {
+    case "MAT":
+      return "Mat.";
+    case "NOM":
+      return "Nom";
+    case "PRENOM":
+      return "Prénom";
+    case "POSTE_EFFECTIF":
+      return "Poste";
+    case "AFFECTATION":
+      return "Affectation";
+    case "COMMENTAIRE":
+      return "Commentaire";
+    case "SANCTION_SONATRACH":
+      return "Sanction Sonatrach";
+    case "NET_A_PAYER":
+      return "Net à payer";
+    case "VALIDATION":
+      return "Validation";
+    default:
+      return col.label_fr;
+  }
+}
 const SELECT_CLS =
   "h-9 rounded-xl border border-border/80 bg-surface px-3 text-sm text-foreground outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10";
 const GHOST_BTN =
@@ -126,6 +189,49 @@ function softTone(bg?: string | null): CSSProperties | undefined {
     background: `color-mix(in oklab, ${bg} 26%, var(--surface))`,
     color: `color-mix(in oklab, ${bg} 50%, var(--foreground))`,
   };
+}
+
+/** Nearby catalogue colours share one group; pale greys stay together at the end. */
+function legendColorKey(color: string | null): number {
+  const match = color?.trim().match(/^#([0-9a-f]{6})$/i);
+  if (!match) return 1000;
+  const n = Number.parseInt(match[1], 16);
+  const r = ((n >> 16) & 255) / 255;
+  const g = ((n >> 8) & 255) / 255;
+  const b = (n & 255) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  if (delta < 0.12) return 1000;
+  let hue = 0;
+  if (max === r) hue = ((g - b) / delta) % 6;
+  else if (max === g) hue = (b - r) / delta + 2;
+  else hue = (r - g) / delta + 4;
+  hue *= 60;
+  if (hue < 0) hue += 360;
+  if (hue < 20 || hue >= 345) return 0;
+  if (hue < 75) return 50;
+  if (hue < 175) return 140;
+  if (hue < 220) return 200;
+  if (hue < 255) return 240;
+  return 280;
+}
+
+function legendColorGroups<T extends { code: string; color_bg: string | null }>(items: T[]) {
+  const groups = new Map<number, T[]>();
+  for (const item of items) {
+    const key = legendColorKey(item.color_bg);
+    const list = groups.get(key);
+    if (list) list.push(item);
+    else groups.set(key, [item]);
+  }
+  return [...groups.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([key, list]) => ({
+      key,
+      color: list.find((item) => item.color_bg)?.color_bg ?? "var(--border)",
+      items: list.slice().sort((a, b) => a.code.localeCompare(b.code)),
+    }));
 }
 
 function Icon({ d, className = "h-4 w-4" }: { d: string; className?: string }) {
@@ -303,6 +409,7 @@ export function AttendanceManager({
   focus?: AttendanceFocus;
   loadError?: string;
 }) {
+  const sheetRef = useRef<HTMLTableElement>(null);
   const now = new Date();
   const [initial] = useState(() => {
     const period = focusMonth(focus);
@@ -338,14 +445,16 @@ export function AttendanceManager({
   const [rowValues, setRowValues] = useState<RowValues>({});
   const [carriedPoste, setCarriedPoste] = useState<Record<string, string>>({});
   const [rowDrafts, setRowDrafts] = useState<RowValues>({});
+  const [rates, setRates] = useState<Record<string, NetRate>>({});
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [info, setInfo] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
-  const shownColumns = useMemo(
-    () => (access ? visibleColumns(columns, access) : []),
-    [columns, access],
-  );
+  const shownColumns = useMemo(() => {
+    if (!access) return [];
+    const sheet = withSonatrachColumn(columns, access);
+    return pointageColumns(visibleColumns(sheet.columns, sheet.access));
+  }, [columns, access]);
   const canEditDays = Boolean(access?.DAYS?.edit);
   const editableValues = useMemo(
     () => (access ? editableRowValueCodes(columns, access) : new Set<string>()),
@@ -378,16 +487,21 @@ export function AttendanceManager({
       if (seen.has(id)) continue;
       seen.add(id);
       const host = base.find((person) => person.id === line.employee_id);
+      const siteName = sites.find((site) => site.id === line.site_id)?.name_fr ?? host?.site_name ?? "";
+      const sameSite = !host || host.site_id === line.site_id;
+      const posted = sameSite ? line.line_poste : line.line_poste.split(" · ").slice(1).join(" · ") || host?.poste || "";
       extras.push({
         id,
         last_name: (host?.last_name || line.last_name || "").toUpperCase(),
         first_name: host?.first_name || line.first_name,
         matricule: host?.matricule || line.matricule,
-        poste: line.line_poste,
-        affectation: line.line_poste,
-        start_date: `${year}-${String(month).padStart(2, "0")}-01`,
+        poste: posted,
+        affectation: sameSite
+          ? host?.affectation || siteName
+          : [siteName, host?.start_date ? `CONTRAT ${host.start_date}` : ""].filter(Boolean).join(" · "),
+        start_date: host?.start_date || "",
         site_id: line.site_id,
-        site_name: sites.find((site) => site.id === line.site_id)?.name_fr ?? host?.site_name ?? "",
+        site_name: siteName,
       });
     }
     return [...base, ...extras];
@@ -577,6 +691,7 @@ export function AttendanceManager({
       setPeriodStatus(r.data.period_status);
       setAccess(r.data.access);
       applySheetRows(r.data.rows);
+      setRates(r.data.rates);
       setDirty(false);
       const nextDrafts: Record<string, string> = {};
       for (const cell of r.data.cells) {
@@ -755,6 +870,58 @@ export function AttendanceManager({
     setError(null);
   }
 
+  function monthCodes(employeeId: string) {
+    const openFrom = allPeople.find((person) => person.id === employeeId)?.start_date.slice(0, 10) ?? "";
+    const codes: string[] = [];
+    for (let d = 1; d <= days; d += 1) {
+      const date = iso(d);
+      if (openFrom.length === 10 && date < openFrom) continue;
+      const key = cellKey(employeeId, d);
+      const code = (drafts[key] ?? grid.get(key)?.legend_code ?? "").trim().toUpperCase();
+      if (code && code !== "0") codes.push(code);
+    }
+    return codes;
+  }
+
+  function netFor(employeeId: string): PointageNet {
+    const rate = rates[employeeId.split("#")[0]];
+    return pointageNet({
+      codes: monthCodes(employeeId),
+      calendarDays: days,
+      netRefMonthly: rate ? rate.net_ref : null,
+      netRecupMonthly: rate ? rate.net_recup : null,
+    });
+  }
+
+  function workerMonthStats(employeeId: string, startDate: string) {
+    const openFrom = startDate.slice(0, 10);
+    const counts = new Map<string, number>();
+    let empty = 0;
+    let before = 0;
+    for (let d = 1; d <= days; d += 1) {
+      const date = iso(d);
+      if (openFrom.length === 10 && date < openFrom) {
+        before += 1;
+        continue;
+      }
+      const code = (drafts[cellKey(employeeId, d)] ?? grid.get(cellKey(employeeId, d))?.legend_code ?? "")
+        .trim()
+        .toUpperCase();
+      if (!code || code === "0") {
+        empty += 1;
+        continue;
+      }
+      counts.set(code, (counts.get(code) ?? 0) + 1);
+    }
+    const coded = [...counts.values()].reduce((sum, n) => sum + n, 0);
+    return {
+      counts: [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
+      empty,
+      before,
+      sum: coded + empty + before,
+    };
+  }
+
   function countCode(employeeId: string, code: string) {
     let n = 0;
     for (let d = 1; d <= days; d += 1) {
@@ -775,9 +942,11 @@ export function AttendanceManager({
 
   function dayTotaux(day: number) {
     const date = iso(day);
-    return shownPeople.filter(
-      (p) => grid.get(`${p.id}|${date}`)?.legend_code === totauxCode,
-    ).length;
+    return shownPeople.filter((p) => {
+      const start = p.start_date.slice(0, 10);
+      if (start.length === 10 && date < start) return false;
+      return grid.get(`${p.id}|${date}`)?.legend_code === totauxCode;
+    }).length;
   }
 
   const visibleIds = new Set(shownPeople.map((p) => p.id));
@@ -806,38 +975,147 @@ export function AttendanceManager({
   const tableColumns = shownColumns.filter(
     (c) => showExtra || (c.kind !== "CODE_COUNTS" && c.kind !== "TOTAL"),
   );
-  const colCount = tableColumns.reduce(
-    (n, c) => n + (c.kind === "DAYS" ? days : c.kind === "CODE_COUNTS" ? extraCodes.length : 1),
-    0,
-  );
+  const showMonthStats = tableColumns.some((c) => c.code === "NJ");
+  const colCount =
+    tableColumns.reduce(
+      (n, c) => n + (c.kind === "DAYS" ? days : c.kind === "CODE_COUNTS" ? extraCodes.length : 1),
+      0,
+    ) + (showMonthStats ? 1 : 0);
 
-  const STICKY = "sticky left-0";
-  const TH =
-    "sticky top-0 z-10 border-b-2 border-[color-mix(in_oklab,var(--border)_70%,var(--foreground))] bg-[color-mix(in_oklab,var(--surface-muted)_80%,var(--border))] py-1.5 text-[12px] font-bold text-foreground";
-  const TH_WEEKEND = "bg-[color-mix(in_oklab,var(--border)_90%,var(--foreground)_10%)]";
-  const TD = "border-b border-border/60";
-  const TF =
-    "sticky bottom-0 z-10 border-t-2 border-[color-mix(in_oklab,var(--border)_70%,var(--foreground))] bg-[color-mix(in_oklab,var(--surface-muted)_80%,var(--border))] py-1.5 text-[12px] font-bold tabular-nums text-foreground";
+  const daysAt = tableColumns.findIndex((c) => c.kind === "DAYS");
+  const edgeCode = daysAt > 0 ? tableColumns[daysAt - 1]?.code : undefined;
+  const TH = "px-3.5 py-2 text-left whitespace-nowrap";
+  const TD = "px-3.5 py-2.5";
+  const TF = "px-1 py-2.5 text-center text-[12px] tabular-nums";
+  const TAIL = new Set(["NJ", "COMMENTAIRE", "SANCTION_SONATRACH", "NET_A_PAYER", "VALIDATION"]);
+  const PINNED = ["ROW_NO", "MATRICULE", "LAST_NAME", "FIRST_NAME", POSTE_EFFECTIF];
+  const pinnedSources = tableColumns
+    .map((col) => col.source)
+    .filter((source): source is string => Boolean(source && PINNED.includes(source)));
+
+  function pinIndex(col: AttendanceColumn) {
+    return col.source ? pinnedSources.indexOf(col.source) : -1;
+  }
+
+  useLayoutEffect(() => {
+    const table = sheetRef.current;
+    if (!table) return;
+    const measure = () => {
+      const gap = Number.parseFloat(getComputedStyle(table).borderSpacing) || 0;
+      const heads = [...table.querySelectorAll<HTMLElement>("thead [data-pin]")].sort(
+        (a, b) => Number(a.dataset.pin) - Number(b.dataset.pin),
+      );
+      let left = 0;
+      for (const el of heads) {
+        table.style.setProperty(`--pin-${el.dataset.pin}`, `${left}px`);
+        left += el.getBoundingClientRect().width + gap;
+      }
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(table);
+    return () => observer.disconnect();
+  }, [pinnedSources.join("|"), shownPeople.length]);
+
+  function dayMarks(day: number) {
+    return {
+      "data-weekend": isWeekend(day) ? "" : undefined,
+      "data-today": day === todayDay ? "" : undefined,
+      "data-week-start": dayOfWeek(day) === 0 ? "" : undefined,
+    };
+  }
+
+  function columnMarks(col: AttendanceColumn) {
+    const pin = pinIndex(col);
+    return {
+      "data-edge": col.code === edgeCode ? "" : undefined,
+      "data-summary": col.kind === "TOTAL" ? "" : undefined,
+      "data-identity": col.kind === "IDENTITY" ? "" : undefined,
+      "data-tail": TAIL.has(col.code) ? "" : undefined,
+      "data-tail-start": col.code === "NJ" ? "" : undefined,
+      "data-pin": pin >= 0 ? String(pin) : undefined,
+      "data-pin-end": pin >= 0 && pin === pinnedSources.length - 1 ? "" : undefined,
+    };
+  }
+
+  function renderSanction(col: AttendanceColumn, p: Person) {
+    const result = netFor(p.id);
+    const text =
+      result.penalty == null ? (result.anDays > 0 ? "—" : "") : result.penalty > 0 ? netMoney(result.penalty) : "";
+    return (
+      <td
+        {...columnMarks(col)}
+        className={`${TD} min-w-[7rem] px-2 text-right text-[13px] font-semibold tabular-nums`}
+        title={
+          result.penalty == null
+            ? "Salaire net mensuel manquant · الراتب الشهري غير موجود"
+            : `AN × ${netMoney(result.sanction)} × ${result.anDays} j · عقوبة سوناطراك`
+        }
+      >
+        {text}
+      </td>
+    );
+  }
+
+  function renderNet(col: AttendanceColumn, p: Person) {
+    const result = netFor(p.id);
+    return (
+      <td
+        {...columnMarks(col)}
+        className={`${TD} min-w-[7.5rem] px-2 text-right text-[13px] font-semibold tabular-nums`}
+        title={netTitle(result)}
+      >
+        {result.amount == null ? "—" : netMoney(result.amount)}
+      </td>
+    );
+  }
+
+  function renderMonthStats(p: Person) {
+    const stats = workerMonthStats(p.id, p.start_date);
+    const balanced = stats.sum === days;
+    return (
+      <td data-tail="" className="attendance-stats-cell">
+        <div className="attendance-stats-line">
+          {stats.counts.map(([code, n]) => {
+            const legend = legendMap.get(code);
+            return (
+              <span key={code} className="attendance-stat" title={legend?.label_fr ?? code}>
+                <span className="attendance-legend-code" style={softTone(legend?.color_bg) ?? undefined}>
+                  {code}
+                </span>
+                <b>{n}</b>
+              </span>
+            );
+          })}
+          {stats.empty > 0 ? (
+            <span className="attendance-stat" title="Jours sans code">
+              <span className="attendance-legend-code">Vide</span>
+              <b>{stats.empty}</b>
+            </span>
+          ) : null}
+          {stats.before > 0 ? (
+            <span className="attendance-stat" title="Jours avant le début du contrat">
+              <span className="attendance-legend-code">Hors contrat</span>
+              <b>{stats.before}</b>
+            </span>
+          ) : null}
+          <span className={`attendance-stat-total${balanced ? " is-ok" : ""}`}>
+            {stats.sum}/{days}
+          </span>
+        </div>
+      </td>
+    );
+  }
 
   function renderHeader(col: AttendanceColumn): ReactNode {
     if (col.kind === "DAYS") {
       return Array.from({ length: days }, (_, i) => {
         const day = i + 1;
-        const today = day === todayDay;
         return (
-          <th
-            key={i}
-            className={`${TH} w-[28px] min-w-[28px] px-px text-center ${isWeekend(day) ? TH_WEEKEND : ""}`}
-          >
-            <div
-              className={`mx-auto flex w-6 flex-col items-center rounded-md py-0.5 leading-tight ${
-                today ? "bg-brand text-white shadow-sm shadow-brand/30" : ""
-              }`}
-            >
-              <span className="text-[12px] font-bold tabular-nums">{day}</span>
-              <span className={`text-[9px] font-semibold ${today ? "text-white/85" : "text-foreground/60"}`}>
-                {weekday(day)}
-              </span>
+          <th key={day} {...dayMarks(day)} className="attendance-day-head w-[40px] min-w-[40px] max-w-[40px] px-0 text-center">
+            <div className="flex flex-col items-center leading-none">
+              <span className="attendance-day-num">{day}</span>
+              <span className="attendance-weekday">{weekday(day)}</span>
             </div>
           </th>
         );
@@ -858,14 +1136,22 @@ export function AttendanceManager({
         );
       });
     }
-    const sticky = col.source === "LAST_NAME" ? `${STICKY} z-30` : "";
-    const align = col.kind === "TOTAL" ? "min-w-[42px] px-1 text-center" : "px-3 text-left";
+    const align = col.kind === "TOTAL" || col.code === "VALIDATION" ? "min-w-12 px-2 text-center" : TH;
     return (
       <th
-        className={`${TH} whitespace-nowrap uppercase tracking-[0.06em] ${align} ${sticky}`}
-        title={col.label_ar ?? undefined}
+        {...columnMarks(col)}
+        className={align}
+        title={
+          col.code === "SANCTION_SONATRACH"
+            ? "AN × salaire journalier P/MS\nعقوبة سوناطراك = أيام الغياب غير المبرر × أجر يوم الحضور"
+            : col.code === "NET_A_PAYER"
+            ? `${POINTAGE_NET_FORMULA}\nالصافي = (P+MS+AOP+BC+W+JF) × أجر يوم الحضور + CRP × أجر يوم الاسترجاع − عقوبة سوناطراك`
+            : col.label_ar
+              ? `${col.label_fr} · ${col.label_ar}`
+              : col.label_fr
+        }
       >
-        {col.label_fr}
+        {sheetHeader(col)}
       </th>
     );
   }
@@ -876,23 +1162,23 @@ export function AttendanceManager({
       const day = i + 1;
       const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       const key = cellKey(p.id, day);
-      const lockedDay = (openFrom.length === 10 && iso < openFrom) || lineKeys.has(key);
+      const beforeContract = openFrom.length === 10 && iso < openFrom;
+      const lockedDay = beforeContract || lineKeys.has(key);
       const cell = grid.get(key);
       const stored = cell?.legend_code ?? "";
-      const value = drafts[key] ?? stored;
+      const value = beforeContract ? "0" : (drafts[key] ?? stored);
       const legend = value ? legendMap.get(value.toUpperCase()) : undefined;
       const proposed = isAutoProposed(cell) && value === stored;
       const origin = value === stored ? cellOriginLabel(cell) : "";
       const tone = proposed ? undefined : softTone(legend?.color_bg);
-      const fallback = isWeekend(day) ? "bg-surface-muted/70" : "bg-transparent";
       const omMark = !proposed && value === stored && cell?.source_code === "OM";
       return (
-        <td key={i} className={`${TD} border-r border-r-border/30 p-px`}>
+        <td key={day} {...dayMarks(day)} className="attendance-day w-[40px] min-w-[40px] max-w-[40px] p-0 text-center">
           <input
             readOnly={!canEditDays || lockedDay}
-            className={`h-6 w-full min-w-[26px] rounded border-0 px-0 text-center text-[10px] font-semibold uppercase outline-none transition focus:ring-2 focus:ring-brand ${
-              proposed ? PROPOSED_CLS : tone ? "" : fallback
-            } ${canEditDays && !lockedDay ? "cursor-pointer hover:ring-1 hover:ring-brand/40" : "cursor-default"}`}
+            className={`attendance-day-input outline-none ${proposed ? PROPOSED_CLS : ""} ${
+              canEditDays && !lockedDay ? "cursor-pointer" : "cursor-default"
+            }`}
             style={
               omMark
                 ? { ...tone, boxShadow: "inset 0 -2px 0 rgba(15, 23, 42, 0.4)" }
@@ -942,14 +1228,34 @@ export function AttendanceManager({
     });
   }
 
+  function renderValidation(col: AttendanceColumn, p: Person) {
+    const editable = Boolean(access?.[col.code]?.edit);
+    const on = isSheetValidated(rowValue(p.id, col.code));
+    return (
+      <td {...columnMarks(col)} className={`${TD} text-center`}>
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={on}
+          aria-label={`Valider ${p.last_name} ${p.first_name}`}
+          disabled={!editable}
+          className={`attendance-check${on ? " is-on" : ""}`}
+          onClick={() => editRowValue(p.id, col.code, on ? "" : "OK")}
+        >
+          <Icon d={ICONS.check} className="h-3 w-3" />
+        </button>
+      </td>
+    );
+  }
+
   function renderValueInput(col: AttendanceColumn, p: Person, placeholder?: string) {
     const edited = rowDrafts[p.id]?.[col.code] !== undefined;
     return (
-      <td className={`${TD} p-px`}>
+      <td {...columnMarks(col)} className={`${TD} p-0.5`}>
         <input
-          className={`h-6 w-full min-w-[120px] rounded border-0 px-2 text-[12px] outline-none transition placeholder:text-foreground/30 focus:ring-2 focus:ring-brand ${
-            edited ? "bg-amber-50 dark:bg-amber-950/30" : "bg-transparent hover:bg-surface-muted/60"
-          }`}
+          className={`attendance-value-input h-8 w-full rounded-lg border-0 px-2.5 text-[13px] outline-none transition ${
+            col.catalog_kind === "job_title" ? "min-w-[12.5rem] placeholder:text-foreground" : "min-w-[9rem] placeholder:text-foreground/35"
+          } ${edited ? "bg-amber-50 dark:bg-amber-950/30" : "bg-transparent"}`}
           type={col.value_type === "number" ? "number" : col.value_type === "date" ? "date" : "text"}
           list={col.catalog_kind === "job_title" ? "attendance-job-titles" : undefined}
           value={rowValue(p.id, col.code)}
@@ -962,61 +1268,85 @@ export function AttendanceManager({
   }
 
   function renderCell(col: AttendanceColumn, p: Person, index: number): ReactNode {
-    const td = `${TD} whitespace-nowrap px-3 text-[12px] text-foreground/90`;
+    const td = `${TD} whitespace-nowrap text-[13px] text-foreground`;
+    const marks = columnMarks(col);
     const editable = Boolean(access?.[col.code]?.edit);
     switch (col.kind) {
       case "DAYS":
         return renderDayCells(p);
       case "CODE_COUNTS":
         return extraCodes.map((code) => (
-          <td key={code} className={`${TD} px-1 text-center text-[12px] font-medium tabular-nums text-foreground/85`}>
+          <td key={code} className={`${TD} px-1 text-center text-[12px] font-medium tabular-nums text-foreground/80`}>
             {countCode(p.id, code) || ""}
           </td>
         ));
       case "TOTAL":
         return (
-          <td className={`${TD} bg-surface-muted/50 px-1 text-center text-[12px] font-semibold tabular-nums`}>
+          <td {...marks} className={`${TD} min-w-12 px-2 text-center text-[12px] font-semibold tabular-nums`}>
             {col.source === "NJ" ? days : col.source === "COEF" ? coefSum(p.id) || "" : ""}
           </td>
         );
       case "INPUT":
+        if (col.code === "SANCTION_SONATRACH") return renderSanction(col, p);
+        if (col.code === "NET_A_PAYER") return renderNet(col, p);
+        if (col.code === "VALIDATION") return renderValidation(col, p);
         return editable ? (
           renderValueInput(col, p)
         ) : (
-          <td className={td}>{rowValue(p.id, col.code)}</td>
+          <td {...marks} className={td}>
+            {rowValue(p.id, col.code)}
+          </td>
         );
       case "IDENTITY":
         switch (col.source) {
           case "ROW_NO":
             return (
-              <td className={`${TD} px-2 text-center text-[11px] tabular-nums text-foreground/60`}>
+              <td {...marks} className={`${TD} px-2 text-center text-[12px] font-semibold tabular-nums text-foreground/70`}>
                 {index + 1}
               </td>
             );
           case "MATRICULE":
-            return <td className={`${td} font-mono text-[11px] text-foreground/70`}>{p.matricule}</td>;
+            return (
+              <td {...marks} className={`${td} font-mono text-[12px] font-semibold text-foreground`}>
+                {p.matricule}
+              </td>
+            );
           case "LAST_NAME":
             return (
-              <td
-                className={`${td} ${STICKY} z-20 bg-surface font-semibold text-foreground shadow-[1px_0_0_var(--border)] group-hover:bg-[color-mix(in_oklab,var(--color-brand-muted)_45%,var(--surface))]`}
-              >
+              <td {...marks} className={`${td} attendance-name text-[14px] font-bold text-foreground`}>
                 {p.last_name}
               </td>
             );
           case "FIRST_NAME":
-            return <td className={td}>{p.first_name}</td>;
+            return (
+              <td {...marks} className={`${td} font-semibold`}>
+                {p.first_name}
+              </td>
+            );
           case POSTE_EFFECTIF:
             return editable ? (
               renderValueInput(col, p, carriedPoste[p.id] || p.poste)
             ) : (
-              <td className={td}>{posteFor(p)}</td>
+              <td {...marks} className={`${td} text-[13px] text-foreground`} title={posteFor(p)}>
+                {posteFor(p)}
+              </td>
             );
           case "AFFECTATION":
-            return <td className={td}>{p.affectation}</td>;
+            return (
+              <td {...marks} className={`${td} text-[13px] text-foreground`} title={p.affectation}>
+                {p.affectation}
+              </td>
+            );
           case "CONTRACT_START":
-            return <td className={`${td} tabular-nums`}>{p.start_date}</td>;
+            return (
+              <td {...marks} className={`${td} tabular-nums text-foreground`}>
+                {p.start_date}
+              </td>
+            );
           default:
-            return <td className={td} />;
+            return (
+              <td {...marks} className={td} />
+            );
         }
     }
     return null;
@@ -1027,22 +1357,25 @@ export function AttendanceManager({
 
   function renderFooter(col: AttendanceColumn, labelHere: boolean): ReactNode {
     if (col.kind === "DAYS") {
-      return Array.from({ length: days }, (_, i) => (
-        <td key={i} className={`${TF} text-center`}>
-          {dayTotaux(i + 1) || ""}
-        </td>
-      ));
+      return Array.from({ length: days }, (_, i) => {
+        const day = i + 1;
+        return (
+          <td key={day} {...dayMarks(day)} className={TF}>
+            {dayTotaux(day) || ""}
+          </td>
+        );
+      });
     }
     if (col.kind === "CODE_COUNTS") {
       return extraCodes.map((code) => (
-        <td key={code} className={`${TF} text-center`}>
+        <td key={code} className={TF}>
           {codeTotals.get(code) || ""}
         </td>
       ));
     }
     if (col.kind === "TOTAL") {
       return (
-        <td className={`${TF} text-center`}>
+        <td {...columnMarks(col)} className={`${TF} min-w-12`}>
           {col.source === "NJ"
             ? days
             : col.source === "COEF"
@@ -1051,15 +1384,45 @@ export function AttendanceManager({
         </td>
       );
     }
-    const sticky = col.source === "LAST_NAME" ? `${STICKY} z-20 shadow-[1px_0_0_var(--border)]` : "";
+    if (col.code === "SANCTION_SONATRACH") {
+      const amounts = shownPeople.map((p) => netFor(p.id).penalty);
+      const known = amounts.filter((amount): amount is number => amount != null && amount > 0);
+      const total = Math.round((known.reduce((sum, amount) => sum + amount, 0) + Number.EPSILON) * 100) / 100;
+      return (
+        <td {...columnMarks(col)} className={`${TF} px-2 text-right font-bold`}>
+          {known.length ? netMoney(total) : ""}
+        </td>
+      );
+    }
+    if (col.code === "NET_A_PAYER") {
+      const amounts = shownPeople.map((p) => netFor(p.id).amount);
+      const known = amounts.filter((amount): amount is number => amount != null);
+      const total = Math.round((known.reduce((sum, amount) => sum + amount, 0) + Number.EPSILON) * 100) / 100;
+      return (
+        <td {...columnMarks(col)} className={`${TF} px-2 text-right font-bold`}>
+          {known.length ? netMoney(total) : ""}
+        </td>
+      );
+    }
+    if (col.code === "VALIDATION") {
+      const approved = shownPeople.filter((p) => isSheetValidated(rowValue(p.id, col.code))).length;
+      return (
+        <td {...columnMarks(col)} className={TF}>
+          {approved || ""}
+        </td>
+      );
+    }
     return (
-      <td className={`${TF} px-3 uppercase tracking-[0.06em] ${sticky}`}>
+      <td {...columnMarks(col)} className={`${TF} px-3 text-left text-[13px] font-bold text-foreground`}>
         {labelHere ? "Total" : ""}
       </td>
     );
   }
 
   const siteName = sites.find((s) => s.id === siteId)?.name_fr ?? "";
+  const formulaUnknown = access?.NET_A_PAYER?.view
+    ? unknownPointageCodes(shownPeople.flatMap((p) => monthCodes(p.id)))
+    : [];
 
   return (
     <div className="-mx-2 space-y-3 sm:-mx-4 print:mx-0">
@@ -1410,53 +1773,74 @@ export function AttendanceManager({
         </div>
       ) : null}
 
+      {formulaUnknown.length ? (
+        <div className="print:hidden">
+          <RhAlert tone="warning">
+            {`Codes hors formule du net : ${formulaUnknown.join(", ")}. Ils ne changent pas le montant. À l'enregistrement, un avis demande de réécrire la formule. · رموز خارج معادلة الصافي: لا تدخل في المبلغ، وعند الحفظ يصل إشعار لإعادة كتابة المعادلة.`}
+          </RhAlert>
+        </div>
+      ) : null}
+
       {mode === "site" ? <div className="print:hidden">{presenceFilter.bar}</div> : null}
 
       <div
-        className={`relative max-h-[calc(100dvh-14rem)] overflow-auto rounded-2xl border border-border/70 bg-surface shadow-[var(--card-shadow)] transition-opacity print:max-h-none print:overflow-visible print:shadow-none ${
+        className={`attendance-scroll relative max-h-[calc(100dvh-14rem)] overflow-auto rounded-2xl border border-border/70 bg-surface shadow-[var(--card-shadow)] transition-opacity print:max-h-none print:overflow-visible print:shadow-none ${
           pending && access ? "opacity-70" : ""
         }`}
       >
-        <table className="min-w-max border-separate border-spacing-0 text-[12px]">
+        <table ref={sheetRef} className="attendance-sheet min-w-max text-[13px]">
           <thead>
             <tr>
               {tableColumns.map((col) => (
-                <Fragment key={col.code}>{renderHeader(col)}</Fragment>
+                <Fragment key={col.code}>
+                  {renderHeader(col)}
+                  {col.code === "NJ" ? (
+                    <th data-tail="" className={`${TH} text-left`} title="Répartition des codes · المجموع يساوي أيام الشهر">
+                      Codes
+                    </th>
+                  ) : null}
+                </Fragment>
               ))}
             </tr>
           </thead>
           <tbody>
             {!access ? (
               <tr>
-                <td className="px-4 py-16 text-center text-sm text-foreground/45" colSpan={Math.max(colCount, 1)}>
-                  <span className="inline-flex items-center gap-2">
-                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-brand/30 border-t-brand" />
-                    Chargement…
-                  </span>
+                <td className="p-0" colSpan={Math.max(colCount, 1)}>
+                  <div className="attendance-empty text-sm text-foreground/45">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-brand/30 border-t-brand" />
+                      Chargement…
+                    </span>
+                  </div>
                 </td>
               </tr>
             ) : tableColumns.length === 0 ? (
               <tr>
-                <td className="px-4 py-16 text-center text-sm text-foreground/45">
-                  Aucune colonne autorisée pour votre rôle sur ce chantier.
+                <td className="p-0">
+                  <div className="attendance-empty text-sm text-foreground/45">
+                    Aucune colonne autorisée pour votre rôle sur ce chantier.
+                  </div>
                 </td>
               </tr>
             ) : shownPeople.length === 0 ? (
               <tr>
-                <td className="px-4 py-16 text-center text-sm text-foreground/45" colSpan={colCount}>
-                  {mode === "employee"
-                    ? "Recherchez un employé par matricule ou par nom."
-                    : presenceFilter.emptyHint ?? "Aucun contrat sur ce chantier pour ce mois."}
+                <td className="p-0" colSpan={colCount}>
+                  <div className="attendance-empty text-sm text-foreground/45">
+                    {mode === "employee"
+                      ? "Recherchez un employé par matricule ou par nom."
+                      : presenceFilter.emptyHint ?? "Aucun contrat sur ce chantier pour ce mois."}
+                  </div>
                 </td>
               </tr>
             ) : (
               shownPeople.map((p, index) => (
-                <tr
-                  key={`${p.id}-${p.site_id}`}
-                  className="group transition-colors hover:bg-[color-mix(in_oklab,var(--color-brand-muted)_45%,transparent)]"
-                >
+                <tr key={`${p.id}-${p.site_id}`}>
                   {tableColumns.map((col) => (
-                    <Fragment key={col.code}>{renderCell(col, p, index)}</Fragment>
+                    <Fragment key={col.code}>
+                      {renderCell(col, p, index)}
+                      {col.code === "NJ" ? renderMonthStats(p) : null}
+                    </Fragment>
                   ))}
                 </tr>
               ))
@@ -1468,6 +1852,7 @@ export function AttendanceManager({
                 {tableColumns.map((col) => (
                   <Fragment key={col.code}>
                     {renderFooter(col, col.code === totalsLabelCode)}
+                    {col.code === "NJ" ? <td data-tail="" /> : null}
                   </Fragment>
                 ))}
               </tr>
@@ -1482,6 +1867,32 @@ export function AttendanceManager({
           </datalist>
         ) : null}
       </div>
+
+      {activeLegends.length > 0 ? (
+        <section className="attendance-legend print:break-inside-avoid" aria-label="Légende des codes">
+          <div className="mb-3 flex items-baseline justify-between gap-3">
+            <h3>Légende des codes</h3>
+            <span>{activeLegends.length}</span>
+          </div>
+          <div className="attendance-legend-groups">
+            {legendColorGroups(activeLegends).map((group) => (
+              <div key={group.key} className="attendance-legend-group">
+                <span className="attendance-legend-swatch" style={{ background: group.color }} />
+                <ul>
+                  {group.items.map((legend) => (
+                    <li key={legend.id} title={legend.label_ar ?? legend.label_fr}>
+                      <span className="attendance-legend-code" style={softTone(legend.color_bg) ?? undefined}>
+                        {legend.code}
+                      </span>
+                      <span className="attendance-legend-label">{legend.label_fr}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {info ? (
         <div className="pointer-events-none fixed bottom-5 right-5 z-50 print:hidden">

@@ -141,8 +141,65 @@ export function sortColumns<T extends Pick<AttendanceColumn, "sort_order" | "cod
     .sort((a, b) => a.sort_order - b.sort_order || a.code.localeCompare(b.code));
 }
 
+/** Fixed block that always sits immediately after the month days. */
+export const POINTAGE_AFTER_DAYS = ["NJ", "COMMENTAIRE", "SANCTION_SONATRACH", "NET_A_PAYER", "VALIDATION"] as const;
+
+/** Removed from the pointage grid. Payroll can still read stored hour values. */
+const HIDDEN_ON_SHEET = new Set(["COEF", "DEBUT_CONTRAT", "HS50", "HS75", "HS100"]);
+
+/**
+ * Identity columns, then the day grid, then NJ / commentaire / sanction Sonatrach / net à payer / validation,
+ * then whatever else the role can see.
+ */
+export function pointageColumns<T extends Pick<AttendanceColumn, "code" | "kind" | "sort_order">>(
+  cols: T[],
+): T[] {
+  const shown = cols.filter((col) => !HIDDEN_ON_SHEET.has(col.code));
+  const tail = new Set<string>(POINTAGE_AFTER_DAYS);
+  const byCode = new Map(shown.map((col) => [col.code, col]));
+  const rest = shown.filter((col) => !tail.has(col.code));
+  const daysAt = rest.findIndex((col) => col.kind === "DAYS");
+  const head = daysAt >= 0 ? rest.slice(0, daysAt + 1) : rest;
+  const after = daysAt >= 0 ? rest.slice(daysAt + 1) : [];
+  const pinned = POINTAGE_AFTER_DAYS.flatMap((code) => {
+    const col = byCode.get(code);
+    return col ? [col] : [];
+  });
+  return [...head, ...pinned, ...after];
+}
+
 export function visibleColumns(columns: AttendanceColumn[], access: AttendanceColumnAccess) {
   return sortColumns(columns.filter((c) => c.is_active && access[c.code]?.view));
+}
+
+/** The penalty column is part of the net block even before its database row exists. */
+export function withSonatrachColumn(
+  columns: AttendanceColumn[],
+  access: AttendanceColumnAccess,
+): { columns: AttendanceColumn[]; access: AttendanceColumnAccess } {
+  if (!access.NET_A_PAYER?.view) return { columns, access };
+  const nextAccess: AttendanceColumnAccess = {
+    ...access,
+    SANCTION_SONATRACH: { view: true, edit: false },
+  };
+  if (columns.some((column) => column.code === "SANCTION_SONATRACH" && column.is_active)) {
+    return { columns, access: nextAccess };
+  }
+  const net = columns.find((column) => column.code === "NET_A_PAYER");
+  const column: AttendanceColumn = {
+    id: "sanction-sonatrach",
+    code: "SANCTION_SONATRACH",
+    label_fr: "Sanction Sonatrach",
+    label_ar: "عقوبة سوناطراك",
+    kind: "INPUT",
+    source: null,
+    value_type: "number",
+    catalog_kind: null,
+    sort_order: (net?.sort_order ?? 130) - 1,
+    is_system: true,
+    is_active: true,
+  };
+  return { columns: [...columns, column], access: nextAccess };
 }
 
 export function editableRowValueCodes(

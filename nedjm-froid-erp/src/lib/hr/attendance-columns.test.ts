@@ -4,7 +4,9 @@ import {
   isEditableColumn,
   pickVisibleValues,
   rowValuePatch,
+  pointageColumns,
   visibleColumns,
+  withSonatrachColumn,
   type AttendanceColumn,
 } from "@/lib/hr/attendance-columns";
 
@@ -40,6 +42,52 @@ describe("attendance columns", () => {
       "COMMENTAIRE",
       "OLD",
     ]);
+  });
+
+  it("puts NJ, commentaire, the Sonatrach penalty, net à payer and validation straight after the days", () => {
+    const sheet = [
+      col({ code: "NOM", kind: "IDENTITY", source: "LAST_NAME", sort_order: 30 }),
+      col({ code: "COMMENTAIRE", kind: "INPUT", sort_order: 40 }),
+      col({ code: "DAYS", kind: "DAYS", sort_order: 100 }),
+      col({ code: "HS50", kind: "INPUT", sort_order: 115 }),
+      col({ code: "NJ", kind: "TOTAL", source: "NJ", sort_order: 300 }),
+      col({ code: "COEF", kind: "TOTAL", source: "COEF", sort_order: 310 }),
+      col({ code: "VALIDATION", kind: "INPUT", sort_order: 410 }),
+      col({ code: "SANCTION_SONATRACH", kind: "INPUT", sort_order: 890 }),
+      col({ code: "NET_A_PAYER", kind: "INPUT", sort_order: 900 }),
+    ];
+    expect(pointageColumns(sheet).map((c) => c.code)).toEqual([
+      "NOM",
+      "DAYS",
+      "NJ",
+      "COMMENTAIRE",
+      "SANCTION_SONATRACH",
+      "NET_A_PAYER",
+      "VALIDATION",
+    ]);
+  });
+
+  it("adds the Sonatrach column before the net when that role can see the net", () => {
+    const sheet = [
+      col({ code: "DAYS", kind: "DAYS", sort_order: 100 }),
+      col({ code: "NET_A_PAYER", kind: "INPUT", sort_order: 130 }),
+    ];
+    const access = {
+      DAYS: { view: true, edit: true },
+      NET_A_PAYER: { view: true, edit: false },
+    };
+    const withPenalty = withSonatrachColumn(sheet, access);
+    expect(pointageColumns(visibleColumns(withPenalty.columns, withPenalty.access)).map((c) => c.code)).toEqual([
+      "DAYS",
+      "SANCTION_SONATRACH",
+      "NET_A_PAYER",
+    ]);
+  });
+
+  it("leaves the penalty column out when the net is hidden", () => {
+    const sheet = [col({ code: "DAYS", kind: "DAYS", sort_order: 100 })];
+    const access = { DAYS: { view: true, edit: true } };
+    expect(withSonatrachColumn(sheet, access).columns.map((c) => c.code)).toEqual(["DAYS"]);
   });
 
   it("shows active columns the role may view, in order", () => {

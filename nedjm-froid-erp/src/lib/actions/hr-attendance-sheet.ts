@@ -26,6 +26,12 @@ import {
   type AttendanceRoleOption,
   type AttendanceSheetRow,
 } from "@/lib/hr/attendance-columns";
+import {
+  pointageRatesForSite,
+  type PointageRateAssignment,
+  type PointageRateContract,
+  type PointageRateHistory,
+} from "@/lib/hr/pointage-net";
 
 type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -135,6 +141,100 @@ async function fetchSheetRows(
   return { ok: true, data: [...rows.values()] };
 }
 
+type NetRate = { net_ref: number; net_recup: number | null };
+
+function monthEnd(year: number, month: number) {
+  const mm = String(month).padStart(2, "0");
+  return `${year}-${mm}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`;
+}
+
+async function fetchNetRates(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  input: { site_id: string; year: number; month: number },
+  access: AttendanceColumnAccess,
+): Promise<ActionResult<Record<string, NetRate>>> {
+  if (!access.NET_A_PAYER?.view) return { ok: true, data: {} };
+  const end = monthEnd(input.year, input.month);
+  const onSite = await supabase
+    .from("hr_contract_assignments")
+    .select("contract_id")
+    .eq("site_id", input.site_id)
+    .lte("effective_from", end);
+  const assignedIds = [...new Set((onSite.data ?? []).map((row) => String(row.contract_id)))];
+  let contractQuery = supabase
+    .from("hr_contracts")
+    .select("id, employee_id, site_id, start_date, end_date, salaire_net_ref_monthly, salaire_net_recup_monthly")
+    .lte("start_date", end);
+  contractQuery = assignedIds.length
+    ? contractQuery.or(`site_id.eq.${input.site_id},id.in.(${assignedIds.join(",")})`)
+    : contractQuery.eq("site_id", input.site_id);
+  const contracts = await contractQuery;
+  if (contracts.error) return { ok: false, error: contracts.error.message };
+  const rows = (contracts.data ?? []) as {
+    id: string;
+    employee_id: string;
+    site_id: string;
+    start_date: string;
+    end_date: string | null;
+    salaire_net_ref_monthly: number | string | null;
+    salaire_net_recup_monthly: number | string | null;
+  }[];
+  const ids = rows.map((row) => row.id);
+  const [assignments, history] = ids.length
+    ? await Promise.all([
+        supabase
+          .from("hr_contract_assignments")
+          .select("contract_id, site_id, effective_from")
+          .in("contract_id", ids)
+          .lte("effective_from", end),
+        supabase
+          .from("hr_contract_salary_history")
+          .select("contract_id, effective_from, salaire_net_ref_monthly")
+          .in("contract_id", ids)
+          .lte("effective_from", end),
+      ])
+    : [null, null];
+  if (assignments?.error) return { ok: false, error: assignments.error.message };
+  const contractRates: PointageRateContract[] = rows.map((row) => ({
+    id: row.id,
+    employee_id: row.employee_id,
+    site_id: row.site_id,
+    start_date: String(row.start_date),
+    end_date: row.end_date ? String(row.end_date) : null,
+    net_ref: Number(row.salaire_net_ref_monthly ?? 0),
+    net_recup: row.salaire_net_recup_monthly == null ? null : Number(row.salaire_net_recup_monthly),
+  }));
+  const assignmentRows: PointageRateAssignment[] = ((assignments?.data ?? []) as PointageRateAssignment[]).map(
+    (row) => ({
+      contract_id: row.contract_id,
+      site_id: row.site_id,
+      effective_from: String(row.effective_from),
+    }),
+  );
+  const historyRows: PointageRateHistory[] = history?.error
+    ? []
+    : ((history?.data ?? []) as {
+        contract_id: string;
+        effective_from: string;
+        salaire_net_ref_monthly: number | string;
+      }[]).map((row) => ({
+        contract_id: row.contract_id,
+        effective_from: String(row.effective_from),
+        net_ref: Number(row.salaire_net_ref_monthly ?? 0),
+      }));
+  return {
+    ok: true,
+    data: pointageRatesForSite({
+      contracts: contractRates,
+      assignments: assignmentRows,
+      history: historyRows,
+      siteId: input.site_id,
+      year: input.year,
+      month: input.month,
+    }),
+  };
+}
+
 /** Everything the pointage grid needs for one site × month, filtered by the caller's rights. */
 export async function loadAttendanceSheet(input: {
   site_id: string;
@@ -148,13 +248,14 @@ export async function loadAttendanceSheet(input: {
     period_status: PayrollRunStatus | null;
     access: AttendanceColumnAccess;
     rows: AttendanceSheetRow[];
+    rates: Record<string, { net_ref: number; net_recup: number | null }>;
   }>
 > {
   const supabase = await createClient();
   const access = await fetchAccess(supabase, input.site_id);
   if (!access.ok) return access;
-  const needsCells = ["DAYS", "CODE_COUNTS", "COEF"].some((code) => access.data[code]?.view);
-  const [month, rows] = await Promise.all([
+  const needsCells = ["DAYS", "CODE_COUNTS", "COEF", "NET_A_PAYER"].some((code) => access.data[code]?.view);
+  const [month, rows, rates] = await Promise.all([
     needsCells
       ? listAttendanceMonth(input)
       : getAttendancePeriodStatus(input).then((status) =>
@@ -171,9 +272,11 @@ export async function loadAttendanceSheet(input: {
             : status,
         ),
     fetchSheetRows(supabase, input, access.data),
+    fetchNetRates(supabase, input, access.data),
   ]);
   if (!month.ok) return month;
   if (!rows.ok) return rows;
+  if (!rates.ok) return rates;
   return {
     ok: true,
     data: {
@@ -183,6 +286,7 @@ export async function loadAttendanceSheet(input: {
       period_status: month.data.period_status,
       access: access.data,
       rows: rows.data,
+      rates: rates.data,
     },
   };
 }
