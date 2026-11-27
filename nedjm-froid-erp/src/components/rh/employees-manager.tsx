@@ -1,6 +1,6 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Columns3, ClipboardList, DatabaseZap, FileDown, UserCheck, UserPlus } from "lucide-react";
 import { ToolbarSlot } from "@/components/layout/arrange";
@@ -27,6 +27,11 @@ import { matriculeKey } from "@/lib/hr/contract-import";
 import { keepsFirstEmploymentNumber, nextMatriculeForHire } from "@/lib/hr/employee-matricule";
 import type { FilterRow } from "@/lib/hr/screen-filter";
 import type { WorkerRegisterRow } from "@/lib/actions/hr-worker-register";
+import {
+  WorkerRegisterExportDialog,
+  WorkerRegisterImportDialog,
+  WorkerRegisterReportDialog,
+} from "@/components/rh/worker-register-tools";
 import { useScreenFilter } from "@/components/rh/screen-filter-bar";
 import type { SiteRow } from "@/lib/actions/sites";
 import { Button } from "@/components/ui/button";
@@ -145,6 +150,10 @@ export function EmployeesManager({
     startNew ? emptyValues(initialFields.filter((f) => f.is_active)) : {},
   );
   const [reportOpen, setReportOpen] = useState(false);
+  const [baseImportOpen, setBaseImportOpen] = useState(false);
+  const [baseExportOpen, setBaseExportOpen] = useState(false);
+  const [baseReportOpen, setBaseReportOpen] = useState(false);
+  const router = useRouter();
   const [registerDetail, setRegisterDetail] = useState<WorkerRegisterRow | null>(null);
   const autoMatricule = useRef("");
   const previousHire = useRef("");
@@ -313,12 +322,13 @@ export function EmployeesManager({
     describe: describeEmployee,
     initialText: urlQuery,
   });
+  const registerSorted = useMemo(
+    () => [...(register ?? [])].sort((a, b) => b.hiredAt.localeCompare(a.hiredAt) || b.lineNo - a.lineNo),
+    [register],
+  );
   const registerBase = useMemo(
-    () =>
-      (register ?? [])
-        .filter((row) => (activeOnly ? row.status === "ACTIVE" : true))
-        .sort((a, b) => b.hiredAt.localeCompare(a.hiredAt) || b.lineNo - a.lineNo),
-    [register, activeOnly],
+    () => registerSorted.filter((row) => (activeOnly ? row.status === "ACTIVE" : true)),
+    [registerSorted, activeOnly],
   );
   const describeRegister = useCallback((row: WorkerRegisterRow): FilterRow => {
     const year = row.hiredAt.slice(0, 4);
@@ -723,7 +733,22 @@ export function EmployeesManager({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          {showBase ? null : (
+          {showBase ? (
+            <>
+              <Button type="button" variant="secondary" onClick={() => setBaseImportOpen(true)}>
+                <DatabaseZap aria-hidden />
+                Importer Excel
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setBaseReportOpen(true)}>
+                <ClipboardList aria-hidden />
+                RAPPORT
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setBaseExportOpen(true)}>
+                <FileDown aria-hidden />
+                Télécharger / Imprimer
+              </Button>
+            </>
+          ) : (
             <>
               <Button type="button" variant="secondary" disabled={pending} onClick={() => setImportOpen(true)}>
                 <DatabaseZap aria-hidden />
@@ -1042,6 +1067,36 @@ export function EmployeesManager({
           existing={existingIds}
           onClose={() => setImportOpen(false)}
           onImported={refreshRows}
+        />
+      ) : null}
+
+      {baseImportOpen ? (
+        <WorkerRegisterImportDialog
+          currentCount={registerSorted.length}
+          onClose={() => setBaseImportOpen(false)}
+          onImported={(message) => {
+            setBaseImportOpen(false);
+            setInfo(message);
+            router.refresh();
+          }}
+        />
+      ) : null}
+
+      {baseExportOpen ? (
+        <WorkerRegisterExportDialog
+          rows={registerSorted}
+          visible={registerFilter.rows}
+          filtered={registerFilter.rows.length !== registerSorted.length}
+          onClose={() => setBaseExportOpen(false)}
+        />
+      ) : null}
+
+      {baseReportOpen ? (
+        <WorkerRegisterReportDialog
+          rows={registerSorted}
+          visible={registerFilter.rows}
+          filtered={registerFilter.rows.length !== registerSorted.length}
+          onClose={() => setBaseReportOpen(false)}
         />
       ) : null}
 
