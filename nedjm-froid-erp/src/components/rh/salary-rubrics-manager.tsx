@@ -58,7 +58,7 @@ function classPatch(
   return {
     category,
     ...salaryClassFlags(category),
-    nature: category === RETENUE_CATEGORY ? "retenue" : nature,
+    nature: category === RETENUE_CATEGORY && nature !== "remboursement" ? "retenue" : nature,
   };
 }
 
@@ -821,9 +821,11 @@ export function SalaryRubricsManager({
               </RhField>
               <RhField
                 label={
-                  form.category === RETENUE_CATEGORY
-                    ? bi("Montant positif (retenu du net)", "مبلغ موجب (يُقتطع من الصافي)")
-                    : bi("Montant par défaut", "قيمة افتراضية")
+                  form.category === RETENUE_CATEGORY && form.nature === "remboursement"
+                    ? bi("Montant positif (ajouté au net)", "مبلغ موجب (يُضاف إلى الصافي)")
+                    : form.category === RETENUE_CATEGORY
+                      ? bi("Montant positif (retenu du net)", "مبلغ موجب (يُقتطع من الصافي)")
+                      : bi("Montant par défaut", "قيمة افتراضية")
                 }
               >
                 <input

@@ -2,7 +2,7 @@
 
 import { ChevronsUpDown, X } from "lucide-react";
 import type { SalaryRubrique } from "@/lib/actions/hr-salary";
-import { RETENUE_CATEGORY, sortBySalaryClass } from "@/lib/hr/payroll-calc";
+import { RETENUE_CATEGORY, class5Withheld, sortBySalaryClass } from "@/lib/hr/payroll-calc";
 import {
   VALUE_MODES,
   applyValueMode,
@@ -68,7 +68,9 @@ export function ContractRubriquesField({
   function toggle(r: SalaryRubrique, checked: boolean) {
     const next = { ...selected };
     if (checked) {
-      const amount = r.category === RETENUE_CATEGORY ? Math.abs(r.default_amount) : r.default_amount;
+      const amount = class5Withheld(r.category, r.nature)
+        ? Math.abs(r.default_amount)
+        : r.default_amount;
       next[r.id] = { amount: String(amount || 0), unit: r.unit };
     }
     else delete next[r.id];
@@ -167,7 +169,13 @@ export function ContractRubriquesField({
                 <div className="relative">
                   <input
                     aria-label={`Valeur ${r.code}`}
-                    title={r.category === RETENUE_CATEGORY ? "Montant positif, déduit du net sur le bulletin" : undefined}
+                    title={
+                      r.category !== RETENUE_CATEGORY
+                        ? undefined
+                        : class5Withheld(r.category, r.nature)
+                          ? "Montant positif, déduit du net sur le bulletin"
+                          : "Montant positif, ajouté au net sur le bulletin"
+                    }
                     className={`${rhInput} mt-0 h-9 pr-12`}
                     inputMode="decimal"
                     value={line.amount}

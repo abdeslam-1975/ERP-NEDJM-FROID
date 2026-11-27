@@ -7,8 +7,13 @@ import {
 
 export const SALARY_CATEGORIES = ["1", "2", "3", "4", "5"] as const;
 export type SalaryCategory = (typeof SALARY_CATEGORIES)[number];
-/** Class 5 = retenues. The amount is entered positive; the payslip deducts it from the net. */
+/** Class 5 = retenues, except nature « remboursement » which is added to the net. */
 export const RETENUE_CATEGORY: SalaryCategory = "5";
+
+/** Class 5 is withheld from the net. A remboursement in that class is entered positive and added. */
+export function class5Withheld(category: string | null | undefined, nature: string | null | undefined) {
+  return category === RETENUE_CATEGORY && nature !== "remboursement";
+}
 
 export function isSalaryCategory(value: unknown): value is SalaryCategory {
   return SALARY_CATEGORIES.includes(String(value) as SalaryCategory);
@@ -483,11 +488,11 @@ export function computeLineAmount(input: {
   if (input.unit === "month_days") {
     const cal = input.calendarDays && input.calendarDays > 0 ? input.calendarDays : 30;
     const raw = (input.unitAmount * Math.min(Math.max(input.quantity, 0), cal)) / cal;
-    const negative = input.category === RETENUE_CATEGORY || input.nature === "retenue";
+    const negative = class5Withheld(input.category, input.nature) || input.nature === "retenue";
     return roundMoney(negative ? -Math.abs(raw) : raw);
   }
   const qty = input.quantity;
-  if (input.category === RETENUE_CATEGORY) {
+  if (class5Withheld(input.category, input.nature)) {
     const raw =
       input.unit === "percent" ? input.baseMonthly * (input.unitAmount / 100) * qty : input.unitAmount * qty;
     return roundMoney(-Math.abs(raw));
@@ -537,7 +542,7 @@ function toLine(
     label_ar: rubrique.label_ar,
     label_fr: rubrique.label_fr,
     category: rubrique.category,
-    nature: rubrique.category === RETENUE_CATEGORY ? "retenue" : rubrique.nature,
+    nature: class5Withheld(rubrique.category, rubrique.nature) ? "retenue" : rubrique.nature,
     unit: rubrique.unit,
     ...salaryClassFlags(rubrique.category),
     quantity: roundMoney(quantity),
@@ -651,7 +656,7 @@ export function buildPayrollLines(input: {
     const picked = resolvePermanentAssignment(rub.id, workAssignments, ctx);
     if (!picked) continue;
     const declared = picked.unit ?? rub.unit;
-    const retenue = rub.category === RETENUE_CATEGORY;
+    const retenue = class5Withheld(rub.category, rub.nature);
     const perWorkedDay = retenue && declared === "month";
     const unit: SalaryUnit = perWorkedDay ? "month_days" : declared;
     const qty = perWorkedDay
@@ -777,8 +782,8 @@ export function summarizeLines(lines: PayrollLine[], rates: LegalPayrollRates): 
   );
   const retenues = roundMoney(
     lines
-      .filter((l) => l.nature === "retenue" || l.category === RETENUE_CATEGORY)
-      .reduce((s, l) => s + (l.category === RETENUE_CATEGORY ? -Math.abs(l.amount) : l.amount), 0),
+      .filter((l) => l.nature === "retenue" || class5Withheld(l.category, l.nature))
+      .reduce((s, l) => s + (class5Withheld(l.category, l.nature) ? -Math.abs(l.amount) : l.amount), 0),
   );
   const baseSs = Math.max(0, grossCotisable);
   const employeeSs = roundMoney(baseSs * rates.cnasEmployee);

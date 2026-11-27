@@ -329,6 +329,58 @@ describe("payroll calc", () => {
     expect(sum.net_payable).toBe(40000 - 3600 - 2000 - 500);
   });
 
+  it("class 5 remboursement is added to the net; a retenue in the same class is withheld", () => {
+    const deduction: PayrollRubrique = {
+      ...hygiene,
+      id: "r-921",
+      code: "921",
+      label_fr: "RETENUE GARANTIE REPRISE",
+      nature: "retenue",
+      category: "5",
+      cotisable: false,
+      taxable: false,
+      unit: "month",
+    };
+    const refund: PayrollRubrique = {
+      ...deduction,
+      id: "r-922",
+      code: "922",
+      label_fr: "REMBOURSEMENT RETENUE",
+      nature: "remboursement",
+    };
+    const lines = buildPayrollLines({
+      employeeId: "e1",
+      siteId: "s1",
+      contractId: "c1",
+      baseMonthly: 40000,
+      daysPaid: 30,
+      daysWorked: 30,
+      monthFraction: 1,
+      year: 2026,
+      month: 9,
+      rubriques: [deduction, refund],
+      assignments: [
+        { rubrique_id: "r-921", employee_id: null, site_id: null, contract_id: "c1", amount: 90000, is_active: true },
+        { rubrique_id: "r-922", employee_id: null, site_id: null, contract_id: "c1", amount: 90000, is_active: true },
+      ],
+      exceptions: [],
+    });
+    expect(lines.find((l) => l.code === "921")).toMatchObject({ amount: -90000, nature: "retenue" });
+    expect(lines.find((l) => l.code === "922")).toMatchObject({ amount: 90000, nature: "remboursement" });
+    const sum = summarizeLines(lines, {
+      cnasEmployee: 0,
+      cnasEmployer: 0,
+      cnasFos: 0,
+      cacobatph: 0,
+      intemperiesEmployee: 0,
+      intemperiesEmployer: 0,
+      appliesCacobatph: false,
+      appliesIntemperies: false,
+      irgAmount: 0,
+    });
+    expect(sum.net_payable).toBe(40000);
+  });
+
   it("accepts negative amounts only in class 5 and suggests the class from the code series", () => {
     expect(amountAllowedForClass("5", -100)).toBe(true);
     expect(amountAllowedForClass("1", -100)).toBe(false);

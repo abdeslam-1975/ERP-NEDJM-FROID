@@ -11,7 +11,7 @@ import {
   type SalaryUnit,
   type ValueMode,
 } from "@/lib/hr/salary-value-mode";
-import { RETENUE_CATEGORY, sortBySalaryClass } from "@/lib/hr/payroll-calc";
+import { RETENUE_CATEGORY, class5Withheld, sortBySalaryClass } from "@/lib/hr/payroll-calc";
 
 export type SelectedSalaryLine = { amount: string; unit: SalaryUnit };
 
@@ -164,16 +164,22 @@ export function ContractSalaryFields({
                       </RhField>
                       <RhField
                         label={`${bi("Valeur", "القيمة")} (${valueSuffix(unit)})${
-                          r.category === RETENUE_CATEGORY ? " · " + bi("retenue", "اقتطاع") : ""
+                          r.category !== RETENUE_CATEGORY
+                            ? ""
+                            : class5Withheld(r.category, r.nature)
+                              ? " · " + bi("retenue", "اقتطاع")
+                              : " · " + bi("ajouté", "يُضاف")
                         }`}
                       >
                         <input
                           className={rhInput}
                           disabled={!checked}
                           title={
-                            r.category === RETENUE_CATEGORY
-                              ? "Montant positif, déduit du net sur le bulletin · مبلغ موجب يُقتطع من الصافي في الكشف"
-                              : undefined
+                            r.category !== RETENUE_CATEGORY
+                              ? undefined
+                              : class5Withheld(r.category, r.nature)
+                                ? "Montant positif, déduit du net sur le bulletin · مبلغ موجب يُقتطع من الصافي في الكشف"
+                                : "Montant positif, ajouté au net sur le bulletin · مبلغ موجب يُضاف إلى الصافي في الكشف"
                           }
                           value={current?.amount ?? ""}
                           onChange={(e) =>

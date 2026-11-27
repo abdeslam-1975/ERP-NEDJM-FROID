@@ -219,7 +219,7 @@ export function mapObjectRow(
       code,
       label_ar: label_ar.slice(0, 160),
       label_fr: label_fr.slice(0, 160),
-      nature: category === RETENUE_CATEGORY ? "retenue" : nature,
+      nature: category === RETENUE_CATEGORY && nature !== "remboursement" ? "retenue" : nature,
       unit,
       category,
       cotisable: derived.cotisable,

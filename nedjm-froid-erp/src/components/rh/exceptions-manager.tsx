@@ -10,7 +10,7 @@ import {
   type SalaryExceptionRow,
 } from "@/lib/actions/hr-exceptions";
 import type { SalaryRubrique } from "@/lib/actions/hr-salary";
-import { RETENUE_CATEGORY, sortBySalaryClass, type SalaryCategory } from "@/lib/hr/payroll-calc";
+import { RETENUE_CATEGORY, class5Withheld, sortBySalaryClass, type SalaryCategory } from "@/lib/hr/payroll-calc";
 import { Button } from "@/components/ui/button";
 import { DataTable, dataColumns } from "@/components/ui/data-table";
 import {
@@ -480,15 +480,27 @@ export function ExceptionsManager({
             </RhField>
             <RhField
               label={`${bi("Valeur", "القيمة")} (${valueSuffix(form.unit)})${
-                form.category === RETENUE_CATEGORY ? " · " + bi("retenue", "اقتطاع") : ""
+                form.category !== RETENUE_CATEGORY
+                  ? ""
+                  : class5Withheld(
+                      form.category,
+                      classRubriques.find((r) => r.id === form.rubrique_id)?.nature,
+                    )
+                    ? " · " + bi("retenue", "اقتطاع")
+                    : " · " + bi("ajouté", "يُضاف")
               }`}
             >
               <input
                 className={rhInput}
                 title={
-                  form.category === RETENUE_CATEGORY
-                    ? "Montant positif, déduit du net sur le bulletin · مبلغ موجب يُقتطع من الصافي في الكشف"
-                    : undefined
+                  form.category !== RETENUE_CATEGORY
+                    ? undefined
+                    : class5Withheld(
+                        form.category,
+                        classRubriques.find((r) => r.id === form.rubrique_id)?.nature,
+                      )
+                      ? "Montant positif, déduit du net sur le bulletin · مبلغ موجب يُقتطع من الصافي في الكشف"
+                      : "Montant positif, ajouté au net sur le bulletin · مبلغ موجب يُضاف إلى الصافي في الكشف"
                 }
                 value={form.amount}
                 onChange={(e) => setForm({ ...form, amount: e.target.value })}

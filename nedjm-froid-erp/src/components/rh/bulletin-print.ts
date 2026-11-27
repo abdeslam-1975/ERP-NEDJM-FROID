@@ -9,7 +9,7 @@ import { movementCounts } from "@/lib/doc/movement-labels";
 import {
   PAYSLIP_CNAS_SECTION,
   PAYSLIP_IRG_SECTION,
-  RETENUE_CATEGORY,
+  class5Withheld,
   roundMoney,
   sortForPayslip,
 } from "@/lib/hr/payroll-calc";
@@ -178,7 +178,7 @@ export function buildBulletinLines(input: {
     })
     .map((line) => {
     const abs = Math.abs(line.amount);
-    const classRetenue = line.category === RETENUE_CATEGORY;
+    const classRetenue = class5Withheld(line.category, line.nature);
     const isRetenue = classRetenue || line.nature === "retenue" || line.amount < 0;
     const mapped = mapBaseCode(line.code, settings);
     const isBase = line.code === "BASE" || mapped === settings.base_code;
