@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pointageNet, pointageRatesForSite, unknownPointageCodes } from "@/lib/hr/pointage-net";
+import { pointageNet, pointageNetFormula, pointageRatesForSite, unknownPointageCodes } from "@/lib/hr/pointage-net";
 
 describe("pointage net", () => {
   it("pays the handwritten groups and deducts each AN at the P/MS daily rate", () => {
@@ -67,6 +67,35 @@ describe("pointage net", () => {
 
   it("lists each unknown code once", () => {
     expect(unknownPointageCodes(["ca", "CA", "P", "", "AP"])).toEqual(["AP", "CA"]);
+  });
+
+  it("follows a formula saved in the application", () => {
+    const rules = [
+      { code: "P", effect: "PMS" as const },
+      { code: "CA", effect: "PMS" as const },
+      { code: "CRP", effect: "CRP" as const },
+      { code: "CM", effect: "NONE" as const },
+    ];
+    const net = pointageNet({
+      codes: ["P", "CA", "CRP", "CM", "AN"],
+      calendarDays: 30,
+      netRefMonthly: 30000,
+      netRecupMonthly: 15000,
+      rules,
+    });
+    expect(net.paidDays).toBe(2);
+    expect(net.crpDays).toBe(1);
+    expect(net.anDays).toBe(0);
+    expect(net.penalty).toBe(0);
+    expect(net.amount).toBe(2500);
+    expect(net.unknown).toEqual(["AN"]);
+    expect(pointageNetFormula()).toBe(
+      "(P + MS + AOP + BC + W + JF) × salaire journalier P/MS + (CRP) × salaire journalier CRP − (AN) × sanction Sonatrach",
+    );
+    expect(pointageNetFormula(rules)).toBe(
+      "(P + CA) × salaire journalier P/MS + (CRP) × salaire journalier CRP",
+    );
+    expect(unknownPointageCodes(["CA", "HP"], rules)).toEqual(["HP"]);
   });
 });
 

@@ -26,8 +26,10 @@ import {
   type AttendanceRoleOption,
   type AttendanceSheetRow,
 } from "@/lib/hr/attendance-columns";
+import { loadPointageNetRules } from "@/lib/actions/hr-pointage-net";
 import {
   pointageRatesForSite,
+  type PointageNetRule,
   type PointageRateAssignment,
   type PointageRateContract,
   type PointageRateHistory,
@@ -249,13 +251,14 @@ export async function loadAttendanceSheet(input: {
     access: AttendanceColumnAccess;
     rows: AttendanceSheetRow[];
     rates: Record<string, { net_ref: number; net_recup: number | null }>;
+    rules: PointageNetRule[] | null;
   }>
 > {
   const supabase = await createClient();
   const access = await fetchAccess(supabase, input.site_id);
   if (!access.ok) return access;
   const needsCells = ["DAYS", "CODE_COUNTS", "COEF", "NET_A_PAYER"].some((code) => access.data[code]?.view);
-  const [month, rows, rates] = await Promise.all([
+  const [month, rows, rates, rules] = await Promise.all([
     needsCells
       ? listAttendanceMonth(input)
       : getAttendancePeriodStatus(input).then((status) =>
@@ -273,10 +276,12 @@ export async function loadAttendanceSheet(input: {
         ),
     fetchSheetRows(supabase, input, access.data),
     fetchNetRates(supabase, input, access.data),
+    loadPointageNetRules(supabase),
   ]);
   if (!month.ok) return month;
   if (!rows.ok) return rows;
   if (!rates.ok) return rates;
+  if (!rules.ok) return rules;
   return {
     ok: true,
     data: {
@@ -287,6 +292,7 @@ export async function loadAttendanceSheet(input: {
       access: access.data,
       rows: rows.data,
       rates: rates.data,
+      rules: rules.data,
     },
   };
 }

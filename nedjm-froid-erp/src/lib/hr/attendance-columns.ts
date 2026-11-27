@@ -144,17 +144,14 @@ export function sortColumns<T extends Pick<AttendanceColumn, "sort_order" | "cod
 /** Fixed block that always sits immediately after the month days. */
 export const POINTAGE_AFTER_DAYS = ["NJ", "COMMENTAIRE", "SANCTION_SONATRACH", "NET_A_PAYER", "VALIDATION"] as const;
 
-/** Removed from the pointage grid. Payroll can still read stored hour values. */
-const HIDDEN_ON_SHEET = new Set(["COEF", "DEBUT_CONTRAT", "HS50", "HS75", "HS100"]);
-
 /**
  * Identity columns, then the day grid, then NJ / commentaire / sanction Sonatrach / net à payer / validation,
- * then whatever else the role can see.
+ * then whatever else the role can see. Inactive columns are already removed by visibleColumns.
  */
 export function pointageColumns<T extends Pick<AttendanceColumn, "code" | "kind" | "sort_order">>(
   cols: T[],
 ): T[] {
-  const shown = cols.filter((col) => !HIDDEN_ON_SHEET.has(col.code));
+  const shown = cols;
   const tail = new Set<string>(POINTAGE_AFTER_DAYS);
   const byCode = new Map(shown.map((col) => [col.code, col]));
   const rest = shown.filter((col) => !tail.has(col.code));

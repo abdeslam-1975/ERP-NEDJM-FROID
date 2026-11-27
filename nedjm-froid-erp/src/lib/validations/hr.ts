@@ -446,6 +446,21 @@ const attendanceColumnCode = z
   .toUpperCase()
   .regex(/^[A-Z][A-Z0-9_]{0,31}$/, "Code : lettres majuscules, chiffres ou _ (32 max).");
 
+export const pointageNetRulesSchema = z.object({
+  rules: z
+    .array(
+      z.object({
+        code: z
+          .string()
+          .trim()
+          .toUpperCase()
+          .regex(/^[A-Z0-9][A-Z0-9/_-]{0,15}$/, "Code de légende invalide."),
+        effect: z.enum(["PMS", "CRP", "SANCTION", "NONE"]),
+      }),
+    )
+    .max(200),
+});
+
 export const attendanceColumnsConfigSchema = z.object({
   columns: z
     .array(

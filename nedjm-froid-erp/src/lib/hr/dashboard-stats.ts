@@ -83,8 +83,12 @@ export function contractMix(contracts: DashboardContract[], labels: Record<strin
 }
 
 export function attendanceKind(legend: AttendanceLegend | undefined, code: string): AttendanceKind | null {
+  const mark = code.trim().toUpperCase();
+  if (mark === "MS") return "mission";
+  if (mark === "CRP") return "leave";
+  if (mark === "AN") return "absent";
   const label = (legend?.label_fr ?? "").toLowerCase();
-  if (code === "MS" || label.startsWith("mission")) return "mission";
+  if (label.startsWith("mission")) return "mission";
   if (label.startsWith("congé") || label.startsWith("conge")) return "leave";
   if (label.startsWith("absence") || label.startsWith("abandon")) return "absent";
   if (legend?.counts_as_presence) return "present";
@@ -93,10 +97,10 @@ export function attendanceKind(legend: AttendanceLegend | undefined, code: strin
 
 /** Counts of the most recent day carrying at least one present / absent / leave / mission mark. */
 export function attendanceSnapshot(marks: AttendanceMark[], legends: AttendanceLegend[]): AttendanceSnapshot {
-  const byCode = new Map(legends.map((l) => [l.code, l]));
+  const byCode = new Map(legends.map((l) => [l.code.trim().toUpperCase(), l]));
   const byDay = new Map<string, Map<string, AttendanceKind>>();
   for (const m of marks) {
-    const kind = attendanceKind(byCode.get(m.legend_code), m.legend_code);
+    const kind = attendanceKind(byCode.get(m.legend_code.trim().toUpperCase()), m.legend_code);
     if (!kind) continue;
     const day = byDay.get(m.work_date) ?? new Map<string, AttendanceKind>();
     day.set(m.employee_id, kind);

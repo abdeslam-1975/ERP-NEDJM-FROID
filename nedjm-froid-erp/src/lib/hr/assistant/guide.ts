@@ -38,7 +38,7 @@ Un contrat qui arrive à échéance apparaît dans les alertes de la vue d'ensem
     path: "/rh/presence",
     title: "Temps & présence (pointage)",
     body: `Grille mensuelle par chantier : une ligne par employé, une colonne par jour, chaque case reçoit une légende.
-Légendes courantes : P présent, P/2 demi-journée, MS mission, CA congé annuel, CRP récupération, CM congé maladie, CSS congé sans solde, AJ absence justifiée, AN absence injustifiée, AOP absence autorisée payée, JF jour férié, W week-end, AP abandon de poste. La liste et les couleurs se règlent dans Paramètres RH.
+Légendes courantes : P présent, P/2 demi-journée, MS mission, CA congé annuel, CRP récupération, CM congé maladie, CSS congé sans solde, AJ absence justifiée, AN absence injustifiée, AOP absence autorisée payée, JF jour férié, W week-end, AP abandon de poste. La liste et les couleurs se règlent dans Paramètres RH. La formule du net à payer se classe dans Paramètres → Feuille de présence : chaque code ajoute le salaire journalier de présence, celui de récupération, retire la sanction Sonatrach, ou reste sans effet.
 Remplissage automatique : un ordre de mission remplit « MS » dès sa date de début et, s'il est ouvert, couvre les 12 mois suivants ; le remplissage s'arrête dès qu'un congé l'interrompt. Un titre de congé remplit « CA » sur sa période.
 Le mois pointé alimente la préparation de la paie.`,
   },

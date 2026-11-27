@@ -43,11 +43,16 @@ import {
   paintAttendanceCells,
 } from "@/lib/hr/attendance-source";
 import {
-  POINTAGE_NET_FORMULA,
   pointageNet,
+  pointageNetFormula,
+  pointageNetFormulaAr,
+  pointageNetRuleMap,
   unknownPointageCodes,
   type PointageNet,
+  type PointageNetRule,
 } from "@/lib/hr/pointage-net";
+import { attendanceSnapshot } from "@/lib/hr/dashboard-stats";
+import { AttendanceKpis } from "@/components/rh/rh-kpis";
 import { Button } from "@/components/ui/button";
 import { RhAlert, RhTabs } from "@/components/rh/rh-ui";
 
@@ -97,9 +102,9 @@ function netMoney(amount: number) {
   return NET_MONEY.format(amount);
 }
 
-function netTitle(result: PointageNet) {
+function netTitle(result: PointageNet, formula: string) {
   const lines = [
-    POINTAGE_NET_FORMULA,
+    formula,
     `P/MS ${netMoney(result.dailyPms)} × ${result.paidDays} j · CRP ${netMoney(result.dailyCrp)} × ${result.crpDays} j · Sonatrach ${netMoney(result.sanction)} × ${result.anDays} j`,
   ];
   if (result.unknown.length) {
@@ -446,6 +451,7 @@ export function AttendanceManager({
   const [carriedPoste, setCarriedPoste] = useState<Record<string, string>>({});
   const [rowDrafts, setRowDrafts] = useState<RowValues>({});
   const [rates, setRates] = useState<Record<string, NetRate>>({});
+  const [netRules, setNetRules] = useState<PointageNetRule[] | null>(null);
   const [error, setError] = useState<string | null>(loadError ?? null);
   const [info, setInfo] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -692,6 +698,7 @@ export function AttendanceManager({
       setAccess(r.data.access);
       applySheetRows(r.data.rows);
       setRates(r.data.rates);
+      setNetRules(r.data.rules);
       setDirty(false);
       const nextDrafts: Record<string, string> = {};
       for (const cell of r.data.cells) {
@@ -890,6 +897,7 @@ export function AttendanceManager({
       calendarDays: days,
       netRefMonthly: rate ? rate.net_ref : null,
       netRecupMonthly: rate ? rate.net_recup : null,
+      rules: netRules,
     });
   }
 
@@ -1035,6 +1043,7 @@ export function AttendanceManager({
       "data-tail-start": col.code === "NJ" ? "" : undefined,
       "data-pin": pin >= 0 ? String(pin) : undefined,
       "data-pin-end": pin >= 0 && pin === pinnedSources.length - 1 ? "" : undefined,
+      "data-total-end": footerMerge.at(-1)?.code === col.code ? "" : undefined,
     };
   }
 
@@ -1063,7 +1072,7 @@ export function AttendanceManager({
       <td
         {...columnMarks(col)}
         className={`${TD} min-w-[7.5rem] px-2 text-right text-[13px] font-semibold tabular-nums`}
-        title={netTitle(result)}
+        title={netTitle(result, pointageNetFormula(netRules))}
       >
         {result.amount == null ? "—" : netMoney(result.amount)}
       </td>
@@ -1143,9 +1152,9 @@ export function AttendanceManager({
         className={align}
         title={
           col.code === "SANCTION_SONATRACH"
-            ? "AN × salaire journalier P/MS\nعقوبة سوناطراك = أيام الغياب غير المبرر × أجر يوم الحضور"
+            ? `${[...pointageNetRuleMap(netRules).entries()].flatMap(([code, effect]) => (effect === "SANCTION" ? [code] : [])).join(" + ") || "—"} × salaire journalier P/MS\nعقوبة سوناطراك = أيام الرموز المصنّفة عقوبة × أجر يوم الحضور`
             : col.code === "NET_A_PAYER"
-            ? `${POINTAGE_NET_FORMULA}\nالصافي = (P+MS+AOP+BC+W+JF) × أجر يوم الحضور + CRP × أجر يوم الاسترجاع − عقوبة سوناطراك`
+            ? `${pointageNetFormula(netRules)}\n${pointageNetFormulaAr(netRules)}`
             : col.label_ar
               ? `${col.label_fr} · ${col.label_ar}`
               : col.label_fr
@@ -1352,6 +1361,51 @@ export function AttendanceManager({
     return null;
   }
 
+  const FOOTER_MERGE_SOURCES = new Set([
+    "ROW_NO",
+    "MATRICULE",
+    "LAST_NAME",
+    "FIRST_NAME",
+    POSTE_EFFECTIF,
+    "AFFECTATION",
+  ]);
+  const footerMerge: AttendanceColumn[] = [];
+  for (const col of tableColumns) {
+    if (col.source && FOOTER_MERGE_SOURCES.has(col.source)) footerMerge.push(col);
+    else if (footerMerge.length) break;
+  }
+  const footerMergeCodes = new Set(footerMerge.map((col) => col.code));
+
+  useLayoutEffect(() => {
+    const table = sheetRef.current;
+    const scroller = table?.closest<HTMLElement>(".attendance-scroll");
+    if (!table || !scroller) return;
+    const clip = () => {
+      const total = table.querySelector<HTMLElement>(".attendance-total-merge");
+      const pin0 = table.querySelector<HTMLElement>('thead [data-pin="0"]');
+      const pinEnd = table.querySelector<HTMLElement>("thead [data-pin-end]");
+      const end = table.querySelector<HTMLElement>("thead [data-total-end]");
+      if (!total || !pin0 || !pinEnd || !end) {
+        total?.style.removeProperty("clip-path");
+        return;
+      }
+      const frozen = pinEnd.getBoundingClientRect().right - pin0.getBoundingClientRect().left;
+      const span = total.offsetWidth;
+      const natural = end.getBoundingClientRect().right - pin0.getBoundingClientRect().left;
+      const visible = Math.max(frozen, Math.min(span, natural));
+      const clipRight = Math.max(0, span - visible);
+      total.style.clipPath = clipRight > 0.5 ? `inset(0 ${clipRight}px 0 0)` : "none";
+    };
+    clip();
+    scroller.addEventListener("scroll", clip, { passive: true });
+    const observer = new ResizeObserver(clip);
+    observer.observe(table);
+    return () => {
+      scroller.removeEventListener("scroll", clip);
+      observer.disconnect();
+    };
+  }, [footerMerge.length, shownPeople.length, days]);
+
   const totalsLabelCode =
     tableColumns.find((c) => c.source === "LAST_NAME")?.code ?? tableColumns[0]?.code;
 
@@ -1419,13 +1473,48 @@ export function AttendanceManager({
     );
   }
 
+  const workshopSnapshot = useMemo(() => {
+    const prefix = `${year}-${String(month).padStart(2, "0")}-`;
+    const marks: { employee_id: string; work_date: string; legend_code: string }[] = [];
+    for (const [key, raw] of Object.entries(drafts)) {
+      const split = key.lastIndexOf("|");
+      if (split < 0) continue;
+      const workDate = key.slice(split + 1);
+      if (!workDate.startsWith(prefix)) continue;
+      const code = raw.trim().toUpperCase();
+      if (!code || code === "0") continue;
+      marks.push({
+        employee_id: key.slice(0, split).split("#")[0],
+        work_date: workDate,
+        legend_code: code,
+      });
+    }
+    return attendanceSnapshot(
+      marks,
+      legends.map((legend) => ({
+        code: legend.code,
+        label_fr: legend.label_fr,
+        counts_as_presence: legend.counts_as_presence,
+      })),
+    );
+  }, [drafts, legends, month, year]);
+
   const siteName = sites.find((s) => s.id === siteId)?.name_fr ?? "";
   const formulaUnknown = access?.NET_A_PAYER?.view
-    ? unknownPointageCodes(shownPeople.flatMap((p) => monthCodes(p.id)))
+    ? unknownPointageCodes(
+        shownPeople.flatMap((p) => monthCodes(p.id)),
+        netRules,
+      )
     : [];
 
   return (
     <div className="-mx-2 space-y-3 sm:-mx-4 print:mx-0">
+      <div className="print:hidden">
+        <AttendanceKpis
+          snapshot={workshopSnapshot}
+          emptyLabel={loadedAt ? "Aucun pointage sur ce mois" : "Chargement du mois…"}
+        />
+      </div>
       <div className="hidden print:block">
         <h2 className="text-lg font-semibold">
           Pointage · {MONTHS[month - 1]} {year} · {siteName}
@@ -1776,7 +1865,13 @@ export function AttendanceManager({
       {formulaUnknown.length ? (
         <div className="print:hidden">
           <RhAlert tone="warning">
-            {`Codes hors formule du net : ${formulaUnknown.join(", ")}. Ils ne changent pas le montant. À l'enregistrement, un avis demande de réécrire la formule. · رموز خارج معادلة الصافي: لا تدخل في المبلغ، وعند الحفظ يصل إشعار لإعادة كتابة المعادلة.`}
+            <>
+              {`Codes hors formule du net : ${formulaUnknown.join(", ")}. Ils ne changent pas le montant. `}
+              <Link href="/parametres/rh/presence" className="underline">
+                Classez-les dans Feuille de présence
+              </Link>
+              {" · رموز خارج المعادلة لا تدخل في المبلغ. صنّفها من الإعدادات ← ورقة الحضور."}
+            </>
           </RhAlert>
         </div>
       ) : null}
@@ -1849,12 +1944,26 @@ export function AttendanceManager({
           {access && shownPeople.length > 0 && tableColumns.length > 0 ? (
             <tfoot>
               <tr>
-                {tableColumns.map((col) => (
-                  <Fragment key={col.code}>
-                    {renderFooter(col, col.code === totalsLabelCode)}
-                    {col.code === "NJ" ? <td data-tail="" /> : null}
-                  </Fragment>
-                ))}
+                {(() => {
+                  let merged = false;
+                  return tableColumns.map((col) => {
+                    if (footerMergeCodes.has(col.code)) {
+                      if (merged) return null;
+                      merged = true;
+                      return (
+                        <td key="total" colSpan={footerMerge.length} className="attendance-total-merge">
+                          Total
+                        </td>
+                      );
+                    }
+                    return (
+                      <Fragment key={col.code}>
+                        {renderFooter(col, footerMerge.length === 0 && col.code === totalsLabelCode)}
+                        {col.code === "NJ" ? <td data-tail="" /> : null}
+                      </Fragment>
+                    );
+                  });
+                })()}
               </tr>
             </tfoot>
           ) : null}

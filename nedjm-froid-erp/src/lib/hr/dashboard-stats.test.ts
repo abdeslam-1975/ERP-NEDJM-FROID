@@ -81,6 +81,24 @@ describe("attendanceSnapshot", () => {
     );
     expect(snap).toEqual({ date: "2026-03-02", present: 1, absent: 1, leave: 1, mission: 1 });
   });
+
+  it("counts MS as mission, CRP as leave and AN as absent", () => {
+    const snap = attendanceSnapshot(
+      [
+        { employee_id: "e1", work_date: "2026-04-01", legend_code: "MS" },
+        { employee_id: "e2", work_date: "2026-04-01", legend_code: "CRP" },
+        { employee_id: "e3", work_date: "2026-04-01", legend_code: "AN" },
+        { employee_id: "e4", work_date: "2026-04-01", legend_code: "P" },
+      ],
+      [
+        { code: "MS", label_fr: "Mission", counts_as_presence: true },
+        { code: "CRP", label_fr: "Récupération", counts_as_presence: true },
+        { code: "AN", label_fr: "Absence injustifiée", counts_as_presence: false },
+        { code: "P", label_fr: "Présent", counts_as_presence: true },
+      ],
+    );
+    expect(snap).toEqual({ date: "2026-04-01", present: 1, absent: 1, leave: 1, mission: 1 });
+  });
 });
 
 describe("contractAlerts", () => {

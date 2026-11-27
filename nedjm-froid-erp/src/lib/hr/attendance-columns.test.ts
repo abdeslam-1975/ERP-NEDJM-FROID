@@ -64,6 +64,8 @@ describe("attendance columns", () => {
       "SANCTION_SONATRACH",
       "NET_A_PAYER",
       "VALIDATION",
+      "HS50",
+      "COEF",
     ]);
   });
 

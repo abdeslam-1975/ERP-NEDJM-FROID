@@ -9,27 +9,40 @@ import { roundMoney } from "@/lib/hr/payroll-calc";
  *
  * The daily P/MS rate is the contract net reference ÷ calendar days of the month.
  * The CRP rate is the contract recovery net ÷ the same number of days, or the P/MS rate when recovery net is empty.
- * The Sonatrach penalty is one P/MS daily rate per AN day, shown in its own column.
- * A code outside this list does not change the amount.
+ * The Sonatrach penalty is one P/MS daily rate per sanctioned day, shown in its own column.
+ * Which codes use each rate is saved in Paramètres → Feuille de présence.
+ * A code with no saved effect does not change the amount.
  */
 export const POINTAGE_NET_PMS = ["P", "MS", "AOP", "BC", "W", "JF"] as const;
 export const POINTAGE_NET_CRP = ["CRP"] as const;
 export const POINTAGE_NET_AN = ["AN"] as const;
 
-export const POINTAGE_NET_CODES = new Set<string>([
-  ...POINTAGE_NET_PMS,
-  ...POINTAGE_NET_CRP,
-  ...POINTAGE_NET_AN,
-]);
+/** How a legend changes the pointage net. Stored per code in hr_pointage_net_rules. */
+export type PointageNetEffect = "PMS" | "CRP" | "SANCTION" | "NONE";
 
-export const POINTAGE_NET_FORMULA =
-  "(P + MS + AOP + BC + W + JF) × salaire journalier P/MS + CRP × salaire journalier CRP − AN × sanction Sonatrach";
+export type PointageNetRule = {
+  code: string;
+  effect: PointageNetEffect;
+};
+
+export const POINTAGE_NET_EFFECTS: readonly PointageNetEffect[] = ["PMS", "CRP", "SANCTION", "NONE"];
+
+/** Used when the settings table has not been read yet. */
+export const POINTAGE_NET_DEFAULT_RULES: readonly PointageNetRule[] = [
+  ...POINTAGE_NET_PMS.map((code) => ({ code, effect: "PMS" as const })),
+  ...POINTAGE_NET_CRP.map((code) => ({ code, effect: "CRP" as const })),
+  ...POINTAGE_NET_AN.map((code) => ({ code, effect: "SANCTION" as const })),
+];
+
+export const POINTAGE_NET_CODES = new Set<string>(POINTAGE_NET_DEFAULT_RULES.map((rule) => rule.code));
 
 export type PointageNetInput = {
   codes: readonly string[];
   calendarDays: number;
   netRefMonthly: number | null;
   netRecupMonthly: number | null;
+  /** Null or omitted: the built-in formula. An array is the formula saved in the application. */
+  rules?: readonly PointageNetRule[] | null;
 };
 
 export type PointageNet = {
@@ -46,11 +59,60 @@ export type PointageNet = {
   unknown: string[];
 };
 
-export function unknownPointageCodes(codes: readonly string[]): string[] {
+export function pointageNetRuleMap(rules?: readonly PointageNetRule[] | null): Map<string, PointageNetEffect> {
+  const source = rules == null ? POINTAGE_NET_DEFAULT_RULES : rules;
+  const map = new Map<string, PointageNetEffect>();
+  for (const rule of source) {
+    const code = rule.code.trim().toUpperCase();
+    if (!code || !POINTAGE_NET_EFFECTS.includes(rule.effect)) continue;
+    map.set(code, rule.effect);
+  }
+  return map;
+}
+
+function codesFor(rules: readonly PointageNetRule[] | null | undefined, effect: PointageNetEffect): string[] {
+  const source = rules == null ? POINTAGE_NET_DEFAULT_RULES : rules;
+  const seen = new Set<string>();
+  const codes: string[] = [];
+  for (const rule of source) {
+    const code = rule.code.trim().toUpperCase();
+    if (!code || seen.has(code) || rule.effect !== effect) continue;
+    seen.add(code);
+    codes.push(code);
+  }
+  return codes;
+}
+
+function joinFormula(rules: readonly PointageNetRule[] | null | undefined, pms: string, crp: string, sanction: string): string {
+  const presence = codesFor(rules, "PMS");
+  const recovery = codesFor(rules, "CRP");
+  const penalty = codesFor(rules, "SANCTION");
+  const parts: string[] = [];
+  if (presence.length) parts.push(`(${presence.join(" + ")}) × ${pms}`);
+  if (recovery.length) parts.push(`(${recovery.join(" + ")}) × ${crp}`);
+  const plus = parts.join(" + ");
+  if (!penalty.length) return plus || "Aucun code dans la formule";
+  const minus = `(${penalty.join(" + ")}) × ${sanction}`;
+  return plus ? `${plus} − ${minus}` : `− ${minus}`;
+}
+
+/** French sentence shown on the net column. Follows the rules saved in the application. */
+export function pointageNetFormula(rules?: readonly PointageNetRule[] | null): string {
+  return joinFormula(rules, "salaire journalier P/MS", "salaire journalier CRP", "sanction Sonatrach");
+}
+
+export function pointageNetFormulaAr(rules?: readonly PointageNetRule[] | null): string {
+  return joinFormula(rules, "أجر يوم الحضور", "أجر يوم الاسترجاع", "عقوبة سوناطراك");
+}
+
+export const POINTAGE_NET_FORMULA = pointageNetFormula();
+
+export function unknownPointageCodes(codes: readonly string[], rules?: readonly PointageNetRule[] | null): string[] {
+  const known = pointageNetRuleMap(rules);
   const unknown = new Set<string>();
   for (const raw of codes) {
     const code = raw.trim().toUpperCase();
-    if (!code || POINTAGE_NET_CODES.has(code)) continue;
+    if (!code || known.has(code)) continue;
     unknown.add(code);
   }
   return [...unknown].sort();
@@ -70,12 +132,19 @@ export function pointageNet(input: PointageNetInput): PointageNet {
   const crpMonthly = hasRecup ? (input.netRecupMonthly as number) : hasRef ? (input.netRefMonthly as number) : 0;
   const dailyCrp = days > 0 ? crpMonthly / days : 0;
   const sanction = dailyPms;
-  const paidDays = POINTAGE_NET_PMS.reduce((sum, code) => sum + (counts[code] ?? 0), 0);
-  const crpDays = POINTAGE_NET_CRP.reduce((sum, code) => sum + (counts[code] ?? 0), 0);
-  const anDays = POINTAGE_NET_AN.reduce((sum, code) => sum + (counts[code] ?? 0), 0);
-  const unknown = Object.keys(counts)
-    .filter((code) => !POINTAGE_NET_CODES.has(code))
-    .sort();
+  const effects = pointageNetRuleMap(input.rules);
+  let paidDays = 0;
+  let crpDays = 0;
+  let anDays = 0;
+  const unknown: string[] = [];
+  for (const [code, count] of Object.entries(counts)) {
+    const effect = effects.get(code);
+    if (effect === "PMS") paidDays += count;
+    else if (effect === "CRP") crpDays += count;
+    else if (effect === "SANCTION") anDays += count;
+    else if (effect !== "NONE") unknown.push(code);
+  }
+  unknown.sort();
   const penalty = hasRef ? roundMoney(anDays * sanction) : null;
   const amount = hasRef
     ? roundMoney(paidDays * dailyPms + crpDays * dailyCrp - (penalty ?? 0))

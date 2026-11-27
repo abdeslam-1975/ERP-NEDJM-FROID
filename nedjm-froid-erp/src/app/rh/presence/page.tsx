@@ -2,10 +2,9 @@ import Link from "next/link";
 import { CalendarPlus, Upload } from "lucide-react";
 import { RhShell } from "@/components/rh/rh-shell";
 import { AttendanceManager } from "@/components/rh/attendance-manager";
-import { AttendanceKpis } from "@/components/rh/rh-kpis";
 import { RhPage, RhPageHeader } from "@/components/rh/rh-ui";
 import { listAttendanceRoster } from "@/lib/actions/hr-ops";
-import { loadAttendanceSnapshot, loadHrLookups } from "@/lib/actions/hr-lookups";
+import { loadHrLookups } from "@/lib/actions/hr-lookups";
 import { listAttendanceColumns } from "@/lib/actions/hr-attendance-sheet";
 import { rosterToAttendanceContract } from "@/lib/hr/attendance-columns";
 
@@ -17,11 +16,10 @@ export default async function PresencePage({
   searchParams: Promise<{ employee?: string; site?: string; mois?: string }>;
 }) {
   const sp = await searchParams;
-  const [roster, lookups, columns, snapshot] = await Promise.all([
+  const [roster, lookups, columns] = await Promise.all([
     listAttendanceRoster(),
     loadHrLookups(),
     listAttendanceColumns(),
-    loadAttendanceSnapshot(sp.site),
   ]);
   const jobTitles = [
     ...new Set(
@@ -57,7 +55,6 @@ export default async function PresencePage({
             </>
           }
         />
-        <AttendanceKpis snapshot={snapshot} />
         <AttendanceManager
           key={`${sp.employee ?? ""}|${sp.site ?? ""}|${sp.mois ?? ""}`}
           sites={lookups.sites}

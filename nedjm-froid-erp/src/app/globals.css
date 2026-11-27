@@ -504,6 +504,8 @@ body {
 }
 
 .attendance-sheet {
+  --head-bg: color-mix(in oklab, var(--color-brand) 18%, var(--surface));
+  --foot-bg: color-mix(in oklab, var(--color-brand) 30%, var(--surface));
   --tile-shadow:
     inset 0 1px 0 color-mix(in oklab, white 78%, transparent),
     inset 0 0 0 1px color-mix(in oklab, var(--foreground) 8%, var(--border)),
@@ -713,6 +715,27 @@ body {
   color: var(--foreground);
 }
 
+.attendance-sheet tfoot td.attendance-total-merge {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  padding-right: 8px;
+  padding-left: 8px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  background: color-mix(in oklab, var(--surface-muted) 70%, var(--surface));
+  box-shadow:
+    var(--tile-shadow),
+    -48px 0 0 0 var(--sheet-bg, var(--surface-muted));
+}
+
+.attendance-sheet tfoot td:not(.attendance-total-merge) {
+  position: relative;
+  z-index: 4;
+}
+
 .attendance-sheet tfoot td:not([data-identity]):not([data-weekend]):not([data-today]):not([data-tail]) {
   background: color-mix(in oklab, var(--foreground) 5%, var(--surface-muted));
 }
@@ -720,6 +743,46 @@ body {
 .attendance-sheet tfoot [data-pin] {
   z-index: 4;
   background: color-mix(in oklab, var(--surface-muted) 70%, var(--surface));
+}
+
+.attendance-sheet thead th,
+.attendance-sheet thead th[data-identity],
+.attendance-sheet thead th[data-tail],
+.attendance-sheet thead th[data-pin] {
+  background: var(--head-bg);
+  color: color-mix(in oklab, var(--color-brand) 48%, var(--foreground));
+}
+
+.attendance-sheet thead th[data-weekend] {
+  background: color-mix(in oklab, #b08968 24%, var(--head-bg));
+}
+
+.attendance-sheet thead th[data-today] {
+  background: color-mix(in oklab, var(--color-brand) 34%, var(--surface));
+  color: var(--color-brand);
+}
+
+.attendance-sheet .attendance-weekday {
+  color: color-mix(in oklab, var(--color-brand) 35%, var(--foreground));
+}
+
+.attendance-sheet tfoot td,
+.attendance-sheet tfoot td[data-identity],
+.attendance-sheet tfoot td[data-tail],
+.attendance-sheet tfoot td[data-pin],
+.attendance-sheet tfoot td.attendance-total-merge,
+.attendance-sheet tfoot td:not([data-identity]):not([data-weekend]):not([data-today]):not([data-tail]) {
+  background: var(--foot-bg);
+  color: color-mix(in oklab, var(--color-brand) 38%, var(--foreground));
+}
+
+.attendance-sheet tfoot td[data-weekend] {
+  background: color-mix(in oklab, #b08968 22%, var(--foot-bg));
+}
+
+.attendance-sheet tfoot td[data-today] {
+  background: color-mix(in oklab, var(--color-brand) 42%, var(--surface));
+  color: var(--color-brand);
 }
 
 .attendance-sheet tbody tr:hover > td {

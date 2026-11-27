@@ -200,9 +200,9 @@ export function AttendanceColumnsManager({ initial }: { initial: AttendanceColum
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <RhSectionTitle>Feuille de présence — colonnes et droits</RhSectionTitle>
-            <p className="mt-1 text-xs text-foreground/60">
-              أعمدة ورقة الحضور وصلاحيات الاطلاع والتعديل لكل دور. SUPER_ADMIN يرى ويعدّل كل الأعمدة دائمًا.
-              Aucune colonne financière n&apos;est proposée sur la feuille de présence.
+            <p className="mt-1 max-w-3xl text-xs text-foreground/60">
+              SUPER_ADMIN يضيف عموداً، أو يخفيه من الورقة، أو يحذف أعمدة الإدخال التي أنشأها. العمود المخفي
+              يختفي من الحضور ويبقى محفوظاً. أعمدة النظام تُخفى ولا تُحذف.
             </p>
           </div>
           <Button disabled={pending || !dirty} onClick={save}>
@@ -225,7 +225,10 @@ export function AttendanceColumnsManager({ initial }: { initial: AttendanceColum
               <th className="px-2 py-2 text-left" rowSpan={2}>Libellé FR</th>
               <th className="px-2 py-2 text-left" rowSpan={2}>Libellé AR</th>
               <th className="px-2 py-2 text-left" rowSpan={2}>Nature</th>
-              <th className="px-2 py-2 text-center" rowSpan={2}>Active</th>
+              <th className="px-2 py-2 text-center" rowSpan={2}>
+                Affichée
+                <span className="block text-[10px] font-normal text-foreground/45">إخفاء</span>
+              </th>
               {roles.map((r) => (
                 <th key={r.id} className="border-l border-border/60 px-2 pt-2 text-center" colSpan={2}>
                   {r.label_fr}
@@ -310,7 +313,14 @@ export function AttendanceColumnsManager({ initial }: { initial: AttendanceColum
                       type="checkbox"
                       checked={col.is_active}
                       disabled={col.kind === "DAYS"}
-                      title={col.kind === "DAYS" ? "La grille des jours reste toujours active." : undefined}
+                      aria-label={col.is_active ? `Masquer ${col.code}` : `Afficher ${col.code}`}
+                      title={
+                        col.kind === "DAYS"
+                          ? "La grille des jours reste affichée."
+                          : col.is_active
+                            ? "Décocher pour masquer la colonne"
+                            : "Colonne masquée"
+                      }
                       onChange={(e) => patchColumn(col.code, { is_active: e.target.checked })}
                     />
                   </td>
@@ -327,7 +337,9 @@ export function AttendanceColumnsManager({ initial }: { initial: AttendanceColum
                     );
                   })}
                   <td className="px-2 py-1.5">
-                    {col.is_system ? null : (
+                    {col.is_system ? (
+                      <span className="text-[10px] text-foreground/40">Système</span>
+                    ) : (
                       <button
                         type="button"
                         className="rounded-lg px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-50"

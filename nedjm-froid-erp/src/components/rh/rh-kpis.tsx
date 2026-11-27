@@ -20,7 +20,13 @@ function Kpi({ icon, color, label, value }: { icon: LucideIcon; color: string; l
 }
 
 /** Present / absent / on leave / on mission on the latest pointage day. */
-export function AttendanceKpis({ snapshot }: { snapshot: AttendanceSnapshot }) {
+export function AttendanceKpis({
+  snapshot,
+  emptyLabel = "Aucun pointage enregistré ces 30 derniers jours",
+}: {
+  snapshot: AttendanceSnapshot;
+  emptyLabel?: string;
+}) {
   const day = snapshot.date
     ? new Date(`${snapshot.date}T00:00:00`).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })
     : null;
@@ -33,7 +39,7 @@ export function AttendanceKpis({ snapshot }: { snapshot: AttendanceSnapshot }) {
         <Kpi icon={Plane} color="#3b6ef5" label="En mission" value={snapshot.mission} />
       </div>
       <p className="text-xs text-foreground/45 first-letter:uppercase">
-        {day ? `Dernier jour pointé : ${day}` : "Aucun pointage enregistré ces 30 derniers jours"}
+        {day ? `Dernier jour pointé : ${day}` : emptyLabel}
       </p>
     </div>
   );
