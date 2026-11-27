@@ -29,6 +29,8 @@ export type ContractPrintValues = {
   net: string;
   recup: string;
   retenue: string;
+  /** Money equivalent typed on the absence penalty. Printed in the parentheses of article 9. */
+  retenue_equivalent: string;
 };
 
 export const CONTRACT_PRINT_KEYS = [
@@ -128,6 +130,7 @@ export function contractPrintDefaults(src: ContractPrintSource, type: ContractTy
     net: amountText(src.salaire_net_ref_monthly),
     recup: amountText(src.salaire_net_recup_monthly),
     retenue: "",
+    retenue_equivalent: "",
   };
   const saved = src.print_data ?? {};
   for (const key of CONTRACT_PRINT_KEYS) {
@@ -136,6 +139,7 @@ export function contractPrintDefaults(src: ContractPrintSource, type: ContractTy
   }
   const reason = Number(saved.cdd_reason);
   if (Number.isInteger(reason) && reason >= 1) base.cdd_reason = reason;
+  if (typeof saved.retenue_equivalent === "string") base.retenue_equivalent = clean(saved.retenue_equivalent);
   return base;
 }
 
@@ -287,6 +291,25 @@ export function contractPrintError(v: Pick<ContractPrintValues, "is_cdi">) {
     : null;
 }
 
+function isDaAmount(raw: string) {
+  const text = raw.trim();
+  return text.length > 0 && !text.includes("%") && Number.isFinite(Number(text.replace(/\s/g, "").replace(",", ".")));
+}
+
+function retenueValue(raw: string) {
+  const text = raw.trim();
+  if (!text) return "..........";
+  return isDaAmount(text) ? formatDzd(text) : text;
+}
+
+function retenueWords(raw: string, equivalent: string) {
+  const written = equivalent.trim();
+  if (written) return `\u2066${written}\u2069`;
+  const text = raw.trim();
+  if (!text) return "..........";
+  return isDaAmount(text) ? arabicAmountWords(text) || ".........." : "";
+}
+
 /** Values printed by the contract templates (empty values print as a dotted blank). */
 export function contractDocData(v: ContractPrintValues, company: HrCompanyProfile): DocData {
   const date = (iso: string, long = false) => (iso.trim() ? (long ? arabicLongDate(iso) : slashDate(iso)) : "");
@@ -317,8 +340,8 @@ export function contractDocData(v: ContractPrintValues, company: HrCompanyProfil
     net_words: words(v.net),
     recup: amount(v.recup),
     recup_words: words(v.recup),
-    retenue: amount(v.retenue),
-    retenue_words: words(v.retenue),
+    retenue: retenueValue(v.retenue),
+    retenue_words: retenueWords(v.retenue, v.retenue_equivalent),
   };
 }
 

@@ -20,7 +20,7 @@ import {
   type ContractPrintSource,
   type ContractPrintValues,
 } from "@/lib/hr/work-contract";
-import { appendClientTerms, type StoredClientTerms } from "@/lib/hr/client-contract-terms";
+import { absenceEquivalentAmount, appendClientTerms, isRetenueText, type StoredClientTerms } from "@/lib/hr/client-contract-terms";
 
 export type ActionResult<T = void> =
   | { ok: true; data: T }
@@ -41,6 +41,7 @@ function readClientTerms(value: unknown): StoredClientTerms | null {
     poste_label: typeof row.poste_label === "string" ? row.poste_label : "",
     penalty_text: typeof row.penalty_text === "string" ? row.penalty_text : "",
     clauses: Array.isArray(row.clauses) ? row.clauses : [],
+    penalties: Array.isArray(row.penalties) ? row.penalties : [],
   };
 }
 
@@ -166,10 +167,11 @@ export async function getContractPreviewContext(input: {
 /** Daily deduction for an unjustified absence, printed in the contract (print_data.retenue). */
 export async function saveContractRetenue(input: { contract_id: string; retenue: string }): Promise<ActionResult> {
   if (!z.string().uuid().safeParse(input.contract_id).success) return { ok: false, error: "Contrat invalide." };
-  const retenue = input.retenue.trim().replace(",", ".");
-  if (retenue && !/^\d{1,9}(\.\d{1,2})?$/.test(retenue)) {
-    return { ok: false, error: "Retenue / jour d'absence : saisissez un montant en DA." };
+  const raw = input.retenue.trim().replace(/\s+/g, " ");
+  if (raw && !isRetenueText(raw)) {
+    return { ok: false, error: "Retenue / jour d'absence : montant en DA, ou le taux du poste (ex. 5 % par jour)." };
   }
+  const retenue = raw.includes("%") ? raw : raw.replace(",", ".");
   const supabase = await createClient();
   const { data: ctr, error } = await supabase
     .from("hr_contracts")
@@ -193,6 +195,43 @@ export async function saveContractRetenue(input: { contract_id: string; retenue:
   return { ok: true, data: undefined };
 }
 
+const IDENTITY_KEYS = ["nom", "matricule", "birth_date", "birth_place", "father", "mother", "id_number", "address"] as const;
+
+/** Keeps an identity edit on the printed contract. A value equal to the fiche is left to follow the fiche. */
+export async function saveContractIdentity(input: {
+  contract_id: string;
+  fields: Partial<Record<(typeof IDENTITY_KEYS)[number], string>>;
+}): Promise<ActionResult> {
+  if (!z.string().uuid().safeParse(input.contract_id).success) return { ok: false, error: "Contrat invalide." };
+  const supabase = await createClient();
+  const source = await loadSource(supabase, input.contract_id);
+  if (!source.ok) return source;
+  const defaults = contractPrintDefaults({ ...source.data.source, print_data: {} }, source.data.type);
+  const { data: ctr, error } = await supabase
+    .from("hr_contracts")
+    .select("print_data")
+    .eq("id", input.contract_id)
+    .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!ctr) return { ok: false, error: "Contrat introuvable." };
+  const print_data = { ...((ctr.print_data ?? {}) as Record<string, unknown>) };
+  for (const key of IDENTITY_KEYS) {
+    const value = (input.fields[key] ?? "").trim().slice(0, key === "address" ? 400 : 200);
+    if (!value || value === defaults[key]) delete print_data[key];
+    else print_data[key] = value;
+  }
+  const { data: saved, error: saveErr } = await supabase
+    .from("hr_contracts")
+    .update({ print_data })
+    .eq("id", input.contract_id)
+    .select("id")
+    .maybeSingle();
+  if (saveErr) return { ok: false, error: saveErr.message };
+  if (!saved) return { ok: false, error: "Modification du contrat non autorisée." };
+  revalidatePath("/rh/contrats");
+  return { ok: true, data: undefined };
+}
+
 export async function getContractPrintContext(
   contractId: string,
 ): Promise<ActionResult<ContractPrintContext>> {
@@ -203,7 +242,10 @@ export async function getContractPrintContext(
   return {
     ok: true,
     data: {
-      values: contractPrintDefaults(source.data.source, source.data.type),
+      values: {
+        ...contractPrintDefaults(source.data.source, source.data.type),
+        retenue_equivalent: absenceEquivalentAmount(source.data.client_terms?.penalties ?? []),
+      },
       client_terms: source.data.client_terms,
     },
   };
@@ -233,6 +275,7 @@ const valuesSchema = z.object({
   net: z.string().max(40),
   recup: z.string().max(40),
   retenue: z.string().max(40),
+  retenue_equivalent: z.string().max(120).optional().default(""),
 });
 
 /** Saves the edited values on the contract and gives it a number (YYYY/NNN) when it has none. */

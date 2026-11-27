@@ -106,6 +106,8 @@ function penaltyPatch(p: ExtractedPenalty): Partial<PenaltyRule> {
   }
   if (p.grace_hours != null) patch.grace_hours = p.grace_hours;
   if (p.grace_days != null) patch.grace_days = p.grace_days;
+  if (p.source.article) patch.article_ref = p.source.article;
+  if (p.source.excerpt) patch.statement = p.source.excerpt;
   return patch;
 }
 

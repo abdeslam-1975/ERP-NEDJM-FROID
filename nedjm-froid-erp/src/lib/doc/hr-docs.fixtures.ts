@@ -255,6 +255,7 @@ const contractBase: ContractPrintValues = {
   net: "65000",
   recup: "45000.5",
   retenue: "2166.67",
+  retenue_equivalent: "",
 };
 
 export const CONTRACT_FIXTURES: { name: string; values: ContractPrintValues }[] = [

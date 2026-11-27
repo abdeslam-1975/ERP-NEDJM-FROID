@@ -88,6 +88,16 @@ describe("formatting", () => {
     expect(data.birth_date).toBe("28 ديسمبر 1991");
     expect([data.retenue, data.retenue_words]).toEqual(["..........", ".........."]);
   });
+
+  it("prints the absence equivalent amount in the parentheses of article 9", () => {
+    const v = contractPrintDefaults(
+      { ...source, print_data: { retenue: "5 % par jour", retenue_equivalent: "4 500 دج" } },
+      cdd,
+    );
+    const data = contractDocData(v, SEED_COMPANY);
+    expect(data.retenue).toBe("5 % par jour");
+    expect(data.retenue_words).toBe("\u20664 500 دج\u2069");
+  });
 });
 
 describe("contractCddReasons", () => {

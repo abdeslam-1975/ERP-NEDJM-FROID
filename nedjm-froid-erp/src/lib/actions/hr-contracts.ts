@@ -14,14 +14,21 @@ import {
 import { contractAttributesSchema } from "@/lib/contracts/attributes-schema";
 import { withdrawContractArchive } from "@/lib/hr/contract-archive";
 import {
+  absenceForPoste,
   absenceRules,
   asStoredClientTerms,
+  citationsFromExtraction,
+  citePenaltyRules,
   clientTermsKey,
+  describedPenalties,
   laborPostes,
   posteMatchesLabor,
   storedClientTerms,
+  storedFromWorkerTerms,
   transferableClauses,
+  workerTerms,
   type StoredClientTerms,
+  type WorkerTerm,
 } from "@/lib/hr/client-contract-terms";
 
 export type ActionResult<T = void> =
@@ -142,8 +149,38 @@ export type OpenClientContract = {
   site_id: string;
   labor: { id: string; designation: string; unit: string }[];
   absence: { id: string; label: string; detail: string; fixedAmount: number | null }[];
+  penalties: {
+    id: string;
+    label: string;
+    detail: string;
+    fixedAmount: number | null;
+    absence: boolean;
+    grace: string;
+    articleRef: string;
+    statement: string;
+  }[];
   clauses: { id: string; article_ref: string; title: string; content: string }[];
 };
+
+async function penaltyCitations(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  contractIds: string[],
+) {
+  const byContract = new Map<string, ReturnType<typeof citationsFromExtraction>>();
+  if (!contractIds.length) return byContract;
+  const { data, error } = await supabase
+    .from("contract_extractions")
+    .select("contract_id, result, created_at")
+    .in("contract_id", contractIds)
+    .in("status", ["APPLIED", "DONE"])
+    .order("created_at", { ascending: false });
+  if (error || !data) return byContract;
+  for (const row of data) {
+    if (typeof row.contract_id !== "string" || byContract.has(row.contract_id)) continue;
+    byContract.set(row.contract_id, citationsFromExtraction(row.result));
+  }
+  return byContract;
+}
 
 type ClientTermInput = {
   site_id: string;
@@ -151,6 +188,8 @@ type ClientTermInput = {
   poste_ar: string | null;
   client_contract_id: string | null;
   clause_ids?: string[];
+  /** Terms shown in the form. When present, their edited values replace the contract text. */
+  terms?: WorkerTerm[];
   /** An existing contract can be edited before a client contract is linked. */
   allowMissing?: boolean;
 };
@@ -185,6 +224,7 @@ export async function clientTermsForContract(
   }
   const parsed = contractAttributesSchema.safeParse(chosen.attributes ?? {});
   const attrs = parsed.success ? parsed.data : contractAttributesSchema.parse({});
+  const citations = (await penaltyCitations(supabase, [chosen.id])).get(chosen.id) ?? [];
   const labor = laborPostes((chosen.items ?? []) as { id: string; item_type: string; designation: string; unit?: string }[]);
   const poste = posteMatchesLabor(input.poste_fr || input.poste_ar || "", labor);
   if (!poste) {
@@ -194,14 +234,49 @@ export async function clientTermsForContract(
       error: `Le poste doit être l'un des postes du contrat client : ${names}. · المنصب يجب أن يكون مذكوراً في عقد العميل.`,
     };
   }
+  const rules = describedPenalties(citePenaltyRules([...attrs.penalties.presets, ...attrs.penalties.custom], citations));
+  const clauses = transferableClauses(attrs.clauses.items);
+  if (input.terms) {
+    const drafted = workerTerms({ poste: poste.designation, labor, penalties: rules, clauses });
+    const edited = new Map(input.terms.map((term) => [term.id, term]));
+    const overlay = (term: WorkerTerm, edit: WorkerTerm | undefined): WorkerTerm[] => {
+      const value = (edit ? edit.value : term.value).trim();
+      const title = (edit?.title ?? term.title).trim();
+      const penalties = (edit?.penalties ?? term.penalties).flatMap((row) => {
+        const name = row.name.trim();
+        const rate = row.value.trim();
+        const amount = (row.amount ?? "").trim();
+        if (!name && !rate && !amount) return [];
+        return [{ id: row.id, name, value: rate, amount }];
+      });
+      if ((!value || !title) && !penalties.length) return [];
+      return [{ ...term, title, value, articleRef: edit?.articleRef || term.articleRef, penalties }];
+    };
+    const merged = drafted.flatMap((term) => overlay(term, edited.get(term.id)));
+    for (const edit of input.terms) {
+      if (drafted.some((term) => term.id === edit.id)) continue;
+      merged.push(...overlay(edit, edit));
+    }
+    return {
+      ok: true,
+      data: storedFromWorkerTerms({
+        clientContractId: chosen.id,
+        contractNumber: chosen.contract_number,
+        poste: poste.designation,
+        terms: merged,
+        absenceIds: new Set(rules.filter((rule) => rule.absence).map((rule) => rule.id)),
+      }),
+    };
+  }
+  const matched = absenceForPoste(poste.designation, rules.filter((rule) => rule.absence));
   return {
     ok: true,
     data: storedClientTerms({
       clientContractId: chosen.id,
       contractNumber: chosen.contract_number,
       poste: poste.designation,
-      rules: absenceRules([...attrs.penalties.presets, ...attrs.penalties.custom]),
-      clauses: transferableClauses(attrs.clauses.items),
+      rules: matched ? [matched] : [],
+      clauses,
       confirmedIds: input.clause_ids ?? [],
     }),
   };
@@ -218,20 +293,30 @@ export async function listOpenClientContracts(): Promise<ActionResult<OpenClient
     .in("status", ["VALIDE", "EN_COURS"])
     .limit(500);
   if (error) return { ok: false, error: error.message };
+  const rows = (data ?? []).filter(
+    (row) => typeof row.contract_number === "string" && typeof row.client_name === "string",
+  );
+  const citations = await penaltyCitations(
+    supabase,
+    rows.map((row) => row.id),
+  );
   return {
     ok: true,
-    data: (data ?? [])
-      .filter((row) => typeof row.contract_number === "string" && typeof row.client_name === "string")
-      .map((row) => {
+    data: rows.map((row) => {
         const parsed = contractAttributesSchema.safeParse(row.attributes ?? {});
         const attrs = parsed.success ? parsed.data : contractAttributesSchema.parse({});
+        const rules = citePenaltyRules(
+          [...attrs.penalties.presets, ...attrs.penalties.custom],
+          citations.get(row.id) ?? [],
+        );
         return {
           id: row.id,
           contract_number: row.contract_number,
           client_name: row.client_name,
           site_id: row.site_id,
           labor: laborPostes((row.items ?? []) as { id: string; item_type: string; designation: string; unit?: string }[]),
-          absence: absenceRules([...attrs.penalties.presets, ...attrs.penalties.custom]),
+          absence: absenceRules(rules),
+          penalties: describedPenalties(rules),
           clauses: transferableClauses(attrs.clauses.items),
         };
       }),

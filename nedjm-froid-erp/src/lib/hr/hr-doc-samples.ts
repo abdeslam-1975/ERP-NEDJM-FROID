@@ -66,6 +66,7 @@ const SAMPLE_CONTRACT: ContractPrintValues = {
   net: "65000",
   recup: "45000",
   retenue: "2166.67",
+  retenue_equivalent: "",
 };
 
 function missionSample(company: HrCompanyProfile): MissionOrderFields & { numero: string } {

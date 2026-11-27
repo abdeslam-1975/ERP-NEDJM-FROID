@@ -66,7 +66,7 @@ const FIELDS: FieldDef[] = [
   { key: "preavis", label: "Préavis · الإخطار المسبق" },
   { key: "net", label: "Net à payer (DA) · الأجر الصافي" },
   { key: "recup", label: "Indemnité récupération (DA) · العطلة التعويضية" },
-  { key: "retenue", label: "Retenue / jour d'absence (DA) · اقتطاع الغياب" },
+  { key: "retenue", label: "Retenue / jour d'absence · اقتطاع الغياب" },
 ];
 
 export const CONTRACT_DOC_TYPES = [CONTRACT_DOC_TYPE] as const;

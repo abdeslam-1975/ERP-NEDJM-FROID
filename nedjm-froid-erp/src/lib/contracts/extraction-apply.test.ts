@@ -133,7 +133,13 @@ describe("applyExtraction", () => {
   it("updates a matching preset, adds a custom penalty and skips an incomplete one", () => {
     const out = run({ header: [], penalties: [0, 1, 2], penalty_cap: true, termination: false, clauses: [] });
     const chef = out.attributes.penalties.presets.find((p) => p.code === "CHEF_ABSENCE");
-    expect(chef).toMatchObject({ rate: 0.12, grace_hours: 48, label: "Absence Chef de maintenance" });
+    expect(chef).toMatchObject({
+      rate: 0.12,
+      grace_hours: 48,
+      label: "Absence Chef de maintenance",
+      article_ref: "Art. 20",
+      statement: "extrait",
+    });
     const hse = out.attributes.penalties.custom.find((p) => p.label === "Non-respect des consignes HSE");
     expect(hse).toMatchObject({ mode: "FIXED", fixed_amount: 50000, code: "NON_RESPECT_DES_CONSIGNES_HSE" });
     expect(out.skipped.join(" ")).toContain("Retard sans taux");

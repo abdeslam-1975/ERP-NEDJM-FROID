@@ -41,6 +41,10 @@ export const penaltyRuleSchema = z.object({
   grace_days: z.coerce.number().int().min(0).optional(),
   item_code_ref: z.string().optional(),
   brackets: z.array(progressiveBracketSchema).optional(),
+  /** Article number as written in the client contract, for example "Art. 17.2". */
+  article_ref: z.string().trim().max(40).optional().default(""),
+  /** The clause in the client contract's own words. */
+  statement: z.string().trim().max(2000).optional().default(""),
 });
 
 export const marginGuardsSchema = z.object({

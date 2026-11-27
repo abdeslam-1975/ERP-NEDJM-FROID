@@ -352,6 +352,29 @@ export const hrContractSchema = z.object({
     .optional()
     .transform((v) => (v ? v : null)),
   clause_ids: z.array(z.string().trim().min(1).max(80)).max(40).optional(),
+  terms: z
+    .array(
+      z.object({
+        id: z.string().trim().min(1).max(80),
+        title: z.string().trim().max(220),
+        value: z.string().max(4000),
+        articleRef: z.string().trim().max(40).optional().default(""),
+        penalties: z
+          .array(
+            z.object({
+              id: z.string().trim().min(1).max(80),
+              name: z.string().trim().max(200),
+              value: z.string().max(500),
+              amount: z.string().trim().max(120).optional().default(""),
+            }),
+          )
+          .max(20)
+          .optional()
+          .default([]),
+      }),
+    )
+    .max(40)
+    .optional(),
 });
 
 export const hrFileSchema = z.object({

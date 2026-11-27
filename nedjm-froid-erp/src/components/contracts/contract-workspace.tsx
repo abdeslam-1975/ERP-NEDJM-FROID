@@ -1611,6 +1611,8 @@ function PenaltiesTab({
               mode: custom.mode,
               rate: Number(custom.rate_pct) / 100,
               fixed_amount: Number(custom.fixed_amount) || 0,
+              article_ref: "",
+              statement: "",
             };
             setDraft((d) => ({
               ...d,

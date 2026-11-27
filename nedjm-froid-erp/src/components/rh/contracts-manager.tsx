@@ -36,6 +36,7 @@ import type { SalaryAssignment, SalaryRubrique } from "@/lib/actions/hr-salary";
 import type { PosteRow } from "@/lib/actions/hr-postes";
 import {
   getContractPreviewContext,
+  saveContractIdentity,
   saveContractRetenue,
   type ContractPreviewContext,
 } from "@/lib/actions/hr-contract-print";
@@ -66,7 +67,17 @@ import { ContractViewDialog } from "@/components/rh/contract-view-dialog";
 import { WorkRegimeField } from "@/components/rh/work-regime-field";
 import { ContractRubriquesField } from "@/components/rh/contract-rubriques-field";
 import type { OpenClientContract } from "@/lib/actions/hr-contracts";
-import { appendClientTerms, storedClientTerms } from "@/lib/hr/client-contract-terms";
+import {
+  absenceEquivalentAmount,
+  appendClientTerms,
+  isRetenueText,
+  retenueFromAbsence,
+  storedFromWorkerTerms,
+  workerTerms,
+  type PenaltyField,
+  type StoredClientTerms,
+  type WorkerTerm,
+} from "@/lib/hr/client-contract-terms";
 import type { SelectedSalaryLine } from "@/components/rh/contract-salary-fields";
 import {
   ContractLegalFields,
@@ -110,7 +121,74 @@ const EMPTY_PRINT_EMPLOYEE: ContractPrintSource["employee"] = {
 
 const NO_ARCHIVES: Record<string, string> = {};
 
-const RETENUE_PATTERN = /^\d{1,9}([.,]\d{1,2})?$/;
+function termsFor(contract: OpenClientContract | undefined, poste: string): WorkerTerm[] {
+  if (!contract || !poste.trim()) return [];
+  return workerTerms({ poste, labor: contract.labor, penalties: contract.penalties, clauses: contract.clauses });
+}
+
+function retenueForTerms(contract: OpenClientContract | undefined, terms: readonly WorkerTerm[]) {
+  if (!contract) return "";
+  const rule = contract.absence.find((item) => terms.some((term) => term.id === item.id));
+  return rule ? retenueFromAbsence(rule) : "";
+}
+
+function blankPenalty(): PenaltyField {
+  return { id: `penalty-${Date.now().toString(36)}`, name: "", value: "", amount: "" };
+}
+
+function addPenaltyRow(terms: readonly WorkerTerm[]): WorkerTerm[] {
+  const row = blankPenalty();
+  if (!terms.length) {
+    return [{ id: "added-penalties", title: "", value: "", articleRef: "", penalties: [row] }];
+  }
+  return terms.map((term, index) =>
+    index === 0 ? { ...term, penalties: [...(term.penalties ?? []), row] } : term,
+  );
+}
+
+function patchPenalty(
+  terms: readonly WorkerTerm[],
+  id: string,
+  patch: Partial<Pick<PenaltyField, "name" | "value" | "amount">>,
+) {
+  return terms.map((term) => ({
+    ...term,
+    penalties: (term.penalties ?? []).map((row) => (row.id === id ? { ...row, ...patch } : row)),
+  }));
+}
+
+function dropPenalty(terms: readonly WorkerTerm[], id: string) {
+  return terms.map((term) => ({ ...term, penalties: (term.penalties ?? []).filter((row) => row.id !== id) }));
+}
+
+function withStoredPenalties(terms: WorkerTerm[], stored: StoredClientTerms | null): WorkerTerm[] {
+  const saved = stored?.penalties ?? [];
+  const used = new Set<string>();
+  const next = terms.map((term) => ({
+    ...term,
+    penalties: (term.penalties ?? []).map((row) => {
+      const hit = saved.find((item) => item.id === row.id);
+      if (!hit) return row;
+      used.add(hit.id);
+      return hit;
+    }),
+  }));
+  const extras = saved.filter((item) => !used.has(item.id));
+  if (!extras.length) return next;
+  if (!next.length) return [{ id: "added-penalties", title: "", value: "", articleRef: "", penalties: extras }];
+  return next.map((term, index) => (index === 0 ? { ...term, penalties: [...term.penalties, ...extras] } : term));
+}
+
+type IdentityFields = {
+  nom: string;
+  matricule: string;
+  birth_date: string;
+  birth_place: string;
+  father: string;
+  mother: string;
+  id_number: string;
+  address: string;
+};
 
 function statusOption(status: string) {
   return STATUS_OPTIONS.find((s) => s.value === status) ?? STATUS_OPTIONS[0];
@@ -201,6 +279,7 @@ type FormState = {
   retenue: string;
   client_contract_id: string;
   clause_ids: string[];
+  terms: WorkerTerm[];
 };
 
 const emptyForm = (): FormState => ({
@@ -227,6 +306,7 @@ const emptyForm = (): FormState => ({
   retenue: "",
   client_contract_id: "",
   clause_ids: [],
+  terms: [],
 });
 
 function describeContract(row: HrContractRow): FilterRow {
@@ -319,6 +399,8 @@ export function ContractsManager({
   const [previewError, setPreviewError] = useState<string | null>(null);
   /** Retenue saved on the contract; null until it is known for an existing contract. */
   const [retenueBase, setRetenueBase] = useState<string | null>("");
+  const [identity, setIdentity] = useState<IdentityFields | null>(null);
+  const identityEmployee = useRef("");
   const jobs = useMemo(() => catalogOptions(catalogs, "job_title"), [catalogs]);
 
   const previewEmployee = open ? form.employee_id : "";
@@ -338,6 +420,34 @@ export function ContractsManager({
       }
       setPreviewError(null);
       setPreview({ ...r.data, key: `${previewEmployee}|${previewContract}` });
+      if (previewEmployee && identityEmployee.current !== previewEmployee) {
+        identityEmployee.current = previewEmployee;
+        const filled = contractPrintDefaults(
+          {
+            contract_number: r.data.contract_number,
+            contract_type_code: null,
+            poste_ar: null,
+            poste_fr: null,
+            start_date: "",
+            end_date: null,
+            salaire_net_ref_monthly: null,
+            salaire_net_recup_monthly: null,
+            print_data: r.data.print_data,
+            employee: r.data.employee ?? EMPTY_PRINT_EMPLOYEE,
+          },
+          contractTypeDefaults(catalogs, ""),
+        );
+        setIdentity({
+          nom: filled.nom,
+          matricule: filled.matricule,
+          birth_date: filled.birth_date,
+          birth_place: filled.birth_place,
+          father: filled.father,
+          mother: filled.mother,
+          id_number: filled.id_number,
+          address: filled.address,
+        });
+      }
       if (previewContract) {
         const saved = typeof r.data.print_data.retenue === "string" ? r.data.print_data.retenue : "";
         setRetenueBase(saved);
@@ -347,7 +457,7 @@ export function ContractsManager({
     return () => {
       cancelled = true;
     };
-  }, [open, previewEmployee, previewContract]);
+  }, [open, previewEmployee, previewContract, catalogs]);
 
   const { kit: printKit, error: kitError } = usePrintKit(CONTRACT_DOC_TYPES);
   const printedPreview = useMemo(() => {
@@ -362,23 +472,27 @@ export function ContractsManager({
       end_date: form.end_date || null,
       salaire_net_ref_monthly: form.salaire_net_ref_monthly ? Number(form.salaire_net_ref_monthly) : null,
       salaire_net_recup_monthly: form.salaire_net_recup_monthly ? Number(form.salaire_net_recup_monthly) : null,
-      print_data: { ...(current ? preview.print_data : {}), retenue: form.retenue.trim() },
+      print_data: {
+        ...(current ? preview.print_data : {}),
+        retenue: form.retenue.trim(),
+        retenue_equivalent: absenceEquivalentAmount(form.terms.flatMap((term) => term.penalties)),
+        ...(identity ?? {}),
+      },
       employee: (current && preview.employee) || EMPTY_PRINT_EMPLOYEE,
     }, contractTypeDefaults(catalogs, form.contract_type_code));
     return contractHtml(printKit, values);
-  }, [open, preview, printKit, previewKey, form, catalogs]);
+  }, [open, preview, printKit, previewKey, form, catalogs, identity]);
   const previewClient = clientContracts.find((contract) => contract.id === form.client_contract_id) ?? null;
   const previewHtml = printedPreview?.ok
     ? appendClientTerms(
         printedPreview.data,
         previewClient
-          ? storedClientTerms({
+          ? storedFromWorkerTerms({
               clientContractId: previewClient.id,
               contractNumber: previewClient.contract_number,
               poste: form.poste_fr,
-              rules: previewClient.absence,
-              clauses: previewClient.clauses,
-              confirmedIds: form.clause_ids,
+              terms: form.terms,
+              absenceIds: new Set(previewClient.absence.map((rule) => rule.id)),
             })
           : null,
       ).replace("</head>", "<style>@media screen { body { padding: 28px 34px; } }</style></head>")
@@ -406,6 +520,8 @@ export function ContractsManager({
   }, [postes, form.poste_id, form.grade, form.start_date]);
 
   function openModal(next: FormState, lines: ContractLines, nextScan: typeof scan = null) {
+    identityEmployee.current = "";
+    setIdentity(null);
     setScan(nextScan);
     setForm(next);
     setSelectedLines(lines.work);
@@ -493,6 +609,34 @@ export function ContractsManager({
   }
 
   function openRow(row: HrContractRow) {
+    const contract = clientContracts.find((item) => item.id === row.client_contract_id);
+    const fresh = termsFor(contract, row.poste_fr ?? "");
+    const stored = row.client_terms;
+    const terms = withStoredPenalties(
+      fresh.length
+        ? fresh.map((term) => {
+            const clause = stored?.clauses.find((item) => item.id === term.id);
+            if (clause) return { ...term, title: clause.title, value: clause.content, articleRef: clause.article_ref };
+            if (stored?.penalty_text && contract?.absence.some((rule) => rule.id === term.id)) {
+              const parts = stored.penalty_text.split(" : ");
+              return { ...term, value: parts.length > 1 ? parts.slice(1).join(" : ") : stored.penalty_text };
+            }
+            return term;
+          })
+        : [
+            ...(stored?.penalty_text
+              ? [{ id: "penalty", title: "عقوبة الغياب", value: stored.penalty_text, articleRef: "", penalties: [] }]
+              : []),
+            ...(stored?.clauses.map((clause) => ({
+              id: clause.id,
+              title: clause.title,
+              value: clause.content,
+              articleRef: clause.article_ref,
+              penalties: [],
+            })) ?? []),
+          ],
+      stored,
+    );
     openModal(
       {
         id: row.id,
@@ -517,9 +661,10 @@ export function ContractsManager({
         start_date: row.start_date,
         end_date: row.end_date ?? "",
         status: row.status as FormState["status"],
-        retenue: "",
+        retenue: retenueForTerms(contract, terms),
         client_contract_id: row.client_contract_id ?? "",
-        clause_ids: row.client_terms?.clauses.map((clause) => clause.id) ?? [],
+        clause_ids: terms.map((term) => term.id),
+        terms,
       },
       linesForContract(row.id, row.employee_id),
     );
@@ -559,8 +704,8 @@ export function ContractsManager({
       setError(bi("Date de début obligatoire.", "أدخل تاريخ بداية العقد."));
       return;
     }
-    if (form.retenue.trim() && !RETENUE_PATTERN.test(form.retenue.trim())) {
-      setError("Retenue / jour d'absence : saisissez un montant en DA.");
+    if (form.retenue.trim() && !isRetenueText(form.retenue)) {
+      setError("Retenue / jour d'absence : montant en DA, ou le taux du poste (ex. 5 % par jour).");
       return;
     }
     if (form.id && !legalBase) {
@@ -710,6 +855,15 @@ export function ContractsManager({
           return;
         }
         setRetenueBase(retenue);
+      }
+      if (identity) {
+        const savedIdentity = await saveContractIdentity({ contract_id: done.id, fields: identity });
+        if (!savedIdentity.ok) {
+          setForm((f) => ({ ...f, id: done.id }));
+          openedId.current = done.id;
+          setError(`Contrat enregistré, mais les données de la fiche n'ont pas été reportées : ${savedIdentity.error}${reissue}`);
+          return;
+        }
       }
       if (canEditCompliance && legalBase) {
         const thisMonth = firstOfMonth();
@@ -981,6 +1135,38 @@ export function ContractsManager({
                           emptyText="Aucun employé trouvé"
                         />
                       </RhField>
+                      {form.employee_id && identity ? (
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                          <p className="sm:col-span-2 text-xs text-foreground/65">
+                            {bi(
+                              "Données reprises de sa fiche. Laissez-les ou corrigez-les avant d'enregistrer.",
+                              "البيانات من بطاقة المعلومات. اتركوها أو عدّلوها قبل الحفظ.",
+                            )}
+                          </p>
+                          {(
+                            [
+                              ["nom", bi("Nom", "الاسم")],
+                              ["matricule", bi("Matricule", "الرقم التسلسلي")],
+                              ["birth_date", bi("Date de naissance", "تاريخ الميلاد")],
+                              ["birth_place", bi("Lieu de naissance", "مكان الميلاد")],
+                              ["father", bi("Père", "الأب")],
+                              ["mother", bi("Mère", "الأم")],
+                              ["id_number", bi("N° de pièce", "رقم الوثيقة")],
+                              ["address", bi("Adresse", "العنوان")],
+                            ] as const
+                          ).map(([key, label]) => (
+                            <RhField key={key} label={label}>
+                              <input
+                                className={rhInput}
+                                value={identity[key]}
+                                onChange={(e) => setIdentity({ ...identity, [key]: e.target.value })}
+                              />
+                            </RhField>
+                          ))}
+                        </div>
+                      ) : form.employee_id ? (
+                        <p className="mt-2 text-xs text-foreground/55">{bi("Chargement de la fiche…", "جارٍ تحميل البطاقة…")}</p>
+                      ) : null}
                       {openPrincipal ? (
                         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-100">
                           {bi(
@@ -1009,16 +1195,19 @@ export function ContractsManager({
                         onChange={(e) => {
                           const nextSite = sites.find((s) => s.id === e.target.value);
                           const onSite = clientContracts.filter((contract) => contract.site_id === e.target.value);
-                          const only = onSite.length === 1 ? onSite[0] : null;
-                          const fixed = only?.absence.find((rule) => rule.fixedAmount != null)?.fixedAmount;
+                          const only = onSite.length === 1 ? onSite[0] : undefined;
+                          const poste = only?.labor.length === 1 ? only.labor[0].designation : "";
+                          const terms = termsFor(only, poste);
                           setForm({
                             ...form,
                             site_id: e.target.value,
                             activity_code_id: nextSite?.activity_code_id || form.activity_code_id,
                             client_contract_id: only?.id ?? "",
-                            clause_ids: [],
-                            poste_fr: only?.labor.length === 1 ? only.labor[0].designation : form.poste_fr,
-                            retenue: fixed != null && !form.retenue ? String(fixed) : form.retenue,
+                            clause_ids: terms.map((term) => term.id),
+                            poste_fr: poste,
+                            poste_ar: poste,
+                            terms,
+                            retenue: retenueForTerms(only, terms),
                           });
                         }}
                       >
@@ -1065,13 +1254,16 @@ export function ContractsManager({
                           value={form.client_contract_id}
                           onChange={(e) => {
                             const chosen = clientContracts.find((contract) => contract.id === e.target.value);
-                            const fixed = chosen?.absence.find((rule) => rule.fixedAmount != null)?.fixedAmount;
+                            const poste = chosen?.labor.length === 1 ? chosen.labor[0].designation : "";
+                            const terms = termsFor(chosen, poste);
                             setForm({
                               ...form,
                               client_contract_id: e.target.value,
-                              clause_ids: [],
-                              poste_fr: chosen?.labor.length === 1 ? chosen.labor[0].designation : form.poste_fr,
-                              retenue: fixed != null && !form.retenue ? String(fixed) : form.retenue,
+                              clause_ids: terms.map((term) => term.id),
+                              poste_fr: poste,
+                              poste_ar: poste,
+                              terms,
+                              retenue: retenueForTerms(chosen, terms),
                             });
                           }}
                         >
@@ -1095,10 +1287,18 @@ export function ContractsManager({
                                 ?.labor.find((item) => item.designation === form.poste_fr)?.id ?? ""
                             }
                             onChange={(e) => {
-                              const labor = clientContracts
-                                .find((contract) => contract.id === form.client_contract_id)
-                                ?.labor.find((item) => item.id === e.target.value);
-                              if (labor) setForm({ ...form, poste_fr: labor.designation, poste_ar: labor.designation });
+                              const chosen = clientContracts.find((contract) => contract.id === form.client_contract_id);
+                              const labor = chosen?.labor.find((item) => item.id === e.target.value);
+                              if (!labor || !chosen) return;
+                              const terms = termsFor(chosen, labor.designation);
+                              setForm({
+                                ...form,
+                                poste_fr: labor.designation,
+                                poste_ar: labor.designation,
+                                terms,
+                                clause_ids: terms.map((term) => term.id),
+                                retenue: retenueForTerms(chosen, terms),
+                              });
                             }}
                           >
                             <option value="">—</option>
@@ -1113,45 +1313,84 @@ export function ContractsManager({
                           </select>
                         </RhField>
                       ) : null}
-                      {clientContracts.find((contract) => contract.id === form.client_contract_id)?.absence.length ? (
-                        <p className="text-xs text-foreground/70">
-                          {bi("Absence", "الغياب")} :{" "}
-                          {clientContracts
-                            .find((contract) => contract.id === form.client_contract_id)
-                            ?.absence.map((rule) => `${rule.label} (${rule.detail})`)
-                            .join(" · ")}
-                        </p>
-                      ) : null}
-                      {clientContracts.find((contract) => contract.id === form.client_contract_id)?.clauses.length ? (
-                        <div className="space-y-1">
-                          <p className="text-xs font-semibold">
-                            {bi("Clauses à reporter dans le contrat de travail", "بنود تُنقل إلى عقد العمل")}
+                      {form.terms.length || form.poste_fr ? (
+                        <div className="space-y-3 sm:col-span-2">
+                          <p className="text-xs text-foreground/70">
+                            {bi(
+                              "Clauses du contrat client qui concernent ce poste. Enregistrez pour les confirmer, ou modifiez le texte.",
+                              "بنود عقد العميل الخاصة بهذا المنصب. الحفظ مصادقة، ويمكن تعديل النص.",
+                            )}
                           </p>
-                          {clientContracts
-                            .find((contract) => contract.id === form.client_contract_id)
-                            ?.clauses.map((clause) => (
-                              <label key={clause.id} className="flex items-start gap-2 text-xs">
+                          {form.terms.filter((term) => term.title || term.value).map((term) => (
+                            <RhField key={term.id} label={term.title || bi("Clause", "البند")}>
+                              <textarea
+                                className={`${rhInput} min-h-16 py-2`}
+                                value={term.value}
+                                onChange={(e) => {
+                                  const terms = form.terms.map((item) =>
+                                    item.id === term.id ? { ...item, value: e.target.value } : item,
+                                  );
+                                  const chosen = clientContracts.find((contract) => contract.id === form.client_contract_id);
+                                  setForm({ ...form, terms, retenue: retenueForTerms(chosen, terms) });
+                                }}
+                              />
+                            </RhField>
+                          ))}
+                          <div className="space-y-2 rounded-xl border border-border/70 bg-surface-muted/30 p-3">
+                            <p className="text-xs text-foreground/70">
+                              {bi(
+                                "Sanctions. Écrivez le type, le taux, puis le montant équivalent au pourcentage pour que le travailleur le voie. Un champ vide n'entre pas dans le contrat.",
+                                "العقوبات. اكتبوا النوع والاسم، ثم النسبة أو الرمز، ثم المبلغ المكافئ للنسبة ليطّلع عليه العامل. الحقل الفارغ لا يُكتب في العقد.",
+                              )}
+                            </p>
+                            {form.terms.flatMap((term) => term.penalties ?? []).map((row) => (
+                              <div key={row.id} className="grid gap-2 sm:grid-cols-[1fr_1.3fr_0.9fr_auto]">
                                 <input
-                                  type="checkbox"
-                                  className="mt-0.5"
-                                  checked={form.clause_ids.includes(clause.id)}
-                                  onChange={(e) =>
-                                    setForm({
-                                      ...form,
-                                      clause_ids: e.target.checked
-                                        ? [...form.clause_ids, clause.id]
-                                        : form.clause_ids.filter((id) => id !== clause.id),
-                                    })
-                                  }
+                                  className={rhInput}
+                                  dir="auto"
+                                  value={row.name}
+                                  placeholder={bi("Type et nom, ex. absence ou faute", "النوع والاسم، مثل الغياب أو ارتكاب خطأ")}
+                                  onChange={(e) => setForm({ ...form, terms: patchPenalty(form.terms, row.id, { name: e.target.value }) })}
                                 />
-                                <span>
-                                  <span className="font-semibold">{clause.title}</span>
-                                  {clause.article_ref ? ` · ${clause.article_ref}` : ""}
-                                  {clause.content ? <span className="block text-foreground/65">{clause.content}</span> : null}
-                                </span>
-                              </label>
+                                <input
+                                  className={rhInput}
+                                  dir="auto"
+                                  value={row.value}
+                                  placeholder={bi("Taux ou symbole, ex. 5 %", "النسبة أو الرمز، مثل 5 %")}
+                                  onChange={(e) => setForm({ ...form, terms: patchPenalty(form.terms, row.id, { value: e.target.value }) })}
+                                />
+                                <input
+                                  className={rhInput}
+                                  dir="auto"
+                                  value={row.amount ?? ""}
+                                  placeholder={bi("Montant équivalent, ex. 4 500 DA", "المبلغ المكافئ، مثل 4 500 دج")}
+                                  onChange={(e) => setForm({ ...form, terms: patchPenalty(form.terms, row.id, { amount: e.target.value }) })}
+                                />
+                                <button
+                                  type="button"
+                                  className="rounded-md px-2 text-xs text-foreground/60 hover:text-foreground"
+                                  onClick={() => setForm({ ...form, terms: dropPenalty(form.terms, row.id) })}
+                                >
+                                  {bi("Retirer", "حذف")}
+                                </button>
+                              </div>
                             ))}
+                            <button
+                              type="button"
+                              className="text-sm font-medium text-brand"
+                              onClick={() => setForm({ ...form, terms: addPenaltyRow(form.terms) })}
+                            >
+                              {bi("Ajouter une sanction", "إضافة عقوبة")}
+                            </button>
+                          </div>
                         </div>
+                      ) : form.client_contract_id && !form.poste_fr ? (
+                        <p className="text-xs text-foreground/70 sm:col-span-2">
+                          {bi(
+                            "Confirmez le poste du contrat client pour écrire ses clauses.",
+                            "أكّدوا منصب عقد العميل لتُكتب بنوده.",
+                          )}
+                        </p>
                       ) : null}
                     </div>
                     <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border/70 bg-surface-muted/40 px-3.5 py-2.5 sm:col-span-2">
@@ -1400,16 +1639,36 @@ export function ContractsManager({
                         onChange={(v) => setForm({ ...form, salaire_net_recup_monthly: v })}
                       />
                     </RhField>
+                    {form.terms.some((term) =>
+                      clientContracts
+                        .find((contract) => contract.id === form.client_contract_id)
+                        ?.absence.some((rule) => rule.id === term.id),
+                    ) ? null : (
                     <RhField
                       label={bi("Retenue / jour d'absence", "اقتطاع الغياب")}
                       hint={
                         form.id && retenueBase === null
                           ? "Chargement…"
-                          : "Par jour d'absence non justifiée, imprimée dans le contrat"
+                          : bi(
+                              "Selon la clause d'absence du poste choisi.",
+                              "حسب بند الغياب الخاص بالمنصب المختار.",
+                            )
                       }
                     >
-                      <MoneyInput value={form.retenue} onChange={(v) => setForm({ ...form, retenue: v })} />
+                      <div className="relative">
+                        <input
+                          className={`${rhInput} ${/^\d/.test(form.retenue) && !form.retenue.includes("%") ? "pr-11 text-right tabular-nums" : ""}`}
+                          value={form.retenue}
+                          onChange={(e) => setForm({ ...form, retenue: e.target.value })}
+                        />
+                        {/^\d/.test(form.retenue) && !form.retenue.includes("%") ? (
+                          <span className="pointer-events-none absolute right-3.5 bottom-0 flex h-10 items-center text-xs font-medium text-foreground/40">
+                            DA
+                          </span>
+                        ) : null}
+                      </div>
                     </RhField>
+                    )}
                   </div>
                 </FormSection>
 
