@@ -4,6 +4,7 @@ import { hrFileDisplayUrl, hrFileHref, isSafeHrFilePath } from "./hr-file-url";
 describe("hr-file-url", () => {
   it("accepts employee/object paths only", () => {
     expect(isSafeHrFilePath("0b1c-22/CNI-9f.pdf")).toBe(true);
+    expect(isSafeHrFilePath("contrats-pdf/11111111-1111-1111-1111-111111111111.pdf")).toBe(true);
     expect(isSafeHrFilePath("0b1c/OM_ARCHIVE-OM-2026-001-ab.html")).toBe(true);
     expect(isSafeHrFilePath("../secret.pdf")).toBe(false);
     expect(isSafeHrFilePath("a/../b.pdf")).toBe(false);

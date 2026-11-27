@@ -10,12 +10,33 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Fichier invalide." }, { status: 400 });
   }
 
+  const staged = /^contrats-pdf\/[0-9a-f-]{36}\.(pdf|jpg|png|webp)$/i.exec(path);
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent("/rh/documents")}`, request.url));
+  }
+
+  // The imported contract stays the original file: number, signature and fingerprint are on the paper.
+  if (staged) {
+    const { data, error } = await supabase.storage.from(HR_DOCS_BUCKET).download(path);
+    if (error || !data) {
+      return NextResponse.json({ error: "Fichier introuvable ou accès refusé." }, { status: 404 });
+    }
+    const ext = staged[1].toLowerCase();
+    const mime =
+      ext === "pdf" ? "application/pdf" : ext === "jpg" ? "image/jpeg" : ext === "png" ? "image/png" : "image/webp";
+    return new NextResponse(await data.arrayBuffer(), {
+      status: 200,
+      headers: {
+        "Content-Type": mime,
+        "Content-Disposition": "inline",
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   }
 
   // Generated HTML archives (ordres de mission) are rendered from the app origin so relative assets resolve.

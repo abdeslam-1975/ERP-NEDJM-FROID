@@ -42,6 +42,7 @@ import {
 } from "@/lib/actions/hr-contract-print";
 import { confirmAnotherCopy } from "@/lib/hr/document-notice";
 import { contractTypeAllowsFixedIrg } from "@/lib/hr/compliance";
+import { hrFileHref } from "@/lib/hr/hr-file-url";
 import { contractPrintDefaults, type ContractPrintSource } from "@/lib/hr/work-contract";
 import { contractTypeDefaults } from "@/lib/hr/hr-lists";
 import { usePrintKit } from "@/components/doc/use-print-kit";
@@ -372,6 +373,7 @@ export function ContractsManager({
   const [pdfOpen, setPdfOpen] = useState(false);
   /** Scanned contract read by the AI for the form being filled; archived once the contract is saved. */
   const [scan, setScan] = useState<(ContractPdfScan & { warnings: string[]; matched: boolean }) | null>(null);
+  const [showOriginal, setShowOriginal] = useState(true);
   const [asgRows, setAsgRows] = useState(assignments);
   const [catalogs, setCatalogs] = useState(initialCatalogs);
   const [open, setOpen] = useState(false);
@@ -464,7 +466,7 @@ export function ContractsManager({
     if (!open || !preview || !printKit) return null;
     const current = preview.key === previewKey;
     const values = contractPrintDefaults({
-      contract_number: current ? preview.contract_number : null,
+      contract_number: (current ? preview.contract_number : null) || scan?.read.contract_number || null,
       contract_type_code: form.contract_type_code || null,
       poste_ar: form.poste_ar || null,
       poste_fr: form.poste_fr || null,
@@ -481,7 +483,7 @@ export function ContractsManager({
       employee: (current && preview.employee) || EMPTY_PRINT_EMPLOYEE,
     }, contractTypeDefaults(catalogs, form.contract_type_code));
     return contractHtml(printKit, values);
-  }, [open, preview, printKit, previewKey, form, catalogs, identity]);
+  }, [open, preview, printKit, previewKey, form, catalogs, identity, scan]);
   const previewClient = clientContracts.find((contract) => contract.id === form.client_contract_id) ?? null;
   const previewHtml = printedPreview?.ok
     ? appendClientTerms(
@@ -594,6 +596,7 @@ export function ContractsManager({
       );
     }
     if (values.retenue) warnings.push("Vérifiez la retenue / jour d'absence lue dans le contrat.");
+    setShowOriginal(true);
     openModal(
       {
         ...emptyForm(),
@@ -1722,14 +1725,34 @@ export function ContractsManager({
                   <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-surface px-4 py-3">
                     <span className="flex items-center gap-2 font-display text-base font-semibold text-foreground">
                       <FileText className="size-[18px] text-brand" strokeWidth={1.8} aria-hidden />
-                      Aperçu du contrat
+                      {scan && showOriginal
+                        ? bi("Document importé", "الوثيقة المرفوعة")
+                        : bi("Aperçu du contrat", "معاينة العقد")}
                     </span>
-                    <span className="text-xs text-foreground/60">
-                      {form.employee_id ? "Mis à jour pendant la saisie" : "Choisissez l'employé pour compléter le document"}
-                    </span>
+                    {scan ? (
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-brand"
+                        onClick={() => setShowOriginal((value) => !value)}
+                      >
+                        {showOriginal
+                          ? bi("Voir le modèle", "عرض النموذج")
+                          : bi("Voir le fichier", "عرض الملف")}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-foreground/60">
+                        {form.employee_id ? "Mis à jour pendant la saisie" : "Choisissez l'employé pour compléter le document"}
+                      </span>
+                    )}
                   </div>
                   <div className="min-h-0 flex-1 p-3">
-                    {previewHtml ? (
+                    {scan && showOriginal ? (
+                      <iframe
+                        title={scan.file_name}
+                        src={hrFileHref(scan.path)}
+                        className="h-full w-full rounded-lg bg-white shadow-md ring-1 ring-black/5"
+                      />
+                    ) : previewHtml ? (
                       <iframe
                         title="Aperçu du contrat"
                         srcDoc={previewHtml}
