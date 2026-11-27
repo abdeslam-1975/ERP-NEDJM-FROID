@@ -1925,6 +1925,7 @@ export function AttendanceManager({
             {hasUnsaved ? <span className="h-2 w-2 rounded-full bg-amber-300" /> : null}
           </Button>
         </div>
+        </div>
         {mode === "site" ? presenceFilter.bar : null}
       </div>
 
