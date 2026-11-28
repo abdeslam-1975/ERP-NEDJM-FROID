@@ -168,6 +168,7 @@
 .ventes-app .btn-releve { background: #0f766e; }
 .ventes-app .btn-admin { background: #1e3a5f; }
 .ventes-app .btn-export { background: #16a34a; }
+.ventes-app .btn-corbeille { background: #7c2d12; }
 .ventes-app .btn-pdf {
   background: #fff;
   color: #1d4ed8;
@@ -425,6 +426,7 @@
 .ventes-app .modal-head.navy { background: linear-gradient(135deg, #1e3a5f, #3a87ad); }
 .ventes-app .modal-head.teal { background: linear-gradient(135deg, #0f766e, #115e59); }
 .ventes-app .modal-head.slate { background: linear-gradient(135deg, #1e293b, #334155); }
+.ventes-app .modal-head.brown { background: linear-gradient(135deg, #7c2d12, #9a3412); }
 .ventes-app .modal-close {
   border: 0;
   background: transparent;

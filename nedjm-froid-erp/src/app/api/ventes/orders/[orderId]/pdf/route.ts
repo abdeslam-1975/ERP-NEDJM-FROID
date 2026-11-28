@@ -27,12 +27,22 @@ export async function GET(_req: Request, { params }: Params) {
     return NextResponse.json({ error: "Accès refusé." }, { status: 403 });
   }
 
-  const { data: order, error } = await supabase
+  let order: Record<string, unknown> | null = null;
+  const primary = await supabase
     .from("sal_orders")
     .select("*")
     .eq("id", orderId)
+    .is("deleted_at", null)
     .maybeSingle();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (primary.error && /deleted_at/i.test(primary.error.message)) {
+    const legacy = await supabase.from("sal_orders").select("*").eq("id", orderId).maybeSingle();
+    if (legacy.error) return NextResponse.json({ error: legacy.error.message }, { status: 500 });
+    order = (legacy.data as Record<string, unknown> | null) ?? null;
+  } else if (primary.error) {
+    return NextResponse.json({ error: primary.error.message }, { status: 500 });
+  } else {
+    order = (primary.data as Record<string, unknown> | null) ?? null;
+  }
   if (!order) {
     return NextResponse.json({ error: "Bon de commande introuvable." }, { status: 404 });
   }
